@@ -6,8 +6,11 @@ import javax.inject.Inject
 
 class BootstrapRouteResolver @Inject constructor() {
     fun resolve(state: SessionBootstrapState): AppRoute = when {
-        !state.hasCompletedOnboarding -> AppRoute.Welcome
-        state.pairingStatus == PairingStatus.PAIRED_PLACEHOLDER -> AppRoute.CanvasHome
-        else -> AppRoute.Pairing
+        state.authStatus == com.subhajit.elaris.data.bootstrap.AuthStatus.SIGNED_OUT ->
+            AppRoute.AuthLanding
+        !state.hasCompletedOnboarding -> AppRoute.OnboardingName
+        state.pairingStatus == PairingStatus.INVITE_PENDING_ACCEPTANCE -> AppRoute.InviteAcceptance
+        state.pairingStatus == PairingStatus.PAIRED -> AppRoute.CanvasHome
+        else -> AppRoute.PairingHub
     }
 }

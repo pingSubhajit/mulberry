@@ -1,8 +1,8 @@
 package com.subhajit.elaris.navigation
 
+import com.subhajit.elaris.data.bootstrap.AuthStatus
 import com.subhajit.elaris.data.bootstrap.PairingStatus
 import com.subhajit.elaris.data.bootstrap.SessionBootstrapState
-import com.subhajit.elaris.data.bootstrap.SessionDisplayState
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -10,27 +10,47 @@ class BootstrapRouteResolverTest {
     private val resolver = BootstrapRouteResolver()
 
     @Test
-    fun `fresh install routes to welcome`() {
-        assertEquals(AppRoute.Welcome, resolver.resolve(SessionBootstrapState()))
+    fun `signed out user routes to auth landing`() {
+        assertEquals(AppRoute.AuthLanding, resolver.resolve(SessionBootstrapState()))
     }
 
     @Test
-    fun `completed onboarding without pairing routes to pairing`() {
+    fun `signed in new user routes to onboarding`() {
         val state = SessionBootstrapState(
-            hasCompletedOnboarding = true,
-            pairingStatus = PairingStatus.UNPAIRED,
-            sessionDisplayState = SessionDisplayState.EMPTY
+            authStatus = AuthStatus.SIGNED_IN
         )
 
-        assertEquals(AppRoute.Pairing, resolver.resolve(state))
+        assertEquals(AppRoute.OnboardingName, resolver.resolve(state))
     }
 
     @Test
-    fun `placeholder paired state routes to home`() {
+    fun `signed in unpaired user routes to pairing hub`() {
         val state = SessionBootstrapState(
+            authStatus = AuthStatus.SIGNED_IN,
             hasCompletedOnboarding = true,
-            pairingStatus = PairingStatus.PAIRED_PLACEHOLDER,
-            sessionDisplayState = SessionDisplayState.PLACEHOLDER_SESSION
+            pairingStatus = PairingStatus.UNPAIRED
+        )
+
+        assertEquals(AppRoute.PairingHub, resolver.resolve(state))
+    }
+
+    @Test
+    fun `invite pending user routes to invite acceptance`() {
+        val state = SessionBootstrapState(
+            authStatus = AuthStatus.SIGNED_IN,
+            hasCompletedOnboarding = true,
+            pairingStatus = PairingStatus.INVITE_PENDING_ACCEPTANCE
+        )
+
+        assertEquals(AppRoute.InviteAcceptance, resolver.resolve(state))
+    }
+
+    @Test
+    fun `paired user routes to home`() {
+        val state = SessionBootstrapState(
+            authStatus = AuthStatus.SIGNED_IN,
+            hasCompletedOnboarding = true,
+            pairingStatus = PairingStatus.PAIRED
         )
 
         assertEquals(AppRoute.CanvasHome, resolver.resolve(state))

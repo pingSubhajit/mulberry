@@ -51,6 +51,7 @@ fun SettingsRoute(
         uiState = uiState,
         onNavigateBack = onNavigateBack,
         onResetAppState = viewModel::onResetAppState,
+        onLogout = viewModel::onLogout,
         onSeedDemoSession = viewModel::onSeedDemoSession,
         onFeatureFlagChanged = viewModel::onFeatureFlagChanged,
         onClearFeatureOverrides = viewModel::onClearFeatureOverrides
@@ -63,6 +64,7 @@ private fun SettingsScreen(
     uiState: SettingsUiState,
     onNavigateBack: () -> Unit,
     onResetAppState: () -> Unit,
+    onLogout: () -> Unit,
     onSeedDemoSession: () -> Unit,
     onFeatureFlagChanged: (FeatureFlag, Boolean) -> Unit,
     onClearFeatureOverrides: () -> Unit
@@ -99,7 +101,22 @@ private fun SettingsScreen(
                     )
                     Text(text = "Environment: ${uiState.environmentLabel}")
                     Text(text = "API Base URL: ${uiState.apiBaseUrl}")
+                    Text(text = "Auth state: ${uiState.bootstrapState.authStatus.name}")
+                    uiState.bootstrapState.userDisplayName?.let {
+                        Text(text = "Signed in as: $it")
+                    }
                     Text(text = "Current pairing state: ${uiState.bootstrapState.pairingStatus.displayName}")
+                }
+            }
+
+            if (uiState.bootstrapState.authStatus.name != "SIGNED_OUT") {
+                OutlinedButton(
+                    onClick = onLogout,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(TestTags.SETTINGS_LOGOUT_BUTTON)
+                ) {
+                    Text("Log Out")
                 }
             }
 

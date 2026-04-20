@@ -28,14 +28,16 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
             buildConfigField("String", "APP_ENVIRONMENT", "\"dev\"")
-            buildConfigField("String", "API_BASE_URL", "\"https://dev.api.elaris.local\"")
+            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080/\"")
             buildConfigField("boolean", "ENABLE_DEBUG_MENU", "true")
+            buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"\"")
         }
         create("prod") {
             dimension = "environment"
             buildConfigField("String", "APP_ENVIRONMENT", "\"prod\"")
-            buildConfigField("String", "API_BASE_URL", "\"https://api.elaris.app\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://api.elaris.app/\"")
             buildConfigField("boolean", "ENABLE_DEBUG_MENU", "false")
+            buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"\"")
         }
     }
 
@@ -88,6 +90,12 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.retrofit.core)
+    implementation(libs.retrofit.gson)
+    implementation(libs.okhttp.logging)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.navigation.compose)
     kapt(libs.hilt.compiler)

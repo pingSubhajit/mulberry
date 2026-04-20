@@ -2,6 +2,7 @@ package com.subhajit.elaris.app.bootstrap
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.subhajit.elaris.bootstrap.BootstrapRepository
 import com.subhajit.elaris.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.elaris.navigation.AppRoute
 import com.subhajit.elaris.navigation.BootstrapRouteResolver
@@ -10,6 +11,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 data class BootstrapUiState(
     val destination: AppRoute? = null
@@ -18,8 +20,17 @@ data class BootstrapUiState(
 @HiltViewModel
 class BootstrapViewModel @Inject constructor(
     repository: SessionBootstrapRepository,
+    bootstrapRepository: BootstrapRepository,
     private val routeResolver: BootstrapRouteResolver
 ) : ViewModel() {
+    init {
+        viewModelScope.launch {
+            if (repository.getCurrentSession() != null) {
+                bootstrapRepository.refreshBootstrap()
+            }
+        }
+    }
+
     val uiState = repository.state
         .map { state -> BootstrapUiState(destination = routeResolver.resolve(state)) }
         .stateIn(

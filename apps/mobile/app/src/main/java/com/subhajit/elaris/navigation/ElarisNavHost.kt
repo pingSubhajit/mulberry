@@ -6,11 +6,15 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.subhajit.elaris.app.bootstrap.BootstrapRoute
+import com.subhajit.elaris.auth.AuthLandingRoute
 import com.subhajit.elaris.home.CanvasHomeRoute
 import com.subhajit.elaris.home.CanvasSurfaceRoute
 import com.subhajit.elaris.home.LockScreenPlaceholderRoute
-import com.subhajit.elaris.onboarding.WelcomeRoute
-import com.subhajit.elaris.pairing.PairingRoute
+import com.subhajit.elaris.onboarding.OnboardingDetailsRoute
+import com.subhajit.elaris.onboarding.OnboardingNameRoute
+import com.subhajit.elaris.pairing.InviteAcceptanceRoute
+import com.subhajit.elaris.pairing.InviteCodeEntryRoute
+import com.subhajit.elaris.pairing.PairingHubRoute
 import com.subhajit.elaris.settings.SettingsRoute
 
 @Composable
@@ -34,11 +38,11 @@ fun ElarisNavHost(
             )
         }
 
-        composable(AppRoute.Welcome.route) {
-            WelcomeRoute(
-                onNavigateToPairing = {
-                    navController.navigate(AppRoute.Pairing.route) {
-                        popUpTo(AppRoute.Welcome.route) {
+        composable(AppRoute.AuthLanding.route) {
+            AuthLandingRoute(
+                onNavigateToBootstrap = {
+                    navController.navigate(AppRoute.Bootstrap.route) {
+                        popUpTo(AppRoute.AuthLanding.route) {
                             inclusive = true
                         }
                         launchSingleTop = true
@@ -47,11 +51,54 @@ fun ElarisNavHost(
             )
         }
 
-        composable(AppRoute.Pairing.route) {
-            PairingRoute(
-                onNavigateToCanvasHome = {
-                    navController.navigate(AppRoute.CanvasHome.route) {
-                        popUpTo(AppRoute.Pairing.route) {
+        composable(AppRoute.OnboardingName.route) {
+            OnboardingNameRoute(
+                onNavigateToDetails = {
+                    navController.navigate(AppRoute.OnboardingDetails.route)
+                },
+                onNavigateToCodeEntry = {
+                    navController.navigate(AppRoute.InviteCodeEntry.route)
+                }
+            )
+        }
+
+        composable(AppRoute.OnboardingDetails.route) {
+            OnboardingDetailsRoute(
+                onNavigateToBootstrap = {
+                    navController.navigate(AppRoute.Bootstrap.route) {
+                        popUpTo(AppRoute.OnboardingName.route)
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(AppRoute.PairingHub.route) {
+            PairingHubRoute(
+                onNavigateToCodeEntry = {
+                    navController.navigate(AppRoute.InviteCodeEntry.route)
+                }
+            )
+        }
+
+        composable(AppRoute.InviteCodeEntry.route) {
+            InviteCodeEntryRoute(
+                onNavigateToBootstrap = {
+                    navController.navigate(AppRoute.Bootstrap.route) {
+                        popUpTo(AppRoute.InviteCodeEntry.route) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(AppRoute.InviteAcceptance.route) {
+            InviteAcceptanceRoute(
+                onNavigateToBootstrap = {
+                    navController.navigate(AppRoute.Bootstrap.route) {
+                        popUpTo(AppRoute.InviteAcceptance.route) {
                             inclusive = true
                         }
                         launchSingleTop = true

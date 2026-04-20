@@ -51,20 +51,13 @@ class MainActivityNavigationTest {
     }
 
     @Test
-    fun welcomeNavigatesToPairing() {
-        assertTagExists(TestTags.WELCOME_SCREEN)
-
-        composeRule.onNodeWithTag(TestTags.WELCOME_CONTINUE_BUTTON).performClick()
-
-        assertTagExists(TestTags.PAIRING_SCREEN)
+    fun signedOutLaunchShowsAuthLanding() {
+        assertTagExists(TestTags.AUTH_LANDING_SCREEN)
     }
 
     @Test
     fun settingsReachableFromHome() {
-        assumeTrue(BuildConfig.ENABLE_DEBUG_MENU)
-
-        composeRule.onNodeWithTag(TestTags.WELCOME_CONTINUE_BUTTON).performClick()
-        composeRule.onNodeWithTag(TestTags.PAIRING_DEMO_BUTTON).performClick()
+        seedDemoSession()
 
         assertTagExists(TestTags.HOME_SCREEN)
         composeRule.onNodeWithTag(TestTags.HOME_SETTINGS_BUTTON).performClick()
@@ -73,10 +66,7 @@ class MainActivityNavigationTest {
 
     @Test
     fun canvasScreenReachableFromHomeAndSupportsDrawing() {
-        assumeTrue(BuildConfig.ENABLE_DEBUG_MENU)
-
-        composeRule.onNodeWithTag(TestTags.WELCOME_CONTINUE_BUTTON).performClick()
-        composeRule.onNodeWithTag(TestTags.PAIRING_DEMO_BUTTON).performClick()
+        seedDemoSession()
         composeRule.onNodeWithTag(TestTags.HOME_OPEN_CANVAS_BUTTON).performClick()
 
         assertTagExists(TestTags.CANVAS_SCREEN)
@@ -90,10 +80,7 @@ class MainActivityNavigationTest {
 
     @Test
     fun lockScreenReachableFromHome() {
-        assumeTrue(BuildConfig.ENABLE_DEBUG_MENU)
-
-        composeRule.onNodeWithTag(TestTags.WELCOME_CONTINUE_BUTTON).performClick()
-        composeRule.onNodeWithTag(TestTags.PAIRING_DEMO_BUTTON).performClick()
+        seedDemoSession()
         composeRule.onNodeWithTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON).performClick()
 
         assertTagExists(TestTags.LOCKSCREEN_SCREEN)
@@ -102,24 +89,25 @@ class MainActivityNavigationTest {
 
     @Test
     fun devOnlyControlsHiddenInProd() {
-        composeRule.onNodeWithTag(TestTags.WELCOME_CONTINUE_BUTTON).performClick()
+        seedDemoSession()
+        composeRule.onNodeWithTag(TestTags.HOME_SETTINGS_BUTTON).performClick()
 
         if (BuildConfig.ENABLE_DEBUG_MENU) {
-            assertTagExists(TestTags.PAIRING_DEMO_BUTTON)
+            assertTagExists(TestTags.SETTINGS_DEVELOPER_SECTION)
         } else {
-            assertTagDoesNotExist(TestTags.PAIRING_DEMO_BUTTON)
+            assertTagDoesNotExist(TestTags.SETTINGS_DEVELOPER_SECTION)
         }
     }
 
     @Test
     fun stateSurvivesActivityRecreation() {
-        composeRule.onNodeWithTag(TestTags.WELCOME_CONTINUE_BUTTON).performClick()
-        assertTagExists(TestTags.PAIRING_SCREEN)
+        seedSignedInOnboardingState()
+        assertTagExists(TestTags.ONBOARDING_NAME_SCREEN)
 
         composeRule.activityRule.scenario.recreate()
         composeRule.waitForIdle()
 
-        assertTagExists(TestTags.PAIRING_SCREEN)
+        assertTagExists(TestTags.ONBOARDING_NAME_SCREEN)
     }
 
     private fun assertTagExists(tag: String) {
@@ -134,6 +122,51 @@ class MainActivityNavigationTest {
             atLeastOneRootRequired = false
         )
         assertTrue("Expected tag '$tag' to be absent", nodes.isEmpty())
+    }
+
+    private fun seedDemoSession() {
+        assumeTrue(BuildConfig.ENABLE_DEBUG_MENU)
+
+        val applicationContext = composeRule.activity.applicationContext
+        val entryPoint = EntryPointAccessors.fromApplication(
+            applicationContext,
+            TestDependencies::class.java
+        )
+
+        runBlocking {
+            entryPoint.sessionBootstrapRepository().seedDemoSession()
+        }
+
+        composeRule.activityRule.scenario.recreate()
+        composeRule.waitForIdle()
+    }
+
+    private fun seedSignedInOnboardingState() {
+        val applicationContext = composeRule.activity.applicationContext
+        val entryPoint = EntryPointAccessors.fromApplication(
+            applicationContext,
+            TestDependencies::class.java
+        )
+
+        runBlocking {
+            entryPoint.sessionBootstrapRepository().cacheSession(
+                com.subhajit.elaris.data.bootstrap.AppSession(
+                    accessToken = "access",
+                    refreshToken = "refresh",
+                    userId = "user-1"
+                )
+            )
+            entryPoint.sessionBootstrapRepository().cacheBootstrap(
+                com.subhajit.elaris.data.bootstrap.SessionBootstrapState(
+                    authStatus = com.subhajit.elaris.data.bootstrap.AuthStatus.SIGNED_IN,
+                    hasCompletedOnboarding = false,
+                    userId = "user-1"
+                )
+            )
+        }
+
+        composeRule.activityRule.scenario.recreate()
+        composeRule.waitForIdle()
     }
 
     @EntryPoint

@@ -2,6 +2,7 @@ package com.subhajit.elaris.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.subhajit.elaris.auth.AuthRepository
 import com.subhajit.elaris.core.config.AppConfig
 import com.subhajit.elaris.core.flags.FeatureFlag
 import com.subhajit.elaris.core.flags.FeatureFlagProvider
@@ -38,6 +39,7 @@ sealed interface SettingsEffect {
 class SettingsViewModel @Inject constructor(
     repository: SessionBootstrapRepository,
     featureFlagProvider: FeatureFlagProvider,
+    private val authRepository: AuthRepository,
     private val drawingRepository: DrawingRepository,
     private val backgroundImageRepository: BackgroundImageRepository,
     private val canvasSnapshotRenderer: CanvasSnapshotRenderer,
@@ -77,6 +79,13 @@ class SettingsViewModel @Inject constructor(
             backgroundImageRepository.clearBackground()
             wallpaperCoordinator.ensureSnapshotCurrent()
             wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+            _effects.emit(SettingsEffect.RestartFromBootstrap)
+        }
+    }
+
+    fun onLogout() {
+        viewModelScope.launch {
+            authRepository.logout()
             _effects.emit(SettingsEffect.RestartFromBootstrap)
         }
     }

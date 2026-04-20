@@ -6,6 +6,10 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
+import com.subhajit.elaris.auth.AuthRepository
+import com.subhajit.elaris.auth.CredentialManagerAuthRepository
+import com.subhajit.elaris.bootstrap.BackendBootstrapRepository
+import com.subhajit.elaris.bootstrap.BootstrapRepository
 import com.subhajit.elaris.core.config.AppConfig
 import com.subhajit.elaris.core.config.AppConfigFactory
 import com.subhajit.elaris.core.data.APP_PREFERENCES_FILE
@@ -19,6 +23,15 @@ import com.subhajit.elaris.drawing.data.local.CanvasMetadataDao
 import com.subhajit.elaris.drawing.data.local.DrawingDatabase
 import com.subhajit.elaris.drawing.data.local.DrawingDao
 import com.subhajit.elaris.drawing.data.local.DrawingOperationsDao
+import com.subhajit.elaris.navigation.BootstrapRouteResolver
+import com.subhajit.elaris.network.AuthHeaderInterceptor
+import com.subhajit.elaris.network.ElarisApiService
+import com.subhajit.elaris.onboarding.BackendProfileRepository
+import com.subhajit.elaris.onboarding.DataStoreOnboardingDraftRepository
+import com.subhajit.elaris.onboarding.OnboardingDraftRepository
+import com.subhajit.elaris.onboarding.ProfileRepository
+import com.subhajit.elaris.pairing.BackendInviteRepository
+import com.subhajit.elaris.pairing.InviteRepository
 import com.subhajit.elaris.wallpaper.BackgroundImageRepository
 import com.subhajit.elaris.wallpaper.CanvasSnapshotRenderer
 import com.subhajit.elaris.wallpaper.DataStoreBackgroundImageRepository
@@ -36,6 +49,10 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -75,6 +92,36 @@ abstract class AppBindingsModule {
     abstract fun bindWallpaperCoordinator(
         implementation: DefaultWallpaperCoordinator
     ): WallpaperCoordinator
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthRepository(
+        implementation: CredentialManagerAuthRepository
+    ): AuthRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindBootstrapRepository(
+        implementation: BackendBootstrapRepository
+    ): BootstrapRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindOnboardingDraftRepository(
+        implementation: DataStoreOnboardingDraftRepository
+    ): OnboardingDraftRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindProfileRepository(
+        implementation: BackendProfileRepository
+    ): ProfileRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindInviteRepository(
+        implementation: BackendInviteRepository
+    ): InviteRepository
 }
 
 @Module
@@ -123,4 +170,51 @@ object AppProvidesModule {
     @Provides
     @Singleton
     fun provideWallpaperStatusCalculator(): WallpaperStatusCalculator = WallpaperStatusCalculator()
+
+    @Provides
+    @Singleton
+    fun provideHttpLoggingInterceptor(appConfig: AppConfig): HttpLoggingInterceptor =
+        HttpLoggingInterceptor().apply {
+            level = if (appConfig.enableDebugMenu) {
+                HttpLoggingInterceptor.Level.BODY
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
+        }
+
+    @Provides
+    @Singleton
+    fun provideOkHttpClient(
+        authHeaderInterceptor: AuthHeaderInterceptor,
+        loggingInterceptor: HttpLoggingInterceptor
+    ): OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor(authHeaderInterceptor)
+        .addInterceptor(loggingInterceptor)
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideRetrofit(
+        appConfig: AppConfig,
+        okHttpClient: OkHttpClient
+    ): Retrofit = Retrofit.Builder()
+        .baseUrl(
+            if (appConfig.apiBaseUrl.endsWith("/")) {
+                appConfig.apiBaseUrl
+            } else {
+                "${appConfig.apiBaseUrl}/"
+            }
+        )
+        .client(okHttpClient)
+        .addConverterFactory(GsonConverterFactory.create())
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideElarisApiService(retrofit: Retrofit): ElarisApiService =
+        retrofit.create(ElarisApiService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideBootstrapRouteResolver(): BootstrapRouteResolver = BootstrapRouteResolver()
 }

@@ -4,14 +4,13 @@ import kotlinx.coroutines.flow.Flow
 
 interface SessionBootstrapRepository {
     val state: Flow<SessionBootstrapState>
+    val session: Flow<AppSession?>
 
-    suspend fun completeOnboarding()
+    suspend fun getCurrentSession(): AppSession?
 
-    suspend fun setPairingStatus(status: PairingStatus)
-
+    suspend fun cacheBootstrap(state: SessionBootstrapState)
+    suspend fun cacheSession(session: AppSession?)
     suspend fun setWallpaperConfigured(configured: Boolean)
-
-    suspend fun setSessionDisplayState(state: SessionDisplayState)
 
     suspend fun seedDemoSession()
 

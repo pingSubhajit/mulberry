@@ -7,6 +7,7 @@ data class AppConfig(
     val environment: AppEnvironment,
     val apiBaseUrl: String,
     val enableDebugMenu: Boolean,
+    val googleServerClientId: String,
     val defaultFeatureFlags: FeatureFlags
 )
 
@@ -14,7 +15,8 @@ object AppConfigFactory {
     fun fromFields(
         environmentName: String,
         apiBaseUrl: String,
-        enableDebugMenu: Boolean
+        enableDebugMenu: Boolean,
+        googleServerClientId: String = ""
     ): AppConfig {
         val environment = AppEnvironment.fromRaw(environmentName)
         val defaultFeatureFlags = when (environment) {
@@ -35,6 +37,7 @@ object AppConfigFactory {
             environment = environment,
             apiBaseUrl = apiBaseUrl,
             enableDebugMenu = enableDebugMenu,
+            googleServerClientId = googleServerClientId,
             defaultFeatureFlags = defaultFeatureFlags
         )
     }
@@ -43,6 +46,7 @@ object AppConfigFactory {
         fromFields(
             environmentName = BuildConfig.APP_ENVIRONMENT,
             apiBaseUrl = BuildConfig.API_BASE_URL,
-            enableDebugMenu = BuildConfig.ENABLE_DEBUG_MENU
+            enableDebugMenu = BuildConfig.ENABLE_DEBUG_MENU,
+            googleServerClientId = BuildConfig.GOOGLE_SERVER_CLIENT_ID
         )
 }

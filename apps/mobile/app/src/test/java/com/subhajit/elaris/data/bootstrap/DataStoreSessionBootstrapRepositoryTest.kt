@@ -5,12 +5,14 @@ import com.subhajit.elaris.core.config.AppConfigFactory
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DataStoreSessionBootstrapRepositoryTest {
@@ -22,38 +24,79 @@ class DataStoreSessionBootstrapRepositoryTest {
     }
 
     @Test
-    fun `completing onboarding persists state`() = runTest {
+    fun `cache bootstrap persists signed in onboarding state`() = runTest {
         val repository = createRepository(this)
 
-        repository.completeOnboarding()
+        repository.cacheSession(
+            AppSession(
+                accessToken = "access",
+                refreshToken = "refresh",
+                userId = "user-1"
+            )
+        )
+        repository.cacheBootstrap(
+            SessionBootstrapState(
+                authStatus = AuthStatus.SIGNED_IN,
+                hasCompletedOnboarding = true,
+                userId = "user-1",
+                userDisplayName = "Subhajit",
+                partnerDisplayName = "Ankita",
+                anniversaryDate = "2026-01-01",
+                pairingStatus = PairingStatus.UNPAIRED
+            )
+        )
 
-        assertTrue(repository.state.first().hasCompletedOnboarding)
+        val state = repository.state.first()
+        val session = repository.session.first()
+
+        assertTrue(state.hasCompletedOnboarding)
+        assertEquals(AuthStatus.SIGNED_IN, state.authStatus)
+        assertEquals("Subhajit", state.userDisplayName)
+        assertNotNull(session)
     }
 
     @Test
     fun `reset clears bootstrap state`() = runTest {
         val repository = createRepository(this)
-        repository.completeOnboarding()
-        repository.setPairingStatus(PairingStatus.PAIRED_PLACEHOLDER)
-        repository.setSessionDisplayState(SessionDisplayState.PLACEHOLDER_SESSION)
+        repository.cacheSession(
+            AppSession(
+                accessToken = "access",
+                refreshToken = "refresh",
+                userId = "user-1"
+            )
+        )
+        repository.cacheBootstrap(
+            SessionBootstrapState(
+                authStatus = AuthStatus.SIGNED_IN,
+                hasCompletedOnboarding = true,
+                userId = "user-1",
+                pairingStatus = PairingStatus.PAIRED,
+                pairSessionId = "pair-1"
+            )
+        )
         repository.setWallpaperConfigured(true)
 
         repository.reset()
 
         assertEquals(SessionBootstrapState(), repository.state.first())
+        assertNull(repository.session.first())
     }
 
     @Test
-    fun `seed demo session persists placeholder paired state in dev`() = runTest {
+    fun `seed demo session persists paired state in dev`() = runTest {
         val repository = createRepository(this, enableDebugMenu = true)
 
         repository.seedDemoSession()
 
         val state = repository.state.first()
+        val session = repository.session.first()
+
         assertTrue(state.hasCompletedOnboarding)
-        assertEquals(PairingStatus.PAIRED_PLACEHOLDER, state.pairingStatus)
-        assertEquals(SessionDisplayState.PLACEHOLDER_SESSION, state.sessionDisplayState)
+        assertEquals(AuthStatus.SIGNED_IN, state.authStatus)
+        assertEquals(PairingStatus.PAIRED, state.pairingStatus)
+        assertEquals("Subhajit", state.userDisplayName)
         assertFalse(state.hasWallpaperConfigured)
+        assertNotNull(session)
     }
 
     private fun createRepository(
