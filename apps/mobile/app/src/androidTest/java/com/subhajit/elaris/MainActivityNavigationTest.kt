@@ -68,21 +68,20 @@ class MainActivityNavigationTest {
     }
 
     @Test
-    fun blankStateVisibleOnEmptyCanvasAndHiddenAfterDrawing() {
+    fun canvasScreenReachableFromHomeAndSupportsDrawing() {
         assumeTrue(BuildConfig.ENABLE_DEBUG_MENU)
 
         composeRule.onNodeWithTag(TestTags.WELCOME_CONTINUE_BUTTON).performClick()
         composeRule.onNodeWithTag(TestTags.PAIRING_DEMO_BUTTON).performClick()
+        composeRule.onNodeWithTag(TestTags.HOME_OPEN_CANVAS_BUTTON).performClick()
 
-        assertTagExists(TestTags.DRAWING_BLANK_STATE)
+        assertTagExists(TestTags.CANVAS_SCREEN)
 
         composeRule.onNodeWithTag(TestTags.DRAWING_CANVAS).performTouchInput {
             down(center)
             moveTo(Offset(center.x + 120f, center.y + 40f))
             up()
         }
-
-        assertTagDoesNotExist(TestTags.DRAWING_BLANK_STATE)
     }
 
     @Test
@@ -91,7 +90,7 @@ class MainActivityNavigationTest {
 
         composeRule.onNodeWithTag(TestTags.WELCOME_CONTINUE_BUTTON).performClick()
         composeRule.onNodeWithTag(TestTags.PAIRING_DEMO_BUTTON).performClick()
-        composeRule.onNodeWithTag(TestTags.HOME_LOCKSCREEN_TAB).performClick()
+        composeRule.onNodeWithTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON).performClick()
 
         assertTagExists(TestTags.LOCKSCREEN_PLACEHOLDER)
     }

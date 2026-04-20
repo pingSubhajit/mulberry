@@ -31,7 +31,6 @@ data class CanvasHomeUiState(
         selectedColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
         selectedWidth = DrawingDefaults.DEFAULT_WIDTH
     ),
-    val selectedTab: CanvasHomeTab = CanvasHomeTab.CANVAS,
     val showClearConfirmation: Boolean = false,
     val palette: List<Long> = DrawingDefaults.palette
 )
@@ -44,7 +43,6 @@ class CanvasHomeViewModel @Inject constructor(
     private val strokeHitTester: StrokeHitTester,
     appConfig: AppConfig
 ) : ViewModel() {
-    private val selectedTab = MutableStateFlow(CanvasHomeTab.CANVAS)
     private val showClearConfirmation = MutableStateFlow(false)
 
     private val baseState = combine(
@@ -63,16 +61,14 @@ class CanvasHomeViewModel @Inject constructor(
 
     val uiState = combine(
         baseState,
-        selectedTab,
         showClearConfirmation
-    ) { baseState, tab, clearDialogVisible ->
+    ) { baseState, clearDialogVisible ->
         CanvasHomeUiState(
             environmentLabel = appConfig.environment.displayName,
             bootstrapState = baseState.bootstrapState,
             featureFlags = baseState.featureFlags,
             canvasState = baseState.canvasState,
             toolState = baseState.toolState,
-            selectedTab = tab,
             showClearConfirmation = clearDialogVisible
         )
     }.stateIn(
@@ -89,10 +85,6 @@ class CanvasHomeViewModel @Inject constructor(
         viewModelScope.launch {
             sessionRepository.setWallpaperConfigured(configured)
         }
-    }
-
-    fun onTabSelected(tab: CanvasHomeTab) {
-        selectedTab.value = tab
     }
 
     fun onCanvasPress(point: StrokePoint) {

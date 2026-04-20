@@ -7,6 +7,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.subhajit.elaris.app.bootstrap.BootstrapRoute
 import com.subhajit.elaris.home.CanvasHomeRoute
+import com.subhajit.elaris.home.CanvasSurfaceRoute
+import com.subhajit.elaris.home.LockScreenPlaceholderRoute
 import com.subhajit.elaris.onboarding.WelcomeRoute
 import com.subhajit.elaris.pairing.PairingRoute
 import com.subhajit.elaris.settings.SettingsRoute
@@ -60,10 +62,24 @@ fun ElarisNavHost(
 
         composable(AppRoute.CanvasHome.route) {
             CanvasHomeRoute(
+                onNavigateToCanvas = {
+                    navController.navigate(AppRoute.CanvasSurface.route)
+                },
+                onNavigateToLockScreen = {
+                    navController.navigate(AppRoute.LockScreenPlaceholder.route)
+                },
                 onNavigateToSettings = {
                     navController.navigate(AppRoute.Settings.route)
                 }
             )
+        }
+
+        composable(AppRoute.CanvasSurface.route) {
+            CanvasSurfaceRoute()
+        }
+
+        composable(AppRoute.LockScreenPlaceholder.route) {
+            LockScreenPlaceholderRoute()
         }
 
         composable(AppRoute.Settings.route) {
