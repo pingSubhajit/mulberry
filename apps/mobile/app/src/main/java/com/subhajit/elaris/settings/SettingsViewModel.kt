@@ -8,6 +8,7 @@ import com.subhajit.elaris.core.flags.FeatureFlagProvider
 import com.subhajit.elaris.core.flags.FeatureFlags
 import com.subhajit.elaris.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.elaris.data.bootstrap.SessionBootstrapState
+import com.subhajit.elaris.drawing.DrawingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -34,6 +35,7 @@ sealed interface SettingsEffect {
 class SettingsViewModel @Inject constructor(
     repository: SessionBootstrapRepository,
     featureFlagProvider: FeatureFlagProvider,
+    private val drawingRepository: DrawingRepository,
     appConfig: AppConfig
 ) : ViewModel() {
     private val _effects = MutableSharedFlow<SettingsEffect>()
@@ -64,6 +66,7 @@ class SettingsViewModel @Inject constructor(
     fun onResetAppState() {
         viewModelScope.launch {
             sessionRepository.reset()
+            drawingRepository.resetAllDrawingState()
             _effects.emit(SettingsEffect.RestartFromBootstrap)
         }
     }

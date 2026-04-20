@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.room.Room
 import com.subhajit.elaris.core.config.AppConfig
 import com.subhajit.elaris.core.config.AppConfigFactory
 import com.subhajit.elaris.core.data.APP_PREFERENCES_FILE
@@ -12,6 +13,12 @@ import com.subhajit.elaris.core.flags.DataStoreFeatureFlagProvider
 import com.subhajit.elaris.core.flags.FeatureFlagProvider
 import com.subhajit.elaris.data.bootstrap.DataStoreSessionBootstrapRepository
 import com.subhajit.elaris.data.bootstrap.SessionBootstrapRepository
+import com.subhajit.elaris.drawing.DrawingRepository
+import com.subhajit.elaris.drawing.data.RoomDrawingRepository
+import com.subhajit.elaris.drawing.data.local.CanvasMetadataDao
+import com.subhajit.elaris.drawing.data.local.DrawingDatabase
+import com.subhajit.elaris.drawing.data.local.DrawingDao
+import com.subhajit.elaris.drawing.data.local.DrawingOperationsDao
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -37,6 +44,12 @@ abstract class AppBindingsModule {
     abstract fun bindFeatureFlagProvider(
         implementation: DataStoreFeatureFlagProvider
     ): FeatureFlagProvider
+
+    @Binds
+    @Singleton
+    abstract fun bindDrawingRepository(
+        implementation: RoomDrawingRepository
+    ): DrawingRepository
 }
 
 @Module
@@ -54,4 +67,25 @@ object AppProvidesModule {
         scope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
         produceFile = { context.preferencesDataStoreFile(APP_PREFERENCES_FILE) }
     )
+
+    @Provides
+    @Singleton
+    fun provideDrawingDatabase(
+        @ApplicationContext context: Context
+    ): DrawingDatabase = Room.databaseBuilder(
+        context,
+        DrawingDatabase::class.java,
+        "drawing.db"
+    ).fallbackToDestructiveMigration().build()
+
+    @Provides
+    fun provideDrawingDao(database: DrawingDatabase): DrawingDao = database.drawingDao()
+
+    @Provides
+    fun provideDrawingOperationsDao(database: DrawingDatabase): DrawingOperationsDao =
+        database.drawingOperationsDao()
+
+    @Provides
+    fun provideCanvasMetadataDao(database: DrawingDatabase): CanvasMetadataDao =
+        database.canvasMetadataDao()
 }

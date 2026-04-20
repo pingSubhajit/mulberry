@@ -109,7 +109,7 @@ private fun SettingsScreen(
                     .fillMaxWidth()
                     .testTag(TestTags.SETTINGS_RESET_BUTTON)
             ) {
-                Text("Reset Bootstrap State")
+                Text("Reset App State")
             }
 
             if (uiState.enableDebugMenu) {
