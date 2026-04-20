@@ -19,6 +19,13 @@ import com.subhajit.elaris.drawing.data.local.CanvasMetadataDao
 import com.subhajit.elaris.drawing.data.local.DrawingDatabase
 import com.subhajit.elaris.drawing.data.local.DrawingDao
 import com.subhajit.elaris.drawing.data.local.DrawingOperationsDao
+import com.subhajit.elaris.wallpaper.BackgroundImageRepository
+import com.subhajit.elaris.wallpaper.CanvasSnapshotRenderer
+import com.subhajit.elaris.wallpaper.DataStoreBackgroundImageRepository
+import com.subhajit.elaris.wallpaper.DefaultCanvasSnapshotRenderer
+import com.subhajit.elaris.wallpaper.DefaultWallpaperCoordinator
+import com.subhajit.elaris.wallpaper.WallpaperCoordinator
+import com.subhajit.elaris.wallpaper.WallpaperStatusCalculator
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -50,6 +57,24 @@ abstract class AppBindingsModule {
     abstract fun bindDrawingRepository(
         implementation: RoomDrawingRepository
     ): DrawingRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindBackgroundImageRepository(
+        implementation: DataStoreBackgroundImageRepository
+    ): BackgroundImageRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCanvasSnapshotRenderer(
+        implementation: DefaultCanvasSnapshotRenderer
+    ): CanvasSnapshotRenderer
+
+    @Binds
+    @Singleton
+    abstract fun bindWallpaperCoordinator(
+        implementation: DefaultWallpaperCoordinator
+    ): WallpaperCoordinator
 }
 
 @Module
@@ -67,6 +92,12 @@ object AppProvidesModule {
         scope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
         produceFile = { context.preferencesDataStoreFile(APP_PREFERENCES_FILE) }
     )
+
+    @Provides
+    @Singleton
+    @ApplicationScope
+    fun provideApplicationScope(): CoroutineScope =
+        CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     @Provides
     @Singleton
@@ -88,4 +119,8 @@ object AppProvidesModule {
     @Provides
     fun provideCanvasMetadataDao(database: DrawingDatabase): CanvasMetadataDao =
         database.canvasMetadataDao()
+
+    @Provides
+    @Singleton
+    fun provideWallpaperStatusCalculator(): WallpaperStatusCalculator = WallpaperStatusCalculator()
 }

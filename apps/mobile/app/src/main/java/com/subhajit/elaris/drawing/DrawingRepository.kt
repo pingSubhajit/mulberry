@@ -22,6 +22,8 @@ interface DrawingRepository {
 
     suspend fun setTool(tool: DrawingTool)
 
+    suspend fun setCanvasViewport(widthPx: Int, heightPx: Int)
+
     suspend fun eraseStroke(strokeId: String)
 
     suspend fun clearCanvas()

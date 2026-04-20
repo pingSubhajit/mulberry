@@ -4,4 +4,5 @@
     <string name="environment_label">Environment</string>
     <string name="api_label">API Base URL</string>
     <string name="settings_title">Settings</string>
+    <string name="wallpaper_description">Shared local canvas wallpaper</string>
 </resources>

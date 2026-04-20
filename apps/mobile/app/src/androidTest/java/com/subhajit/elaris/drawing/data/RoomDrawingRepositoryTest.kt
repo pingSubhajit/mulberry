@@ -81,6 +81,19 @@ class RoomDrawingRepositoryTest {
     }
 
     @Test
+    fun canvasViewportPersistsAcrossRepositoryRecreation() = runBlocking {
+        repository.setCanvasViewport(widthPx = 320, heightPx = 640)
+
+        val recreated = createRepository()
+        val metadata = recreated.canvasState.first().snapshotState
+        val storedMetadata = database.canvasMetadataDao().getMetadata()
+
+        assertEquals(320, storedMetadata?.canvasWidthPx)
+        assertEquals(640, storedMetadata?.canvasHeightPx)
+        assertTrue(metadata.isDirty)
+    }
+
+    @Test
     fun erasingStrokePersistsAcrossReload() = runBlocking {
         repository.startStroke(StrokePoint(0f, 0f))
         repository.appendPoint(StrokePoint(10f, 10f))
@@ -111,6 +124,18 @@ class RoomDrawingRepositoryTest {
     }
 
     @Test
+    fun committedChangesMarkSnapshotDirty() = runBlocking {
+        repository.startStroke(StrokePoint(0f, 0f))
+        repository.appendPoint(StrokePoint(10f, 10f))
+        repository.finishStroke()
+
+        val canvasState = repository.canvasState.first { it.strokes.isNotEmpty() }
+
+        assertTrue(canvasState.snapshotState.isDirty)
+        assertEquals(canvasState.revision, canvasState.snapshotState.lastSnapshotRevision + 1)
+    }
+
+    @Test
     fun resetClearsAllDrawingState() = runBlocking {
         repository.startStroke(StrokePoint(0f, 0f))
         repository.appendPoint(StrokePoint(10f, 10f))
@@ -125,6 +150,9 @@ class RoomDrawingRepositoryTest {
         assertTrue(canvasState.strokes.isEmpty())
         assertTrue(canvasState.isEmpty)
         assertEquals(DrawingTool.DRAW, toolState.activeTool)
+        assertTrue(canvasState.snapshotState.isDirty)
+        assertEquals(0L, canvasState.snapshotState.lastSnapshotRevision)
+        assertEquals(null, canvasState.snapshotState.cachedImagePath)
         assertFalse(database.drawingOperationsDao().getOperations().isNotEmpty())
     }
 

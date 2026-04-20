@@ -14,8 +14,13 @@ import com.subhajit.elaris.drawing.model.DrawingDefaults
 import com.subhajit.elaris.drawing.model.DrawingTool
 import com.subhajit.elaris.drawing.model.StrokePoint
 import com.subhajit.elaris.drawing.model.ToolState
+import com.subhajit.elaris.wallpaper.BackgroundImageRepository
+import com.subhajit.elaris.wallpaper.BackgroundImageState
+import com.subhajit.elaris.wallpaper.WallpaperCoordinator
+import com.subhajit.elaris.wallpaper.WallpaperStatusState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import android.net.Uri
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -31,6 +36,8 @@ data class CanvasHomeUiState(
         selectedColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
         selectedWidth = DrawingDefaults.DEFAULT_WIDTH
     ),
+    val wallpaperStatus: WallpaperStatusState = WallpaperStatusState(),
+    val backgroundImageState: BackgroundImageState = BackgroundImageState(),
     val showClearConfirmation: Boolean = false,
     val palette: List<Long> = DrawingDefaults.palette
 )
@@ -41,21 +48,36 @@ class CanvasHomeViewModel @Inject constructor(
     featureFlagProvider: FeatureFlagProvider,
     private val drawingRepository: DrawingRepository,
     private val strokeHitTester: StrokeHitTester,
+    private val backgroundImageRepository: BackgroundImageRepository,
+    private val wallpaperCoordinator: WallpaperCoordinator,
     appConfig: AppConfig
 ) : ViewModel() {
     private val showClearConfirmation = MutableStateFlow(false)
 
     private val baseState = combine(
-        repository.state,
-        featureFlagProvider.flags,
-        drawingRepository.canvasState,
-        drawingRepository.toolState
-    ) { bootstrapState, flags, canvasState, toolState ->
+        combine(
+            repository.state,
+            featureFlagProvider.flags,
+            drawingRepository.canvasState,
+            drawingRepository.toolState
+        ) { bootstrapState, flags, canvasState, toolState ->
+            PartialCanvasHomeState(
+                bootstrapState = bootstrapState,
+                featureFlags = flags,
+                canvasState = canvasState,
+                toolState = toolState
+            )
+        },
+        wallpaperCoordinator.wallpaperStatus(),
+        backgroundImageRepository.backgroundState
+    ) { partialState, wallpaperStatus, backgroundState ->
         BaseCanvasHomeState(
-            bootstrapState = bootstrapState,
-            featureFlags = flags,
-            canvasState = canvasState,
-            toolState = toolState
+            bootstrapState = partialState.bootstrapState,
+            featureFlags = partialState.featureFlags,
+            canvasState = partialState.canvasState,
+            toolState = partialState.toolState,
+            wallpaperStatus = wallpaperStatus,
+            backgroundState = backgroundState
         )
     }
 
@@ -69,6 +91,8 @@ class CanvasHomeViewModel @Inject constructor(
             featureFlags = baseState.featureFlags,
             canvasState = baseState.canvasState,
             toolState = baseState.toolState,
+            wallpaperStatus = baseState.wallpaperStatus,
+            backgroundImageState = baseState.backgroundState,
             showClearConfirmation = clearDialogVisible
         )
     }.stateIn(
@@ -84,6 +108,12 @@ class CanvasHomeViewModel @Inject constructor(
     fun onWallpaperConfiguredChanged(configured: Boolean) {
         viewModelScope.launch {
             sessionRepository.setWallpaperConfigured(configured)
+        }
+    }
+
+    fun refreshWallpaperStatus() {
+        viewModelScope.launch {
+            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
         }
     }
 
@@ -118,6 +148,12 @@ class CanvasHomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             drawingRepository.eraseStroke(stroke.id)
+        }
+    }
+
+    fun onCanvasViewportChanged(widthPx: Int, heightPx: Int) {
+        viewModelScope.launch {
+            drawingRepository.setCanvasViewport(widthPx, heightPx)
         }
     }
 
@@ -160,7 +196,35 @@ class CanvasHomeViewModel @Inject constructor(
         }
     }
 
+    fun onBackgroundImageSelected(uri: Uri) {
+        viewModelScope.launch {
+            backgroundImageRepository.importBackground(uri)
+        }
+    }
+
+    fun onBackgroundImageCleared() {
+        viewModelScope.launch {
+            backgroundImageRepository.clearBackground()
+        }
+    }
+
+    fun onSnapshotRefreshRequested() {
+        viewModelScope.launch {
+            wallpaperCoordinator.ensureSnapshotCurrent()
+            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+        }
+    }
+
     private data class BaseCanvasHomeState(
+        val bootstrapState: SessionBootstrapState,
+        val featureFlags: FeatureFlags,
+        val canvasState: CanvasState,
+        val toolState: ToolState,
+        val wallpaperStatus: WallpaperStatusState,
+        val backgroundState: BackgroundImageState
+    )
+
+    private data class PartialCanvasHomeState(
         val bootstrapState: SessionBootstrapState,
         val featureFlags: FeatureFlags,
         val canvasState: CanvasState,

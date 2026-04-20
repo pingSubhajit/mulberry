@@ -11,6 +11,8 @@ import com.subhajit.elaris.core.flags.FeatureFlagProvider
 import com.subhajit.elaris.core.ui.TestTags
 import com.subhajit.elaris.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.elaris.drawing.DrawingRepository
+import com.subhajit.elaris.wallpaper.BackgroundImageRepository
+import com.subhajit.elaris.wallpaper.CanvasSnapshotRenderer
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -40,6 +42,8 @@ class MainActivityNavigationTest {
             entryPoint.sessionBootstrapRepository().reset()
             entryPoint.featureFlagProvider().clearOverrides()
             entryPoint.drawingRepository().resetAllDrawingState()
+            entryPoint.canvasSnapshotRenderer().clearSnapshots()
+            entryPoint.backgroundImageRepository().clearBackground()
         }
 
         composeRule.activityRule.scenario.recreate()
@@ -85,14 +89,15 @@ class MainActivityNavigationTest {
     }
 
     @Test
-    fun lockScreenPlaceholderReachableFromHome() {
+    fun lockScreenReachableFromHome() {
         assumeTrue(BuildConfig.ENABLE_DEBUG_MENU)
 
         composeRule.onNodeWithTag(TestTags.WELCOME_CONTINUE_BUTTON).performClick()
         composeRule.onNodeWithTag(TestTags.PAIRING_DEMO_BUTTON).performClick()
         composeRule.onNodeWithTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON).performClick()
 
-        assertTagExists(TestTags.LOCKSCREEN_PLACEHOLDER)
+        assertTagExists(TestTags.LOCKSCREEN_SCREEN)
+        assertTagExists(TestTags.LOCKSCREEN_OPEN_WALLPAPER_BUTTON)
     }
 
     @Test
@@ -137,5 +142,7 @@ class MainActivityNavigationTest {
         fun sessionBootstrapRepository(): SessionBootstrapRepository
         fun featureFlagProvider(): FeatureFlagProvider
         fun drawingRepository(): DrawingRepository
+        fun backgroundImageRepository(): BackgroundImageRepository
+        fun canvasSnapshotRenderer(): CanvasSnapshotRenderer
     }
 }

@@ -160,6 +160,22 @@ class RoomDrawingRepository @Inject constructor(
         )
     }
 
+    override suspend fun setCanvasViewport(widthPx: Int, heightPx: Int) {
+        if (widthPx <= 0 || heightPx <= 0) return
+
+        val metadata = currentMetadata()
+        if (metadata.canvasWidthPx == widthPx && metadata.canvasHeightPx == heightPx) return
+
+        canvasMetadataDao.upsertMetadata(
+            metadata.copy(
+                canvasWidthPx = widthPx,
+                canvasHeightPx = heightPx,
+                lastModifiedAt = System.currentTimeMillis(),
+                isSnapshotDirty = true
+            )
+        )
+    }
+
     override suspend fun eraseStroke(strokeId: String) {
         activeStroke.value = null
         val now = System.currentTimeMillis()

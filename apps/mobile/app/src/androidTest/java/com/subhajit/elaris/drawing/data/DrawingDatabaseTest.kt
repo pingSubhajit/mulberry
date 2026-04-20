@@ -93,6 +93,8 @@ class DrawingDatabaseTest {
         database.canvasMetadataDao().upsertMetadata(
             CanvasMetadataEntity.default().copy(
                 revision = 2L,
+                canvasWidthPx = 320,
+                canvasHeightPx = 640,
                 selectedTool = DrawingTool.ERASE,
                 selectedWidth = 14f,
                 isSnapshotDirty = true
@@ -102,6 +104,8 @@ class DrawingDatabaseTest {
         val metadata = database.canvasMetadataDao().getMetadata()
 
         assertEquals(2L, metadata?.revision)
+        assertEquals(320, metadata?.canvasWidthPx)
+        assertEquals(640, metadata?.canvasHeightPx)
         assertEquals(DrawingTool.ERASE, metadata?.selectedTool)
         assertEquals(14f, metadata?.selectedWidth ?: 0f, 0.001f)
         assertTrue(metadata?.isSnapshotDirty == true)

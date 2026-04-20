@@ -79,7 +79,9 @@ fun ElarisNavHost(
         }
 
         composable(AppRoute.LockScreenPlaceholder.route) {
-            LockScreenPlaceholderRoute()
+            LockScreenPlaceholderRoute(
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
 
         composable(AppRoute.Settings.route) {

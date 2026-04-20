@@ -9,6 +9,9 @@ import com.subhajit.elaris.core.flags.FeatureFlags
 import com.subhajit.elaris.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.elaris.data.bootstrap.SessionBootstrapState
 import com.subhajit.elaris.drawing.DrawingRepository
+import com.subhajit.elaris.wallpaper.BackgroundImageRepository
+import com.subhajit.elaris.wallpaper.CanvasSnapshotRenderer
+import com.subhajit.elaris.wallpaper.WallpaperCoordinator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -36,6 +39,9 @@ class SettingsViewModel @Inject constructor(
     repository: SessionBootstrapRepository,
     featureFlagProvider: FeatureFlagProvider,
     private val drawingRepository: DrawingRepository,
+    private val backgroundImageRepository: BackgroundImageRepository,
+    private val canvasSnapshotRenderer: CanvasSnapshotRenderer,
+    private val wallpaperCoordinator: WallpaperCoordinator,
     appConfig: AppConfig
 ) : ViewModel() {
     private val _effects = MutableSharedFlow<SettingsEffect>()
@@ -67,6 +73,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             sessionRepository.reset()
             drawingRepository.resetAllDrawingState()
+            canvasSnapshotRenderer.clearSnapshots()
+            backgroundImageRepository.clearBackground()
+            wallpaperCoordinator.ensureSnapshotCurrent()
+            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
             _effects.emit(SettingsEffect.RestartFromBootstrap)
         }
     }

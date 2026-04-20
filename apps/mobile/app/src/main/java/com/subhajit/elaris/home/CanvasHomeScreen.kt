@@ -134,6 +134,7 @@ fun CanvasSurfaceRoute(
         onCanvasDrag = viewModel::onCanvasDrag,
         onCanvasRelease = viewModel::onCanvasRelease,
         onCanvasTap = viewModel::onCanvasTap,
+        onCanvasViewportChanged = viewModel::onCanvasViewportChanged,
         onColorSelected = viewModel::onColorSelected,
         onBrushWidthChanged = viewModel::onBrushWidthChanged,
         onEraserToggle = viewModel::onEraserToggle,
@@ -150,6 +151,7 @@ private fun CanvasSurfaceScreen(
     onCanvasDrag: (StrokePoint) -> Unit,
     onCanvasRelease: () -> Unit,
     onCanvasTap: (StrokePoint) -> Unit,
+    onCanvasViewportChanged: (Int, Int) -> Unit,
     onColorSelected: (Long) -> Unit,
     onBrushWidthChanged: (Float) -> Unit,
     onEraserToggle: () -> Unit,
@@ -226,6 +228,7 @@ private fun CanvasSurfaceScreen(
                     onDrawPoint = onCanvasDrag,
                     onDrawEnd = onCanvasRelease,
                     onEraseTap = onCanvasTap,
+                    onCanvasSizeChanged = onCanvasViewportChanged,
                     modifier = Modifier.padding(8.dp)
                 )
             }
@@ -258,38 +261,6 @@ private fun CanvasSurfaceScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-fun LockScreenPlaceholderRoute(
-    viewModel: CanvasHomeViewModel = hiltViewModel()
-) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-    LockScreenPlaceholderContent(uiState = uiState)
-}
-
-@Composable
-private fun LockScreenPlaceholderContent(
-    uiState: CanvasHomeUiState
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 16.dp)
-            .testTag(TestTags.LOCKSCREEN_PLACEHOLDER),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text("Lock screen preview is coming later.", style = MaterialTheme.typography.headlineSmall)
-        Text(
-            text = if (uiState.canvasState.isEmpty) {
-                "No local canvas content yet."
-            } else {
-                "You have ${uiState.canvasState.strokes.size} local stroke(s)."
-            },
-            style = MaterialTheme.typography.bodyLarge
-        )
     }
 }
 

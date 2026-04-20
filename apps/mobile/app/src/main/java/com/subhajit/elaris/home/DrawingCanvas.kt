@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import com.subhajit.elaris.core.ui.TestTags
 import com.subhajit.elaris.drawing.model.CanvasState
@@ -30,6 +31,7 @@ fun DrawingCanvas(
     onDrawPoint: (StrokePoint) -> Unit,
     onDrawEnd: () -> Unit,
     onEraseTap: (StrokePoint) -> Unit,
+    onCanvasSizeChanged: (Int, Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val gestureModifier = if (activeTool == DrawingTool.DRAW) {
@@ -64,6 +66,9 @@ fun DrawingCanvas(
     Canvas(
         modifier = modifier
             .fillMaxSize()
+            .onSizeChanged { size ->
+                onCanvasSizeChanged(size.width, size.height)
+            }
             .testTag(TestTags.DRAWING_CANVAS)
             .then(gestureModifier)
     ) {
