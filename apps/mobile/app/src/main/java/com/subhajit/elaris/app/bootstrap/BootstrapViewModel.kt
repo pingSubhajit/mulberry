@@ -1,0 +1,30 @@
+package com.subhajit.elaris.app.bootstrap
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.subhajit.elaris.data.bootstrap.SessionBootstrapRepository
+import com.subhajit.elaris.navigation.AppRoute
+import com.subhajit.elaris.navigation.BootstrapRouteResolver
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+
+data class BootstrapUiState(
+    val destination: AppRoute? = null
+)
+
+@HiltViewModel
+class BootstrapViewModel @Inject constructor(
+    repository: SessionBootstrapRepository,
+    private val routeResolver: BootstrapRouteResolver
+) : ViewModel() {
+    val uiState = repository.state
+        .map { state -> BootstrapUiState(destination = routeResolver.resolve(state)) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = BootstrapUiState()
+        )
+}
