@@ -49,6 +49,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -65,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -240,7 +242,7 @@ private fun MainAppHeader(
                 lineHeight = 22.sp,
                 fontWeight = FontWeight.Normal
             )
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = stringResource(R.string.home_unpaired_title),
                 color = Color(0xFF070B14),
@@ -257,7 +259,7 @@ private fun MainAppHeader(
             displayName = displayName,
             size = 38.dp,
             modifier = Modifier
-                .padding(top = 32.dp)
+                .padding(top = 26.dp)
                 .testTag(TestTags.HOME_SETTINGS_BUTTON)
                 .clickable(onClick = onProfileClick)
         )
@@ -303,7 +305,7 @@ private fun CanvasHomePane(
                 color = Color(0xFF737373),
                 fontFamily = PoppinsFontFamily,
                 fontSize = 15.sp,
-                lineHeight = 24.sp,
+                lineHeight = 20.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.width(306.dp)
             )
@@ -406,13 +408,6 @@ private fun OverlappingInviteAvatars(
             .height(155.dp),
         contentAlignment = Alignment.CenterStart
     ) {
-        ProfileAvatar(
-            photoUrl = userPhotoUrl,
-            displayName = userName,
-            size = 139.dp,
-            borderWidth = 8.dp,
-            modifier = Modifier.align(Alignment.CenterStart)
-        )
         QuestionAvatar(
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -423,6 +418,14 @@ private fun OverlappingInviteAvatars(
                     onClick = onQuestionClick
                 )
         )
+        ProfileAvatar(
+            photoUrl = userPhotoUrl,
+            displayName = userName,
+            size = 139.dp,
+            borderWidth = 8.dp,
+            shadowElevation = 14.dp,
+            modifier = Modifier.align(Alignment.CenterStart)
+        )
     }
 }
 
@@ -430,13 +433,26 @@ private fun OverlappingInviteAvatars(
 private fun ProfileAvatar(
     photoUrl: String?,
     displayName: String,
-    size: androidx.compose.ui.unit.Dp,
+    size: Dp,
     modifier: Modifier = Modifier,
-    borderWidth: androidx.compose.ui.unit.Dp = 0.dp
+    borderWidth: Dp = 0.dp,
+    shadowElevation: Dp = 0.dp
 ) {
     val initial = displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "M"
+    val avatarModifier = if (shadowElevation > 0.dp) {
+        modifier.shadow(
+            elevation = shadowElevation,
+            shape = CircleShape,
+            clip = false,
+            ambientColor = Color(0x33000000),
+            spotColor = Color(0x26000000)
+        )
+    } else {
+        modifier
+    }
+
     Box(
-        modifier = modifier
+        modifier = avatarModifier
             .size(size)
             .border(borderWidth, Color(0xFFFFEDF0), CircleShape)
             .clip(CircleShape)
@@ -610,7 +626,7 @@ private fun InviteCodeBottomSheet(
         dragHandle = {
             Box(
                 modifier = Modifier
-                    .padding(top = 16.dp, bottom = 22.dp)
+                    .padding(top = 8.dp, bottom = 19.dp)
                     .size(width = 44.dp, height = 4.dp)
                     .clip(RoundedCornerShape(100.dp))
                     .background(Color(0xFFDEDEDE))
@@ -632,16 +648,16 @@ private fun InviteCodeBottomSheet(
                 lineHeight = 28.sp,
                 fontWeight = FontWeight.SemiBold
             )
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Image(
                 painter = painterResource(R.drawable.invite_envelope_heart),
                 contentDescription = null,
-                modifier = Modifier.size(150.dp),
+                modifier = Modifier.size(190.dp),
                 contentScale = ContentScale.Fit
             )
-            Spacer(modifier = Modifier.height(44.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             InviteCodeCells(code = inviteSheet.code.orEmpty())
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = when {
                     inviteSheet.isLoading -> stringResource(R.string.home_invite_loading)
@@ -655,13 +671,13 @@ private fun InviteCodeBottomSheet(
                 lineHeight = 18.sp,
                 fontWeight = FontWeight.SemiBold
             )
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = stringResource(R.string.home_invite_sheet_body),
                 color = Color.Black,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 12.sp,
-                lineHeight = 22.sp,
+                lineHeight = 18.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.width(302.dp)
             )
@@ -676,7 +692,7 @@ private fun InviteCodeBottomSheet(
                     textAlign = TextAlign.Center
                 )
             }
-            Spacer(modifier = Modifier.height(26.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = onShareInviteClicked,
                 enabled = !inviteSheet.isLoading,
@@ -722,9 +738,9 @@ private fun InviteCodeCells(code: String) {
                     text = digit.toString(),
                     color = Color.Black,
                     fontFamily = PoppinsFontFamily,
-                    fontSize = 27.sp,
+                    fontSize = 30.sp,
                     lineHeight = 34.sp,
-                    fontWeight = FontWeight.Normal
+                    fontWeight = FontWeight.Medium
                 )
             }
         }
@@ -732,9 +748,14 @@ private fun InviteCodeCells(code: String) {
 }
 
 private fun Long.formatInviteCountdown(): String {
-    val minutes = this / 60
+    val hours = this / 3_600
+    val minutes = (this % 3_600) / 60
     val seconds = this % 60
-    return "%02d:%02d".format(minutes, seconds)
+    return if (hours > 0) {
+        "%02d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%02d:%02d".format(minutes, seconds)
+    }
 }
 
 @Composable
