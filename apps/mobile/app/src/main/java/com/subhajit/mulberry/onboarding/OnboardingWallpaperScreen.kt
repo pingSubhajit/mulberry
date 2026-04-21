@@ -75,7 +75,10 @@ import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.ui.theme.MulberryError
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
+import com.subhajit.mulberry.wallpaper.ui.WallpaperBackgroundSelectionSection
+import com.subhajit.mulberry.wallpaper.ui.WallpaperLockScreenPreview
 import kotlin.math.max
 
 private val OnboardingBackground = Color.White
@@ -195,7 +198,7 @@ private fun OnboardingWallpaperScreen(
                 null
             }
 
-            LockScreenPreview(
+            WallpaperLockScreenPreview(
                 assetPath = previewAssetPath,
                 assetUpdatedAt = uiState.backgroundImageState.lastUpdatedAt,
                 fallbackBackgroundRes = selectedPreviewResId,
@@ -211,7 +214,7 @@ private fun OnboardingWallpaperScreen(
                 )
             }
 
-            BackgroundSelectionSection(
+            WallpaperBackgroundSelectionSection(
                 presets = presets,
                 selectedPresetResId = uiState.selectedPresetResId,
                 onUploadFromGallery = onUploadFromGallery,
@@ -426,234 +429,6 @@ private fun WallpaperHeader(
 }
 
 @Composable
-private fun LockScreenPreview(
-    assetPath: String?,
-    assetUpdatedAt: Long,
-    @DrawableRes fallbackBackgroundRes: Int,
-    modifier: Modifier = Modifier
-) {
-    val imageBitmap = remember(assetPath, assetUpdatedAt) {
-        assetPath?.let { path ->
-            decodeSampledBitmap(path, targetWidth = 492, targetHeight = 856)?.asImageBitmap()
-        }
-    }
-    val previewShape = RoundedCornerShape(15.38.dp)
-
-    Box(
-        modifier = modifier
-            .size(width = 233.dp, height = 428.dp)
-            .clip(previewShape)
-            .background(PreviewFrame)
-            .padding(6.dp)
-            .clip(previewShape)
-    ) {
-        if (imageBitmap != null) {
-            Image(
-                bitmap = imageBitmap,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            Image(
-                painter = painterResource(fallbackBackgroundRes),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-        PreviewClock(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 54.dp)
-        )
-    }
-}
-
-@Composable
-private fun PreviewClock(modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = "9:41",
-            color = Color.White.copy(alpha = 0.62f),
-            style = TextStyle(
-                fontFamily = PoppinsFontFamily,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 52.sp,
-                lineHeight = 58.sp
-            )
-        )
-        Text(
-            text = stringResource(R.string.onboarding_wallpaper_preview_date),
-            color = Color.White.copy(alpha = 0.70f),
-            style = TextStyle(
-                fontFamily = PoppinsFontFamily,
-                fontWeight = FontWeight.Medium,
-                fontSize = 12.sp,
-                lineHeight = 18.sp
-            )
-        )
-    }
-}
-
-@Composable
-private fun BackgroundSelectionSection(
-    presets: List<WallpaperPreset>,
-    @DrawableRes selectedPresetResId: Int?,
-    onUploadFromGallery: () -> Unit,
-    onPresetSelected: (Int) -> Unit
-) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(28.dp),
-        modifier = Modifier.testTag(TestTags.ONBOARDING_WALLPAPER_BACKGROUND_SECTION)
-    ) {
-        UploadBackgroundButton(onClick = onUploadFromGallery)
-        Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            presets.chunked(2).forEach { row ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    row.forEach { preset ->
-                        PresetCard(
-                            preset = preset,
-                            isSelected = selectedPresetResId == preset.drawableResId,
-                            onClick = { onPresetSelected(preset.drawableResId) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    if (row.size == 1) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun UploadBackgroundButton(onClick: () -> Unit) {
-    val radius = 15.38.dp
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(115.dp)
-            .clip(RoundedCornerShape(radius))
-            .background(UploadBackground)
-            .dashedBorder(MulberryPrimary, radius)
-            .clickable(onClick = onClick)
-            .testTag(TestTags.ONBOARDING_WALLPAPER_UPLOAD_BUTTON),
-        contentAlignment = Alignment.Center
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            GalleryIcon()
-            Text(
-                text = stringResource(R.string.onboarding_wallpaper_upload),
-                color = MulberryPrimary,
-                style = TextStyle(
-                    fontFamily = PoppinsFontFamily,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    lineHeight = 22.sp
-                )
-            )
-        }
-    }
-}
-
-@Composable
-private fun GalleryIcon() {
-    Canvas(modifier = Modifier.size(18.dp)) {
-        val strokeWidth = 1.8.dp.toPx()
-        drawRoundRect(
-            color = MulberryPrimary,
-            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-            cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
-        )
-        drawCircle(
-            color = MulberryPrimary,
-            radius = 2.dp.toPx(),
-            center = center.copy(x = size.width * 0.66f, y = size.height * 0.34f),
-            style = Stroke(width = strokeWidth)
-        )
-        drawLine(
-            color = MulberryPrimary,
-            start = center.copy(x = size.width * 0.20f, y = size.height * 0.72f),
-            end = center.copy(x = size.width * 0.42f, y = size.height * 0.50f),
-            strokeWidth = strokeWidth,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = MulberryPrimary,
-            start = center.copy(x = size.width * 0.42f, y = size.height * 0.50f),
-            end = center.copy(x = size.width * 0.72f, y = size.height * 0.76f),
-            strokeWidth = strokeWidth,
-            cap = StrokeCap.Round
-        )
-    }
-}
-
-@Composable
-private fun PresetCard(
-    preset: WallpaperPreset,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val shape = RoundedCornerShape(15.38.dp)
-    Box(
-        modifier = modifier
-            .aspectRatio(171f / 133f)
-            .clip(shape)
-            .clickable(onClick = onClick)
-    ) {
-        Image(
-            painter = painterResource(preset.thumbnailDrawableResId),
-            contentDescription = preset.label,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
-        if (isSelected) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.46f)),
-                contentAlignment = Alignment.Center
-            ) {
-                CheckmarkIcon()
-            }
-        }
-    }
-}
-
-@Composable
-private fun CheckmarkIcon() {
-    Canvas(modifier = Modifier.size(34.dp)) {
-        val strokeWidth = 4.dp.toPx()
-        drawLine(
-            color = Color.White,
-            start = Offset(size.width * 0.22f, size.height * 0.54f),
-            end = Offset(size.width * 0.43f, size.height * 0.74f),
-            strokeWidth = strokeWidth,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = Color.White,
-            start = Offset(size.width * 0.43f, size.height * 0.74f),
-            end = Offset(size.width * 0.80f, size.height * 0.30f),
-            strokeWidth = strokeWidth,
-            cap = StrokeCap.Round
-        )
-    }
-}
-
-@Composable
 private fun PrimaryOnboardingButton(
     text: String,
     onClick: () -> Unit,
@@ -684,43 +459,4 @@ private fun PrimaryOnboardingButton(
             )
         )
     }
-}
-
-private fun Modifier.dashedBorder(color: Color, radius: androidx.compose.ui.unit.Dp): Modifier =
-    drawBehind {
-        val strokeWidth = 1.dp.toPx()
-        drawRoundRect(
-            color = color,
-            style = Stroke(
-                width = strokeWidth,
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 8.dp.toPx()))
-            ),
-            cornerRadius = CornerRadius(radius.toPx(), radius.toPx())
-        )
-    }
-
-private fun decodeSampledBitmap(
-    path: String,
-    targetWidth: Int,
-    targetHeight: Int
-): android.graphics.Bitmap? {
-    val boundsOptions = BitmapFactory.Options().apply {
-        inJustDecodeBounds = true
-    }
-    BitmapFactory.decodeFile(path, boundsOptions)
-
-    if (boundsOptions.outWidth <= 0 || boundsOptions.outHeight <= 0) {
-        return null
-    }
-
-    val widthRatio = boundsOptions.outWidth / targetWidth
-    val heightRatio = boundsOptions.outHeight / targetHeight
-    val sampleSize = max(1, minOf(widthRatio, heightRatio))
-
-    return BitmapFactory.decodeFile(
-        path,
-        BitmapFactory.Options().apply {
-            inSampleSize = sampleSize
-        }
-    )
 }

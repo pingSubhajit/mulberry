@@ -3,6 +3,7 @@ package com.subhajit.mulberry.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.net.Uri
+import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.config.AppConfig
 import com.subhajit.mulberry.core.flags.FeatureFlagProvider
 import com.subhajit.mulberry.core.flags.FeatureFlags
@@ -23,7 +24,9 @@ import com.subhajit.mulberry.pairing.CreateInviteResult
 import com.subhajit.mulberry.pairing.InviteRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageState
+import com.subhajit.mulberry.wallpaper.DefaultWallpaperPresets
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
+import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.WallpaperStatusState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -70,12 +73,16 @@ data class CanvasHomeUiState(
     val currentInvite: CreateInviteResult? = null,
     val isInviteSheetVisible: Boolean = false,
     val inviteSheet: InviteSheetUiState = InviteSheetUiState(),
+    val selectedWallpaperPresetResId: Int? = null,
+    val isWallpaperBusy: Boolean = false,
+    val wallpaperErrorMessage: String? = null,
     val showClearConfirmation: Boolean = false,
     val palette: List<Long> = DrawingDefaults.palette
 )
 
 sealed interface CanvasHomeEffect {
     data class ShareInvite(val message: String) : CanvasHomeEffect
+    data object OpenWallpaperSetup : CanvasHomeEffect
 }
 
 @HiltViewModel
@@ -94,9 +101,13 @@ class CanvasHomeViewModel @Inject constructor(
     private val showInviteSheet = MutableStateFlow(false)
     private val inviteLoadingState = MutableStateFlow(false)
     private val inviteErrorState = MutableStateFlow<String?>(null)
+    private val selectedWallpaperPresetState = MutableStateFlow<Int?>(null)
+    private val wallpaperBusyState = MutableStateFlow(false)
+    private val wallpaperErrorState = MutableStateFlow<String?>(null)
     private val currentTimeMillis = MutableStateFlow(System.currentTimeMillis())
     private val _effects = MutableSharedFlow<CanvasHomeEffect>()
     val effects = _effects.asSharedFlow()
+    val wallpaperPresets: List<WallpaperPreset> = DefaultWallpaperPresets
 
     private val baseState = combine(
         combine(
@@ -140,10 +151,23 @@ class CanvasHomeViewModel @Inject constructor(
         )
     }
 
+    private val wallpaperControls = combine(
+        selectedWallpaperPresetState,
+        wallpaperBusyState,
+        wallpaperErrorState
+    ) { selectedWallpaperPreset, wallpaperBusy, wallpaperError ->
+        WallpaperControlState(
+            selectedPreset = selectedWallpaperPreset,
+            isBusy = wallpaperBusy,
+            error = wallpaperError
+        )
+    }
+
     val uiState = combine(
         baseState,
-        inviteControls
-    ) { baseState, inviteControls ->
+        inviteControls,
+        wallpaperControls
+    ) { baseState, inviteControls, wallpaperControls ->
         CanvasHomeUiState(
             environmentLabel = appConfig.environment.displayName,
             bootstrapState = baseState.bootstrapState,
@@ -159,6 +183,9 @@ class CanvasHomeViewModel @Inject constructor(
                 isLoading = inviteControls.inviteLoading,
                 errorMessage = inviteControls.inviteError
             ),
+            selectedWallpaperPresetResId = wallpaperControls.selectedPreset,
+            isWallpaperBusy = wallpaperControls.isBusy,
+            wallpaperErrorMessage = wallpaperControls.error,
             showClearConfirmation = inviteControls.clearDialogVisible
         )
     }.stateIn(
@@ -313,13 +340,44 @@ class CanvasHomeViewModel @Inject constructor(
 
     fun onBackgroundImageSelected(uri: Uri) {
         viewModelScope.launch {
-            backgroundImageRepository.importBackground(uri)
+            runWallpaperUpdate {
+                selectedWallpaperPresetState.value = null
+                backgroundImageRepository.importBackground(uri)
+            }
         }
     }
 
     fun onBackgroundImageCleared() {
         viewModelScope.launch {
-            backgroundImageRepository.clearBackground()
+            runWallpaperUpdate {
+                selectedWallpaperPresetState.value = null
+                backgroundImageRepository.clearBackground()
+            }
+        }
+    }
+
+    fun onWallpaperPresetSelected(drawableResId: Int) {
+        viewModelScope.launch {
+            runWallpaperUpdate {
+                selectedWallpaperPresetState.value = drawableResId
+                backgroundImageRepository.importBundledBackground(drawableResId)
+            }
+        }
+    }
+
+    fun onSetUpLockScreenClicked() {
+        viewModelScope.launch {
+            wallpaperBusyState.value = true
+            wallpaperErrorState.value = null
+            runCatching {
+                ensureDefaultBackgroundIfNeeded()
+                wallpaperCoordinator.ensureSnapshotCurrent()
+            }.onSuccess {
+                _effects.emit(CanvasHomeEffect.OpenWallpaperSetup)
+            }.onFailure { error ->
+                wallpaperErrorState.value = error.message ?: "Unable to prepare wallpaper setup"
+            }
+            wallpaperBusyState.value = false
         }
     }
 
@@ -352,6 +410,31 @@ class CanvasHomeViewModel @Inject constructor(
         val inviteError: String?,
         val nowMillis: Long
     )
+
+    private data class WallpaperControlState(
+        val selectedPreset: Int?,
+        val isBusy: Boolean,
+        val error: String?
+    )
+
+    private suspend fun runWallpaperUpdate(block: suspend () -> Unit) {
+        wallpaperErrorState.value = null
+        runCatching {
+            block()
+            wallpaperCoordinator.ensureSnapshotCurrent()
+            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+        }.onFailure { error ->
+            wallpaperErrorState.value = error.message ?: "Unable to update background"
+        }
+    }
+
+    private suspend fun ensureDefaultBackgroundIfNeeded() {
+        if (!backgroundImageRepository.getCurrentBackgroundState().isConfigured) {
+            selectedWallpaperPresetState.value = selectedWallpaperPresetState.value
+                ?: R.drawable.wallpaper_default_bg
+            backgroundImageRepository.importBundledBackground(R.drawable.wallpaper_default_bg)
+        }
+    }
 }
 
 private fun CreateInviteResult?.toInviteSheetUiState(

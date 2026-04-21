@@ -52,6 +52,7 @@
     <string name="home_default_user_name">there</string>
     <string name="home_header_welcome">Welcome</string>
     <string name="home_unpaired_title">Ask your partner out</string>
+    <string name="home_lockscreen_title">Set your lock screen</string>
     <string name="home_profile_photo_content_description">Profile photo</string>
     <string name="home_unpaired_pair_title">%1$s &amp; who?</string>
     <string name="home_unpaired_body">Invite your partner to Mulberry to unlock the full experience</string>
@@ -60,6 +61,7 @@
     <string name="home_tab_lockscreen">Lock screen</string>
     <string name="home_open_canvas">Open canvas</string>
     <string name="home_open_lockscreen">Open lock screen</string>
+    <string name="home_lockscreen_setup_button">Set as lock screen</string>
     <string name="home_canvas_paired_body">Local strokes: %1$d</string>
     <string name="home_lockscreen_selected_body">Mulberry is set as your wallpaper.</string>
     <string name="home_lockscreen_unselected_body">Set up Mulberry as your live lock screen wallpaper.</string>

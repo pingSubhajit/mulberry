@@ -1,6 +1,9 @@
 package com.subhajit.mulberry.home
 
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -25,12 +28,15 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
@@ -82,6 +88,11 @@ import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
+import com.subhajit.mulberry.wallpaper.WallpaperPreset
+import com.subhajit.mulberry.wallpaper.ui.WallpaperBackgroundSelectionSection
+import com.subhajit.mulberry.wallpaper.ui.WallpaperLockScreenPreview
+import com.subhajit.mulberry.wallpaper.ui.WallpaperPrimaryButton
 import kotlinx.coroutines.launch
 
 @Composable
@@ -94,6 +105,13 @@ fun CanvasHomeRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
+    val backgroundPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.onBackgroundImageSelected(uri)
+        }
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.refreshBootstrapState()
@@ -114,6 +132,9 @@ fun CanvasHomeRoute(
                         )
                     )
                 }
+
+                CanvasHomeEffect.OpenWallpaperSetup ->
+                    WallpaperIntentFactory.openWallpaperPicker(context)
             }
         }
     }
@@ -122,6 +143,7 @@ fun CanvasHomeRoute(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshBootstrapState()
+                viewModel.refreshWallpaperStatus()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -132,12 +154,20 @@ fun CanvasHomeRoute(
 
     CanvasHomeScreen(
         uiState = uiState,
+        wallpaperPresets = viewModel.wallpaperPresets,
         onNavigateToCanvas = onNavigateToCanvas,
         onNavigateToLockScreen = onNavigateToLockScreen,
         onNavigateToSettings = onNavigateToSettings,
         onInviteRequested = viewModel::onInviteRequested,
         onInviteSheetDismissed = viewModel::onInviteSheetDismissed,
-        onShareInviteClicked = viewModel::onShareInviteClicked
+        onShareInviteClicked = viewModel::onShareInviteClicked,
+        onSetUpLockScreen = viewModel::onSetUpLockScreenClicked,
+        onUploadWallpaperBackground = {
+            backgroundPicker.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            )
+        },
+        onWallpaperPresetSelected = viewModel::onWallpaperPresetSelected
     )
 }
 
@@ -145,16 +175,29 @@ fun CanvasHomeRoute(
 @Composable
 private fun CanvasHomeScreen(
     uiState: CanvasHomeUiState,
+    wallpaperPresets: List<WallpaperPreset>,
     onNavigateToCanvas: () -> Unit,
     onNavigateToLockScreen: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onInviteRequested: () -> Unit,
     onInviteSheetDismissed: () -> Unit,
-    onShareInviteClicked: () -> Unit
+    onShareInviteClicked: () -> Unit,
+    onSetUpLockScreen: () -> Unit,
+    onUploadWallpaperBackground: () -> Unit,
+    onWallpaperPresetSelected: (Int) -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { MainAppTab.entries.size })
     val coroutineScope = rememberCoroutineScope()
     val selectedTab = MainAppTab.entries[pagerState.currentPage]
+    val headerTitle = when (selectedTab) {
+        MainAppTab.Canvas -> if (uiState.bootstrapState.pairingStatus == PairingStatus.UNPAIRED) {
+            stringResource(R.string.home_unpaired_title)
+        } else {
+            stringResource(R.string.home_tab_canvas)
+        }
+
+        MainAppTab.LockScreen -> stringResource(R.string.home_lockscreen_title)
+    }
 
     if (uiState.isInviteSheetVisible) {
         InviteCodeBottomSheet(
@@ -175,6 +218,7 @@ private fun CanvasHomeScreen(
         MainAppHeader(
             userName = uiState.bootstrapState.userDisplayName,
             userPhotoUrl = uiState.bootstrapState.userPhotoUrl,
+            title = headerTitle,
             onProfileClick = onNavigateToSettings
         )
 
@@ -193,7 +237,10 @@ private fun CanvasHomeScreen(
 
                 MainAppTab.LockScreen -> LockScreenHomePane(
                     uiState = uiState,
-                    onNavigateToLockScreen = onNavigateToLockScreen
+                    presets = wallpaperPresets,
+                    onSetUpLockScreen = onSetUpLockScreen,
+                    onUploadFromGallery = onUploadWallpaperBackground,
+                    onPresetSelected = onWallpaperPresetSelected
                 )
             }
         }
@@ -216,6 +263,7 @@ private fun CanvasHomeScreen(
 private fun MainAppHeader(
     userName: String?,
     userPhotoUrl: String?,
+    title: String,
     onProfileClick: () -> Unit
 ) {
     val displayName = userName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.home_default_user_name)
@@ -244,7 +292,7 @@ private fun MainAppHeader(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = stringResource(R.string.home_unpaired_title),
+                text = title,
                 color = Color(0xFF070B14),
                 fontFamily = PoppinsFontFamily,
                 fontSize = 28.sp,
@@ -343,19 +391,85 @@ private fun CanvasHomePane(
 @Composable
 private fun LockScreenHomePane(
     uiState: CanvasHomeUiState,
-    onNavigateToLockScreen: () -> Unit
+    presets: List<WallpaperPreset>,
+    onSetUpLockScreen: () -> Unit,
+    onUploadFromGallery: () -> Unit,
+    onPresetSelected: (Int) -> Unit
 ) {
-    PairedPaneCard(
-        title = stringResource(R.string.home_tab_lockscreen),
-        body = if (uiState.wallpaperStatus.isWallpaperSelected) {
-            stringResource(R.string.home_lockscreen_selected_body)
-        } else {
-            stringResource(R.string.home_lockscreen_unselected_body)
-        },
-        button = stringResource(R.string.home_open_lockscreen),
-        testTag = TestTags.HOME_OPEN_LOCKSCREEN_BUTTON,
-        onClick = onNavigateToLockScreen
-    )
+    val selectedPreviewResId = presets
+        .firstOrNull { it.drawableResId == uiState.selectedWallpaperPresetResId }
+        ?.previewDrawableResId
+        ?: R.drawable.wallpaper_default_bg_preview
+    val previewAssetPath = if (uiState.selectedWallpaperPresetResId == null) {
+        uiState.backgroundImageState.assetPath
+    } else {
+        null
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 34.dp, bottom = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(34.dp)
+        ) {
+            WallpaperLockScreenPreview(
+                assetPath = previewAssetPath,
+                assetUpdatedAt = uiState.backgroundImageState.lastUpdatedAt,
+                fallbackBackgroundRes = selectedPreviewResId
+            )
+
+            if (!uiState.wallpaperStatus.isWallpaperSelected) {
+                WallpaperPrimaryButton(
+                    text = stringResource(R.string.home_lockscreen_setup_button),
+                    onClick = onSetUpLockScreen,
+                    enabled = !uiState.isWallpaperBusy,
+                    modifier = Modifier.testTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON)
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.onboarding_wallpaper_ready),
+                    color = MulberryPrimary,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            uiState.wallpaperErrorMessage?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            WallpaperBackgroundSelectionSection(
+                presets = presets,
+                selectedPresetResId = uiState.selectedWallpaperPresetResId,
+                onUploadFromGallery = onUploadFromGallery,
+                onPresetSelected = onPresetSelected
+            )
+        }
+
+        if (uiState.isWallpaperBusy) {
+            CircularProgressIndicator(
+                color = MulberryPrimary,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+    }
 }
 
 @Composable

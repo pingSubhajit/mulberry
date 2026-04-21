@@ -9,7 +9,9 @@ import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageState
+import com.subhajit.mulberry.wallpaper.DefaultWallpaperPresets
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
+import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.WallpaperStatusState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -21,13 +23,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-data class WallpaperPreset(
-    @DrawableRes val drawableResId: Int,
-    @DrawableRes val previewDrawableResId: Int,
-    @DrawableRes val thumbnailDrawableResId: Int,
-    val label: String
-)
 
 data class OnboardingWallpaperUiState(
     val bootstrapState: SessionBootstrapState = SessionBootstrapState(),
@@ -56,32 +51,7 @@ class OnboardingWallpaperViewModel @Inject constructor(
     private val errorState = MutableStateFlow<String?>(null)
     private val selectedPresetState = MutableStateFlow<Int?>(null)
 
-    val presets: List<WallpaperPreset> = listOf(
-        WallpaperPreset(
-            drawableResId = R.drawable.wallpaper_preset_1,
-            previewDrawableResId = R.drawable.wallpaper_preset_1_preview,
-            thumbnailDrawableResId = R.drawable.wallpaper_preset_1_thumb,
-            label = "Warm canyon"
-        ),
-        WallpaperPreset(
-            drawableResId = R.drawable.wallpaper_preset_2,
-            previewDrawableResId = R.drawable.wallpaper_preset_2_preview,
-            thumbnailDrawableResId = R.drawable.wallpaper_preset_2_thumb,
-            label = "Red waves"
-        ),
-        WallpaperPreset(
-            drawableResId = R.drawable.wallpaper_preset_3,
-            previewDrawableResId = R.drawable.wallpaper_preset_3_preview,
-            thumbnailDrawableResId = R.drawable.wallpaper_preset_3_thumb,
-            label = "Quiet dusk"
-        ),
-        WallpaperPreset(
-            drawableResId = R.drawable.wallpaper_preset_4,
-            previewDrawableResId = R.drawable.wallpaper_preset_4_preview,
-            thumbnailDrawableResId = R.drawable.wallpaper_preset_4_thumb,
-            label = "Mulberry glow"
-        )
-    )
+    val presets: List<WallpaperPreset> = DefaultWallpaperPresets
 
     private val baseState = combine(
         sessionBootstrapRepository.state,
