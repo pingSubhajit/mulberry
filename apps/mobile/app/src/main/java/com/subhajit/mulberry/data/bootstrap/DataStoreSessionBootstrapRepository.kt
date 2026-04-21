@@ -84,9 +84,12 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
 
     override suspend fun cacheBootstrap(state: SessionBootstrapState) {
         dataStore.edit { preferences ->
+            val localWallpaperConfigured =
+                preferences[PreferenceStorage.wallpaperConfigured] ?: false
             preferences[PreferenceStorage.authStatus] = state.authStatus.name
             preferences[PreferenceStorage.onboardingCompleted] = state.hasCompletedOnboarding
-            preferences[PreferenceStorage.wallpaperConfigured] = state.hasWallpaperConfigured
+            preferences[PreferenceStorage.wallpaperConfigured] =
+                state.hasWallpaperConfigured || localWallpaperConfigured
             updateNullable(preferences, PreferenceStorage.sessionUserId, state.userId)
             updateNullable(preferences, PreferenceStorage.userDisplayName, state.userDisplayName)
             updateNullable(preferences, PreferenceStorage.partnerDisplayName, state.partnerDisplayName)

@@ -21,6 +21,21 @@
     <string name="onboarding_date_picker_select">Select</string>
     <string name="onboarding_date_picker_cancel">Cancel</string>
     <string name="onboarding_details_submitting">Submitting...</string>
+    <string name="onboarding_wallpaper_eyebrow">Almost there</string>
+    <string name="onboarding_wallpaper_title">Let’s set up your\nlock screen</string>
+    <string name="onboarding_wallpaper_description">Let’s set up a device background for you that only you will see. The canvas will appear on top of it</string>
+    <string name="onboarding_wallpaper_help">Help</string>
+    <string name="onboarding_wallpaper_help_title">Setting up Mulberry</string>
+    <string name="onboarding_wallpaper_help_body">Android will open the wallpaper setup screen. Select Mulberry, then choose Lock screen or Both if Android asks where to apply it.</string>
+    <string name="onboarding_wallpaper_help_step_one">Pick a background now, or keep the default Mulberry background.</string>
+    <string name="onboarding_wallpaper_help_step_two">Tap Set up lock screen and select Mulberry in Android’s wallpaper screen.</string>
+    <string name="onboarding_wallpaper_help_step_three">After setup, return here and tap All done to finish onboarding.</string>
+    <string name="onboarding_wallpaper_help_confirm">Got it</string>
+    <string name="onboarding_wallpaper_preview_date">Monday, January 16</string>
+    <string name="onboarding_wallpaper_setup_button">Set up lock screen</string>
+    <string name="onboarding_wallpaper_upload">Upload from gallery</string>
+    <string name="onboarding_wallpaper_ready">Mulberry is set as your wallpaper.</string>
+    <string name="onboarding_wallpaper_done">All done</string>
     <string name="invite_code_title">Let’s get you set up</string>
     <string name="invite_code_help">Help</string>
     <string name="invite_code_continue">Let’s get going</string>
@@ -30,5 +45,5 @@
     <string name="environment_label">Environment</string>
     <string name="api_label">API Base URL</string>
     <string name="settings_title">Settings</string>
-    <string name="wallpaper_description">Shared local canvas wallpaper</string>
+    <string name="wallpaper_description">Your private Mulberry canvas, layered over a background only you see.</string>
 </resources>

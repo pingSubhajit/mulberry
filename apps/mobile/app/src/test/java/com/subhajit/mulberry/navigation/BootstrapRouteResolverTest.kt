@@ -24,10 +24,22 @@ class BootstrapRouteResolverTest {
     }
 
     @Test
-    fun `signed in unpaired user routes to pairing hub`() {
+    fun `signed in completed onboarding user routes to wallpaper setup first`() {
         val state = SessionBootstrapState(
             authStatus = AuthStatus.SIGNED_IN,
             hasCompletedOnboarding = true,
+            pairingStatus = PairingStatus.UNPAIRED
+        )
+
+        assertEquals(AppRoute.OnboardingWallpaper, resolver.resolve(state))
+    }
+
+    @Test
+    fun `signed in unpaired user with wallpaper configured routes to home`() {
+        val state = SessionBootstrapState(
+            authStatus = AuthStatus.SIGNED_IN,
+            hasCompletedOnboarding = true,
+            hasWallpaperConfigured = true,
             pairingStatus = PairingStatus.UNPAIRED
         )
 
@@ -61,6 +73,7 @@ class BootstrapRouteResolverTest {
         val state = SessionBootstrapState(
             authStatus = AuthStatus.SIGNED_IN,
             hasCompletedOnboarding = true,
+            hasWallpaperConfigured = true,
             pairingStatus = PairingStatus.PAIRED
         )
 

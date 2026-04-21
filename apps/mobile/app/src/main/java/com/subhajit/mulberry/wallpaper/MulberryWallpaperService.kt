@@ -79,7 +79,7 @@ class MulberryWallpaperService : WallpaperService() {
                 drawBitmapIfValid(
                     canvas = canvas,
                     filePath = renderState.backgroundImagePath,
-                    cropToScreenViewport = false,
+                    scaleMode = BitmapScaleMode.CENTER_CROP_TO_CANVAS,
                     onCorruptFile = {
                         backgroundImageRepository.clearBackground()
                     }
@@ -87,7 +87,7 @@ class MulberryWallpaperService : WallpaperService() {
                 drawBitmapIfValid(
                     canvas = canvas,
                     filePath = renderState.snapshotPath,
-                    cropToScreenViewport = true,
+                    scaleMode = BitmapScaleMode.CENTERED_SCREEN_VIEWPORT,
                     onCorruptFile = {
                         File(it).delete()
                         wallpaperCoordinator.ensureSnapshotCurrent()
@@ -102,7 +102,7 @@ class MulberryWallpaperService : WallpaperService() {
         private suspend fun drawBitmapIfValid(
             canvas: Canvas,
             filePath: String?,
-            cropToScreenViewport: Boolean,
+            scaleMode: BitmapScaleMode,
             onCorruptFile: suspend (String) -> Unit
         ) {
             val path = filePath ?: return
@@ -113,15 +113,19 @@ class MulberryWallpaperService : WallpaperService() {
             }
 
             try {
-                val sourceRect = if (cropToScreenViewport) {
-                    centeredScreenSourceRect(
+                val sourceRect = when (scaleMode) {
+                    BitmapScaleMode.CENTER_CROP_TO_CANVAS -> centerCropSourceRect(
+                        bitmapWidth = bitmap.width,
+                        bitmapHeight = bitmap.height,
+                        targetWidth = canvas.width,
+                        targetHeight = canvas.height
+                    ).toAndroidRect()
+                    BitmapScaleMode.CENTERED_SCREEN_VIEWPORT -> centeredScreenSourceRect(
                         bitmapWidth = bitmap.width,
                         bitmapHeight = bitmap.height,
                         screenWidth = resources.displayMetrics.widthPixels,
                         screenHeight = resources.displayMetrics.heightPixels
                     ).toAndroidRect()
-                } else {
-                    Rect(0, 0, bitmap.width, bitmap.height)
                 }
                 canvas.drawBitmap(
                     bitmap,
@@ -133,6 +137,36 @@ class MulberryWallpaperService : WallpaperService() {
                 bitmap.recycle()
             }
         }
+    }
+}
+
+private enum class BitmapScaleMode {
+    CENTER_CROP_TO_CANVAS,
+    CENTERED_SCREEN_VIEWPORT
+}
+
+internal fun centerCropSourceRect(
+    bitmapWidth: Int,
+    bitmapHeight: Int,
+    targetWidth: Int,
+    targetHeight: Int
+): ScreenSourceRect {
+    val safeBitmapWidth = bitmapWidth.coerceAtLeast(1)
+    val safeBitmapHeight = bitmapHeight.coerceAtLeast(1)
+    val safeTargetWidth = targetWidth.coerceAtLeast(1)
+    val safeTargetHeight = targetHeight.coerceAtLeast(1)
+
+    val bitmapAspectRatio = safeBitmapWidth.toFloat() / safeBitmapHeight.toFloat()
+    val targetAspectRatio = safeTargetWidth.toFloat() / safeTargetHeight.toFloat()
+
+    return if (bitmapAspectRatio > targetAspectRatio) {
+        val cropWidth = (safeBitmapHeight * targetAspectRatio).toInt().coerceAtLeast(1)
+        val left = ((safeBitmapWidth - cropWidth) / 2f).toInt()
+        ScreenSourceRect(left, 0, left + cropWidth, safeBitmapHeight)
+    } else {
+        val cropHeight = (safeBitmapWidth / targetAspectRatio).toInt().coerceAtLeast(1)
+        val top = ((safeBitmapHeight - cropHeight) / 2f).toInt()
+        ScreenSourceRect(0, top, safeBitmapWidth, top + cropHeight)
     }
 }
 

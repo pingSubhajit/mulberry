@@ -3,6 +3,7 @@ package com.subhajit.mulberry.wallpaper
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import androidx.annotation.DrawableRes
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -50,6 +51,20 @@ class DataStoreBackgroundImageRepository @Inject constructor(
         }
     }
 
+    override suspend fun importBundledBackground(@DrawableRes drawableResId: Int) {
+        val backgroundFile = WallpaperFiles.backgroundFile(context)
+        copyDrawableToFile(
+            drawableResId = drawableResId,
+            destination = backgroundFile
+        )
+
+        val now = System.currentTimeMillis()
+        dataStore.edit { preferences ->
+            preferences[PreferenceStorage.backgroundImagePath] = backgroundFile.absolutePath
+            preferences[PreferenceStorage.backgroundImageUpdatedAt] = now.toString()
+        }
+    }
+
     override suspend fun clearBackground() {
         WallpaperFiles.backgroundFile(context).delete()
         dataStore.edit { preferences ->
@@ -69,5 +84,17 @@ class DataStoreBackgroundImageRepository @Inject constructor(
                 input.copyTo(output)
             }
         } ?: error("Unable to open background image")
+    }
+
+    private fun copyDrawableToFile(
+        @DrawableRes drawableResId: Int,
+        destination: File
+    ) {
+        destination.parentFile?.mkdirs()
+        context.resources.openRawResource(drawableResId).use { input ->
+            destination.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
     }
 }

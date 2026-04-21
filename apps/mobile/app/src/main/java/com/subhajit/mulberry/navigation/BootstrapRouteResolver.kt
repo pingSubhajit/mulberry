@@ -10,6 +10,7 @@ class BootstrapRouteResolver @Inject constructor() {
             AppRoute.AuthLanding
         state.pairingStatus == PairingStatus.INVITE_PENDING_ACCEPTANCE -> AppRoute.InviteAcceptance
         !state.hasCompletedOnboarding -> AppRoute.OnboardingName
+        !state.hasWallpaperConfigured -> AppRoute.OnboardingWallpaper
         else -> AppRoute.CanvasHome
     }
 }

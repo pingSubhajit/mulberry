@@ -13,6 +13,7 @@ import com.subhajit.mulberry.home.CanvasSurfaceRoute
 import com.subhajit.mulberry.home.LockScreenPlaceholderRoute
 import com.subhajit.mulberry.onboarding.OnboardingDetailsRoute
 import com.subhajit.mulberry.onboarding.OnboardingNameRoute
+import com.subhajit.mulberry.onboarding.OnboardingWallpaperRoute
 import com.subhajit.mulberry.pairing.InviteAcceptanceRoute
 import com.subhajit.mulberry.pairing.InviteCodeEntryRoute
 import com.subhajit.mulberry.pairing.PairingHubRoute
@@ -71,6 +72,20 @@ fun MulberryNavHost(
                 onNavigateToBootstrap = {
                     navController.navigate(AppRoute.Bootstrap.route) {
                         popUpTo(AppRoute.OnboardingName.route)
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(AppRoute.OnboardingWallpaper.route) {
+            ReleaseStartupGateAfterFirstFrame()
+            OnboardingWallpaperRoute(
+                onNavigateHome = {
+                    navController.navigate(AppRoute.CanvasHome.route) {
+                        popUpTo(AppRoute.OnboardingWallpaper.route) {
+                            inclusive = true
+                        }
                         launchSingleTop = true
                     }
                 }
