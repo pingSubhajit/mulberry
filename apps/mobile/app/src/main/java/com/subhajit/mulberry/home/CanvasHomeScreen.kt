@@ -254,7 +254,7 @@ private fun CanvasHomeScreen(
             },
             modifier = Modifier
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 12.dp)
+                .padding(top = 10.dp, bottom = 12.dp)
         )
     }
 }
@@ -373,7 +373,7 @@ private fun CanvasHomePane(
                     fontFamily = PoppinsFontFamily,
                     fontSize = 18.sp,
                     lineHeight = 24.sp,
-                    fontWeight = FontWeight.Normal
+                    fontWeight = FontWeight.Medium
                 )
             }
         }
@@ -428,17 +428,6 @@ private fun LockScreenHomePane(
                     onClick = onSetUpLockScreen,
                     enabled = !uiState.isWallpaperBusy,
                     modifier = Modifier.testTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON)
-                )
-            } else {
-                Text(
-                    text = stringResource(R.string.onboarding_wallpaper_ready),
-                    color = MulberryPrimary,
-                    fontFamily = PoppinsFontFamily,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
                 )
             }
 
@@ -503,7 +492,7 @@ private fun PairedPaneCard(
                     color = MulberryPrimary,
                     fontFamily = PoppinsFontFamily,
                     fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Medium
                 )
             }
         }
@@ -825,7 +814,7 @@ private fun InviteCodeBottomSheet(
                     fontFamily = PoppinsFontFamily,
                     fontSize = 18.sp,
                     lineHeight = 24.sp,
-                    fontWeight = FontWeight.Normal
+                    fontWeight = FontWeight.Medium
                 )
             }
         }
