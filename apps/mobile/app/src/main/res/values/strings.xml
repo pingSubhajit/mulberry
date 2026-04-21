@@ -1,6 +1,10 @@
 <resources>
     <string name="app_name">Mulberry</string>
     <string name="app_tagline">A shared lock screen canvas for two.</string>
+    <string name="auth_headline">Connect with your significant other</string>
+    <string name="auth_subtitle">Share a canvas with your partner that lives on your lock-screen</string>
+    <string name="auth_provider_google">Continue with Google</string>
+    <string name="auth_signing_in">Signing in...</string>
     <string name="environment_label">Environment</string>
     <string name="api_label">API Base URL</string>
     <string name="settings_title">Settings</string>

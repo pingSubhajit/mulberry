@@ -10,6 +10,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -33,6 +34,11 @@ class BootstrapViewModel @Inject constructor(
 
     val uiState = repository.state
         .map { state -> BootstrapUiState(destination = routeResolver.resolve(state)) }
+        .onEach { uiState ->
+            if (uiState.destination != null) {
+                AppStartupGate.release()
+            }
+        }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),

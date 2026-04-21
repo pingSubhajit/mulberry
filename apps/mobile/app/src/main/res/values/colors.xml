@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="seed_blue">#1C4E80</color>
-    <color name="seed_blue_dark">#153A60</color>
-    <color name="seed_orange">#F28C28</color>
-    <color name="surface_light">#F6F8FB</color>
-    <color name="surface_dark">#0D1B2A</color>
+    <color name="mulberry_primary">#B31329</color>
+    <color name="mulberry_primary_dark">#7E0D1D</color>
+    <color name="mulberry_primary_light">#F7DDE2</color>
+    <color name="mulberry_accent">#FF6A2A</color>
+    <color name="mulberry_auth_scrim">#070009</color>
+    <color name="surface_light">#FFFAFA</color>
+    <color name="surface_dark">#120008</color>
+    <color name="surface_variant_light">#F5EAED</color>
+    <color name="surface_variant_dark">#291019</color>
+    <color name="text_primary_light">#171016</color>
+    <color name="text_primary_dark">#FFF7F8</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>

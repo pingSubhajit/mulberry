@@ -1,11 +1,17 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.Mulberry" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/seed_blue</item>
-        <item name="colorPrimaryContainer">@color/seed_blue_dark</item>
+        <item name="colorPrimary">@color/mulberry_primary</item>
+        <item name="colorPrimaryContainer">@color/mulberry_primary_dark</item>
         <item name="colorOnPrimary">@color/white</item>
-        <item name="colorSecondary">@color/seed_orange</item>
+        <item name="colorSecondary">@color/mulberry_accent</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowBackground">@color/surface_dark</item>
+    </style>
+
+    <style name="Theme.Mulberry.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/mulberry_primary</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/brand_splash_icon</item>
+        <item name="postSplashScreenTheme">@style/Theme.Mulberry</item>
     </style>
 </resources>

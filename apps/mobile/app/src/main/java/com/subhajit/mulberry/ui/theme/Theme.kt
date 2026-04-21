@@ -7,33 +7,39 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
 private val LightColors = lightColorScheme(
-    primary = Blue40,
-    onPrimary = LightSurface,
-    primaryContainer = Blue20,
-    onPrimaryContainer = LightSurface,
-    secondary = Orange40,
-    onSecondary = DarkBackground,
-    background = LightBackground,
-    onBackground = DarkBackground,
-    surface = LightSurface,
-    onSurface = DarkBackground,
-    surfaceVariant = LightSurfaceVariant,
-    onSurfaceVariant = Blue20
+    primary = MulberryPrimary,
+    onPrimary = MulberrySurface,
+    primaryContainer = MulberryPrimaryLight,
+    onPrimaryContainer = MulberryPrimaryDark,
+    secondary = MulberryAccent,
+    onSecondary = MulberryInk,
+    background = MulberrySurface,
+    onBackground = MulberryInk,
+    surface = MulberrySurface,
+    onSurface = MulberryInk,
+    surfaceVariant = MulberrySurfaceVariant,
+    onSurfaceVariant = MulberryMutedInk,
+    outline = MulberryMutedInk,
+    outlineVariant = MulberryPrimaryLight,
+    error = MulberryError
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Blue80,
-    onPrimary = DarkBackground,
-    primaryContainer = Blue20,
-    onPrimaryContainer = LightSurface,
-    secondary = Orange40,
-    onSecondary = DarkBackground,
-    background = DarkBackground,
-    onBackground = LightSurface,
-    surface = DarkSurface,
-    onSurface = LightSurface,
-    surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = Blue80
+    primary = MulberryPrimary,
+    onPrimary = MulberryDarkInk,
+    primaryContainer = MulberryPrimaryDark,
+    onPrimaryContainer = MulberryDarkInk,
+    secondary = MulberryAccent,
+    onSecondary = MulberryInk,
+    background = MulberryDarkBackground,
+    onBackground = MulberryDarkInk,
+    surface = MulberryDarkSurface,
+    onSurface = MulberryDarkInk,
+    surfaceVariant = MulberryDarkSurfaceVariant,
+    onSurfaceVariant = MulberryPrimaryLight,
+    outline = MulberryPrimaryLight,
+    outlineVariant = MulberryDarkSurfaceVariant,
+    error = MulberryError
 )
 
 @Composable
@@ -43,6 +49,8 @@ fun MulberryTheme(
 ) {
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
+        typography = MulberryTypography,
+        shapes = MulberryShapes,
         content = content
     )
 }
