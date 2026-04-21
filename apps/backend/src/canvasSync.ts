@@ -1,5 +1,9 @@
 import type { WebSocket } from "@fastify/websocket"
-import type { CanvasOperationEnvelope, ClientCanvasOperation } from "./domain.js"
+import type {
+  CanvasOperationEnvelope,
+  ClientCanvasOperation,
+  ClientCanvasOperationBatch,
+} from "./domain.js"
 import { HttpError, MulberryService } from "./service.js"
 
 type ClientMessage =
@@ -13,6 +17,9 @@ type ClientMessage =
       type: "CLIENT_OP"
       operation?: ClientCanvasOperation
     }
+  | ({
+      type: "CLIENT_OP_BATCH"
+    } & Partial<ClientCanvasOperationBatch>)
   | {
       type: "PING"
     }
@@ -26,6 +33,7 @@ interface ConnectionContext {
 export class CanvasSyncHub {
   private readonly connectionsByPairSession = new Map<string, Set<WebSocket>>()
   private readonly contexts = new WeakMap<WebSocket, ConnectionContext>()
+  private readonly pairQueues = new Map<string, Promise<void>>()
 
   constructor(private readonly service: MulberryService) {}
 
@@ -57,6 +65,9 @@ export class CanvasSyncHub {
           break
         case "CLIENT_OP":
           await this.handleClientOperation(socket, message.operation)
+          break
+        case "CLIENT_OP_BATCH":
+          await this.handleClientOperationBatch(socket, message)
           break
         case "PING":
           this.send(socket, { type: "PONG" })
@@ -112,10 +123,12 @@ export class CanvasSyncHub {
       throw new HttpError(400, "CLIENT_OP requires operation")
     }
 
-    const accepted = await this.service.acceptCanvasOperationForSession(
-      context.accessToken,
-      context.pairSessionId,
-      operation,
+    const accepted = await this.enqueueForPair(context.pairSessionId, () =>
+      this.service.acceptCanvasOperationForSession(
+        context.accessToken,
+        context.pairSessionId,
+        operation,
+      ),
     )
     this.send(socket, {
       type: "ACK",
@@ -127,6 +140,71 @@ export class CanvasSyncHub {
       type: "SERVER_OP",
       operation: accepted,
     })
+  }
+
+  private async handleClientOperationBatch(
+    socket: WebSocket,
+    batch: Partial<ClientCanvasOperationBatch> | undefined,
+  ): Promise<void> {
+    const context = this.contexts.get(socket)
+    if (!context) {
+      throw new HttpError(401, "Send HELLO before CLIENT_OP_BATCH")
+    }
+    if (!batch?.batchId || !Array.isArray(batch.operations)) {
+      throw new HttpError(400, "CLIENT_OP_BATCH requires batchId and operations")
+    }
+    const batchId = batch.batchId
+    const operations = batch.operations
+
+    const accepted = await this.enqueueForPair(context.pairSessionId, () =>
+      this.service.acceptCanvasOperationBatchForSession(
+        context.accessToken,
+        context.pairSessionId,
+        {
+          batchId,
+          operations,
+          clientCreatedAt: batch.clientCreatedAt ?? new Date().toISOString(),
+        },
+      ),
+    )
+    const ackedClientOperationIds = accepted.map((operation) => operation.clientOperationId)
+    const ackedThroughRevision = accepted.at(-1)?.serverRevision ?? 0
+    this.send(socket, {
+      type: "ACK_BATCH",
+      batchId,
+      ackedClientOperationIds,
+      ackedThroughRevision,
+      operations: accepted,
+    })
+    this.broadcast(context.pairSessionId, {
+      type: "SERVER_OP_BATCH",
+      operations: accepted,
+    })
+    this.send(socket, {
+      type: "FLOW_CONTROL",
+      mode: operations.length >= SLOW_DOWN_OPERATION_THRESHOLD ? "SLOW_DOWN" : "NORMAL",
+      maxAppendHz: operations.length >= SLOW_DOWN_OPERATION_THRESHOLD ? 15 : 30,
+      reason: operations.length >= SLOW_DOWN_OPERATION_THRESHOLD ? "large_batch" : null,
+    })
+  }
+
+  private async enqueueForPair<T>(
+    pairSessionId: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.pairQueues.get(pairSessionId) ?? Promise.resolve()
+    const next = previous.catch(() => undefined).then(task)
+    const cleanup = next.then(
+      () => undefined,
+      () => undefined,
+    )
+    this.pairQueues.set(pairSessionId, cleanup)
+    cleanup.finally(() => {
+      if (this.pairQueues.get(pairSessionId) === cleanup) {
+        this.pairQueues.delete(pairSessionId)
+      }
+    })
+    return next
   }
 
   private broadcast(pairSessionId: string, payload: unknown): void {
@@ -152,6 +230,8 @@ export class CanvasSyncHub {
     }
   }
 }
+
+const SLOW_DOWN_OPERATION_THRESHOLD = 48
 
 export function isRemoteOperationFromOtherUser(
   operation: CanvasOperationEnvelope,

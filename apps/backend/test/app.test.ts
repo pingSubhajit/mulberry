@@ -387,6 +387,58 @@ describe("Mulberry backend", () => {
     second.close()
   })
 
+  it("accepts canvas operation batches with contiguous revisions", async () => {
+    const { inviter } = await pairUsers()
+    const first = await app.injectWS("/canvas/sync")
+
+    first.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: inviter.accessToken,
+        pairSessionId: inviter.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    await nextWsJson(first)
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP_BATCH",
+        batchId: "batch-1",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          {
+            clientOperationId: "batch-op-1",
+            type: "ADD_STROKE",
+            strokeId: "batch-stroke-1",
+            payload: {
+              id: "batch-stroke-1",
+              colorArgb: 4278190080,
+              width: 8,
+              createdAt: 123,
+              firstPoint: { x: 1, y: 2 },
+            },
+            clientCreatedAt: new Date().toISOString(),
+          },
+          {
+            clientOperationId: "batch-op-2",
+            type: "FINISH_STROKE",
+            strokeId: "batch-stroke-1",
+            payload: {},
+            clientCreatedAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    )
+
+    const ack = await nextWsJson(first)
+    expect(ack.type).toBe("ACK_BATCH")
+    expect(ack.ackedClientOperationIds).toEqual(["batch-op-1", "batch-op-2"])
+    expect(ack.ackedThroughRevision).toBe(2)
+    expect(ack.operations.map((operation: { serverRevision: number }) => operation.serverRevision))
+      .toEqual([1, 2])
+    first.close()
+  })
+
   async function signIn(email: string, name: string) {
     const response = await app.inject({
       method: "POST",

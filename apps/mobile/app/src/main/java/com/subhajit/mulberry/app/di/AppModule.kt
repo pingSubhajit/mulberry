@@ -10,6 +10,10 @@ import com.subhajit.mulberry.auth.AuthRepository
 import com.subhajit.mulberry.auth.CredentialManagerAuthRepository
 import com.subhajit.mulberry.bootstrap.BackendBootstrapRepository
 import com.subhajit.mulberry.bootstrap.BootstrapRepository
+import com.subhajit.mulberry.canvas.CanvasPersistenceStore
+import com.subhajit.mulberry.canvas.CanvasRuntime
+import com.subhajit.mulberry.canvas.DefaultCanvasRuntime
+import com.subhajit.mulberry.canvas.RoomCanvasPersistenceStore
 import com.subhajit.mulberry.core.config.AppConfig
 import com.subhajit.mulberry.core.config.AppConfigFactory
 import com.subhajit.mulberry.core.data.APP_PREFERENCES_FILE
@@ -36,9 +40,7 @@ import com.subhajit.mulberry.sync.CanvasSyncClient
 import com.subhajit.mulberry.sync.CanvasSyncRepository
 import com.subhajit.mulberry.sync.DataStoreSyncMetadataRepository
 import com.subhajit.mulberry.sync.DefaultCanvasSyncRepository
-import com.subhajit.mulberry.sync.DefaultRemoteOperationApplier
 import com.subhajit.mulberry.sync.OkHttpCanvasSyncClient
-import com.subhajit.mulberry.sync.RemoteOperationApplier
 import com.subhajit.mulberry.sync.SyncMetadataRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
@@ -82,6 +84,18 @@ abstract class AppBindingsModule {
     abstract fun bindDrawingRepository(
         implementation: RoomDrawingRepository
     ): DrawingRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCanvasPersistenceStore(
+        implementation: RoomCanvasPersistenceStore
+    ): CanvasPersistenceStore
+
+    @Binds
+    @Singleton
+    abstract fun bindCanvasRuntime(
+        implementation: DefaultCanvasRuntime
+    ): CanvasRuntime
 
     @Binds
     @Singleton
@@ -142,12 +156,6 @@ abstract class AppBindingsModule {
     abstract fun bindCanvasSyncRepository(
         implementation: DefaultCanvasSyncRepository
     ): CanvasSyncRepository
-
-    @Binds
-    @Singleton
-    abstract fun bindRemoteOperationApplier(
-        implementation: DefaultRemoteOperationApplier
-    ): RemoteOperationApplier
 
     @Binds
     @Singleton

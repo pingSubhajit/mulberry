@@ -9,6 +9,7 @@ import type {
   CanvasOpsResponse,
   CanvasSnapshotResponse,
   CanvasSyncBootstrap,
+  ClientCanvasOperationBatch,
   ClientCanvasOperation,
   CreateInviteResponse,
   GoogleIdentity,
@@ -294,6 +295,29 @@ export class MulberryService {
   ): Promise<CanvasOperationEnvelope> {
     const context = await this.requireCanvasSessionContext(accessToken, pairSessionId)
     return this.acceptCanvasOperation(context, operation)
+  }
+
+  async acceptCanvasOperationBatchForSession(
+    accessToken: string,
+    pairSessionId: string,
+    batch: ClientCanvasOperationBatch,
+  ): Promise<CanvasOperationEnvelope[]> {
+    const context = await this.requireCanvasSessionContext(accessToken, pairSessionId)
+    if (!batch.batchId.trim()) {
+      throw new HttpError(400, "batchId is required")
+    }
+    if (!Array.isArray(batch.operations) || batch.operations.length === 0) {
+      throw new HttpError(400, "CLIENT_OP_BATCH requires operations")
+    }
+    if (batch.operations.length > 128) {
+      throw new HttpError(413, "CLIENT_OP_BATCH is too large")
+    }
+
+    const accepted: CanvasOperationEnvelope[] = []
+    for (const operation of batch.operations) {
+      accepted.push(await this.acceptCanvasOperation(context, operation))
+    }
+    return accepted
   }
 
   async listCanvasOperations(

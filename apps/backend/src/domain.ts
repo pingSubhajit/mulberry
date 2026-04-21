@@ -92,6 +92,12 @@ export interface ClientCanvasOperation {
   clientCreatedAt: string
 }
 
+export interface ClientCanvasOperationBatch {
+  batchId: string
+  operations: ClientCanvasOperation[]
+  clientCreatedAt: string
+}
+
 export interface CanvasOpsResponse {
   operations: CanvasOperationEnvelope[]
 }

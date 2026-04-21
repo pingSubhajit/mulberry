@@ -18,6 +18,13 @@ data class ClientOperationMessage(
     val operation: ClientOperationBody
 )
 
+data class ClientOperationBatchMessage(
+    val type: String = "CLIENT_OP_BATCH",
+    val batchId: String,
+    val operations: List<ClientOperationBody>,
+    val clientCreatedAt: String
+)
+
 data class ClientOperationBody(
     val clientOperationId: String,
     val type: String,
@@ -48,9 +55,29 @@ data class AckMessage(
     val operation: CanvasOperationEnvelopeResponse?
 )
 
+data class AckBatchMessage(
+    val type: String,
+    val batchId: String,
+    val ackedClientOperationIds: List<String>,
+    val ackedThroughRevision: Long,
+    val operations: List<CanvasOperationEnvelopeResponse>
+)
+
 data class ServerOperationMessage(
     val type: String,
     val operation: CanvasOperationEnvelopeResponse
+)
+
+data class ServerOperationBatchMessage(
+    val type: String,
+    val operations: List<CanvasOperationEnvelopeResponse>
+)
+
+data class FlowControlMessage(
+    val type: String,
+    val mode: String,
+    val maxAppendHz: Int,
+    val reason: String?
 )
 
 data class ErrorMessage(
@@ -82,6 +109,22 @@ fun CanvasSyncOperation.toWireJson(): String = gson.toJson(
     )
 )
 
+fun List<CanvasSyncOperation>.toBatchWireJson(batchId: String): String = gson.toJson(
+    ClientOperationBatchMessage(
+        batchId = batchId,
+        operations = map { operation ->
+            ClientOperationBody(
+                clientOperationId = operation.clientOperationId,
+                type = operation.type.name,
+                strokeId = operation.strokeId,
+                payload = operation.payload.toJsonObject(),
+                clientCreatedAt = operation.clientCreatedAt
+            )
+        },
+        clientCreatedAt = nowIsoString()
+    )
+)
+
 fun helloJson(
     accessToken: String,
     pairSessionId: String,
@@ -101,8 +144,15 @@ fun parseReady(raw: String): ReadyMessage = gson.fromJson(raw, ReadyMessage::cla
 
 fun parseAck(raw: String): AckMessage = gson.fromJson(raw, AckMessage::class.java)
 
+fun parseAckBatch(raw: String): AckBatchMessage = gson.fromJson(raw, AckBatchMessage::class.java)
+
 fun parseServerOperation(raw: String): ServerOperationMessage =
     gson.fromJson(raw, ServerOperationMessage::class.java)
+
+fun parseServerOperationBatch(raw: String): ServerOperationBatchMessage =
+    gson.fromJson(raw, ServerOperationBatchMessage::class.java)
+
+fun parseFlowControl(raw: String): FlowControlMessage = gson.fromJson(raw, FlowControlMessage::class.java)
 
 fun parseError(raw: String): ErrorMessage = gson.fromJson(raw, ErrorMessage::class.java)
 

@@ -41,5 +41,9 @@ interface DrawingRepository {
 
     suspend fun replaceWithRemoteSnapshot(strokes: List<Stroke>, serverRevision: Long)
 
+    suspend fun persistLocalCommittedStroke(stroke: Stroke): Long
+
+    suspend fun persistRemoteCommittedStroke(stroke: Stroke, serverRevision: Long)
+
     suspend fun resetAllDrawingState()
 }

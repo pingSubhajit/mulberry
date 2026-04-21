@@ -60,4 +60,61 @@ class CanvasSyncJsonTest {
         val payload = operation.payload as SyncOperationPayload.AppendPoints
         assertEquals(listOf(StrokePoint(1f, 2f), StrokePoint(3f, 4f)), payload.points)
     }
+
+    @Test
+    fun serializesOperationBatchWithStableOperationOrder() {
+        val first = newClientOperation(
+            type = DrawingOperationType.ADD_STROKE,
+            strokeId = "stroke-1",
+            payload = SyncOperationPayload.AddStroke(
+                id = "stroke-1",
+                colorArgb = 0xff111111,
+                width = 12f,
+                createdAt = 123L,
+                firstPoint = StrokePoint(10f, 20f)
+            )
+        )
+        val second = newClientOperation(
+            type = DrawingOperationType.FINISH_STROKE,
+            strokeId = "stroke-1",
+            payload = SyncOperationPayload.FinishStroke
+        )
+
+        val json = gson.fromJson(listOf(first, second).toBatchWireJson("batch-1"), Map::class.java)
+
+        assertEquals("CLIENT_OP_BATCH", json["type"])
+        assertEquals("batch-1", json["batchId"])
+        val operations = json["operations"] as List<*>
+        val firstBody = operations[0] as Map<*, *>
+        val secondBody = operations[1] as Map<*, *>
+        assertEquals(first.clientOperationId, firstBody["clientOperationId"])
+        assertEquals(second.clientOperationId, secondBody["clientOperationId"])
+        assertEquals("ADD_STROKE", firstBody["type"])
+        assertEquals("FINISH_STROKE", secondBody["type"])
+    }
+
+    @Test
+    fun parsesAckBatchAndFlowControlMessages() {
+        val ack = parseAckBatch(
+            """
+            {
+              "type":"ACK_BATCH",
+              "batchId":"batch-1",
+              "ackedClientOperationIds":["op-1","op-2"],
+              "ackedThroughRevision":7,
+              "operations":[]
+            }
+            """.trimIndent()
+        )
+        val flowControl = parseFlowControl(
+            """{"type":"FLOW_CONTROL","mode":"SLOW_DOWN","maxAppendHz":15,"reason":"large_batch"}"""
+        )
+
+        assertEquals("batch-1", ack.batchId)
+        assertEquals(listOf("op-1", "op-2"), ack.ackedClientOperationIds)
+        assertEquals(7L, ack.ackedThroughRevision)
+        assertEquals("SLOW_DOWN", flowControl.mode)
+        assertEquals(15, flowControl.maxAppendHz)
+        assertEquals("large_batch", flowControl.reason)
+    }
 }

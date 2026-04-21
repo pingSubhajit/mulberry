@@ -92,45 +92,7 @@ class RoomDrawingRepository @Inject constructor(
 
     override suspend fun finishStroke(): Stroke? {
         val committedStroke = strokeBuilder.finishStroke(activeStroke.value ?: return null) ?: return null
-        val now = System.currentTimeMillis()
-
-        database.withTransaction {
-            val metadata = currentMetadata()
-            val nextRevision = metadata.revision + 1
-            drawingDao.insertStroke(committedStroke.toEntity())
-            drawingDao.insertStrokePoints(committedStroke.toPointEntities())
-            drawingOperationsDao.insertOperation(
-                DrawingOperationEntity(
-                    type = DrawingOperationType.ADD_STROKE,
-                    strokeId = committedStroke.id,
-                    payload = committedStroke.addStrokePayloadJson(),
-                    revision = nextRevision,
-                    createdAt = now
-                )
-            )
-            if (committedStroke.points.size > 1) {
-                drawingOperationsDao.insertOperation(
-                    DrawingOperationEntity(
-                        type = DrawingOperationType.APPEND_POINTS,
-                        strokeId = committedStroke.id,
-                        payload = pointsPayloadJson(committedStroke.points.drop(1)),
-                        revision = nextRevision,
-                        createdAt = now
-                    )
-                )
-            }
-            canvasMetadataDao.upsertMetadata(
-                metadata.copy(
-                    revision = nextRevision,
-                    lastModifiedAt = now,
-                    selectedColorArgb = committedStroke.colorArgb,
-                    selectedWidth = committedStroke.width,
-                    selectedTool = DrawingTool.DRAW,
-                    isSnapshotDirty = true
-                )
-            )
-        }
-
+        persistLocalCommittedStroke(committedStroke)
         activeStroke.value = null
         return committedStroke
     }
@@ -235,7 +197,53 @@ class RoomDrawingRepository @Inject constructor(
     }
 
     override suspend fun applyRemoteAddStroke(stroke: Stroke, serverRevision: Long) {
-        activeStroke.value = null
+        persistRemoteCommittedStroke(stroke, serverRevision)
+    }
+
+    override suspend fun persistLocalCommittedStroke(stroke: Stroke): Long {
+        val now = System.currentTimeMillis()
+        var nextRevision = 0L
+        database.withTransaction {
+            val metadata = currentMetadata()
+            nextRevision = metadata.revision + 1
+            drawingDao.insertStroke(stroke.toEntity())
+            drawingDao.deleteStrokePoints(stroke.id)
+            drawingDao.insertStrokePoints(stroke.toPointEntities())
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.ADD_STROKE,
+                    strokeId = stroke.id,
+                    payload = stroke.addStrokePayloadJson(),
+                    revision = nextRevision,
+                    createdAt = now
+                )
+            )
+            if (stroke.points.size > 1) {
+                drawingOperationsDao.insertOperation(
+                    DrawingOperationEntity(
+                        type = DrawingOperationType.APPEND_POINTS,
+                        strokeId = stroke.id,
+                        payload = pointsPayloadJson(stroke.points.drop(1)),
+                        revision = nextRevision,
+                        createdAt = now
+                    )
+                )
+            }
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = nextRevision,
+                    lastModifiedAt = now,
+                    selectedColorArgb = stroke.colorArgb,
+                    selectedWidth = stroke.width,
+                    selectedTool = DrawingTool.DRAW,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+        return nextRevision
+    }
+
+    override suspend fun persistRemoteCommittedStroke(stroke: Stroke, serverRevision: Long) {
         val now = System.currentTimeMillis()
         database.withTransaction {
             val metadata = currentMetadata()
@@ -253,6 +261,19 @@ class RoomDrawingRepository @Inject constructor(
                     syncStatus = "REMOTE_APPLIED"
                 )
             )
+            if (stroke.points.size > 1) {
+                drawingOperationsDao.insertOperation(
+                    DrawingOperationEntity(
+                        type = DrawingOperationType.APPEND_POINTS,
+                        strokeId = stroke.id,
+                        payload = pointsPayloadJson(stroke.points.drop(1)),
+                        revision = maxOf(metadata.revision + 1, serverRevision),
+                        createdAt = now,
+                        serverRevision = serverRevision,
+                        syncStatus = "REMOTE_APPLIED"
+                    )
+                )
+            }
             canvasMetadataDao.upsertMetadata(
                 metadata.copy(
                     revision = maxOf(metadata.revision, serverRevision),
@@ -350,7 +371,6 @@ class RoomDrawingRepository @Inject constructor(
     }
 
     override suspend fun applyRemoteDeleteStroke(strokeId: String, serverRevision: Long) {
-        activeStroke.value = null
         val now = System.currentTimeMillis()
         database.withTransaction {
             val metadata = currentMetadata()

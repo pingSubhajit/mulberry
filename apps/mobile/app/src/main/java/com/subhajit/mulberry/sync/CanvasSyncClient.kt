@@ -24,7 +24,17 @@ sealed interface CanvasSyncMessage {
         val operation: ServerCanvasOperation?
     ) : CanvasSyncMessage
 
+    data class AckBatch(
+        val batchId: String,
+        val ackedClientOperationIds: List<String>,
+        val ackedThroughRevision: Long,
+        val operations: List<ServerCanvasOperation>
+    ) : CanvasSyncMessage
+
     data class ServerOperation(val operation: ServerCanvasOperation) : CanvasSyncMessage
+    data class ServerOperationBatch(val operations: List<ServerCanvasOperation>) : CanvasSyncMessage
+    data class FlowControl(val mode: String, val maxAppendHz: Int, val reason: String?) : CanvasSyncMessage
+    data object ResyncRequired : CanvasSyncMessage
     data class Error(val message: String) : CanvasSyncMessage
     data object Closed : CanvasSyncMessage
 }
@@ -34,6 +44,7 @@ interface CanvasSyncClient {
 
     fun connect(accessToken: String, pairSessionId: String, lastAppliedServerRevision: Long)
     fun send(operation: CanvasSyncOperation)
+    fun sendBatch(batchId: String, operations: List<CanvasSyncOperation>)
     fun disconnect()
 }
 
@@ -93,6 +104,11 @@ class OkHttpCanvasSyncClient @Inject constructor(
         webSocket?.send(operation.toWireJson())
     }
 
+    override fun sendBatch(batchId: String, operations: List<CanvasSyncOperation>) {
+        if (operations.isEmpty()) return
+        webSocket?.send(operations.toBatchWireJson(batchId))
+    }
+
     override fun disconnect() {
         webSocket?.close(1000, "disconnect")
         webSocket = null
@@ -114,9 +130,30 @@ class OkHttpCanvasSyncClient @Inject constructor(
                 operation = ack.operation?.toDomainOperation()
             )
         }
+        "ACK_BATCH" -> {
+            val ack = parseAckBatch(raw)
+            CanvasSyncMessage.AckBatch(
+                batchId = ack.batchId,
+                ackedClientOperationIds = ack.ackedClientOperationIds,
+                ackedThroughRevision = ack.ackedThroughRevision,
+                operations = ack.operations.map { it.toDomainOperation() }
+            )
+        }
         "SERVER_OP" -> CanvasSyncMessage.ServerOperation(
             parseServerOperation(raw).operation.toDomainOperation()
         )
+        "SERVER_OP_BATCH" -> CanvasSyncMessage.ServerOperationBatch(
+            parseServerOperationBatch(raw).operations.map { it.toDomainOperation() }
+        )
+        "FLOW_CONTROL" -> {
+            val flowControl = parseFlowControl(raw)
+            CanvasSyncMessage.FlowControl(
+                mode = flowControl.mode,
+                maxAppendHz = flowControl.maxAppendHz,
+                reason = flowControl.reason
+            )
+        }
+        "RESYNC_REQUIRED" -> CanvasSyncMessage.ResyncRequired
         "ERROR" -> CanvasSyncMessage.Error(parseError(raw).message)
         else -> CanvasSyncMessage.Error("Unsupported sync message")
     }
