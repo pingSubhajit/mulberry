@@ -240,7 +240,15 @@ class DefaultCanvasSyncRepository @Inject constructor(
             }
         )
 
-        if (recoveryPolicy.shouldUseSnapshot(input)) {
+        val shouldValidateCurrentSnapshot =
+            message.latestRevision > 0 &&
+                message.latestRevision == lastApplied &&
+                canvasRuntime.renderState.value.isEmpty
+
+        if (
+            (recoveryPolicy.shouldUseSnapshot(input) || shouldValidateCurrentSnapshot) &&
+            canReplaceFromSnapshot()
+        ) {
             recoverFromSnapshot()
         } else {
             applyRecoveryOperationsAtomically(message.missedOperations)
@@ -399,7 +407,9 @@ class DefaultCanvasSyncRepository @Inject constructor(
     }
 
     private suspend fun recoverFromSnapshot() {
+        if (!canReplaceFromSnapshot()) return
         val snapshot = apiService.getCanvasSnapshot()
+        if (!canReplaceFromSnapshot()) return
         canvasRuntime.submitAndAwait(
             CanvasRuntimeEvent.RecoverySnapshot(
                 strokes = snapshot.snapshot.strokes.map { stroke ->
@@ -419,6 +429,10 @@ class DefaultCanvasSyncRepository @Inject constructor(
         syncMetadataRepository.setLastAppliedServerRevision(snapshot.revision)
         revisionBuffer.clear()
     }
+
+    private fun canReplaceFromSnapshot(): Boolean =
+        pendingOperations.value.isEmpty() &&
+            canvasRuntime.renderState.value.localActiveStroke == null
 
     private suspend fun applyRecoveryOperationsAtomically(operations: List<ServerCanvasOperation>) {
         val lastApplied = syncMetadataRepository.metadata.first().lastAppliedServerRevision

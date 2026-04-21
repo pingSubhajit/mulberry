@@ -53,7 +53,7 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
             "Background snapshot sync check localRevision=$localRevision " +
                 "latestRevisionHint=$latestRevisionHint pairSessionId=${bootstrap.pairSessionId}"
         )
-        if (latestRevisionHint != null && latestRevisionHint <= localRevision) {
+        if (latestRevisionHint != null && latestRevisionHint < localRevision) {
             return@runCatching BackgroundCanvasSyncResult.AlreadyCurrent
         }
 
@@ -61,7 +61,7 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         if (snapshot.pairSessionId != bootstrap.pairSessionId) {
             return@runCatching skip("snapshot pair session mismatch")
         }
-        if (snapshot.revision <= localRevision) {
+        if (snapshot.revision < localRevision) {
             return@runCatching BackgroundCanvasSyncResult.AlreadyCurrent
         }
 
