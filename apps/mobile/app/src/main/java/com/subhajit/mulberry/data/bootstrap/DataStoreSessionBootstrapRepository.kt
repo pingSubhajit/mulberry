@@ -35,6 +35,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                 hasCompletedOnboarding = preferences[PreferenceStorage.onboardingCompleted] ?: false,
                 hasWallpaperConfigured = preferences[PreferenceStorage.wallpaperConfigured] ?: false,
                 userId = preferences[PreferenceStorage.sessionUserId],
+                userPhotoUrl = preferences[PreferenceStorage.userPhotoUrl],
                 userDisplayName = preferences[PreferenceStorage.userDisplayName],
                 partnerDisplayName = preferences[PreferenceStorage.partnerDisplayName],
                 anniversaryDate = preferences[PreferenceStorage.anniversaryDate],
@@ -91,6 +92,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences[PreferenceStorage.wallpaperConfigured] =
                 state.hasWallpaperConfigured || localWallpaperConfigured
             updateNullable(preferences, PreferenceStorage.sessionUserId, state.userId)
+            updateNullable(preferences, PreferenceStorage.userPhotoUrl, state.userPhotoUrl)
             updateNullable(preferences, PreferenceStorage.userDisplayName, state.userDisplayName)
             updateNullable(preferences, PreferenceStorage.partnerDisplayName, state.partnerDisplayName)
             updateNullable(preferences, PreferenceStorage.anniversaryDate, state.anniversaryDate)
@@ -172,6 +174,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences.remove(PreferenceStorage.refreshToken)
             preferences.remove(PreferenceStorage.sessionUserId)
             preferences.remove(PreferenceStorage.onboardingCompleted)
+            preferences.remove(PreferenceStorage.userPhotoUrl)
             preferences.remove(PreferenceStorage.userDisplayName)
             preferences.remove(PreferenceStorage.partnerDisplayName)
             preferences.remove(PreferenceStorage.anniversaryDate)

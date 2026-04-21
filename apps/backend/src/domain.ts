@@ -39,6 +39,7 @@ export interface BootstrapResponse {
   onboardingCompleted: boolean
   hasWallpaperConfigured: boolean
   userId: string | null
+  userPhotoUrl: string | null
   userDisplayName: string | null
   partnerDisplayName: string | null
   anniversaryDate: string | null
@@ -138,6 +139,7 @@ export interface UserRecord {
   id: string
   google_subject: string
   email: string
+  google_picture_url: string | null
 }
 
 export interface ProfileRecord {
@@ -196,4 +198,5 @@ export interface GoogleIdentity {
   subject: string
   email: string
   name: string | null
+  pictureUrl: string | null
 }

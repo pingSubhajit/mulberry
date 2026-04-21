@@ -130,6 +130,7 @@ dependencies {
     implementation(libs.androidx.hilt.work)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.firebase.messaging)
+    implementation(libs.coil.compose)
     kapt(libs.hilt.compiler)
     kapt(libs.androidx.hilt.compiler)
     kapt(libs.androidx.room.compiler)

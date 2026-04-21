@@ -40,6 +40,7 @@ class DataStoreSessionBootstrapRepositoryTest {
                 hasCompletedOnboarding = true,
                 userId = "user-1",
                 userDisplayName = "Subhajit",
+                userPhotoUrl = "https://example.test/avatar.png",
                 partnerDisplayName = "Ankita",
                 anniversaryDate = "2026-01-01",
                 pairingStatus = PairingStatus.UNPAIRED
@@ -52,6 +53,7 @@ class DataStoreSessionBootstrapRepositoryTest {
         assertTrue(state.hasCompletedOnboarding)
         assertEquals(AuthStatus.SIGNED_IN, state.authStatus)
         assertEquals("Subhajit", state.userDisplayName)
+        assertEquals("https://example.test/avatar.png", state.userPhotoUrl)
         assertNotNull(session)
     }
 

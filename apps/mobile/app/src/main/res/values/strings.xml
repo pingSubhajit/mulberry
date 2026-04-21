@@ -49,4 +49,23 @@
     <string name="api_label">API Base URL</string>
     <string name="settings_title">Settings</string>
     <string name="wallpaper_description">Your private Mulberry canvas, layered over a background only you see.</string>
+    <string name="home_default_user_name">there</string>
+    <string name="home_header_welcome">Welcome</string>
+    <string name="home_unpaired_title">Ask your partner out</string>
+    <string name="home_profile_photo_content_description">Profile photo</string>
+    <string name="home_unpaired_pair_title">%1$s &amp; who?</string>
+    <string name="home_unpaired_body">Invite your partner to Mulberry to unlock the full experience</string>
+    <string name="home_invite_button">Share invite code</string>
+    <string name="home_tab_canvas">Canvas</string>
+    <string name="home_tab_lockscreen">Lock screen</string>
+    <string name="home_open_canvas">Open canvas</string>
+    <string name="home_open_lockscreen">Open lock screen</string>
+    <string name="home_canvas_paired_body">Local strokes: %1$d</string>
+    <string name="home_lockscreen_selected_body">Mulberry is set as your wallpaper.</string>
+    <string name="home_lockscreen_unselected_body">Set up Mulberry as your live lock screen wallpaper.</string>
+    <string name="home_invite_sheet_title">Invite your partner</string>
+    <string name="home_invite_loading">Creating invite code...</string>
+    <string name="home_invite_countdown_expired">Expired</string>
+    <string name="home_invite_sheet_body">Share this code with your partner and ask them to enter it after they have signed up for Mulberry</string>
+    <string name="home_invite_share_chooser_title">Share invite code</string>
 </resources>

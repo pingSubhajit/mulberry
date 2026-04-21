@@ -505,26 +505,32 @@ export class MulberryService {
 
   private async findOrCreateUser(identity: GoogleIdentity): Promise<UserRecord> {
     const existing = await this.db.query<UserRecord>(
-      `SELECT id, google_subject, email FROM users WHERE google_subject = $1`,
+      `SELECT id, google_subject, email, google_picture_url FROM users WHERE google_subject = $1`,
       [identity.subject],
     )
     if (existing.rows[0]) {
-      await this.db.query(`UPDATE users SET email = $2 WHERE id = $1`, [
+      await this.db.query(`UPDATE users SET email = $2, google_picture_url = $3 WHERE id = $1`, [
         existing.rows[0].id,
         identity.email,
+        identity.pictureUrl,
       ])
       await this.ensureProfileRow(existing.rows[0].id, identity.name)
-      return existing.rows[0]
+      return {
+        ...existing.rows[0],
+        email: identity.email,
+        google_picture_url: identity.pictureUrl,
+      }
     }
 
     const user: UserRecord = {
       id: randomUUID(),
       google_subject: identity.subject,
       email: identity.email,
+      google_picture_url: identity.pictureUrl,
     }
     await this.db.query(
-      `INSERT INTO users (id, google_subject, email) VALUES ($1, $2, $3)`,
-      [user.id, user.google_subject, user.email],
+      `INSERT INTO users (id, google_subject, email, google_picture_url) VALUES ($1, $2, $3, $4)`,
+      [user.id, user.google_subject, user.email, user.google_picture_url],
     )
     await this.ensureProfileRow(user.id, identity.name)
     return user
@@ -642,7 +648,7 @@ export class MulberryService {
     }
 
     const userRows = await this.db.query<UserRecord>(
-      `SELECT id, google_subject, email FROM users WHERE id = $1`,
+      `SELECT id, google_subject, email, google_picture_url FROM users WHERE id = $1`,
       [session.user_id],
     )
     const user = userRows.rows[0]
@@ -690,13 +696,14 @@ export class MulberryService {
 
   private async getUserById(userId: string): Promise<UserRecord | null> {
     const rows = await this.db.query<UserRecord>(
-      `SELECT id, google_subject, email FROM users WHERE id = $1`,
+      `SELECT id, google_subject, email, google_picture_url FROM users WHERE id = $1`,
       [userId],
     )
     return rows.rows[0] ?? null
   }
 
   private async buildBootstrap(userId: string): Promise<BootstrapResponse> {
+    const user = await this.getUserById(userId)
     let profile = await this.getProfile(userId)
     const pairSession = await this.getPairSession(userId)
     const pendingInvite = await this.getPendingInvite(userId)
@@ -725,6 +732,7 @@ export class MulberryService {
       onboardingCompleted,
       hasWallpaperConfigured: false,
       userId,
+      userPhotoUrl: user?.google_picture_url ?? null,
       userDisplayName: profile?.display_name ?? null,
       partnerDisplayName: profile?.partner_display_name ?? null,
       anniversaryDate: profile?.anniversary_date ?? null,

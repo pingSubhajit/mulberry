@@ -93,7 +93,7 @@ fun OnboardingPrivacyNotice(modifier: Modifier = Modifier) {
 private fun PrivacyPolicySheet(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val policyText = remember {
-        context.resources.openRawResource(R.raw.privacy_policy_placeholder)
+        context.resources.openRawResource(R.raw.privacy_policy)
             .bufferedReader()
             .use { it.readText() }
             .trim()

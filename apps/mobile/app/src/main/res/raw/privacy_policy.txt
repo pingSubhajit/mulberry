@@ -1,0 +1,367 @@
+Mulberry Privacy Policy
+
+Effective date: April 21, 2026
+Last updated: April 21, 2026
+
+This Privacy Policy explains how Mulberry collects, uses, stores, shares, and protects information when you use the Mulberry Android app, the Mulberry live wallpaper, and related backend services. Mulberry is a paired-device app for two people who share a private drawing canvas that can appear on the Android lock screen as a live wallpaper.
+
+This policy is intended to describe the app's current product and technical behavior. It should be reviewed by a qualified privacy attorney before public launch, especially the sections marked "Legal review required."
+
+Legal review required: Replace this paragraph before publication with the legal name of the company or individual operating Mulberry, the registered address, and the privacy contact email. Suggested contact fields: privacy email, mailing address, and, if required, Data Protection Officer or EU/UK representative details.
+
+1. Who this policy applies to
+
+This policy applies to people who install, access, or use Mulberry. It also applies to information processed when you pair with another Mulberry user, draw on a shared canvas, set up the live wallpaper, register for push-based canvas updates, or contact the Mulberry operator for support.
+
+Mulberry is designed for a private two-person experience. It is not designed for public posting, group collaboration, advertising, or broad social networking.
+
+2. Summary
+
+Mulberry collects account, profile, pairing, device, sync, and canvas information so the app can authenticate you, pair you with one other user, sync the shared drawing canvas, and update the local live wallpaper.
+
+The shared canvas is visible to both paired users. Your device-local wallpaper background is intended to stay on your device and is not part of the shared drawing state sent to the Mulberry backend.
+
+Mulberry uses Google Sign-In for authentication and Firebase Cloud Messaging for background canvas update signals. These providers process some information under their own privacy policies.
+
+Mulberry does not sell your personal information. Mulberry does not use your shared canvas content for third-party advertising.
+
+Legal review required: Confirm whether the operator will serve users in the European Economic Area, United Kingdom, Switzerland, California, or other regulated jurisdictions, and update the rights, legal bases, international transfer, retention, and contact sections accordingly.
+
+3. Information we collect
+
+3.1 Account and authentication information
+
+When you sign in with Google, Mulberry receives information needed to authenticate your account. This may include:
+
+- Your Google account identifier.
+- Your email address.
+- Your Google display name, if provided by Google.
+- A Google ID token used for sign-in verification.
+- Mulberry access and refresh tokens created by the Mulberry backend.
+- Account and session identifiers created by Mulberry.
+
+Mulberry uses the Google ID token to verify your identity. The Mulberry backend stores your Mulberry user identifier, Google subject identifier, email address, profile row, and Mulberry session tokens. Mulberry does not need your Google account password.
+
+3.2 Profile and onboarding information
+
+During onboarding or account setup, Mulberry may collect:
+
+- Your display name.
+- Your partner's display name.
+- Your relationship anniversary date.
+- Whether onboarding is complete.
+- Whether your live wallpaper has been configured.
+
+This information is used to personalize the paired experience and to help both users understand invite and pairing flows.
+
+3.3 Pairing and invite information
+
+When you create, redeem, accept, or decline an invite, Mulberry may collect and store:
+
+- Invite identifiers.
+- Six-digit invite codes.
+- Invite status, such as pending, redeemed, accepted, declined, or expired.
+- Invite expiration timestamps.
+- The user identifiers for the inviter and, after redemption, the recipient.
+- Pair session identifiers for accepted pairings.
+- Timestamps for invite creation and consumption.
+
+Invite codes are used to connect exactly two users into a private pair session. Anyone with a valid invite code may be able to start the pairing flow, so you should share invite codes only with the person you intend to pair with.
+
+3.4 Shared canvas and drawing information
+
+Mulberry stores and synchronizes drawing data that you or your paired partner create on the shared canvas. This may include:
+
+- Strokes, stroke identifiers, colors, brush widths, and point coordinates.
+- Drawing operations such as adding strokes, appending points, finishing strokes, deleting strokes, and clearing the canvas.
+- Client operation identifiers, operation batches, and timestamps.
+- Server-assigned revision numbers.
+- Actor user identifiers showing which paired user created an operation.
+- Canvas snapshots used for recovery and synchronization.
+- Cached local render state used to draw the current canvas and live wallpaper.
+
+The shared canvas may reveal personal information if you or your paired partner draw, write, or display it there. Do not put information on the shared canvas that you do not want your paired partner, Mulberry systems, or authorized service providers to process.
+
+3.5 Device, app, and technical information
+
+Mulberry may collect technical information needed to operate and secure the app, including:
+
+- App environment, such as development or production.
+- Device platform, currently Android.
+- Firebase Cloud Messaging registration tokens.
+- Token registration, last-seen, and revocation timestamps.
+- Network request metadata processed by the backend, such as IP address, request time, endpoint, and error information.
+- Sync status, last applied server revision, pending operation data, and last sync error stored locally.
+- App configuration values required to reach the Mulberry API.
+
+Legal review required: Confirm whether production logging will include IP addresses, device identifiers, crash reports, analytics events, or diagnostic payloads beyond what is listed here. Add any third-party analytics or crash reporting providers before publication.
+
+3.6 Local wallpaper and device storage information
+
+Mulberry lets you choose a private background image for the live wallpaper. That background image is intended to stay on your device. Mulberry stores a local copy of the selected or bundled background so the live wallpaper can render after the app is closed.
+
+Local app storage may also include:
+
+- Access and refresh tokens.
+- Cached profile and pairing state.
+- Pending invite details.
+- FCM token registration state.
+- Local Room database records for strokes, points, operations, canvas metadata, and cached snapshot paths.
+- Local DataStore preferences.
+- Cached images used by the wallpaper renderer.
+
+Because the Android app currently allows system backup, some local app data may be included in Android cloud backup or device transfer features depending on your device settings, Android version, Google account settings, and backup configuration.
+
+Legal review required: Before launch, confirm Android backup and data extraction rules. If sensitive local data should not be backed up, update the app's backup configuration and this policy.
+
+3.7 Information from support communications
+
+If you contact the Mulberry operator for support or privacy requests, Mulberry may collect your name, email address, message contents, diagnostic details you choose to provide, and any other information needed to respond.
+
+3.8 Information we do not intentionally collect
+
+Mulberry does not intentionally collect payment card information, government identification numbers, precise GPS location, biometric identifiers, health data, or contacts.
+
+Mulberry does not intentionally collect the private contents of your Google account beyond the information provided through Google Sign-In for authentication.
+
+Mulberry does not intentionally collect the device-local wallpaper background through the backend. If you choose a personal photo as your local background, it is intended to remain on your device, subject to Android backup behavior described above.
+
+4. How we collect information
+
+Mulberry collects information in these ways:
+
+- Directly from you when you sign in, complete onboarding, create or redeem an invite, draw on the shared canvas, choose a wallpaper background, or contact support.
+- Automatically through the app and backend when Mulberry authenticates sessions, syncs canvas operations, registers FCM tokens, refreshes canvas state, or records technical events needed to operate the service.
+- From your paired partner when that person creates shared canvas operations or participates in the pairing flow.
+- From service providers such as Google Sign-In and Firebase Cloud Messaging when they provide authentication or push-delivery functionality.
+
+5. How we use information
+
+Mulberry uses information for the following purposes:
+
+- To create and authenticate your Mulberry account.
+- To verify Google Sign-In tokens.
+- To maintain Mulberry access and refresh sessions.
+- To save and update your profile and onboarding state.
+- To create, redeem, accept, decline, expire, and manage pairing invites.
+- To connect exactly two users into a private pair session.
+- To send, receive, order, replay, and reconcile shared canvas operations.
+- To maintain server-side canvas snapshots for sync recovery.
+- To render and cache the shared canvas locally on your device.
+- To update the Android live wallpaper with the latest local canvas snapshot.
+- To register and unregister Firebase Cloud Messaging tokens.
+- To send minimal push signals so backgrounded devices can catch up to the latest canvas revision.
+- To troubleshoot reliability, sync, authentication, and pairing problems.
+- To protect the service from misuse, fraud, unauthorized access, or abuse.
+- To comply with legal obligations and enforce applicable terms.
+- To respond to support, privacy, security, or legal requests.
+
+Mulberry does not use shared canvas content for third-party advertising.
+
+Legal review required: Add or remove purposes before launch so this section exactly matches production behavior, including any analytics, crash reporting, marketing email, billing, beta testing, or customer support tools.
+
+6. Pairing and shared content
+
+When you accept a pairing invite, Mulberry creates a pair session between you and the other user. The shared canvas for that pair session is visible to both paired users.
+
+Either paired user may draw, erase, delete strokes, or clear the shared canvas. Those shared actions are synchronized through the Mulberry backend and may be stored as operation history and snapshots.
+
+Your paired partner can see the shared canvas content. Your paired partner cannot see your private device-local wallpaper background through Mulberry unless you share it separately outside the app or add it to the shared canvas yourself.
+
+Mulberry cannot control what your paired partner does with shared canvas content after viewing it, including taking screenshots, screen recordings, photos of their device, or otherwise saving or sharing what appears on their screen.
+
+7. Push notifications and background sync
+
+Mulberry uses Firebase Cloud Messaging to help backgrounded devices catch up when the shared canvas changes. Push payloads are intended to contain limited routing and revision metadata, such as:
+
+- Message type.
+- Pair session identifier.
+- Latest canvas revision.
+- Snapshot revision.
+- Actor user identifier.
+
+Push payloads are not intended to contain full drawing content. When a device receives a canvas update signal, the app may contact the Mulberry backend to fetch missed canvas operations or the latest canvas snapshot.
+
+Firebase Cloud Messaging is provided by Google. Google may process device, token, delivery, and diagnostic information according to Google's terms and privacy policies.
+
+8. Legal bases for processing
+
+If privacy laws such as the GDPR or UK GDPR apply, Mulberry may rely on the following legal bases:
+
+- Contract: To provide the app features you request, including authentication, pairing, canvas sync, live wallpaper support, and account sessions.
+- Consent: Where required for optional features, non-essential communications, or certain local/device permissions.
+- Legitimate interests: To secure the service, prevent abuse, maintain reliability, debug issues, and understand whether core features are working.
+- Legal obligation: To comply with applicable law, lawful requests, and regulatory obligations.
+
+Legal review required: Confirm final legal bases for each category of data and processing purpose before publication. Some jurisdictions require more specific disclosures, consent flows, or records of processing.
+
+9. How we share information
+
+Mulberry may share information in the following limited circumstances:
+
+- With your paired partner: Shared canvas content, relevant pairing information, invite status, and display names may be visible to the other user in your pair session.
+- With service providers: Mulberry may use vendors for authentication, push delivery, hosting, database infrastructure, logging, security, support, and other operational services.
+- With Google services: Google Sign-In helps authenticate users, and Firebase Cloud Messaging helps deliver background canvas update signals.
+- For legal and safety reasons: Mulberry may disclose information if required by law, legal process, or a good-faith belief that disclosure is necessary to protect rights, safety, users, or the service.
+- In a business transfer: If Mulberry is involved in a merger, acquisition, financing, reorganization, or sale of assets, information may be transferred as part of that transaction, subject to appropriate safeguards.
+- With your direction or consent: Mulberry may share information when you ask us to or when you give permission.
+
+Mulberry does not sell your personal information.
+
+Mulberry does not share your personal information for cross-context behavioral advertising as currently designed.
+
+Legal review required: Confirm the complete list of production subprocessors and whether any "sale," "sharing," or targeted advertising disclosures are required under California or other state privacy laws.
+
+10. Third-party services
+
+Mulberry currently relies on:
+
+- Google Sign-In and Android Credential Manager for account authentication.
+- Firebase Cloud Messaging for push update signals.
+- Backend hosting and database infrastructure for Mulberry API, sessions, pairing, canvas operations, snapshots, and device tokens.
+
+Third-party services may collect and process information under their own privacy policies. You should review Google's privacy disclosures and any other provider disclosures made available by the Mulberry operator.
+
+Legal review required: Add the final hosting provider, database provider, monitoring tools, crash reporting tools, analytics services, support tools, and any other production subprocessors before publication.
+
+11. Cookies, SDKs, and tracking
+
+Mulberry is an Android app and does not currently describe a browser cookie-based experience. The app uses SDKs and platform services needed for authentication, push messaging, networking, storage, and app operation.
+
+Mulberry does not currently use third-party advertising SDKs or cross-app tracking for targeted advertising.
+
+Legal review required: If a website, web dashboard, analytics SDK, crash reporting SDK, attribution SDK, advertising SDK, or cookie banner is added, update this section and implement any required consent controls.
+
+12. Data retention
+
+Mulberry retains information only for as long as reasonably necessary for the purposes described in this policy, unless a longer retention period is required or permitted by law.
+
+Current retention expectations are:
+
+- Account records may be retained while your account is active.
+- Session tokens may be retained until they expire, are refreshed, are revoked, or are deleted as part of account cleanup.
+- Device tokens may be retained while active and may remain in revoked form for operational, anti-abuse, or troubleshooting purposes.
+- Profile and pairing data may be retained while needed to provide the paired experience.
+- Invite records may be retained after expiration, acceptance, decline, or consumption for operational integrity and troubleshooting.
+- Canvas operations and snapshots may be retained while needed to provide synchronization, ordering, replay, recovery, and paired canvas functionality.
+- Local app data remains on your device until you log out, clear app data, remove local backgrounds, uninstall the app, or the app deletes or overwrites cached data.
+- Support communications may be retained while needed to respond to your request and maintain business records.
+
+Legal review required: Replace these general retention expectations with specific production retention periods, such as exact days, months, or event-based deletion windows. Confirm account deletion, pair-session deletion, canvas deletion, backup deletion, and log-retention behavior before launch.
+
+13. Your choices and controls
+
+You may have the following controls:
+
+- You can choose whether to sign in with Google.
+- You can choose whether to create, redeem, accept, or decline a pairing invite.
+- You can choose what to draw on the shared canvas.
+- You can change or remove your device-local wallpaper background in the app where supported.
+- You can log out, which removes or clears certain local session state and unregisters the current FCM token where possible.
+- You can clear local app data through Android system settings.
+- You can uninstall the app to remove app-managed local storage from your device, subject to Android backup and restore behavior.
+- You can manage Google account and Android backup settings through Google and Android system controls.
+
+Some choices may limit app functionality. For example, if you do not sign in, Mulberry cannot pair your account or sync the shared canvas. If FCM token registration is unavailable, backgrounded devices may not catch up until the app reconnects.
+
+14. Privacy rights
+
+Depending on where you live, you may have rights to:
+
+- Request access to personal information held about you.
+- Request correction of inaccurate information.
+- Request deletion of certain information.
+- Request a copy of certain information in a portable format.
+- Object to or restrict certain processing.
+- Withdraw consent where processing is based on consent.
+- Opt out of certain disclosures, sales, sharing, targeted advertising, or profiling, if applicable.
+- Appeal a denied privacy request, if applicable law provides that right.
+- Lodge a complaint with a data protection authority.
+
+To exercise rights, contact the Mulberry operator using the privacy contact listed in this policy after publication.
+
+Legal review required: Add the final rights-request email, mailing address, identity verification process, appeal process, response timelines, authorized agent process, and jurisdiction-specific notices for GDPR, UK GDPR, CCPA/CPRA, and other applicable laws.
+
+15. California and U.S. state privacy notice
+
+If California or similar U.S. state privacy laws apply, the categories of personal information Mulberry may collect include:
+
+- Identifiers, such as email address, Google subject identifier, Mulberry user identifier, session tokens, and device tokens.
+- Internet or other electronic network activity information, such as app interactions, sync requests, request metadata, and technical logs.
+- Customer records information, such as account and profile details.
+- Inferences or profile-related information you provide, such as display names and relationship anniversary date.
+- User-generated content, such as shared canvas drawings and operations.
+
+Mulberry does not sell personal information as currently designed. Mulberry does not share personal information for cross-context behavioral advertising as currently designed.
+
+Legal review required: Confirm whether California, Colorado, Connecticut, Virginia, Utah, Texas, Oregon, Montana, Delaware, Iowa, Nebraska, New Hampshire, New Jersey, or other U.S. state privacy laws apply. Add required category tables, lookback periods, sensitive personal information disclosures, appeal rights, and "Do Not Sell or Share" language if required.
+
+16. International data transfers
+
+Mulberry information may be processed in the country where you live and in other countries where Mulberry, its hosting providers, Google, Firebase, or other service providers operate. Privacy laws in those countries may differ from the laws in your location.
+
+Legal review required: Identify production hosting regions and subprocessors before launch. If Mulberry serves users in the EEA, UK, or Switzerland and transfers personal data internationally, implement and disclose appropriate safeguards such as adequacy decisions, Standard Contractual Clauses, UK transfer mechanisms, or other lawful transfer tools.
+
+17. Security
+
+Mulberry uses reasonable technical and organizational measures designed to protect information, including authenticated API requests, server-side session checks, access controls, and encrypted transport for production network communication.
+
+Mulberry stores authentication tokens and app state locally on the device so the app can work across launches and keep the canvas synchronized. You should protect your device with a passcode, biometric unlock, or other device security feature.
+
+No method of transmission or storage is completely secure. Mulberry cannot guarantee absolute security.
+
+Development builds may use local development servers or cleartext local network traffic for testing. Production builds should use secure transport to the production API.
+
+Legal review required: Confirm production encryption, token storage, database security, key management, access controls, logging controls, incident response, vulnerability management, and breach notification procedures before publication.
+
+18. Children's privacy
+
+Mulberry is not intended for children under 13 years old, and Mulberry does not knowingly collect personal information from children under 13. If you believe a child has provided personal information to Mulberry, contact the Mulberry operator so the information can be reviewed and deleted where appropriate.
+
+Legal review required: If Mulberry is directed to children, likely to be used by teenagers, or marketed to families or minors, review COPPA, GDPR-K, UK Age Appropriate Design Code, and similar child privacy requirements before launch.
+
+19. Sensitive information
+
+Mulberry is designed for personal communication between two paired users. The app may process relationship-related information that you choose to provide, such as your partner's display name, relationship anniversary date, and shared drawings.
+
+Do not use Mulberry to share highly sensitive information unless you understand that it may be visible to your paired partner and processed by Mulberry systems as described in this policy.
+
+Legal review required: Confirm whether any collected information is treated as sensitive personal information under applicable laws and whether additional consent, minimization, or deletion controls are required.
+
+20. Third-party links and services
+
+Mulberry may link to or rely on third-party services that are not controlled by the Mulberry operator. This policy does not apply to third-party websites, apps, services, or privacy practices. Review those third parties' privacy policies before using them.
+
+21. Changes to this policy
+
+Mulberry may update this Privacy Policy from time to time. If changes are material, Mulberry will provide notice through the app, by email, or by another reasonable method before or when the changes take effect, where required by law.
+
+The "Last updated" date at the top of this policy shows when it was last changed.
+
+Legal review required: Confirm the final notice method and notice period for material changes, especially for users in jurisdictions requiring advance notice or renewed consent.
+
+22. Contact
+
+For privacy questions, requests, or complaints, contact:
+
+Privacy contact: Legal review required - add privacy email before launch.
+Mailing address: Legal review required - add operator mailing address before launch.
+Data Protection Officer or EU/UK representative: Legal review required - add if required.
+
+Please include enough information for the Mulberry operator to understand and respond to your request. For security, Mulberry may need to verify your identity before fulfilling certain privacy requests.
+
+23. Legal review checklist before publication
+
+Before publishing this Privacy Policy, the Mulberry operator should:
+
+- Add the legal operator name, address, and privacy contact.
+- Confirm all production data categories and remove anything that does not apply.
+- Confirm all production third-party services and subprocessors.
+- Confirm whether analytics, crash reporting, support tools, or marketing tools are used.
+- Define exact retention periods and deletion procedures.
+- Define account deletion, pair deletion, and canvas deletion behavior.
+- Confirm Android backup and data extraction rules.
+- Confirm production security measures.
+- Confirm applicable jurisdictions and add required rights notices.
+- Confirm whether any data is sold, shared, used for targeted advertising, or used for profiling.
+- Have a qualified privacy attorney review the final policy before launch.

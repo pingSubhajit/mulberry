@@ -11,6 +11,7 @@ fun BootstrapResponse.toDomainBootstrap(): SessionBootstrapState = SessionBootst
     hasCompletedOnboarding = onboardingCompleted,
     hasWallpaperConfigured = hasWallpaperConfigured,
     userId = userId,
+    userPhotoUrl = userPhotoUrl,
     userDisplayName = userDisplayName,
     partnerDisplayName = partnerDisplayName,
     anniversaryDate = anniversaryDate,

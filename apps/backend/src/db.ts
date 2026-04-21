@@ -11,8 +11,12 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       id TEXT PRIMARY KEY,
       google_subject TEXT NOT NULL UNIQUE,
       email TEXT NOT NULL UNIQUE,
+      google_picture_url TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS google_picture_url TEXT;
 
     CREATE TABLE IF NOT EXISTS user_profiles (
       user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

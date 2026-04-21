@@ -39,6 +39,7 @@ data class SessionBootstrapState(
     val hasCompletedOnboarding: Boolean = false,
     val hasWallpaperConfigured: Boolean = false,
     val userId: String? = null,
+    val userPhotoUrl: String? = null,
     val userDisplayName: String? = null,
     val partnerDisplayName: String? = null,
     val anniversaryDate: String? = null,

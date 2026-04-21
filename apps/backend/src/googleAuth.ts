@@ -14,7 +14,8 @@ export class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
 
   async verify(idToken: string): Promise<GoogleIdentity> {
     if (this.config.allowDevGoogleTokens && idToken.startsWith("dev-google:")) {
-      const [, email, name] = idToken.split(":")
+      const [, email, name, ...pictureParts] = idToken.split(":")
+      const pictureUrl = pictureParts.join(":")
       if (!email) {
         throw new HttpError(401, "Invalid development Google token")
       }
@@ -22,6 +23,7 @@ export class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
         subject: email,
         email,
         name: name ?? null,
+        pictureUrl: pictureUrl.length > 0 ? pictureUrl : null,
       }
     }
 
@@ -43,6 +45,7 @@ export class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
       subject: payload.sub,
       email: payload.email,
       name: payload.name ?? null,
+      pictureUrl: payload.picture ?? null,
     }
   }
 }

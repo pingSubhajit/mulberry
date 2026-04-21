@@ -27,11 +27,34 @@ import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import com.subhajit.mulberry.wallpaper.WallpaperStatusState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+enum class MainAppTab {
+    Canvas,
+    LockScreen
+}
+
+data class InviteSheetUiState(
+    val code: String? = null,
+    val expiresAt: String? = null,
+    val remainingSeconds: Long = 0L,
+    val isExpired: Boolean = false,
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null
+) {
+    val hasCode: Boolean
+        get() = !code.isNullOrBlank()
+}
 
 data class CanvasHomeUiState(
     val environmentLabel: String = "",
@@ -46,11 +69,14 @@ data class CanvasHomeUiState(
     val backgroundImageState: BackgroundImageState = BackgroundImageState(),
     val currentInvite: CreateInviteResult? = null,
     val isInviteSheetVisible: Boolean = false,
-    val isInviteLoading: Boolean = false,
-    val inviteErrorMessage: String? = null,
+    val inviteSheet: InviteSheetUiState = InviteSheetUiState(),
     val showClearConfirmation: Boolean = false,
     val palette: List<Long> = DrawingDefaults.palette
 )
+
+sealed interface CanvasHomeEffect {
+    data class ShareInvite(val message: String) : CanvasHomeEffect
+}
 
 @HiltViewModel
 class CanvasHomeViewModel @Inject constructor(
@@ -68,6 +94,9 @@ class CanvasHomeViewModel @Inject constructor(
     private val showInviteSheet = MutableStateFlow(false)
     private val inviteLoadingState = MutableStateFlow(false)
     private val inviteErrorState = MutableStateFlow<String?>(null)
+    private val currentTimeMillis = MutableStateFlow(System.currentTimeMillis())
+    private val _effects = MutableSharedFlow<CanvasHomeEffect>()
+    val effects = _effects.asSharedFlow()
 
     private val baseState = combine(
         combine(
@@ -95,13 +124,26 @@ class CanvasHomeViewModel @Inject constructor(
         )
     }
 
-    val uiState = combine(
-        baseState,
+    private val inviteControls = combine(
         showClearConfirmation,
         showInviteSheet,
         inviteLoadingState,
-        inviteErrorState
-    ) { baseState, clearDialogVisible, inviteSheetVisible, inviteLoading, inviteError ->
+        inviteErrorState,
+        currentTimeMillis
+    ) { clearDialogVisible, inviteSheetVisible, inviteLoading, inviteError, nowMillis ->
+        InviteControlState(
+            clearDialogVisible = clearDialogVisible,
+            inviteSheetVisible = inviteSheetVisible,
+            inviteLoading = inviteLoading,
+            inviteError = inviteError,
+            nowMillis = nowMillis
+        )
+    }
+
+    val uiState = combine(
+        baseState,
+        inviteControls
+    ) { baseState, inviteControls ->
         CanvasHomeUiState(
             environmentLabel = appConfig.environment.displayName,
             bootstrapState = baseState.bootstrapState,
@@ -111,10 +153,13 @@ class CanvasHomeViewModel @Inject constructor(
             wallpaperStatus = baseState.wallpaperStatus,
             backgroundImageState = baseState.backgroundState,
             currentInvite = baseState.currentInvite,
-            isInviteSheetVisible = inviteSheetVisible,
-            isInviteLoading = inviteLoading,
-            inviteErrorMessage = inviteError,
-            showClearConfirmation = clearDialogVisible
+            isInviteSheetVisible = inviteControls.inviteSheetVisible,
+            inviteSheet = baseState.currentInvite.toInviteSheetUiState(
+                nowMillis = inviteControls.nowMillis,
+                isLoading = inviteControls.inviteLoading,
+                errorMessage = inviteControls.inviteError
+            ),
+            showClearConfirmation = inviteControls.clearDialogVisible
         )
     }.stateIn(
         scope = viewModelScope,
@@ -125,6 +170,15 @@ class CanvasHomeViewModel @Inject constructor(
     )
 
     private val sessionRepository = repository
+
+    init {
+        viewModelScope.launch {
+            while (true) {
+                currentTimeMillis.value = System.currentTimeMillis()
+                delay(1_000)
+            }
+        }
+    }
 
     fun onWallpaperConfiguredChanged(configured: Boolean) {
         viewModelScope.launch {
@@ -147,6 +201,11 @@ class CanvasHomeViewModel @Inject constructor(
     fun onInviteRequested() {
         showInviteSheet.value = true
         viewModelScope.launch {
+            val existingInvite = uiState.value.currentInvite
+            if (existingInvite != null && !existingInvite.isExpiredAt(System.currentTimeMillis())) {
+                inviteErrorState.value = null
+                return@launch
+            }
             inviteLoadingState.value = true
             inviteErrorState.value = null
             inviteRepository.createInvite()
@@ -164,6 +223,33 @@ class CanvasHomeViewModel @Inject constructor(
     fun onInviteSheetDismissed() {
         showInviteSheet.value = false
         refreshBootstrapState()
+    }
+
+    fun onShareInviteClicked() {
+        viewModelScope.launch {
+            val invite = ensureShareableInvite().getOrElse { error ->
+                inviteErrorState.value = error.message ?: "Unable to create invite"
+                return@launch
+            }
+            _effects.emit(CanvasHomeEffect.ShareInvite(invite.toShareMessage()))
+        }
+    }
+
+    private suspend fun ensureShareableInvite(): Result<CreateInviteResult> {
+        val existingInvite = uiState.value.currentInvite
+        if (existingInvite != null && !existingInvite.isExpiredAt(System.currentTimeMillis())) {
+            return Result.success(existingInvite)
+        }
+        inviteLoadingState.value = true
+        inviteErrorState.value = null
+        return inviteRepository.createInvite()
+            .onSuccess {
+                inviteLoadingState.value = false
+                bootstrapRepository.refreshBootstrap()
+            }
+            .onFailure {
+                inviteLoadingState.value = false
+            }
     }
 
     fun onCanvasPress(point: StrokePoint) {
@@ -258,4 +344,51 @@ class CanvasHomeViewModel @Inject constructor(
         val featureFlags: FeatureFlags,
         val renderState: CanvasRenderState
     )
+
+    private data class InviteControlState(
+        val clearDialogVisible: Boolean,
+        val inviteSheetVisible: Boolean,
+        val inviteLoading: Boolean,
+        val inviteError: String?,
+        val nowMillis: Long
+    )
 }
+
+private fun CreateInviteResult?.toInviteSheetUiState(
+    nowMillis: Long,
+    isLoading: Boolean,
+    errorMessage: String?
+): InviteSheetUiState {
+    val expiresAtMillis = this?.expiresAt?.parseInviteInstantMillis()
+    val remainingSeconds = expiresAtMillis
+        ?.let { ((it - nowMillis) / 1_000).coerceAtLeast(0L) }
+        ?: 0L
+    return InviteSheetUiState(
+        code = this?.code,
+        expiresAt = this?.expiresAt,
+        remainingSeconds = remainingSeconds,
+        isExpired = this != null && remainingSeconds <= 0L,
+        isLoading = isLoading,
+        errorMessage = errorMessage
+    )
+}
+
+private fun CreateInviteResult.isExpiredAt(nowMillis: Long): Boolean {
+    val expiresAtMillis = expiresAt.parseInviteInstantMillis() ?: return false
+    return expiresAtMillis <= nowMillis
+}
+
+private fun CreateInviteResult.toShareMessage(): String =
+    "Join me on Mulberry. Use invite code $code to pair with me and share a canvas on our lock screens. This code expires soon."
+
+private val inviteDateFormats = listOf(
+    SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US),
+    SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US),
+    SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US),
+    SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
+).onEach { it.timeZone = TimeZone.getTimeZone("UTC") }
+
+private fun String.parseInviteInstantMillis(): Long? =
+    inviteDateFormats.firstNotNullOfOrNull { format ->
+        runCatching { format.parse(this)?.time }.getOrNull()
+    }

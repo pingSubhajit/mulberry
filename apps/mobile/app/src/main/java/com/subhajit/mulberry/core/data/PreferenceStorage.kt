@@ -11,6 +11,7 @@ object PreferenceStorage {
     val refreshToken = stringPreferencesKey("refresh_token")
     val sessionUserId = stringPreferencesKey("session_user_id")
     val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
+    val userPhotoUrl = stringPreferencesKey("user_photo_url")
     val userDisplayName = stringPreferencesKey("user_display_name")
     val partnerDisplayName = stringPreferencesKey("partner_display_name")
     val anniversaryDate = stringPreferencesKey("anniversary_date")

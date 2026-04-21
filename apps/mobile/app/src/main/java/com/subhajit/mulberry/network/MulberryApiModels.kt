@@ -20,6 +20,7 @@ data class BootstrapResponse(
     val onboardingCompleted: Boolean,
     val hasWallpaperConfigured: Boolean = false,
     val userId: String?,
+    val userPhotoUrl: String?,
     val userDisplayName: String?,
     val partnerDisplayName: String?,
     val anniversaryDate: String?,

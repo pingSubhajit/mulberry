@@ -59,6 +59,30 @@ describe("Mulberry backend", () => {
     expect(body.bootstrapState.onboardingCompleted).toBe(false)
   })
 
+  it("stores the Google profile photo and returns it in bootstrap", async () => {
+    const photoUrl = "https://example.test/avatar.png"
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/google",
+      payload: {
+        idToken: `dev-google:subhajit@elaris.dev:Subhajit:${photoUrl}`,
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const body = response.json()
+    expect(body.bootstrapState.userPhotoUrl).toBe(photoUrl)
+
+    const bootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(body.accessToken),
+    })
+
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().userPhotoUrl).toBe(photoUrl)
+  })
+
   it("rotates the session on refresh", async () => {
     const auth = await signIn("subhajit@elaris.dev", "Subhajit")
 
