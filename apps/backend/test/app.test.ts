@@ -439,6 +439,60 @@ describe("Mulberry backend", () => {
     first.close()
   })
 
+  it("keeps canvas snapshot materialized to the latest current state", async () => {
+    const { inviter } = await pairUsers()
+    const first = await app.injectWS("/canvas/sync")
+
+    first.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: inviter.accessToken,
+        pairSessionId: inviter.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    await nextWsJson(first)
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP_BATCH",
+        batchId: "snapshot-batch-1",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          addStrokeOperation("snapshot-op-1", "deleted-stroke", 1, 1),
+          appendPointsOperation("snapshot-op-2", "deleted-stroke", [{ x: 2, y: 2 }]),
+          finishStrokeOperation("snapshot-op-3", "deleted-stroke"),
+          deleteStrokeOperation("snapshot-op-4", "deleted-stroke"),
+          clearCanvasOperation("snapshot-op-5"),
+          addStrokeOperation("snapshot-op-6", "current-stroke", 9, 9),
+          finishStrokeOperation("snapshot-op-7", "current-stroke"),
+        ],
+      }),
+    )
+
+    const ack = await nextWsJson(first)
+    expect(ack.type).toBe("ACK_BATCH")
+    expect(ack.ackedThroughRevision).toBe(7)
+
+    const snapshot = await app.inject({
+      method: "GET",
+      url: "/canvas/snapshot",
+      headers: bearer(inviter.accessToken),
+    })
+    const tail = await app.inject({
+      method: "GET",
+      url: "/canvas/ops?afterRevision=5",
+      headers: bearer(inviter.accessToken),
+    })
+
+    expect(snapshot.statusCode).toBe(200)
+    expect(snapshot.json().revision).toBe(7)
+    expect(snapshot.json().snapshot.strokes.map((stroke: { id: string }) => stroke.id))
+      .toEqual(["current-stroke"])
+    expect(tail.json().operations.map((operation: { serverRevision: number }) => operation.serverRevision))
+      .toEqual([6, 7])
+    first.close()
+  })
+
   async function signIn(email: string, name: string) {
     const response = await app.inject({
       method: "POST",
@@ -518,4 +572,69 @@ function nextWsJson(socket: { once: (event: string, listener: (raw: unknown) => 
       resolve(JSON.parse(String(raw)))
     })
   })
+}
+
+function addStrokeOperation(
+  clientOperationId: string,
+  strokeId: string,
+  x: number,
+  y: number,
+) {
+  return {
+    clientOperationId,
+    type: "ADD_STROKE",
+    strokeId,
+    payload: {
+      id: strokeId,
+      colorArgb: 4278190080,
+      width: 8,
+      createdAt: 123,
+      firstPoint: { x, y },
+    },
+    clientCreatedAt: new Date().toISOString(),
+  }
+}
+
+function appendPointsOperation(
+  clientOperationId: string,
+  strokeId: string,
+  points: Array<{ x: number; y: number }>,
+) {
+  return {
+    clientOperationId,
+    type: "APPEND_POINTS",
+    strokeId,
+    payload: { points },
+    clientCreatedAt: new Date().toISOString(),
+  }
+}
+
+function finishStrokeOperation(clientOperationId: string, strokeId: string) {
+  return {
+    clientOperationId,
+    type: "FINISH_STROKE",
+    strokeId,
+    payload: {},
+    clientCreatedAt: new Date().toISOString(),
+  }
+}
+
+function deleteStrokeOperation(clientOperationId: string, strokeId: string) {
+  return {
+    clientOperationId,
+    type: "DELETE_STROKE",
+    strokeId,
+    payload: {},
+    clientCreatedAt: new Date().toISOString(),
+  }
+}
+
+function clearCanvasOperation(clientOperationId: string) {
+  return {
+    clientOperationId,
+    type: "CLEAR_CANVAS",
+    strokeId: null,
+    payload: {},
+    clientCreatedAt: new Date().toISOString(),
+  }
 }

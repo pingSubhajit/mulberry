@@ -12,6 +12,11 @@ sealed interface CanvasRuntimeEvent {
     data object ClearCanvas : CanvasRuntimeEvent
     data class RemoteOperation(val operation: ServerCanvasOperation) : CanvasRuntimeEvent
     data class RemoteBatch(val operations: List<ServerCanvasOperation>) : CanvasRuntimeEvent
+    data class RecoveryOperations(
+        val operations: List<ServerCanvasOperation>,
+        val publishAtomically: Boolean = true
+    ) : CanvasRuntimeEvent
+
     data class RecoverySnapshot(
         val strokes: List<Stroke>,
         val serverRevision: Long

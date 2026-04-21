@@ -17,6 +17,7 @@ import com.subhajit.mulberry.sync.newClientOperation
 import com.subhajit.mulberry.sync.toAddStrokePayload
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -33,6 +34,7 @@ interface CanvasRuntime {
     fun start(pairSessionId: String, userId: String)
     fun stop()
     fun submit(event: CanvasRuntimeEvent)
+    suspend fun submitAndAwait(event: CanvasRuntimeEvent)
     fun setSyncState(syncState: SyncState)
 }
 
@@ -44,7 +46,7 @@ class DefaultCanvasRuntime @Inject constructor(
     private val strokeHitTester: StrokeHitTester,
     @ApplicationScope private val applicationScope: CoroutineScope
 ) : CanvasRuntime {
-    private val events = Channel<CanvasRuntimeEvent>(Channel.UNLIMITED)
+    private val events = Channel<RuntimeEventEnvelope>(Channel.UNLIMITED)
     private val outbound = Channel<CanvasSyncOperation>(Channel.UNLIMITED)
 
     override val outboundOperations: Flow<CanvasSyncOperation> = outbound.receiveAsFlow()
@@ -60,8 +62,14 @@ class DefaultCanvasRuntime @Inject constructor(
 
     init {
         applicationScope.launch {
-            for (event in events) {
-                handleEvent(event)
+            for (envelope in events) {
+                runCatching {
+                    handleEvent(envelope.event)
+                }.onSuccess {
+                    envelope.completion?.complete(Unit)
+                }.onFailure { error ->
+                    envelope.completion?.completeExceptionally(error)
+                }
             }
         }
         applicationScope.launch {
@@ -103,7 +111,13 @@ class DefaultCanvasRuntime @Inject constructor(
     }
 
     override fun submit(event: CanvasRuntimeEvent) {
-        events.trySend(event)
+        events.trySend(RuntimeEventEnvelope(event))
+    }
+
+    override suspend fun submitAndAwait(event: CanvasRuntimeEvent) {
+        val completion = CompletableDeferred<Unit>()
+        events.send(RuntimeEventEnvelope(event, completion))
+        completion.await()
     }
 
     override fun setSyncState(syncState: SyncState) {
@@ -119,6 +133,7 @@ class DefaultCanvasRuntime @Inject constructor(
             CanvasRuntimeEvent.ClearCanvas -> handleClearCanvas()
             is CanvasRuntimeEvent.RemoteOperation -> applyRemoteOperation(event.operation)
             is CanvasRuntimeEvent.RemoteBatch -> event.operations.forEach { applyRemoteOperation(it) }
+            is CanvasRuntimeEvent.RecoveryOperations -> handleRecoveryOperations(event)
             is CanvasRuntimeEvent.RecoverySnapshot -> handleRecoverySnapshot(event)
             is CanvasRuntimeEvent.FlowControl -> handleFlowControl(event)
         }
@@ -299,6 +314,78 @@ class DefaultCanvasRuntime @Inject constructor(
         }
     }
 
+    private suspend fun handleRecoveryOperations(event: CanvasRuntimeEvent.RecoveryOperations) {
+        if (!event.publishAtomically) {
+            event.operations.forEach { applyRemoteOperation(it) }
+            return
+        }
+
+        val initialState = _renderState.value
+        var committedStrokes = initialState.committedStrokes
+        var remoteActiveStrokes = initialState.remoteActiveStrokes
+        var revision = initialState.revision
+        var shouldClearLocalActive = false
+        var cacheChanged = false
+
+        event.operations.sortedBy { it.serverRevision }.forEach { operation ->
+            when (operation.payload) {
+                is SyncOperationPayload.AddStroke -> {
+                    val payload = operation.payload
+                    val stroke = Stroke(
+                        id = payload.id,
+                        colorArgb = payload.colorArgb,
+                        width = payload.width,
+                        points = listOf(payload.firstPoint),
+                        createdAt = payload.createdAt
+                    )
+                    remoteActiveStrokes = remoteActiveStrokes + (stroke.id to stroke)
+                }
+                is SyncOperationPayload.AppendPoints -> {
+                    val strokeId = operation.strokeId ?: return@forEach
+                    val active = remoteActiveStrokes[strokeId] ?: return@forEach
+                    remoteActiveStrokes = remoteActiveStrokes + (
+                        strokeId to active.copy(points = active.points + operation.payload.points)
+                    )
+                }
+                SyncOperationPayload.FinishStroke -> {
+                    val strokeId = operation.strokeId ?: return@forEach
+                    val finished = remoteActiveStrokes[strokeId]
+                        ?: committedStrokes.firstOrNull { it.id == strokeId }
+                        ?: return@forEach
+                    persistenceStore.persistRemoteCommittedStroke(finished, operation.serverRevision)
+                    committedStrokes = committedStrokes.filterNot { it.id == strokeId } + finished
+                    remoteActiveStrokes = remoteActiveStrokes - strokeId
+                    cacheChanged = true
+                }
+                SyncOperationPayload.DeleteStroke -> {
+                    val strokeId = operation.strokeId ?: return@forEach
+                    persistenceStore.persistErase(strokeId, operation.serverRevision)
+                    committedStrokes = committedStrokes.filterNot { it.id == strokeId }
+                    remoteActiveStrokes = remoteActiveStrokes - strokeId
+                    cacheChanged = true
+                }
+                SyncOperationPayload.ClearCanvas -> {
+                    persistenceStore.persistClear(operation.serverRevision)
+                    committedStrokes = emptyList()
+                    remoteActiveStrokes = emptyMap()
+                    shouldClearLocalActive = true
+                    cacheChanged = true
+                }
+            }
+            revision = maxOf(revision, operation.serverRevision)
+        }
+
+        _renderState.update {
+            it.copy(
+                committedStrokes = committedStrokes,
+                localActiveStroke = if (shouldClearLocalActive) null else it.localActiveStroke,
+                remoteActiveStrokes = remoteActiveStrokes,
+                revision = revision,
+                cacheToken = if (cacheChanged) it.cacheToken + 1 else it.cacheToken
+            )
+        }
+    }
+
     private fun handleFlowControl(event: CanvasRuntimeEvent.FlowControl) {
         activeAppendHz = event.maxAppendHz.coerceIn(MIN_APPEND_HZ, DEFAULT_APPEND_HZ)
     }
@@ -326,3 +413,8 @@ class DefaultCanvasRuntime @Inject constructor(
         const val MIN_APPEND_HZ = 10
     }
 }
+
+private data class RuntimeEventEnvelope(
+    val event: CanvasRuntimeEvent,
+    val completion: CompletableDeferred<Unit>? = null
+)
