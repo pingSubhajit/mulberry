@@ -272,6 +272,26 @@ class RoomDrawingRepository @Inject constructor(
         val now = System.currentTimeMillis()
         database.withTransaction {
             val metadata = currentMetadata()
+            if (!drawingDao.strokeExists(strokeId)) {
+                drawingOperationsDao.insertOperation(
+                    DrawingOperationEntity(
+                        type = DrawingOperationType.APPEND_POINTS,
+                        strokeId = strokeId,
+                        payload = pointsPayloadJson(points),
+                        revision = maxOf(metadata.revision + 1, serverRevision),
+                        createdAt = now,
+                        serverRevision = serverRevision,
+                        syncStatus = "REMOTE_ORPHAN_SKIPPED"
+                    )
+                )
+                canvasMetadataDao.upsertMetadata(
+                    metadata.copy(
+                        revision = maxOf(metadata.revision, serverRevision),
+                        lastModifiedAt = now
+                    )
+                )
+                return@withTransaction
+            }
             val startIndex = drawingDao.maxPointIndex(strokeId) + 1
             drawingDao.insertStrokePoints(
                 points.mapIndexed { index, point ->
@@ -375,6 +395,37 @@ class RoomDrawingRepository @Inject constructor(
             canvasMetadataDao.upsertMetadata(
                 metadata.copy(
                     revision = maxOf(metadata.revision, serverRevision),
+                    lastModifiedAt = now,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+    }
+
+    override suspend fun replaceWithRemoteSnapshot(strokes: List<Stroke>, serverRevision: Long) {
+        activeStroke.value = null
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val metadata = currentMetadata()
+            drawingDao.clearStrokes()
+            strokes.forEach { stroke ->
+                drawingDao.insertStroke(stroke.toEntity())
+                drawingDao.deleteStrokePoints(stroke.id)
+                drawingDao.insertStrokePoints(stroke.toPointEntities())
+            }
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.CLEAR_CANVAS,
+                    payload = """{"snapshotRestore":true,"strokeCount":${strokes.size}}""",
+                    revision = maxOf(metadata.revision + 1, serverRevision),
+                    createdAt = now,
+                    serverRevision = serverRevision,
+                    syncStatus = "REMOTE_SNAPSHOT_RESTORED"
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = serverRevision,
                     lastModifiedAt = now,
                     isSnapshotDirty = true
                 )

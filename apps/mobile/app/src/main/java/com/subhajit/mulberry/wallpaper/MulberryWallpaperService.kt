@@ -13,6 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @AndroidEntryPoint
 class MulberryWallpaperService : WallpaperService() {
@@ -25,6 +27,7 @@ class MulberryWallpaperService : WallpaperService() {
 
     private inner class MulberryWallpaperEngine : Engine() {
         private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        private val drawMutex = Mutex()
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
@@ -61,9 +64,11 @@ class MulberryWallpaperService : WallpaperService() {
 
         private fun drawFrame() {
             engineScope.launch {
-                wallpaperCoordinator.ensureSnapshotCurrent()
-                val renderState = wallpaperRenderStateLoader.loadCurrentState()
-                drawToSurface(renderState)
+                drawMutex.withLock {
+                    wallpaperCoordinator.ensureSnapshotCurrent()
+                    val renderState = wallpaperRenderStateLoader.loadCurrentState()
+                    drawToSurface(renderState)
+                }
             }
         }
 

@@ -39,5 +39,7 @@ interface DrawingRepository {
 
     suspend fun applyRemoteClearCanvas(serverRevision: Long)
 
+    suspend fun replaceWithRemoteSnapshot(strokes: List<Stroke>, serverRevision: Long)
+
     suspend fun resetAllDrawingState()
 }

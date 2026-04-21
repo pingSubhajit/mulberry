@@ -3,9 +3,9 @@ package com.subhajit.mulberry.sync
 import com.subhajit.mulberry.core.config.AppConfig
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -30,7 +30,7 @@ sealed interface CanvasSyncMessage {
 }
 
 interface CanvasSyncClient {
-    val messages: SharedFlow<CanvasSyncMessage>
+    val messages: Flow<CanvasSyncMessage>
 
     fun connect(accessToken: String, pairSessionId: String, lastAppliedServerRevision: Long)
     fun send(operation: CanvasSyncOperation)
@@ -42,11 +42,8 @@ class OkHttpCanvasSyncClient @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val appConfig: AppConfig
 ) : CanvasSyncClient {
-    private val _messages = MutableSharedFlow<CanvasSyncMessage>(
-        extraBufferCapacity = 64,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    override val messages: SharedFlow<CanvasSyncMessage> = _messages
+    private val messagesChannel = Channel<CanvasSyncMessage>(Channel.UNLIMITED)
+    override val messages: Flow<CanvasSyncMessage> = messagesChannel.receiveAsFlow()
 
     private var webSocket: WebSocket? = null
 
@@ -75,16 +72,18 @@ class OkHttpCanvasSyncClient @Inject constructor(
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     val message = runCatching { parseWireMessage(text) }
                         .getOrElse { CanvasSyncMessage.Error("Invalid sync message") }
-                    _messages.tryEmit(message)
+                    messagesChannel.trySend(message)
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    _messages.tryEmit(CanvasSyncMessage.Error(t.message ?: "Sync connection failed"))
-                    _messages.tryEmit(CanvasSyncMessage.Closed)
+                    messagesChannel.trySend(
+                        CanvasSyncMessage.Error(t.message ?: "Sync connection failed")
+                    )
+                    messagesChannel.trySend(CanvasSyncMessage.Closed)
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    _messages.tryEmit(CanvasSyncMessage.Closed)
+                    messagesChannel.trySend(CanvasSyncMessage.Closed)
                 }
             }
         )

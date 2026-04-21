@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.engine.StrokeBuilder
 import com.subhajit.mulberry.drawing.model.DrawingTool
+import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -154,6 +155,46 @@ class RoomDrawingRepositoryTest {
         assertEquals(0L, canvasState.snapshotState.lastSnapshotRevision)
         assertEquals(null, canvasState.snapshotState.cachedImagePath)
         assertFalse(database.drawingOperationsDao().getOperations().isNotEmpty())
+    }
+
+    @Test
+    fun remoteAppendWithoutParentStrokeDoesNotCrashAndAdvancesRevision() = runBlocking {
+        repository.applyRemoteAppendPoints(
+            strokeId = "missing-stroke",
+            points = listOf(StrokePoint(10f, 20f)),
+            serverRevision = 1L
+        )
+
+        val canvasState = repository.canvasState.first()
+        val operations = database.drawingOperationsDao().getOperations()
+
+        assertTrue(canvasState.strokes.isEmpty())
+        assertEquals(1L, canvasState.revision)
+        assertEquals("REMOTE_ORPHAN_SKIPPED", operations.first().syncStatus)
+    }
+
+    @Test
+    fun remoteAppendWithParentStrokePersistsPoints() = runBlocking {
+        repository.applyRemoteAddStroke(
+            stroke = Stroke(
+                id = "remote-stroke",
+                colorArgb = 0xFF111111,
+                width = 8f,
+                points = listOf(StrokePoint(1f, 1f)),
+                createdAt = 123L
+            ),
+            serverRevision = 1L
+        )
+        repository.applyRemoteAppendPoints(
+            strokeId = "remote-stroke",
+            points = listOf(StrokePoint(2f, 2f), StrokePoint(3f, 3f)),
+            serverRevision = 2L
+        )
+
+        val stroke = repository.canvasState.first { it.strokes.isNotEmpty() }.strokes.first()
+
+        assertEquals(3, stroke.points.size)
+        assertEquals(2L, repository.canvasState.first().revision)
     }
 
     private fun createRepository(): RoomDrawingRepository = RoomDrawingRepository(

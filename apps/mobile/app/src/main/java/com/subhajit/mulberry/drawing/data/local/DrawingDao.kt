@@ -26,6 +26,9 @@ interface DrawingDao {
     @Query("SELECT COALESCE(MAX(pointIndex), -1) FROM stroke_point_entities WHERE strokeId = :strokeId")
     suspend fun maxPointIndex(strokeId: String): Int
 
+    @Query("SELECT EXISTS(SELECT 1 FROM stroke_entities WHERE id = :strokeId)")
+    suspend fun strokeExists(strokeId: String): Boolean
+
     @Query("DELETE FROM stroke_point_entities WHERE strokeId = :strokeId")
     suspend fun deleteStrokePoints(strokeId: String)
 
