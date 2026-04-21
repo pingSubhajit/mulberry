@@ -42,6 +42,9 @@
     <string name="invite_code_back_content_description">Go back</string>
     <string name="privacy_policy_agreement">By continuing you agree to our</string>
     <string name="privacy_policy">Privacy Policy</string>
+    <string name="privacy_policy_sheet_title">Privacy Policy</string>
+    <string name="privacy_policy_sheet_updated">Last updated at: 21st April 2026</string>
+    <string name="privacy_policy_sheet_close">Close</string>
     <string name="environment_label">Environment</string>
     <string name="api_label">API Base URL</string>
     <string name="settings_title">Settings</string>

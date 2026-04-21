@@ -8,7 +8,6 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -202,12 +202,14 @@ private fun OnboardingWallpaperScreen(
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             )
 
-            PrimaryOnboardingButton(
-                text = stringResource(R.string.onboarding_wallpaper_setup_button),
-                onClick = onSetUpLockScreen,
-                enabled = !uiState.isBusy,
-                modifier = Modifier.testTag(TestTags.ONBOARDING_WALLPAPER_SETUP_BUTTON)
-            )
+            if (!uiState.wallpaperStatus.isWallpaperSelected) {
+                PrimaryOnboardingButton(
+                    text = stringResource(R.string.onboarding_wallpaper_setup_button),
+                    onClick = onSetUpLockScreen,
+                    enabled = !uiState.isBusy,
+                    modifier = Modifier.testTag(TestTags.ONBOARDING_WALLPAPER_SETUP_BUTTON)
+                )
+            }
 
             BackgroundSelectionSection(
                 presets = presets,
@@ -216,41 +218,11 @@ private fun OnboardingWallpaperScreen(
                 onPresetSelected = onPresetSelected
             )
 
-            if (uiState.wallpaperStatus.isWallpaperSelected) {
-                Text(
-                    text = stringResource(R.string.onboarding_wallpaper_ready),
-                    color = MulberryPrimary,
-                    style = TextStyle(
-                        fontFamily = PoppinsFontFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                        lineHeight = 21.sp
-                    ),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            uiState.errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    color = MulberryError,
-                    style = TextStyle(
-                        fontFamily = PoppinsFontFamily,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
-                    ),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            PrimaryOnboardingButton(
-                text = stringResource(R.string.onboarding_wallpaper_done),
-                onClick = onAllDone,
-                enabled = uiState.canComplete && !uiState.isBusy,
-                modifier = Modifier.testTag(TestTags.ONBOARDING_WALLPAPER_DONE_BUTTON)
+            WallpaperCompletionSection(
+                isWallpaperSelected = uiState.wallpaperStatus.isWallpaperSelected,
+                errorMessage = uiState.errorMessage,
+                canComplete = uiState.canComplete && !uiState.isBusy,
+                onAllDone = onAllDone
             )
         }
 
@@ -271,6 +243,53 @@ private fun OnboardingWallpaperScreen(
         ) {
             WallpaperHelpSheet(onDismiss = { showHelp = false })
         }
+    }
+}
+
+@Composable
+private fun WallpaperCompletionSection(
+    isWallpaperSelected: Boolean,
+    errorMessage: String?,
+    canComplete: Boolean,
+    onAllDone: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (isWallpaperSelected) {
+            Text(
+                text = stringResource(R.string.onboarding_wallpaper_ready),
+                color = MulberryPrimary,
+                style = TextStyle(
+                    fontFamily = PoppinsFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    lineHeight = 21.sp
+                ),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        errorMessage?.let { message ->
+            Text(
+                text = message,
+                color = MulberryError,
+                style = TextStyle(
+                    fontFamily = PoppinsFontFamily,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                ),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        PrimaryOnboardingButton(
+            text = stringResource(R.string.onboarding_wallpaper_done),
+            onClick = onAllDone,
+            enabled = canComplete,
+            modifier = Modifier.testTag(TestTags.ONBOARDING_WALLPAPER_DONE_BUTTON)
+        )
     }
 }
 
@@ -588,22 +607,50 @@ private fun PresetCard(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(15.38.dp)
-    Image(
-        painter = painterResource(preset.thumbnailDrawableResId),
-        contentDescription = preset.label,
-        contentScale = ContentScale.Crop,
+    Box(
         modifier = modifier
             .aspectRatio(171f / 133f)
             .clip(shape)
-            .then(
-                if (isSelected) {
-                    Modifier.border(3.dp, MulberryPrimary, shape)
-                } else {
-                    Modifier
-                }
-            )
             .clickable(onClick = onClick)
-    )
+    ) {
+        Image(
+            painter = painterResource(preset.thumbnailDrawableResId),
+            contentDescription = preset.label,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.46f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CheckmarkIcon()
+            }
+        }
+    }
+}
+
+@Composable
+private fun CheckmarkIcon() {
+    Canvas(modifier = Modifier.size(34.dp)) {
+        val strokeWidth = 4.dp.toPx()
+        drawLine(
+            color = Color.White,
+            start = Offset(size.width * 0.22f, size.height * 0.54f),
+            end = Offset(size.width * 0.43f, size.height * 0.74f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = Color.White,
+            start = Offset(size.width * 0.43f, size.height * 0.74f),
+            end = Offset(size.width * 0.80f, size.height * 0.30f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+    }
 }
 
 @Composable

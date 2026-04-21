@@ -1,0 +1,51 @@
+Mulberry Privacy Policy
+
+Effective date: Placeholder
+
+This is a placeholder privacy policy for development and testing. It is written to describe the intended behavior of Mulberry at a product level and must be reviewed and replaced with a final legal policy before public launch.
+
+1. Information we collect
+
+Mulberry may collect account information such as your Google sign-in identifier, display name, and session details so the app can authenticate you and keep your account secure. During onboarding, Mulberry may store your name, your partner's display name, and your relationship anniversary so the paired experience can be personalized.
+
+Mulberry stores drawing data that you or your paired partner create on the shared canvas. This can include strokes, colors, brush widths, erase actions, clear actions, canvas snapshots, and revision metadata used to keep both devices in sync.
+
+Mulberry may collect device and technical information needed to operate the app, such as app version, environment, device push tokens, sync status, crash diagnostics, and timestamps for account, pairing, and canvas updates.
+
+2. Information stored only on your device
+
+Your local background image is intended to remain device-local. It is used as the private base layer behind the shared canvas and is not part of the shared drawing state. If you upload or select a background inside the app, Mulberry stores a copy locally so the live wallpaper can render after the app is closed.
+
+3. How we use information
+
+Mulberry uses your information to authenticate your account, pair you with your partner, sync the shared canvas, update the live wallpaper, maintain local and server-side recovery state, and provide basic support and reliability diagnostics.
+
+Canvas updates may be sent through active WebSocket sync while the app is open. When the app is backgrounded, Mulberry may use push notifications to wake the device briefly and fetch the latest canvas snapshot so the wallpaper can catch up.
+
+4. Pairing and shared content
+
+When you pair with another user, the shared canvas becomes visible to both paired devices. Either paired user may draw, erase, or clear the canvas. Local backgrounds are not shared. The other user can see shared canvas content but cannot see your private device background.
+
+5. Push notifications
+
+Mulberry uses Firebase Cloud Messaging for background canvas update signals. Push payloads are intended to contain only minimal routing and revision metadata, such as the paired session identifier and latest canvas revision. Push payloads should not contain full drawing content.
+
+6. Data retention
+
+Mulberry may retain account, pairing, session, and canvas operation history for as long as needed to provide sync, recovery, and account functionality. Local reset, logout, or account deletion flows may remove local data from the device. Server-side deletion behavior must be defined in the production privacy policy.
+
+7. Security
+
+Mulberry uses encrypted transport for network communication. Access to paired canvas data requires an authenticated app session. The live wallpaper is passive and does not bypass Android lock screen security.
+
+8. Third-party services
+
+Mulberry currently relies on Google sign-in for authentication and Firebase Cloud Messaging for push delivery. These services may process technical information according to their own policies.
+
+9. Your choices
+
+You can change or remove your device-local background from within the app. You can log out or reset local app data from settings. Future production policy text should describe account deletion, data export, and contact options.
+
+10. Contact
+
+This placeholder does not provide a real contact channel. Replace this section with the appropriate privacy contact before launch.
