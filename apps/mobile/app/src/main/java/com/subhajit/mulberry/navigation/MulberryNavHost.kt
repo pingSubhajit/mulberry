@@ -6,6 +6,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.subhajit.mulberry.app.bootstrap.BootstrapRoute
+import com.subhajit.mulberry.app.bootstrap.ReleaseStartupGateAfterFirstFrame
 import com.subhajit.mulberry.auth.AuthLandingRoute
 import com.subhajit.mulberry.home.CanvasHomeRoute
 import com.subhajit.mulberry.home.CanvasSurfaceRoute
@@ -39,6 +40,7 @@ fun MulberryNavHost(
         }
 
         composable(AppRoute.AuthLanding.route) {
+            ReleaseStartupGateAfterFirstFrame()
             AuthLandingRoute(
                 onNavigateToBootstrap = {
                     navController.navigate(AppRoute.Bootstrap.route) {
@@ -52,6 +54,7 @@ fun MulberryNavHost(
         }
 
         composable(AppRoute.OnboardingName.route) {
+            ReleaseStartupGateAfterFirstFrame()
             OnboardingNameRoute(
                 onNavigateToDetails = {
                     navController.navigate(AppRoute.OnboardingDetails.route)
@@ -63,6 +66,7 @@ fun MulberryNavHost(
         }
 
         composable(AppRoute.OnboardingDetails.route) {
+            ReleaseStartupGateAfterFirstFrame()
             OnboardingDetailsRoute(
                 onNavigateToBootstrap = {
                     navController.navigate(AppRoute.Bootstrap.route) {
@@ -74,6 +78,7 @@ fun MulberryNavHost(
         }
 
         composable(AppRoute.PairingHub.route) {
+            ReleaseStartupGateAfterFirstFrame()
             PairingHubRoute(
                 onNavigateToCodeEntry = {
                     navController.navigate(AppRoute.InviteCodeEntry.route)
@@ -82,6 +87,7 @@ fun MulberryNavHost(
         }
 
         composable(AppRoute.InviteCodeEntry.route) {
+            ReleaseStartupGateAfterFirstFrame()
             InviteCodeEntryRoute(
                 onNavigateToBootstrap = {
                     navController.navigate(AppRoute.Bootstrap.route) {
@@ -95,6 +101,7 @@ fun MulberryNavHost(
         }
 
         composable(AppRoute.InviteAcceptance.route) {
+            ReleaseStartupGateAfterFirstFrame()
             InviteAcceptanceRoute(
                 onNavigateToBootstrap = {
                     navController.navigate(AppRoute.Bootstrap.route) {
@@ -108,6 +115,7 @@ fun MulberryNavHost(
         }
 
         composable(AppRoute.CanvasHome.route) {
+            ReleaseStartupGateAfterFirstFrame()
             CanvasHomeRoute(
                 onNavigateToCanvas = {
                     navController.navigate(AppRoute.CanvasSurface.route)
@@ -122,16 +130,19 @@ fun MulberryNavHost(
         }
 
         composable(AppRoute.CanvasSurface.route) {
+            ReleaseStartupGateAfterFirstFrame()
             CanvasSurfaceRoute()
         }
 
         composable(AppRoute.LockScreenPlaceholder.route) {
+            ReleaseStartupGateAfterFirstFrame()
             LockScreenPlaceholderRoute(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
 
         composable(AppRoute.Settings.route) {
+            ReleaseStartupGateAfterFirstFrame()
             SettingsRoute(
                 onNavigateBack = { navController.popBackStack() },
                 onResetAppState = {

@@ -6,7 +6,7 @@
         <item name="colorSecondary">@color/mulberry_accent</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowBackground">@color/surface_dark</item>
+        <item name="android:windowBackground">@color/mulberry_auth_scrim</item>
     </style>
 
     <style name="Theme.Mulberry.Starting" parent="Theme.SplashScreen">

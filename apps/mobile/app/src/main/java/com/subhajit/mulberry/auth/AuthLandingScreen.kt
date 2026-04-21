@@ -14,11 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,16 +27,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
@@ -44,6 +46,7 @@ import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.metadata.AuthLandingMetadata
 import com.subhajit.mulberry.core.ui.metadata.AuthProviderId
 import com.subhajit.mulberry.core.ui.metadata.MulberryUiMetadataProvider
+import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 
 data class AuthLandingUiState(
     val isLoading: Boolean = false,
@@ -106,63 +109,64 @@ private fun AuthLandingScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.0f to Color(0xEE070009),
-                            0.36f to Color(0xAA070009),
-                            0.68f to Color(0x16070009),
-                            1.0f to Color(0x44070009)
-                        )
-                    )
-                )
-        )
-
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 22.dp),
+                .padding(bottom = 12.dp)
+                .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(22.dp)
+            verticalArrangement = Arrangement.spacedBy(28.dp)
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     text = stringResource(metadata.headlineRes),
                     color = Color.White,
-                    style = MaterialTheme.typography.displaySmall,
+                    style = TextStyle(
+                        fontFamily = PoppinsFontFamily,
+                        fontSize = 41.sp,
+                        lineHeight = 46.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
                     text = stringResource(metadata.subtitleRes),
-                    color = Color.White.copy(alpha = 0.92f),
-                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.White,
+                    style = TextStyle(
+                        fontFamily = FontFamily.Default,
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 17.5.sp,
+                        lineHeight = 25.sp,
+                        letterSpacing = 0.25.sp
+                    ),
                     textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp)
+                    modifier = Modifier.width(315.dp)
                 )
             }
 
             uiState.errorMessage?.let {
                 Surface(
                     color = Color(0xDFFFFFFF),
-                    contentColor = MaterialTheme.colorScheme.error,
+                    contentColor = Color(0xFFB31329),
                     shape = RoundedCornerShape(18.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = it,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = TextStyle(
+                            fontFamily = PoppinsFontFamily,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                     )
                 }
@@ -171,43 +175,49 @@ private fun AuthLandingScreen(
             Button(
                 onClick = onGoogleSignIn,
                 enabled = !uiState.isLoading && googleProvider.enabled,
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(15.38.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color.White,
-                    contentColor = Color(0xFF5F5D62),
+                    contentColor = Color(0xFF595959),
                     disabledContainerColor = Color.White.copy(alpha = 0.72f),
-                    disabledContentColor = Color(0xFF5F5D62).copy(alpha = 0.72f)
+                    disabledContentColor = Color(0xFF595959).copy(alpha = 0.72f)
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(64.dp)
+                    .height(50.dp)
                     .testTag(TestTags.AUTH_GOOGLE_BUTTON)
             ) {
                 Row(
                     horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     if (uiState.isLoading) {
                         CircularProgressIndicator(
-                            color = Color(0xFF5F5D62),
+                            color = Color(0xFF595959),
                             strokeWidth = 2.dp,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(21.dp)
                         )
                     } else {
                         Image(
                             painter = painterResource(googleProvider.iconDrawableRes),
                             contentDescription = null,
-                            modifier = Modifier.size(26.dp)
+                            modifier = Modifier.size(21.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.size(10.dp))
                     Text(
                         text = if (uiState.isLoading) {
                             stringResource(com.subhajit.mulberry.R.string.auth_signing_in)
                         } else {
                             stringResource(googleProvider.labelRes)
                         },
-                        style = MaterialTheme.typography.labelLarge,
+                        style = TextStyle(
+                            fontFamily = PoppinsFontFamily,
+                            fontSize = 13.5.sp,
+                            lineHeight = 24.sp,
+                            fontWeight = FontWeight.SemiBold
+                        ),
                         fontWeight = FontWeight.SemiBold
                     )
                 }
