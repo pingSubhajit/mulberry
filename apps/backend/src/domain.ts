@@ -11,10 +11,18 @@ export const InviteStatuses = [
   "DECLINED",
   "EXPIRED",
 ] as const
+export const CanvasOperationTypes = [
+  "ADD_STROKE",
+  "APPEND_POINTS",
+  "FINISH_STROKE",
+  "DELETE_STROKE",
+  "CLEAR_CANVAS",
+] as const
 
 export type AuthStatus = (typeof AuthStatuses)[number]
 export type PairingStatus = (typeof PairingStatuses)[number]
 export type InviteStatus = (typeof InviteStatuses)[number]
+export type CanvasOperationType = (typeof CanvasOperationTypes)[number]
 
 export interface InviteSummary {
   inviteId: string
@@ -64,6 +72,44 @@ export interface AcceptInviteResponse {
   bootstrapState: BootstrapResponse
 }
 
+export interface CanvasOperationEnvelope {
+  clientOperationId: string
+  actorUserId: string
+  pairSessionId: string
+  type: CanvasOperationType
+  strokeId: string | null
+  payload: unknown
+  clientCreatedAt: string
+  serverRevision: number
+  createdAt: string
+}
+
+export interface ClientCanvasOperation {
+  clientOperationId: string
+  type: CanvasOperationType
+  strokeId?: string | null
+  payload: unknown
+  clientCreatedAt: string
+}
+
+export interface CanvasOpsResponse {
+  operations: CanvasOperationEnvelope[]
+}
+
+export interface CanvasSnapshotResponse {
+  pairSessionId: string
+  revision: number
+  snapshot: unknown
+  updatedAt: string | null
+}
+
+export interface CanvasSyncBootstrap {
+  pairSessionId: string
+  userId: string
+  latestRevision: number
+  missedOperations: CanvasOperationEnvelope[]
+}
+
 export interface UserRecord {
   id: string
   google_subject: string
@@ -97,6 +143,19 @@ export interface PairSessionRecord {
   id: string
   user_one_id: string
   user_two_id: string
+}
+
+export interface CanvasOperationRecord {
+  id: string
+  pair_session_id: string
+  server_revision: number
+  client_operation_id: string
+  actor_user_id: string
+  type: CanvasOperationType
+  stroke_id: string | null
+  payload_json: unknown
+  client_created_at: Date | string
+  created_at: Date | string
 }
 
 export interface GoogleIdentity {

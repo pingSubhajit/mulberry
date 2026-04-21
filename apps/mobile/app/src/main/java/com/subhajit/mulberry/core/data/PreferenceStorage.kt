@@ -29,6 +29,10 @@ object PreferenceStorage {
         stringPreferencesKey("onboarding_draft_partner_display_name")
     val onboardingDraftAnniversaryDate =
         stringPreferencesKey("onboarding_draft_anniversary_date")
+    val syncLastAppliedServerRevision =
+        stringPreferencesKey("sync_last_applied_server_revision")
+    val syncLastError = stringPreferencesKey("sync_last_error")
+    val syncPendingOperationsJson = stringPreferencesKey("sync_pending_operations_json")
 
     val placeholderPairingControlsOverride =
         booleanPreferencesKey("flag_placeholder_pairing_controls_override")

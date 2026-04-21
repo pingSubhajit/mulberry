@@ -156,6 +156,83 @@ describe("Mulberry backend", () => {
     expect(accept.json().bootstrapState.pairingStatus).toBe("PAIRED")
   })
 
+  it("hydrates invitee onboarding from inviter profile when code is redeemed during onboarding", async () => {
+    const inviter = await signIn("subhajit@elaris.dev", "Subhajit")
+    await completeProfile(inviter.accessToken, "Subhajit", "Ankita", "2026-01-01")
+    const createInvite = await app.inject({
+      method: "POST",
+      url: "/invites",
+      headers: bearer(inviter.accessToken),
+    })
+    const invite = createInvite.json()
+
+    const recipient = await signIn("ankita@elaris.dev", "Ankita Google")
+    const redeem = await app.inject({
+      method: "POST",
+      url: "/invites/redeem",
+      headers: bearer(recipient.accessToken),
+      payload: {
+        code: invite.code,
+      },
+    })
+
+    expect(redeem.statusCode).toBe(200)
+    const body = redeem.json()
+    expect(body.bootstrapState.onboardingCompleted).toBe(true)
+    expect(body.bootstrapState.pairingStatus).toBe("INVITE_PENDING_ACCEPTANCE")
+    expect(body.bootstrapState.userDisplayName).toBe("Ankita")
+    expect(body.bootstrapState.partnerDisplayName).toBe("Subhajit")
+    expect(body.bootstrapState.anniversaryDate).toBe("2026-01-01")
+    expect(body.bootstrapState.invite.inviterDisplayName).toBe("Subhajit")
+    expect(body.bootstrapState.invite.recipientDisplayName).toBe("Ankita")
+
+    const retry = await app.inject({
+      method: "POST",
+      url: "/invites/redeem",
+      headers: bearer(recipient.accessToken),
+      payload: {
+        code: invite.code,
+      },
+    })
+
+    expect(retry.statusCode).toBe(200)
+    expect(retry.json().bootstrapState.pairingStatus).toBe("INVITE_PENDING_ACCEPTANCE")
+  })
+
+  it("declining an invite clears invite-derived onboarding and returns to onboarding", async () => {
+    const inviter = await signIn("subhajit@elaris.dev", "Subhajit")
+    await completeProfile(inviter.accessToken, "Subhajit", "Ankita", "2026-01-01")
+    const createInvite = await app.inject({
+      method: "POST",
+      url: "/invites",
+      headers: bearer(inviter.accessToken),
+    })
+    const invite = createInvite.json()
+    const recipient = await signIn("ankita@elaris.dev", "Ankita Google")
+    await app.inject({
+      method: "POST",
+      url: "/invites/redeem",
+      headers: bearer(recipient.accessToken),
+      payload: {
+        code: invite.code,
+      },
+    })
+
+    const decline = await app.inject({
+      method: "POST",
+      url: `/invites/${invite.inviteId}/decline`,
+      headers: bearer(recipient.accessToken),
+    })
+
+    expect(decline.statusCode).toBe(200)
+    const body = decline.json()
+    expect(body.onboardingCompleted).toBe(false)
+    expect(body.pairingStatus).toBe("UNPAIRED")
+    expect(body.userDisplayName).toBeNull()
+    expect(body.partnerDisplayName).toBeNull()
+    expect(body.anniversaryDate).toBeNull()
+  })
+
   it("rejects expired and already consumed invite codes deterministically", async () => {
     const inviter = await signIn("subhajit@elaris.dev", "Subhajit")
     await completeProfile(inviter.accessToken, "Subhajit", "Ankita", "2026-01-01")
@@ -218,6 +295,98 @@ describe("Mulberry backend", () => {
     expect(consumedRedeem.statusCode).toBe(400)
   })
 
+  it("persists canvas operations with monotonic revisions and deduplicates client retries", async () => {
+    const { inviter } = await pairUsers()
+    const operation = {
+      clientOperationId: "client-op-1",
+      type: "ADD_STROKE",
+      strokeId: "stroke-1",
+      payload: {
+        id: "stroke-1",
+        colorArgb: 4278190080,
+        width: 8,
+        createdAt: 123,
+        firstPoint: { x: 10, y: 20 },
+      },
+      clientCreatedAt: new Date().toISOString(),
+    }
+
+    const first = await app.injectWS("/canvas/sync")
+    first.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: inviter.accessToken,
+        pairSessionId: inviter.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    await nextWsJson(first)
+    first.send(JSON.stringify({ type: "CLIENT_OP", operation }))
+    const ack = await nextWsJson(first)
+    expect(ack.type).toBe("ACK")
+    expect(ack.serverRevision).toBe(1)
+
+    first.send(JSON.stringify({ type: "CLIENT_OP", operation }))
+    const duplicateAck = await nextWsJson(first)
+    expect(duplicateAck.serverRevision).toBe(1)
+
+    const ops = await app.inject({
+      method: "GET",
+      url: "/canvas/ops?afterRevision=0",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(ops.statusCode).toBe(200)
+    expect(ops.json().operations).toHaveLength(1)
+    first.close()
+  })
+
+  it("broadcasts accepted canvas operations to the paired peer", async () => {
+    const { inviter, recipient } = await pairUsers()
+    const first = await app.injectWS("/canvas/sync")
+    const second = await app.injectWS("/canvas/sync")
+
+    first.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: inviter.accessToken,
+        pairSessionId: inviter.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    second.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: recipient.accessToken,
+        pairSessionId: recipient.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    await nextWsJson(first)
+    await nextWsJson(second)
+
+    const peerMessage = nextWsJson(second)
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP",
+        operation: {
+          clientOperationId: "client-op-broadcast",
+          type: "CLEAR_CANVAS",
+          strokeId: null,
+          payload: {},
+          clientCreatedAt: new Date().toISOString(),
+        },
+      }),
+    )
+
+    const ack = await nextWsJson(first)
+    const serverOp = await peerMessage
+    expect(ack.type).toBe("ACK")
+    expect(serverOp.type).toBe("SERVER_OP")
+    expect(serverOp.operation.serverRevision).toBe(1)
+    first.close()
+    second.close()
+  })
+
   async function signIn(email: string, name: string) {
     const response = await app.inject({
       method: "POST",
@@ -252,10 +421,49 @@ describe("Mulberry backend", () => {
     })
     expect(response.statusCode).toBe(200)
   }
+
+  async function pairUsers() {
+    const inviter = await signIn("subhajit@elaris.dev", "Subhajit")
+    await completeProfile(inviter.accessToken, "Subhajit", "Ankita", "2026-01-01")
+    const createInvite = await app.inject({
+      method: "POST",
+      url: "/invites",
+      headers: bearer(inviter.accessToken),
+    })
+    const invite = createInvite.json()
+
+    const recipient = await signIn("ankita@elaris.dev", "Ankita")
+    await completeProfile(recipient.accessToken, "Ankita", "Subhajit", "2026-01-01")
+    await app.inject({
+      method: "POST",
+      url: "/invites/redeem",
+      headers: bearer(recipient.accessToken),
+      payload: { code: invite.code },
+    })
+    const accept = await app.inject({
+      method: "POST",
+      url: `/invites/${invite.inviteId}/accept`,
+      headers: bearer(recipient.accessToken),
+    })
+    expect(accept.statusCode).toBe(200)
+    const pairSessionId = accept.json().pairSessionId as string
+    return {
+      inviter: { ...inviter, pairSessionId },
+      recipient: { ...recipient, pairSessionId },
+    }
+  }
 })
 
 function bearer(accessToken: string) {
   return {
     authorization: `Bearer ${accessToken}`,
   }
+}
+
+function nextWsJson(socket: { once: (event: string, listener: (raw: unknown) => void) => void }) {
+  return new Promise<Record<string, any>>((resolve) => {
+    socket.once("message", (raw) => {
+      resolve(JSON.parse(String(raw)))
+    })
+  })
 }

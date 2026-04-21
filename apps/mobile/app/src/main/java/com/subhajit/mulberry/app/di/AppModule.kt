@@ -32,6 +32,14 @@ import com.subhajit.mulberry.onboarding.OnboardingDraftRepository
 import com.subhajit.mulberry.onboarding.ProfileRepository
 import com.subhajit.mulberry.pairing.BackendInviteRepository
 import com.subhajit.mulberry.pairing.InviteRepository
+import com.subhajit.mulberry.sync.CanvasSyncClient
+import com.subhajit.mulberry.sync.CanvasSyncRepository
+import com.subhajit.mulberry.sync.DataStoreSyncMetadataRepository
+import com.subhajit.mulberry.sync.DefaultCanvasSyncRepository
+import com.subhajit.mulberry.sync.DefaultRemoteOperationApplier
+import com.subhajit.mulberry.sync.OkHttpCanvasSyncClient
+import com.subhajit.mulberry.sync.RemoteOperationApplier
+import com.subhajit.mulberry.sync.SyncMetadataRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.DataStoreBackgroundImageRepository
@@ -122,6 +130,30 @@ abstract class AppBindingsModule {
     abstract fun bindInviteRepository(
         implementation: BackendInviteRepository
     ): InviteRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCanvasSyncClient(
+        implementation: OkHttpCanvasSyncClient
+    ): CanvasSyncClient
+
+    @Binds
+    @Singleton
+    abstract fun bindCanvasSyncRepository(
+        implementation: DefaultCanvasSyncRepository
+    ): CanvasSyncRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindRemoteOperationApplier(
+        implementation: DefaultRemoteOperationApplier
+    ): RemoteOperationApplier
+
+    @Binds
+    @Singleton
+    abstract fun bindSyncMetadataRepository(
+        implementation: DataStoreSyncMetadataRepository
+    ): SyncMetadataRepository
 }
 
 @Module

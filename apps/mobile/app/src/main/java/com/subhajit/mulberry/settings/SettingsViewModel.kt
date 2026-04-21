@@ -10,6 +10,7 @@ import com.subhajit.mulberry.core.flags.FeatureFlags
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 import com.subhajit.mulberry.drawing.DrawingRepository
+import com.subhajit.mulberry.sync.CanvasSyncRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
@@ -41,6 +42,7 @@ class SettingsViewModel @Inject constructor(
     featureFlagProvider: FeatureFlagProvider,
     private val authRepository: AuthRepository,
     private val drawingRepository: DrawingRepository,
+    private val canvasSyncRepository: CanvasSyncRepository,
     private val backgroundImageRepository: BackgroundImageRepository,
     private val canvasSnapshotRenderer: CanvasSnapshotRenderer,
     private val wallpaperCoordinator: WallpaperCoordinator,
@@ -74,6 +76,7 @@ class SettingsViewModel @Inject constructor(
     fun onResetAppState() {
         viewModelScope.launch {
             sessionRepository.reset()
+            canvasSyncRepository.reset()
             drawingRepository.resetAllDrawingState()
             canvasSnapshotRenderer.clearSnapshots()
             backgroundImageRepository.clearBackground()
@@ -85,6 +88,7 @@ class SettingsViewModel @Inject constructor(
 
     fun onLogout() {
         viewModelScope.launch {
+            canvasSyncRepository.reset()
             authRepository.logout()
             _effects.emit(SettingsEffect.RestartFromBootstrap)
         }

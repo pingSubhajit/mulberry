@@ -1,4 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
+import fastifyWebsocket from "@fastify/websocket"
+import { CanvasSyncHub } from "./canvasSync.js"
 import type { AppConfig } from "./config.js"
 import { loadConfig } from "./config.js"
 import { createDatabase, type Database } from "./db.js"
@@ -16,7 +18,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const db = options.db ?? (await createDatabase(config.databaseUrl))
   const googleVerifier = options.googleVerifier ?? new DefaultGoogleTokenVerifier(config)
   const service = new MulberryService(db, googleVerifier)
+  const canvasSyncHub = new CanvasSyncHub(service)
   const app = Fastify({ logger: false })
+  await app.register(fastifyWebsocket)
 
   app.addHook("onClose", async () => {
     await db.end()
@@ -95,6 +99,23 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       throw new HttpError(400, "inviteId is required")
     }
     return service.declineInvite(requireBearerToken(request), params.inviteId)
+  })
+
+  app.get("/canvas/ops", async (request) => {
+    const query = request.query as { afterRevision?: string }
+    const afterRevision = Number(query.afterRevision ?? "0")
+    return service.listCanvasOperations(
+      requireBearerToken(request),
+      Number.isFinite(afterRevision) ? afterRevision : 0,
+    )
+  })
+
+  app.get("/canvas/snapshot", async (request) => {
+    return service.getCanvasSnapshot(requireBearerToken(request))
+  })
+
+  app.get("/canvas/sync", { websocket: true }, (socket) => {
+    canvasSyncHub.attach(socket)
   })
 
   app.get("/health", async (_request, reply) => {

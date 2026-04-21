@@ -65,3 +65,44 @@ data class AcceptInviteResponse(
     val pairSessionId: String,
     val bootstrapState: BootstrapResponse
 )
+
+data class CanvasOpsResponse(
+    val operations: List<CanvasOperationEnvelopeResponse>
+)
+
+data class CanvasSnapshotResponse(
+    val pairSessionId: String,
+    val revision: Long,
+    val snapshot: CanvasSnapshotPayload,
+    val updatedAt: String?
+)
+
+data class CanvasSnapshotPayload(
+    val strokes: List<CanvasSnapshotStroke> = emptyList()
+)
+
+data class CanvasSnapshotStroke(
+    val id: String,
+    val colorArgb: Long,
+    val width: Float,
+    val createdAt: Long,
+    val points: List<CanvasPointPayload> = emptyList(),
+    val finished: Boolean = true
+)
+
+data class CanvasOperationEnvelopeResponse(
+    val clientOperationId: String,
+    val actorUserId: String,
+    val pairSessionId: String,
+    val type: String,
+    val strokeId: String?,
+    val payload: com.google.gson.JsonObject?,
+    val clientCreatedAt: String,
+    val serverRevision: Long,
+    val createdAt: String
+)
+
+data class CanvasPointPayload(
+    val x: Float,
+    val y: Float
+)

@@ -6,6 +6,7 @@ import android.net.Uri
 import com.subhajit.mulberry.core.config.AppConfig
 import com.subhajit.mulberry.core.flags.FeatureFlagProvider
 import com.subhajit.mulberry.core.flags.FeatureFlags
+import com.subhajit.mulberry.bootstrap.BootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
@@ -18,6 +19,10 @@ import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.drawing.model.ToolState
 import com.subhajit.mulberry.pairing.CreateInviteResult
 import com.subhajit.mulberry.pairing.InviteRepository
+import com.subhajit.mulberry.sync.CanvasSyncRepository
+import com.subhajit.mulberry.sync.SyncOperationPayload
+import com.subhajit.mulberry.sync.newClientOperation
+import com.subhajit.mulberry.sync.toAddStrokePayload
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageState
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
@@ -52,10 +57,12 @@ data class CanvasHomeUiState(
 @HiltViewModel
 class CanvasHomeViewModel @Inject constructor(
     repository: SessionBootstrapRepository,
+    private val bootstrapRepository: BootstrapRepository,
     featureFlagProvider: FeatureFlagProvider,
     private val drawingRepository: DrawingRepository,
     private val strokeHitTester: StrokeHitTester,
     private val inviteRepository: InviteRepository,
+    private val canvasSyncRepository: CanvasSyncRepository,
     private val backgroundImageRepository: BackgroundImageRepository,
     private val wallpaperCoordinator: WallpaperCoordinator,
     appConfig: AppConfig
@@ -64,6 +71,9 @@ class CanvasHomeViewModel @Inject constructor(
     private val showInviteSheet = MutableStateFlow(false)
     private val inviteLoadingState = MutableStateFlow(false)
     private val inviteErrorState = MutableStateFlow<String?>(null)
+    private var activeSyncStrokeId: String? = null
+    private val pendingSyncPoints = mutableListOf<StrokePoint>()
+    private var lastAppendFlushAt = 0L
 
     private val baseState = combine(
         combine(
@@ -137,6 +147,12 @@ class CanvasHomeViewModel @Inject constructor(
         }
     }
 
+    fun refreshBootstrapState() {
+        viewModelScope.launch {
+            bootstrapRepository.refreshBootstrap()
+        }
+    }
+
     fun onInviteRequested() {
         showInviteSheet.value = true
         viewModelScope.launch {
@@ -145,6 +161,7 @@ class CanvasHomeViewModel @Inject constructor(
             inviteRepository.createInvite()
                 .onSuccess {
                     inviteLoadingState.value = false
+                    bootstrapRepository.refreshBootstrap()
                 }
                 .onFailure { error ->
                     inviteLoadingState.value = false
@@ -155,26 +172,48 @@ class CanvasHomeViewModel @Inject constructor(
 
     fun onInviteSheetDismissed() {
         showInviteSheet.value = false
+        refreshBootstrapState()
     }
 
     fun onCanvasPress(point: StrokePoint) {
         if (uiState.value.toolState.activeTool != DrawingTool.DRAW) return
         viewModelScope.launch {
-            drawingRepository.startStroke(point)
+            val stroke = drawingRepository.startStroke(point) ?: return@launch
+            activeSyncStrokeId = stroke.id
+            pendingSyncPoints.clear()
+            lastAppendFlushAt = System.currentTimeMillis()
+            canvasSyncRepository.queueLocalOperation(
+                newClientOperation(
+                    type = com.subhajit.mulberry.drawing.model.DrawingOperationType.ADD_STROKE,
+                    strokeId = stroke.id,
+                    payload = stroke.toAddStrokePayload()
+                )
+            )
         }
     }
 
     fun onCanvasDrag(point: StrokePoint) {
         if (uiState.value.toolState.activeTool != DrawingTool.DRAW) return
         viewModelScope.launch {
-            drawingRepository.appendPoint(point)
+            drawingRepository.appendPoint(point) ?: return@launch
+            pendingSyncPoints.add(point)
+            flushAppendPointsIfNeeded(force = false)
         }
     }
 
     fun onCanvasRelease() {
         if (uiState.value.toolState.activeTool != DrawingTool.DRAW) return
         viewModelScope.launch {
-            drawingRepository.finishStroke()
+            flushAppendPointsIfNeeded(force = true)
+            val stroke = drawingRepository.finishStroke() ?: return@launch
+            canvasSyncRepository.queueLocalOperation(
+                newClientOperation(
+                    type = com.subhajit.mulberry.drawing.model.DrawingOperationType.FINISH_STROKE,
+                    strokeId = stroke.id,
+                    payload = SyncOperationPayload.FinishStroke
+                )
+            )
+            activeSyncStrokeId = null
         }
     }
 
@@ -188,6 +227,13 @@ class CanvasHomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             drawingRepository.eraseStroke(stroke.id)
+            canvasSyncRepository.queueLocalOperation(
+                newClientOperation(
+                    type = com.subhajit.mulberry.drawing.model.DrawingOperationType.DELETE_STROKE,
+                    strokeId = stroke.id,
+                    payload = SyncOperationPayload.DeleteStroke
+                )
+            )
         }
     }
 
@@ -232,8 +278,32 @@ class CanvasHomeViewModel @Inject constructor(
     fun onClearConfirmed() {
         viewModelScope.launch {
             drawingRepository.clearCanvas()
+            canvasSyncRepository.queueLocalOperation(
+                newClientOperation(
+                    type = com.subhajit.mulberry.drawing.model.DrawingOperationType.CLEAR_CANVAS,
+                    strokeId = null,
+                    payload = SyncOperationPayload.ClearCanvas
+                )
+            )
             showClearConfirmation.value = false
         }
+    }
+
+    private suspend fun flushAppendPointsIfNeeded(force: Boolean) {
+        val strokeId = activeSyncStrokeId ?: return
+        if (pendingSyncPoints.isEmpty()) return
+        val now = System.currentTimeMillis()
+        if (!force && now - lastAppendFlushAt < 33L) return
+        val points = pendingSyncPoints.toList()
+        pendingSyncPoints.clear()
+        lastAppendFlushAt = now
+        canvasSyncRepository.queueLocalOperation(
+            newClientOperation(
+                type = com.subhajit.mulberry.drawing.model.DrawingOperationType.APPEND_POINTS,
+                strokeId = strokeId,
+                payload = SyncOperationPayload.AppendPoints(points)
+            )
+        )
     }
 
     fun onBackgroundImageSelected(uri: Uri) {

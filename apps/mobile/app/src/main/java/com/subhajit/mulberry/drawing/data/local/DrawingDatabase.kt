@@ -11,7 +11,7 @@ import androidx.room.TypeConverters
         DrawingOperationEntity::class,
         CanvasMetadataEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(RoomConverters::class)

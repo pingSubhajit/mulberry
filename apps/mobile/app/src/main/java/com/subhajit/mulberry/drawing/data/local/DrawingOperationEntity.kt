@@ -11,5 +11,8 @@ data class DrawingOperationEntity(
     val strokeId: String? = null,
     val payload: String? = null,
     val revision: Long,
-    val createdAt: Long
+    val createdAt: Long,
+    val clientOperationId: String? = null,
+    val serverRevision: Long? = null,
+    val syncStatus: String = "LOCAL_ONLY"
 )

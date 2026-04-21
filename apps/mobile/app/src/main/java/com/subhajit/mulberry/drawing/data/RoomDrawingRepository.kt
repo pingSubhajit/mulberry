@@ -68,26 +68,30 @@ class RoomDrawingRepository @Inject constructor(
         )
     }
 
-    override suspend fun startStroke(point: StrokePoint) {
+    override suspend fun startStroke(point: StrokePoint): Stroke? {
         val metadata = currentMetadata()
-        if (metadata.selectedTool != DrawingTool.DRAW) return
+        if (metadata.selectedTool != DrawingTool.DRAW) return null
 
-        activeStroke.value = strokeBuilder.startStroke(
+        val stroke = strokeBuilder.startStroke(
             point = point,
             brushStyle = BrushStyle(
                 colorArgb = metadata.selectedColorArgb,
                 width = metadata.selectedWidth
             )
         )
+        activeStroke.value = stroke
+        return stroke
     }
 
-    override suspend fun appendPoint(point: StrokePoint) {
-        val active = activeStroke.value ?: return
-        activeStroke.value = strokeBuilder.appendPoint(active, point)
+    override suspend fun appendPoint(point: StrokePoint): Stroke? {
+        val active = activeStroke.value ?: return null
+        val next = strokeBuilder.appendPoint(active, point)
+        activeStroke.value = next
+        return next
     }
 
-    override suspend fun finishStroke() {
-        val committedStroke = strokeBuilder.finishStroke(activeStroke.value ?: return) ?: return
+    override suspend fun finishStroke(): Stroke? {
+        val committedStroke = strokeBuilder.finishStroke(activeStroke.value ?: return null) ?: return null
         val now = System.currentTimeMillis()
 
         database.withTransaction {
@@ -99,7 +103,7 @@ class RoomDrawingRepository @Inject constructor(
                 DrawingOperationEntity(
                     type = DrawingOperationType.ADD_STROKE,
                     strokeId = committedStroke.id,
-                    payload = "pointCount=${committedStroke.points.size}",
+                    payload = committedStroke.addStrokePayloadJson(),
                     revision = nextRevision,
                     createdAt = now
                 )
@@ -109,7 +113,7 @@ class RoomDrawingRepository @Inject constructor(
                     DrawingOperationEntity(
                         type = DrawingOperationType.APPEND_POINTS,
                         strokeId = committedStroke.id,
-                        payload = "pointCount=${committedStroke.points.size - 1}",
+                        payload = pointsPayloadJson(committedStroke.points.drop(1)),
                         revision = nextRevision,
                         createdAt = now
                     )
@@ -128,6 +132,7 @@ class RoomDrawingRepository @Inject constructor(
         }
 
         activeStroke.value = null
+        return committedStroke
     }
 
     override suspend fun setBrushColor(colorArgb: Long) {
@@ -189,6 +194,7 @@ class RoomDrawingRepository @Inject constructor(
                 DrawingOperationEntity(
                     type = DrawingOperationType.DELETE_STROKE,
                     strokeId = strokeId,
+                    payload = "{}",
                     revision = nextRevision,
                     createdAt = now
                 )
@@ -213,6 +219,7 @@ class RoomDrawingRepository @Inject constructor(
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.CLEAR_CANVAS,
+                    payload = "{}",
                     revision = nextRevision,
                     createdAt = now
                 )
@@ -220,6 +227,154 @@ class RoomDrawingRepository @Inject constructor(
             canvasMetadataDao.upsertMetadata(
                 metadata.copy(
                     revision = nextRevision,
+                    lastModifiedAt = now,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+    }
+
+    override suspend fun applyRemoteAddStroke(stroke: Stroke, serverRevision: Long) {
+        activeStroke.value = null
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val metadata = currentMetadata()
+            drawingDao.insertStroke(stroke.toEntity())
+            drawingDao.deleteStrokePoints(stroke.id)
+            drawingDao.insertStrokePoints(stroke.toPointEntities())
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.ADD_STROKE,
+                    strokeId = stroke.id,
+                    payload = stroke.addStrokePayloadJson(),
+                    revision = maxOf(metadata.revision + 1, serverRevision),
+                    createdAt = now,
+                    serverRevision = serverRevision,
+                    syncStatus = "REMOTE_APPLIED"
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = maxOf(metadata.revision, serverRevision),
+                    lastModifiedAt = now,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+    }
+
+    override suspend fun applyRemoteAppendPoints(
+        strokeId: String,
+        points: List<StrokePoint>,
+        serverRevision: Long
+    ) {
+        if (points.isEmpty()) return
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val metadata = currentMetadata()
+            val startIndex = drawingDao.maxPointIndex(strokeId) + 1
+            drawingDao.insertStrokePoints(
+                points.mapIndexed { index, point ->
+                    com.subhajit.mulberry.drawing.data.local.StrokePointEntity(
+                        strokeId = strokeId,
+                        pointIndex = startIndex + index,
+                        x = point.x,
+                        y = point.y
+                    )
+                }
+            )
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.APPEND_POINTS,
+                    strokeId = strokeId,
+                    payload = pointsPayloadJson(points),
+                    revision = maxOf(metadata.revision + 1, serverRevision),
+                    createdAt = now,
+                    serverRevision = serverRevision,
+                    syncStatus = "REMOTE_APPLIED"
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = maxOf(metadata.revision, serverRevision),
+                    lastModifiedAt = now,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+    }
+
+    override suspend fun applyRemoteFinishStroke(strokeId: String, serverRevision: Long) {
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val metadata = currentMetadata()
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.FINISH_STROKE,
+                    strokeId = strokeId,
+                    payload = "{}",
+                    revision = maxOf(metadata.revision + 1, serverRevision),
+                    createdAt = now,
+                    serverRevision = serverRevision,
+                    syncStatus = "REMOTE_APPLIED"
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = maxOf(metadata.revision, serverRevision),
+                    lastModifiedAt = now,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+    }
+
+    override suspend fun applyRemoteDeleteStroke(strokeId: String, serverRevision: Long) {
+        activeStroke.value = null
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val metadata = currentMetadata()
+            drawingDao.deleteStrokeById(strokeId)
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.DELETE_STROKE,
+                    strokeId = strokeId,
+                    payload = "{}",
+                    revision = maxOf(metadata.revision + 1, serverRevision),
+                    createdAt = now,
+                    serverRevision = serverRevision,
+                    syncStatus = "REMOTE_APPLIED"
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = maxOf(metadata.revision, serverRevision),
+                    lastModifiedAt = now,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+    }
+
+    override suspend fun applyRemoteClearCanvas(serverRevision: Long) {
+        activeStroke.value = null
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val metadata = currentMetadata()
+            drawingDao.clearStrokes()
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.CLEAR_CANVAS,
+                    payload = "{}",
+                    revision = maxOf(metadata.revision + 1, serverRevision),
+                    createdAt = now,
+                    serverRevision = serverRevision,
+                    syncStatus = "REMOTE_APPLIED"
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = maxOf(metadata.revision, serverRevision),
                     lastModifiedAt = now,
                     isSnapshotDirty = true
                 )
@@ -239,3 +394,21 @@ class RoomDrawingRepository @Inject constructor(
     private suspend fun currentMetadata(): CanvasMetadataEntity =
         canvasMetadataDao.getMetadata() ?: CanvasMetadataEntity.default()
 }
+
+private fun Stroke.addStrokePayloadJson(): String {
+    val firstPoint = points.firstOrNull()
+    return if (firstPoint == null) {
+        "{}"
+    } else {
+        """{"id":"$id","colorArgb":$colorArgb,"width":$width,"createdAt":$createdAt,"firstPoint":{"x":${firstPoint.x},"y":${firstPoint.y}}}"""
+    }
+}
+
+private fun pointsPayloadJson(points: List<StrokePoint>): String =
+    points.joinToString(
+        prefix = """{"points":[""",
+        postfix = "]}",
+        separator = ","
+    ) { point ->
+        """{"x":${point.x},"y":${point.y}}"""
+    }

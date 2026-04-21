@@ -46,6 +46,17 @@ class BootstrapRouteResolverTest {
     }
 
     @Test
+    fun `invite pending user routes to invite acceptance before onboarding completion`() {
+        val state = SessionBootstrapState(
+            authStatus = AuthStatus.SIGNED_IN,
+            hasCompletedOnboarding = false,
+            pairingStatus = PairingStatus.INVITE_PENDING_ACCEPTANCE
+        )
+
+        assertEquals(AppRoute.InviteAcceptance, resolver.resolve(state))
+    }
+
+    @Test
     fun `paired user routes to home`() {
         val state = SessionBootstrapState(
             authStatus = AuthStatus.SIGNED_IN,

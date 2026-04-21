@@ -4,6 +4,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.PUT
+import retrofit2.http.Query
 import retrofit2.http.Path
 
 interface MulberryApiService {
@@ -33,4 +34,10 @@ interface MulberryApiService {
 
     @POST("/invites/{inviteId}/decline")
     suspend fun declineInvite(@Path("inviteId") inviteId: String): BootstrapResponse
+
+    @GET("/canvas/ops")
+    suspend fun getCanvasOperations(@Query("afterRevision") afterRevision: Long): CanvasOpsResponse
+
+    @GET("/canvas/snapshot")
+    suspend fun getCanvasSnapshot(): CanvasSnapshotResponse
 }

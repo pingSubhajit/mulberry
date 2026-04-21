@@ -48,6 +48,31 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       consumed_at TIMESTAMPTZ
     );
+
+    CREATE TABLE IF NOT EXISTS canvas_operations (
+      id TEXT PRIMARY KEY,
+      pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      server_revision BIGINT NOT NULL,
+      client_operation_id TEXT NOT NULL,
+      actor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      stroke_id TEXT,
+      payload_json JSONB NOT NULL,
+      client_created_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (pair_session_id, server_revision),
+      UNIQUE (pair_session_id, actor_user_id, client_operation_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS canvas_operations_pair_revision_idx
+      ON canvas_operations(pair_session_id, server_revision);
+
+    CREATE TABLE IF NOT EXISTS canvas_snapshots (
+      pair_session_id TEXT PRIMARY KEY REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      revision BIGINT NOT NULL DEFAULT 0,
+      snapshot_json JSONB NOT NULL DEFAULT '{"strokes":[]}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `)
 }
 

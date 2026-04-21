@@ -23,6 +23,12 @@ interface DrawingDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertStrokePoints(points: List<StrokePointEntity>)
 
+    @Query("SELECT COALESCE(MAX(pointIndex), -1) FROM stroke_point_entities WHERE strokeId = :strokeId")
+    suspend fun maxPointIndex(strokeId: String): Int
+
+    @Query("DELETE FROM stroke_point_entities WHERE strokeId = :strokeId")
+    suspend fun deleteStrokePoints(strokeId: String)
+
     @Query("DELETE FROM stroke_entities WHERE id = :strokeId")
     suspend fun deleteStrokeById(strokeId: String): Int
 
