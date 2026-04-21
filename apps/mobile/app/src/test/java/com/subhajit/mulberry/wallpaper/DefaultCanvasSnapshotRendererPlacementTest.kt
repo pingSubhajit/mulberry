@@ -25,9 +25,9 @@ class DefaultCanvasSnapshotRendererPlacementTest {
     }
 
     @Test
-    fun placementFallsBackToBitmapDimensionsWhenSourceSizeMissing() {
+    fun placementFallsBackToScreenViewportWhenSourceSizeMissing() {
         val placement = calculateSnapshotPlacement(
-            bitmapWidth = 1080,
+            bitmapWidth = 4320,
             bitmapHeight = 2400,
             sourceWidth = 0,
             sourceHeight = 0,
@@ -36,7 +36,7 @@ class DefaultCanvasSnapshotRendererPlacementTest {
         )
 
         assertEquals(1f, placement.scale, 0.001f)
-        assertEquals(0f, placement.offsetX, 0.001f)
+        assertEquals(1620f, placement.offsetX, 0.001f)
         assertEquals(0f, placement.offsetY, 0.001f)
         assertTrue(placement.viewport.right > placement.viewport.left)
     }

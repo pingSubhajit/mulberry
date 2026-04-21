@@ -199,8 +199,6 @@ internal fun calculateSnapshotPlacement(
 ): SnapshotPlacement {
     val safeBitmapWidth = bitmapWidth.coerceAtLeast(1)
     val safeBitmapHeight = bitmapHeight.coerceAtLeast(1)
-    val safeSourceWidth = sourceWidth.takeIf { it > 0 } ?: safeBitmapWidth
-    val safeSourceHeight = sourceHeight.takeIf { it > 0 } ?: safeBitmapHeight
 
     val viewportWidth = screenWidth
         .takeIf { it > 0 }
@@ -213,6 +211,8 @@ internal fun calculateSnapshotPlacement(
 
     val viewportLeft = (safeBitmapWidth - viewportWidth) / 2f
     val viewportTop = (safeBitmapHeight - viewportHeight) / 2f
+    val safeSourceWidth = sourceWidth.takeIf { it > 0 } ?: viewportWidth
+    val safeSourceHeight = sourceHeight.takeIf { it > 0 } ?: viewportHeight
     val scale = minOf(
         viewportWidth.toFloat() / safeSourceWidth.toFloat(),
         viewportHeight.toFloat() / safeSourceHeight.toFloat()
