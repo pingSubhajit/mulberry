@@ -31,7 +31,7 @@ class BootstrapRouteResolverTest {
             pairingStatus = PairingStatus.UNPAIRED
         )
 
-        assertEquals(AppRoute.PairingHub, resolver.resolve(state))
+        assertEquals(AppRoute.CanvasHome, resolver.resolve(state))
     }
 
     @Test

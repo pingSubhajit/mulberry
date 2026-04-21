@@ -2,9 +2,11 @@ package com.subhajit.elaris.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
 import com.subhajit.elaris.core.config.AppConfig
 import com.subhajit.elaris.core.flags.FeatureFlagProvider
 import com.subhajit.elaris.core.flags.FeatureFlags
+import com.subhajit.elaris.data.bootstrap.PairingStatus
 import com.subhajit.elaris.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.elaris.data.bootstrap.SessionBootstrapState
 import com.subhajit.elaris.drawing.DrawingRepository
@@ -14,13 +16,14 @@ import com.subhajit.elaris.drawing.model.DrawingDefaults
 import com.subhajit.elaris.drawing.model.DrawingTool
 import com.subhajit.elaris.drawing.model.StrokePoint
 import com.subhajit.elaris.drawing.model.ToolState
+import com.subhajit.elaris.pairing.CreateInviteResult
+import com.subhajit.elaris.pairing.InviteRepository
 import com.subhajit.elaris.wallpaper.BackgroundImageRepository
 import com.subhajit.elaris.wallpaper.BackgroundImageState
 import com.subhajit.elaris.wallpaper.WallpaperCoordinator
 import com.subhajit.elaris.wallpaper.WallpaperStatusState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import android.net.Uri
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -38,6 +41,10 @@ data class CanvasHomeUiState(
     ),
     val wallpaperStatus: WallpaperStatusState = WallpaperStatusState(),
     val backgroundImageState: BackgroundImageState = BackgroundImageState(),
+    val currentInvite: CreateInviteResult? = null,
+    val isInviteSheetVisible: Boolean = false,
+    val isInviteLoading: Boolean = false,
+    val inviteErrorMessage: String? = null,
     val showClearConfirmation: Boolean = false,
     val palette: List<Long> = DrawingDefaults.palette
 )
@@ -48,11 +55,15 @@ class CanvasHomeViewModel @Inject constructor(
     featureFlagProvider: FeatureFlagProvider,
     private val drawingRepository: DrawingRepository,
     private val strokeHitTester: StrokeHitTester,
+    private val inviteRepository: InviteRepository,
     private val backgroundImageRepository: BackgroundImageRepository,
     private val wallpaperCoordinator: WallpaperCoordinator,
     appConfig: AppConfig
 ) : ViewModel() {
     private val showClearConfirmation = MutableStateFlow(false)
+    private val showInviteSheet = MutableStateFlow(false)
+    private val inviteLoadingState = MutableStateFlow(false)
+    private val inviteErrorState = MutableStateFlow<String?>(null)
 
     private val baseState = combine(
         combine(
@@ -69,22 +80,27 @@ class CanvasHomeViewModel @Inject constructor(
             )
         },
         wallpaperCoordinator.wallpaperStatus(),
-        backgroundImageRepository.backgroundState
-    ) { partialState, wallpaperStatus, backgroundState ->
+        backgroundImageRepository.backgroundState,
+        inviteRepository.currentInvite
+    ) { partialState, wallpaperStatus, backgroundState, currentInvite ->
         BaseCanvasHomeState(
             bootstrapState = partialState.bootstrapState,
             featureFlags = partialState.featureFlags,
             canvasState = partialState.canvasState,
             toolState = partialState.toolState,
             wallpaperStatus = wallpaperStatus,
-            backgroundState = backgroundState
+            backgroundState = backgroundState,
+            currentInvite = currentInvite
         )
     }
 
     val uiState = combine(
         baseState,
-        showClearConfirmation
-    ) { baseState, clearDialogVisible ->
+        showClearConfirmation,
+        showInviteSheet,
+        inviteLoadingState,
+        inviteErrorState
+    ) { baseState, clearDialogVisible, inviteSheetVisible, inviteLoading, inviteError ->
         CanvasHomeUiState(
             environmentLabel = appConfig.environment.displayName,
             bootstrapState = baseState.bootstrapState,
@@ -93,6 +109,10 @@ class CanvasHomeViewModel @Inject constructor(
             toolState = baseState.toolState,
             wallpaperStatus = baseState.wallpaperStatus,
             backgroundImageState = baseState.backgroundState,
+            currentInvite = baseState.currentInvite,
+            isInviteSheetVisible = inviteSheetVisible,
+            isInviteLoading = inviteLoading,
+            inviteErrorMessage = inviteError,
             showClearConfirmation = clearDialogVisible
         )
     }.stateIn(
@@ -115,6 +135,26 @@ class CanvasHomeViewModel @Inject constructor(
         viewModelScope.launch {
             wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
         }
+    }
+
+    fun onInviteRequested() {
+        showInviteSheet.value = true
+        viewModelScope.launch {
+            inviteLoadingState.value = true
+            inviteErrorState.value = null
+            inviteRepository.createInvite()
+                .onSuccess {
+                    inviteLoadingState.value = false
+                }
+                .onFailure { error ->
+                    inviteLoadingState.value = false
+                    inviteErrorState.value = error.message ?: "Unable to create invite"
+                }
+        }
+    }
+
+    fun onInviteSheetDismissed() {
+        showInviteSheet.value = false
     }
 
     fun onCanvasPress(point: StrokePoint) {
@@ -221,7 +261,8 @@ class CanvasHomeViewModel @Inject constructor(
         val canvasState: CanvasState,
         val toolState: ToolState,
         val wallpaperStatus: WallpaperStatusState,
-        val backgroundState: BackgroundImageState
+        val backgroundState: BackgroundImageState,
+        val currentInvite: CreateInviteResult?
     )
 
     private data class PartialCanvasHomeState(

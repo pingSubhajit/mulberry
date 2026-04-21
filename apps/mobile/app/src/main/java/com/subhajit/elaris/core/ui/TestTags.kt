@@ -20,6 +20,8 @@ object TestTags {
     const val PAIRING_DEMO_BUTTON = "pairing_demo_button"
     const val HOME_SCREEN = "home_screen"
     const val HOME_SETTINGS_BUTTON = "home_settings_button"
+    const val HOME_SHARE_INVITE_BUTTON = "home_share_invite_button"
+    const val HOME_INVITE_SHEET = "home_invite_sheet"
     const val HOME_OPEN_CANVAS_BUTTON = "home_open_canvas_button"
     const val HOME_OPEN_LOCKSCREEN_BUTTON = "home_open_lockscreen_button"
     const val CANVAS_SCREEN = "canvas_screen"

@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,10 +14,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -50,7 +53,9 @@ fun CanvasHomeRoute(
         uiState = uiState,
         onNavigateToCanvas = onNavigateToCanvas,
         onNavigateToLockScreen = onNavigateToLockScreen,
-        onNavigateToSettings = onNavigateToSettings
+        onNavigateToSettings = onNavigateToSettings,
+        onInviteRequested = viewModel::onInviteRequested,
+        onInviteSheetDismissed = viewModel::onInviteSheetDismissed
     )
 }
 
@@ -60,8 +65,72 @@ private fun CanvasHomeScreen(
     uiState: CanvasHomeUiState,
     onNavigateToCanvas: () -> Unit,
     onNavigateToLockScreen: () -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onInviteRequested: () -> Unit,
+    onInviteSheetDismissed: () -> Unit
 ) {
+    if (uiState.isInviteSheetVisible) {
+        ModalBottomSheet(
+            onDismissRequest = onInviteSheetDismissed,
+            modifier = Modifier.testTag(TestTags.HOME_INVITE_SHEET)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Invite your partner",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+
+                when {
+                    uiState.isInviteLoading -> {
+                        Text(
+                            text = "Creating invite code...",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+
+                    uiState.currentInvite != null -> {
+                        Text(
+                            text = uiState.currentInvite.code.chunked(1).joinToString(" "),
+                            style = MaterialTheme.typography.displaySmall
+                        )
+                        Text(
+                            text = "Expires at ${uiState.currentInvite.expiresAt}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+
+                uiState.inviteErrorMessage?.let {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                Text(
+                    text = "Share this code with your partner and ask them to enter it after they sign up.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                Button(
+                    onClick = onInviteRequested,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 24.dp)
+                ) {
+                    Text("Share invite code")
+                }
+            }
+        }
+    }
+
     Scaffold(
         modifier = Modifier.testTag(TestTags.HOME_SCREEN),
         topBar = {
@@ -85,6 +154,43 @@ private fun CanvasHomeScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (uiState.bootstrapState.pairingStatus == com.subhajit.elaris.data.bootstrap.PairingStatus.UNPAIRED) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = buildString {
+                                append("Welcome ")
+                                append(uiState.bootstrapState.userDisplayName ?: "there")
+                            },
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Ask your partner out",
+                            style = MaterialTheme.typography.headlineMedium
+                        )
+                        Text(
+                            text = "${uiState.bootstrapState.userDisplayName ?: "You"} & who?",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Text(
+                            text = "Invite your partner to unlock the full experience.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Button(
+                            onClick = onInviteRequested,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag(TestTags.HOME_SHARE_INVITE_BUTTON)
+                        ) {
+                            Text("Share invite code")
+                        }
+                    }
+                }
+            }
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
