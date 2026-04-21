@@ -3,7 +3,7 @@ import type { AppConfig } from "./config.js"
 import { loadConfig } from "./config.js"
 import { createDatabase, type Database } from "./db.js"
 import { DefaultGoogleTokenVerifier, type GoogleTokenVerifier } from "./googleAuth.js"
-import { ElarisService, HttpError } from "./service.js"
+import { MulberryService, HttpError } from "./service.js"
 
 export interface CreateAppOptions {
   config?: AppConfig
@@ -15,7 +15,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const config = options.config ?? loadConfig()
   const db = options.db ?? (await createDatabase(config.databaseUrl))
   const googleVerifier = options.googleVerifier ?? new DefaultGoogleTokenVerifier(config)
-  const service = new ElarisService(db, googleVerifier)
+  const service = new MulberryService(db, googleVerifier)
   const app = Fastify({ logger: false })
 
   app.addHook("onClose", async () => {

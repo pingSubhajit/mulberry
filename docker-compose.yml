@@ -3,13 +3,13 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: elaris
-      POSTGRES_USER: elaris
-      POSTGRES_PASSWORD: elaris
+      POSTGRES_DB: mulberry
+      POSTGRES_USER: mulberry
+      POSTGRES_PASSWORD: mulberry
     ports:
       - "5432:5432"
     volumes:
-      - elaris-postgres-data:/var/lib/postgresql/data
+      - mulberry-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -26,7 +26,7 @@ services:
         condition: service_healthy
     environment:
       PORT: 8080
-      DATABASE_URL: postgres://elaris:elaris@postgres:5432/elaris
+      DATABASE_URL: postgres://mulberry:mulberry@postgres:5432/mulberry
       ALLOW_DEV_GOOGLE_TOKENS: "true"
       GOOGLE_SERVER_CLIENT_ID: ${GOOGLE_SERVER_CLIENT_ID:-}
     ports:
@@ -44,4 +44,4 @@ services:
       retries: 10
 
 volumes:
-  elaris-postgres-data:
+  mulberry-postgres-data:

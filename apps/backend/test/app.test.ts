@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createApp } from "../src/app.js"
 import { runMigrations, type Database } from "../src/db.js"
 
-describe("Elaris backend", () => {
+describe("Mulberry backend", () => {
   let app: FastifyInstance
   let db: Database
 

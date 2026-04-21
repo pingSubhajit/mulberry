@@ -1,4 +1,4 @@
-xplugins {
+plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
@@ -6,12 +6,31 @@ xplugins {
     alias(libs.plugins.hilt.android)
 }
 
+import java.util.Properties
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use(::load)
+    }
+}
+
+fun localConfigValue(key: String): String =
+    localProperties.getProperty(key)
+        ?: System.getenv(key)
+        ?: ""
+
+fun quotedBuildConfigValue(value: String): String =
+    "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+val googleServerClientId = localConfigValue("GOOGLE_SERVER_CLIENT_ID")
+
 android {
-    namespace = "com.subhajit.elaris"
+    namespace = "com.subhajit.mulberry"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.subhajit.elaris"
+        applicationId = "com.subhajit.mulberry"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -30,14 +49,22 @@ android {
             buildConfigField("String", "APP_ENVIRONMENT", "\"dev\"")
             buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080/\"")
             buildConfigField("boolean", "ENABLE_DEBUG_MENU", "true")
-            buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"\"")
+            buildConfigField(
+                "String",
+                "GOOGLE_SERVER_CLIENT_ID",
+                quotedBuildConfigValue(googleServerClientId)
+            )
         }
         create("prod") {
             dimension = "environment"
             buildConfigField("String", "APP_ENVIRONMENT", "\"prod\"")
-            buildConfigField("String", "API_BASE_URL", "\"https://api.elaris.app/\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://api.mulberry.app/\"")
             buildConfigField("boolean", "ENABLE_DEBUG_MENU", "false")
-            buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"\"")
+            buildConfigField(
+                "String",
+                "GOOGLE_SERVER_CLIENT_ID",
+                quotedBuildConfigValue(googleServerClientId)
+            )
         }
     }
 

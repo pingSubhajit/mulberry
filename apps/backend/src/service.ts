@@ -31,7 +31,7 @@ interface SessionContext {
   user: UserRecord
 }
 
-export class ElarisService {
+export class MulberryService {
   constructor(
     private readonly db: Database,
     private readonly googleVerifier: GoogleTokenVerifier,

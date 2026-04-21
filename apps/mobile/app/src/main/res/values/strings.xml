@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Elaris</string>
+    <string name="app_name">Mulberry</string>
     <string name="app_tagline">A shared lock screen canvas for two.</string>
     <string name="environment_label">Environment</string>
     <string name="api_label">API Base URL</string>

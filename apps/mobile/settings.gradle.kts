@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Elaris"
+rootProject.name = "Mulberry"
 include(":app")
