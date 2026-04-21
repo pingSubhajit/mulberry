@@ -336,6 +336,17 @@ export class MulberryService {
     return this.buildBootstrap(context.user.id)
   }
 
+  async disconnectPairing(accessToken: string): Promise<BootstrapResponse> {
+    const context = await this.requireSessionContext(accessToken)
+    const pairSession = await this.getPairSession(context.user.id)
+    if (!pairSession) {
+      throw new HttpError(400, "User is not paired")
+    }
+
+    await this.db.query(`DELETE FROM pair_sessions WHERE id = $1`, [pairSession.id])
+    return this.buildBootstrap(context.user.id)
+  }
+
   async bootstrapCanvasSync(
     accessToken: string,
     pairSessionId: string,
@@ -706,6 +717,11 @@ export class MulberryService {
     const user = await this.getUserById(userId)
     let profile = await this.getProfile(userId)
     const pairSession = await this.getPairSession(userId)
+    const partnerUser = pairSession
+      ? await this.getUserById(
+          pairSession.user_one_id === userId ? pairSession.user_two_id : pairSession.user_one_id,
+        )
+      : null
     const pendingInvite = await this.getPendingInvite(userId)
     let onboardingCompleted = Boolean(
       profile?.display_name &&
@@ -732,8 +748,10 @@ export class MulberryService {
       onboardingCompleted,
       hasWallpaperConfigured: false,
       userId,
+      userEmail: user?.email ?? null,
       userPhotoUrl: user?.google_picture_url ?? null,
       userDisplayName: profile?.display_name ?? null,
+      partnerPhotoUrl: partnerUser?.google_picture_url ?? null,
       partnerDisplayName: profile?.partner_display_name ?? null,
       anniversaryDate: profile?.anniversary_date ?? null,
       pairingStatus: pairSession

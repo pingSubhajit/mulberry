@@ -11,8 +11,10 @@ object PreferenceStorage {
     val refreshToken = stringPreferencesKey("refresh_token")
     val sessionUserId = stringPreferencesKey("session_user_id")
     val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
+    val userEmail = stringPreferencesKey("user_email")
     val userPhotoUrl = stringPreferencesKey("user_photo_url")
     val userDisplayName = stringPreferencesKey("user_display_name")
+    val partnerPhotoUrl = stringPreferencesKey("partner_photo_url")
     val partnerDisplayName = stringPreferencesKey("partner_display_name")
     val anniversaryDate = stringPreferencesKey("anniversary_date")
     val pairingStatus = stringPreferencesKey("pairing_status")
@@ -37,6 +39,7 @@ object PreferenceStorage {
     val fcmToken = stringPreferencesKey("fcm_token")
     val fcmRegisteredToken = stringPreferencesKey("fcm_registered_token")
     val fcmRegisteredUserId = stringPreferencesKey("fcm_registered_user_id")
+    val developerOptionsEnabled = booleanPreferencesKey("developer_options_enabled")
 
     val placeholderPairingControlsOverride =
         booleanPreferencesKey("flag_placeholder_pairing_controls_override")

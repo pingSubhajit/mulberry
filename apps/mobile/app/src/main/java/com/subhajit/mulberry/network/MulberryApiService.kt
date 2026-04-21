@@ -42,6 +42,9 @@ interface MulberryApiService {
     @POST("/invites/{inviteId}/decline")
     suspend fun declineInvite(@Path("inviteId") inviteId: String): BootstrapResponse
 
+    @POST("/pairing/disconnect")
+    suspend fun disconnectPairing(): BootstrapResponse
+
     @GET("/canvas/ops")
     suspend fun getCanvasOperations(@Query("afterRevision") afterRevision: Long): CanvasOpsResponse
 

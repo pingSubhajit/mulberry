@@ -39,8 +39,10 @@ export interface BootstrapResponse {
   onboardingCompleted: boolean
   hasWallpaperConfigured: boolean
   userId: string | null
+  userEmail: string | null
   userPhotoUrl: string | null
   userDisplayName: string | null
+  partnerPhotoUrl: string | null
   partnerDisplayName: string | null
   anniversaryDate: string | null
   pairingStatus: PairingStatus

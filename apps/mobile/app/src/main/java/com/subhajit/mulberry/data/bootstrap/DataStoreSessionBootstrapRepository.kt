@@ -35,8 +35,10 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                 hasCompletedOnboarding = preferences[PreferenceStorage.onboardingCompleted] ?: false,
                 hasWallpaperConfigured = preferences[PreferenceStorage.wallpaperConfigured] ?: false,
                 userId = preferences[PreferenceStorage.sessionUserId],
+                userEmail = preferences[PreferenceStorage.userEmail],
                 userPhotoUrl = preferences[PreferenceStorage.userPhotoUrl],
                 userDisplayName = preferences[PreferenceStorage.userDisplayName],
+                partnerPhotoUrl = preferences[PreferenceStorage.partnerPhotoUrl],
                 partnerDisplayName = preferences[PreferenceStorage.partnerDisplayName],
                 anniversaryDate = preferences[PreferenceStorage.anniversaryDate],
                 pairingStatus = preferences[PreferenceStorage.pairingStatus]
@@ -92,8 +94,10 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences[PreferenceStorage.wallpaperConfigured] =
                 state.hasWallpaperConfigured || localWallpaperConfigured
             updateNullable(preferences, PreferenceStorage.sessionUserId, state.userId)
+            updateNullable(preferences, PreferenceStorage.userEmail, state.userEmail)
             updateNullable(preferences, PreferenceStorage.userPhotoUrl, state.userPhotoUrl)
             updateNullable(preferences, PreferenceStorage.userDisplayName, state.userDisplayName)
+            updateNullable(preferences, PreferenceStorage.partnerPhotoUrl, state.partnerPhotoUrl)
             updateNullable(preferences, PreferenceStorage.partnerDisplayName, state.partnerDisplayName)
             updateNullable(preferences, PreferenceStorage.anniversaryDate, state.anniversaryDate)
             preferences[PreferenceStorage.pairingStatus] = state.pairingStatus.name
@@ -174,8 +178,10 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences.remove(PreferenceStorage.refreshToken)
             preferences.remove(PreferenceStorage.sessionUserId)
             preferences.remove(PreferenceStorage.onboardingCompleted)
+            preferences.remove(PreferenceStorage.userEmail)
             preferences.remove(PreferenceStorage.userPhotoUrl)
             preferences.remove(PreferenceStorage.userDisplayName)
+            preferences.remove(PreferenceStorage.partnerPhotoUrl)
             preferences.remove(PreferenceStorage.partnerDisplayName)
             preferences.remove(PreferenceStorage.anniversaryDate)
             preferences.remove(PreferenceStorage.pairingStatus)

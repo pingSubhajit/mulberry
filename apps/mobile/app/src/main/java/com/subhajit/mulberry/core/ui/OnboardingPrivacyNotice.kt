@@ -84,13 +84,13 @@ fun OnboardingPrivacyNotice(modifier: Modifier = Modifier) {
             containerColor = Color.White,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
         ) {
-            PrivacyPolicySheet(onDismiss = { showPolicy = false })
+            PrivacyPolicySheetContent(onDismiss = { showPolicy = false })
         }
     }
 }
 
 @Composable
-private fun PrivacyPolicySheet(onDismiss: () -> Unit) {
+fun PrivacyPolicySheetContent(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val policyText = remember {
         context.resources.openRawResource(R.raw.privacy_policy)

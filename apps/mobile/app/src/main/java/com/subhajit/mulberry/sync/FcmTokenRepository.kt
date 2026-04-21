@@ -23,6 +23,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 
 interface FcmTokenRepository {
     val currentToken: Flow<String?>
+    val isRegistered: Flow<Boolean>
 
     suspend fun syncTokenWithBackend(): Result<Unit>
 
@@ -40,6 +41,11 @@ class FirebaseFcmTokenRepository @Inject constructor(
 ) : FcmTokenRepository {
     override val currentToken: Flow<String?> = dataStore.data.map { preferences ->
         preferences[PreferenceStorage.fcmToken]
+    }
+
+    override val isRegistered: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[PreferenceStorage.fcmRegisteredToken] != null &&
+            preferences[PreferenceStorage.fcmRegisteredUserId] != null
     }
 
     override suspend fun syncTokenWithBackend(): Result<Unit> = runCatching {

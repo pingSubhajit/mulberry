@@ -72,6 +72,7 @@ describe("Mulberry backend", () => {
     expect(response.statusCode).toBe(200)
     const body = response.json()
     expect(body.bootstrapState.userPhotoUrl).toBe(photoUrl)
+    expect(body.bootstrapState.userEmail).toBe("subhajit@elaris.dev")
 
     const bootstrap = await app.inject({
       method: "GET",
@@ -151,7 +152,9 @@ describe("Mulberry backend", () => {
   })
 
   it("redeems and accepts an invite into a paired session", async () => {
-    const inviter = await signIn("subhajit@elaris.dev", "Subhajit")
+    const inviterPhoto = "https://example.test/subhajit.png"
+    const recipientPhoto = "https://example.test/ankita.png"
+    const inviter = await signIn("subhajit@elaris.dev", "Subhajit", inviterPhoto)
     await completeProfile(inviter.accessToken, "Subhajit", "Ankita", "2026-01-01")
     const createInvite = await app.inject({
       method: "POST",
@@ -160,7 +163,7 @@ describe("Mulberry backend", () => {
     })
     const invite = createInvite.json()
 
-    const recipient = await signIn("ankita@elaris.dev", "Ankita")
+    const recipient = await signIn("ankita@elaris.dev", "Ankita", recipientPhoto)
     await completeProfile(recipient.accessToken, "Ankita", "Subhajit", "2026-01-01")
     const redeem = await app.inject({
       method: "POST",
@@ -183,6 +186,47 @@ describe("Mulberry backend", () => {
     expect(accept.statusCode).toBe(200)
     expect(accept.json().pairSessionId).toBeTruthy()
     expect(accept.json().bootstrapState.pairingStatus).toBe("PAIRED")
+    expect(accept.json().bootstrapState.partnerPhotoUrl).toBe(inviterPhoto)
+
+    const inviterBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(inviterBootstrap.statusCode).toBe(200)
+    expect(inviterBootstrap.json().partnerPhotoUrl).toBe(recipientPhoto)
+  })
+
+  it("disconnects a paired session while preserving user profiles", async () => {
+    const { inviter, recipient } = await pairUsers()
+
+    const disconnect = await app.inject({
+      method: "POST",
+      url: "/pairing/disconnect",
+      headers: bearer(inviter.accessToken),
+    })
+
+    expect(disconnect.statusCode).toBe(200)
+    expect(disconnect.json().pairingStatus).toBe("UNPAIRED")
+    expect(disconnect.json().userDisplayName).toBe("Subhajit")
+    expect(disconnect.json().partnerDisplayName).toBe("Ankita")
+
+    const recipientBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(recipientBootstrap.statusCode).toBe(200)
+    expect(recipientBootstrap.json().pairingStatus).toBe("UNPAIRED")
+    expect(recipientBootstrap.json().userDisplayName).toBe("Ankita")
+    expect(recipientBootstrap.json().partnerDisplayName).toBe("Subhajit")
+
+    const secondDisconnect = await app.inject({
+      method: "POST",
+      url: "/pairing/disconnect",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(secondDisconnect.statusCode).toBe(400)
   })
 
   it("hydrates invitee onboarding from inviter profile when code is redeemed during onboarding", async () => {
@@ -674,12 +718,12 @@ describe("Mulberry backend", () => {
     first.close()
   })
 
-  async function signIn(email: string, name: string) {
+  async function signIn(email: string, name: string, photoUrl?: string) {
     const response = await app.inject({
       method: "POST",
       url: "/auth/google",
       payload: {
-        idToken: `dev-google:${email}:${name}`,
+        idToken: `dev-google:${email}:${name}${photoUrl ? `:${photoUrl}` : ""}`,
       },
     })
     expect(response.statusCode).toBe(200)

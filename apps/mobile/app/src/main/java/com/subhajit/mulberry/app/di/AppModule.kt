@@ -36,6 +36,10 @@ import com.subhajit.mulberry.onboarding.OnboardingDraftRepository
 import com.subhajit.mulberry.onboarding.ProfileRepository
 import com.subhajit.mulberry.pairing.BackendInviteRepository
 import com.subhajit.mulberry.pairing.InviteRepository
+import com.subhajit.mulberry.settings.BackendPairingSettingsRepository
+import com.subhajit.mulberry.settings.DataStoreDeveloperOptionsRepository
+import com.subhajit.mulberry.settings.DeveloperOptionsRepository
+import com.subhajit.mulberry.settings.PairingSettingsRepository
 import com.subhajit.mulberry.sync.CanvasSyncClient
 import com.subhajit.mulberry.sync.CanvasSyncRepository
 import com.subhajit.mulberry.sync.BackgroundCanvasSyncCoordinator
@@ -186,6 +190,18 @@ abstract class AppBindingsModule {
     abstract fun bindBackgroundCanvasSyncScheduler(
         implementation: WorkManagerBackgroundCanvasSyncScheduler
     ): BackgroundCanvasSyncScheduler
+
+    @Binds
+    @Singleton
+    abstract fun bindDeveloperOptionsRepository(
+        implementation: DataStoreDeveloperOptionsRepository
+    ): DeveloperOptionsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindPairingSettingsRepository(
+        implementation: BackendPairingSettingsRepository
+    ): PairingSettingsRepository
 }
 
 @Module
