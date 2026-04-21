@@ -148,22 +148,52 @@ export class PushDispatchService {
     this.pendingByPairSession.delete(pairSessionId)
 
     const tokens = await this.activePeerTokens(pending.pairSessionId, pending.actorUserId)
-    if (tokens.length === 0) return
-
-    const result = await this.sender.sendCanvasUpdated({
-      tokens,
-      data: {
-        type: "CANVAS_UPDATED",
+    if (tokens.length === 0) {
+      console.info("[push] no active peer tokens", {
         pairSessionId: pending.pairSessionId,
-        latestRevision: String(pending.latestRevision),
-        snapshotRevision: String(pending.latestRevision),
         actorUserId: pending.actorUserId,
-      },
-      android: {
-        priority: "high",
-        collapseKey: `canvas-${pending.pairSessionId}`,
-        ttlMs: this.ttlMs,
-      },
+        latestRevision: pending.latestRevision,
+      })
+      return
+    }
+
+    console.info("[push] sending canvas update", {
+      pairSessionId: pending.pairSessionId,
+      actorUserId: pending.actorUserId,
+      latestRevision: pending.latestRevision,
+      tokenCount: tokens.length,
+    })
+
+    let result: PushSendResult
+    try {
+      result = await this.sender.sendCanvasUpdated({
+        tokens,
+        data: {
+          type: "CANVAS_UPDATED",
+          pairSessionId: pending.pairSessionId,
+          latestRevision: String(pending.latestRevision),
+          snapshotRevision: String(pending.latestRevision),
+          actorUserId: pending.actorUserId,
+        },
+        android: {
+          priority: "high",
+          collapseKey: `canvas-${pending.pairSessionId}`,
+          ttlMs: this.ttlMs,
+        },
+      })
+    } catch (error) {
+      console.error("[push] canvas update send failed", {
+        pairSessionId: pending.pairSessionId,
+        latestRevision: pending.latestRevision,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+
+    console.info("[push] canvas update sent", {
+      pairSessionId: pending.pairSessionId,
+      latestRevision: pending.latestRevision,
+      invalidTokenCount: result.invalidTokens.length,
     })
 
     if (result.invalidTokens.length > 0) {

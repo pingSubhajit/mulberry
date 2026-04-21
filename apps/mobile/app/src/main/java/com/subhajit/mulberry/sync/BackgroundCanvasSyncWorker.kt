@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.sync
 
 import android.content.Context
+import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -18,10 +19,19 @@ class BackgroundCanvasSyncWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         val pairSessionId = inputData.getString(KEY_PAIR_SESSION_ID)
         val latestRevision = inputData.getLong(KEY_LATEST_REVISION, 0L).takeIf { it > 0L }
+        Log.i(
+            TAG,
+            "Starting background canvas sync pairSessionId=$pairSessionId " +
+                "latestRevision=$latestRevision"
+        )
         return coordinator.syncToLatestSnapshot(pairSessionId, latestRevision)
             .fold(
-                onSuccess = { Result.success() },
+                onSuccess = { result ->
+                    Log.i(TAG, "Background canvas sync finished result=$result")
+                    Result.success()
+                },
                 onFailure = { error ->
+                    Log.w(TAG, "Background canvas sync failed", error)
                     if (error is IOException || error is HttpException && error.code() >= 500) {
                         Result.retry()
                     } else {
@@ -32,6 +42,7 @@ class BackgroundCanvasSyncWorker @AssistedInject constructor(
     }
 
     companion object {
+        private const val TAG = "MulberryBgSync"
         const val KEY_PAIR_SESSION_ID = "pairSessionId"
         const val KEY_LATEST_REVISION = "latestRevision"
     }

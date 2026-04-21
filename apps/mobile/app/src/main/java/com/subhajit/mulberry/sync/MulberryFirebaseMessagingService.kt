@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.sync
 
+import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import dagger.hilt.android.AndroidEntryPoint
@@ -18,13 +19,22 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onNewToken(token: String) {
+        Log.i(TAG, "Received refreshed FCM token")
         serviceScope.launch {
             fcmTokenRepository.registerToken(token)
+                .onFailure { error ->
+                    Log.w(TAG, "Unable to register refreshed FCM token", error)
+                }
         }
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
         val payload = BackgroundCanvasSyncPayloadParser.parse(message.data) ?: return
+        Log.i(
+            TAG,
+            "Received canvas update push pairSessionId=${payload.pairSessionId} " +
+                "latestRevision=${payload.latestRevision}"
+        )
         backgroundCanvasSyncScheduler.enqueueCanvasUpdated(
             pairSessionId = payload.pairSessionId,
             latestRevision = payload.latestRevision
@@ -34,5 +44,9 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
     override fun onDestroy() {
         serviceScope.cancel()
         super.onDestroy()
+    }
+
+    private companion object {
+        const val TAG = "MulberryFcm"
     }
 }
