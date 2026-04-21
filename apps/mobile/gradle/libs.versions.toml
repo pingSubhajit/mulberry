@@ -29,6 +29,7 @@ work = "2.9.1"
 firebaseMessaging = "24.0.3"
 googleServices = "4.4.2"
 coil = "2.7.0"
+ink = "1.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -74,6 +75,11 @@ googleid = { group = "com.google.android.libraries.identity.googleid", name = "g
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging", version.ref = "firebaseMessaging" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+androidx-ink-strokes = { group = "androidx.ink", name = "ink-strokes", version.ref = "ink" }
+androidx-ink-brush = { group = "androidx.ink", name = "ink-brush", version.ref = "ink" }
+androidx-ink-brush-compose = { group = "androidx.ink", name = "ink-brush-compose", version.ref = "ink" }
+androidx-ink-rendering = { group = "androidx.ink", name = "ink-rendering", version.ref = "ink" }
+androidx-ink-nativeloader = { group = "androidx.ink", name = "ink-nativeloader", version.ref = "ink" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -4,8 +4,6 @@ import android.app.WallpaperManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.Point
 import androidx.core.graphics.createBitmap
 import androidx.room.withTransaction
@@ -15,6 +13,8 @@ import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.data.local.DrawingDao
 import com.subhajit.mulberry.drawing.data.local.toDomain
 import com.subhajit.mulberry.drawing.model.Stroke
+import com.subhajit.mulberry.drawing.render.DryBrushStrokeRenderer
+import com.subhajit.mulberry.drawing.render.transformed
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.FileOutputStream
 import javax.inject.Inject
@@ -117,45 +117,16 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
             screenHeight = screenHeight
         )
 
-        strokes.forEach { stroke ->
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE
-                color = stroke.colorArgb.toInt()
-                strokeWidth = stroke.width * placement.scale
-                strokeCap = Paint.Cap.ROUND
-                strokeJoin = Paint.Join.ROUND
+        DryBrushStrokeRenderer.drawStrokes(
+            canvas = canvas,
+            strokes = strokes.map { stroke ->
+                stroke.transformed(
+                    scale = placement.scale,
+                    offsetX = placement.offsetX,
+                    offsetY = placement.offsetY
+                )
             }
-
-            when (stroke.points.size) {
-                0 -> Unit
-                1 -> {
-                    val point = stroke.points.first()
-                    canvas.drawCircle(
-                        placement.offsetX + (point.x * placement.scale),
-                        placement.offsetY + (point.y * placement.scale),
-                        (stroke.width * placement.scale) / 2f,
-                        paint.apply {
-                            style = Paint.Style.FILL
-                        }
-                    )
-                }
-                else -> {
-                    val path = Path().apply {
-                        moveTo(
-                            placement.offsetX + (stroke.points.first().x * placement.scale),
-                            placement.offsetY + (stroke.points.first().y * placement.scale)
-                        )
-                        stroke.points.drop(1).forEach { point ->
-                            lineTo(
-                                placement.offsetX + (point.x * placement.scale),
-                                placement.offsetY + (point.y * placement.scale)
-                            )
-                        }
-                    }
-                    canvas.drawPath(path, paint)
-                }
-            }
-        }
+        )
     }
 
     internal fun calculatePlacement(
