@@ -33,6 +33,9 @@ object PreferenceStorage {
         stringPreferencesKey("sync_last_applied_server_revision")
     val syncLastError = stringPreferencesKey("sync_last_error")
     val syncPendingOperationsJson = stringPreferencesKey("sync_pending_operations_json")
+    val fcmToken = stringPreferencesKey("fcm_token")
+    val fcmRegisteredToken = stringPreferencesKey("fcm_registered_token")
+    val fcmRegisteredUserId = stringPreferencesKey("fcm_registered_user_id")
 
     val placeholderPairingControlsOverride =
         booleanPreferencesKey("flag_placeholder_pairing_controls_override")

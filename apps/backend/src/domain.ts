@@ -18,11 +18,13 @@ export const CanvasOperationTypes = [
   "DELETE_STROKE",
   "CLEAR_CANVAS",
 ] as const
+export const DevicePlatforms = ["ANDROID"] as const
 
 export type AuthStatus = (typeof AuthStatuses)[number]
 export type PairingStatus = (typeof PairingStatuses)[number]
 export type InviteStatus = (typeof InviteStatuses)[number]
 export type CanvasOperationType = (typeof CanvasOperationTypes)[number]
+export type DevicePlatform = (typeof DevicePlatforms)[number]
 
 export interface InviteSummary {
   inviteId: string
@@ -109,6 +111,22 @@ export interface CanvasSnapshotResponse {
   updatedAt: string | null
 }
 
+export interface RegisterFcmTokenRequest {
+  token: string
+  platform: DevicePlatform
+  appEnvironment: string
+}
+
+export interface DeviceTokenRecord {
+  id: string
+  userId: string
+  token: string
+  platform: DevicePlatform
+  appEnvironment: string
+  lastSeenAt: string
+  revokedAt: string | null
+}
+
 export interface CanvasSyncBootstrap {
   pairSessionId: string
   userId: string
@@ -162,6 +180,16 @@ export interface CanvasOperationRecord {
   payload_json: unknown
   client_created_at: Date | string
   created_at: Date | string
+}
+
+export interface DeviceTokenRow {
+  id: string
+  user_id: string
+  token: string
+  platform: DevicePlatform
+  app_environment: string
+  last_seen_at: Date | string
+  revoked_at: Date | string | null
 }
 
 export interface GoogleIdentity {

@@ -2,6 +2,7 @@ package com.subhajit.mulberry.network
 
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Query
@@ -16,6 +17,12 @@ interface MulberryApiService {
 
     @POST("/auth/logout")
     suspend fun logout()
+
+    @POST("/devices/fcm-token")
+    suspend fun registerFcmToken(@Body request: RegisterFcmTokenRequest): DeviceTokenResponse
+
+    @HTTP(method = "DELETE", path = "/devices/fcm-token", hasBody = true)
+    suspend fun unregisterFcmToken(@Body request: UnregisterFcmTokenRequest)
 
     @GET("/bootstrap")
     suspend fun getBootstrap(): BootstrapResponse

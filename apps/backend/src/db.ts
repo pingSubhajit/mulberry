@@ -31,6 +31,20 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       revoked_at TIMESTAMPTZ
     );
 
+    CREATE TABLE IF NOT EXISTS device_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT NOT NULL UNIQUE,
+      platform TEXT NOT NULL,
+      app_environment TEXT NOT NULL,
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      revoked_at TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS device_tokens_active_user_idx
+      ON device_tokens(user_id)
+      WHERE revoked_at IS NULL;
+
     CREATE TABLE IF NOT EXISTS pair_sessions (
       id TEXT PRIMARY KEY,
       user_one_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

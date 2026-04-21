@@ -106,3 +106,23 @@ data class CanvasPointPayload(
     val x: Float,
     val y: Float
 )
+
+data class RegisterFcmTokenRequest(
+    val token: String,
+    val platform: String = "ANDROID",
+    val appEnvironment: String
+)
+
+data class UnregisterFcmTokenRequest(
+    val token: String
+)
+
+data class DeviceTokenResponse(
+    val id: String,
+    val userId: String,
+    val token: String,
+    val platform: String,
+    val appEnvironment: String,
+    val lastSeenAt: String,
+    val revokedAt: String?
+)

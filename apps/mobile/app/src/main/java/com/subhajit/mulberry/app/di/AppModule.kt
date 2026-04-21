@@ -38,10 +38,16 @@ import com.subhajit.mulberry.pairing.BackendInviteRepository
 import com.subhajit.mulberry.pairing.InviteRepository
 import com.subhajit.mulberry.sync.CanvasSyncClient
 import com.subhajit.mulberry.sync.CanvasSyncRepository
+import com.subhajit.mulberry.sync.BackgroundCanvasSyncCoordinator
+import com.subhajit.mulberry.sync.BackgroundCanvasSyncScheduler
 import com.subhajit.mulberry.sync.DataStoreSyncMetadataRepository
+import com.subhajit.mulberry.sync.DefaultBackgroundCanvasSyncCoordinator
 import com.subhajit.mulberry.sync.DefaultCanvasSyncRepository
+import com.subhajit.mulberry.sync.FcmTokenRepository
+import com.subhajit.mulberry.sync.FirebaseFcmTokenRepository
 import com.subhajit.mulberry.sync.OkHttpCanvasSyncClient
 import com.subhajit.mulberry.sync.SyncMetadataRepository
+import com.subhajit.mulberry.sync.WorkManagerBackgroundCanvasSyncScheduler
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.DataStoreBackgroundImageRepository
@@ -162,6 +168,24 @@ abstract class AppBindingsModule {
     abstract fun bindSyncMetadataRepository(
         implementation: DataStoreSyncMetadataRepository
     ): SyncMetadataRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindFcmTokenRepository(
+        implementation: FirebaseFcmTokenRepository
+    ): FcmTokenRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindBackgroundCanvasSyncCoordinator(
+        implementation: DefaultBackgroundCanvasSyncCoordinator
+    ): BackgroundCanvasSyncCoordinator
+
+    @Binds
+    @Singleton
+    abstract fun bindBackgroundCanvasSyncScheduler(
+        implementation: WorkManagerBackgroundCanvasSyncScheduler
+    ): BackgroundCanvasSyncScheduler
 }
 
 @Module

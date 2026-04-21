@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.kapt)
     alias(libs.plugins.hilt.android)
+    alias(libs.plugins.google.services)
 }
 
 import java.util.Properties
@@ -125,7 +126,11 @@ dependencies {
     implementation(libs.googleid)
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.hilt.work)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.firebase.messaging)
     kapt(libs.hilt.compiler)
+    kapt(libs.androidx.hilt.compiler)
     kapt(libs.androidx.room.compiler)
     testImplementation(libs.junit)
     testImplementation(libs.androidx.datastore.preferences.core)

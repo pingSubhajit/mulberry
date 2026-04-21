@@ -5,24 +5,41 @@ import type { AppConfig } from "./config.js"
 import { loadConfig } from "./config.js"
 import { createDatabase, type Database } from "./db.js"
 import { DefaultGoogleTokenVerifier, type GoogleTokenVerifier } from "./googleAuth.js"
+import {
+  createPushSender,
+  PushDispatchService,
+  type PushDispatchOptions,
+  type PushSender,
+} from "./push.js"
 import { MulberryService, HttpError } from "./service.js"
 
 export interface CreateAppOptions {
   config?: AppConfig
   db?: Database
   googleVerifier?: GoogleTokenVerifier
+  pushSender?: PushSender
+  pushOptions?: PushDispatchOptions
 }
 
 export async function createApp(options: CreateAppOptions = {}): Promise<FastifyInstance> {
   const config = options.config ?? loadConfig()
   const db = options.db ?? (await createDatabase(config.databaseUrl))
   const googleVerifier = options.googleVerifier ?? new DefaultGoogleTokenVerifier(config)
-  const service = new MulberryService(db, googleVerifier)
+  const pushDispatchService = new PushDispatchService(
+    db,
+    options.pushSender ?? createPushSender({
+      serviceAccountPath: config.firebaseServiceAccountPath,
+      serviceAccountJson: config.firebaseServiceAccountJson,
+    }),
+    options.pushOptions,
+  )
+  const service = new MulberryService(db, googleVerifier, pushDispatchService)
   const canvasSyncHub = new CanvasSyncHub(service)
   const app = Fastify({ logger: false })
   await app.register(fastifyWebsocket)
 
   app.addHook("onClose", async () => {
+    pushDispatchService.dispose()
     await db.end()
   })
 
@@ -53,6 +70,25 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.post("/auth/logout", async (request, reply) => {
     await service.logout(requireBearerToken(request))
+    reply.code(204).send()
+  })
+
+  app.post("/devices/fcm-token", async (request) => {
+    const body = request.body as {
+      token?: string
+      platform?: "ANDROID"
+      appEnvironment?: string
+    }
+    return service.registerFcmToken(requireBearerToken(request), {
+      token: body.token ?? "",
+      platform: body.platform ?? "ANDROID",
+      appEnvironment: body.appEnvironment ?? "",
+    })
+  })
+
+  app.delete("/devices/fcm-token", async (request, reply) => {
+    const body = request.body as { token?: string }
+    await service.unregisterFcmToken(requireBearerToken(request), body.token ?? "")
     reply.code(204).send()
   })
 

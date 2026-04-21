@@ -29,6 +29,8 @@ services:
       DATABASE_URL: postgres://mulberry:mulberry@postgres:5432/mulberry
       ALLOW_DEV_GOOGLE_TOKENS: "true"
       GOOGLE_SERVER_CLIENT_ID: ${GOOGLE_SERVER_CLIENT_ID:-}
+      FIREBASE_SERVICE_ACCOUNT_PATH: ${FIREBASE_SERVICE_ACCOUNT_PATH:-}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
     ports:
       - "8080:8080"
     healthcheck:

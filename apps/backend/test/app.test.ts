@@ -3,10 +3,12 @@ import type { FastifyInstance } from "fastify"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createApp } from "../src/app.js"
 import { runMigrations, type Database } from "../src/db.js"
+import type { CanvasUpdatedPushMessage, PushSender } from "../src/push.js"
 
 describe("Mulberry backend", () => {
   let app: FastifyInstance
   let db: Database
+  let pushSender: RecordingPushSender
 
   beforeEach(async () => {
     const memoryDb = newDb({
@@ -21,8 +23,11 @@ describe("Mulberry backend", () => {
         await pool.end()
       },
     }
+    pushSender = new RecordingPushSender()
     app = await createApp({
       db,
+      pushSender,
+      pushOptions: { debounceMs: 20 },
       config: {
         port: 8080,
         databaseUrl: "postgres://unused",
@@ -493,6 +498,158 @@ describe("Mulberry backend", () => {
     first.close()
   })
 
+  it("registers and revokes FCM device tokens", async () => {
+    const auth = await signIn("subhajit@elaris.dev", "Subhajit")
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/devices/fcm-token",
+      headers: bearer(auth.accessToken),
+      payload: {
+        token: "fcm-token-1",
+        platform: "ANDROID",
+        appEnvironment: "dev",
+      },
+    })
+    const second = await app.inject({
+      method: "POST",
+      url: "/devices/fcm-token",
+      headers: bearer(auth.accessToken),
+      payload: {
+        token: "fcm-token-1",
+        platform: "ANDROID",
+        appEnvironment: "dev",
+      },
+    })
+
+    expect(first.statusCode).toBe(200)
+    expect(second.statusCode).toBe(200)
+    expect(first.json().userId).toBe(auth.userId)
+    expect(second.json().revokedAt).toBeNull()
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: "/devices/fcm-token",
+      headers: bearer(auth.accessToken),
+      payload: {
+        token: "fcm-token-1",
+      },
+    })
+    expect(deleted.statusCode).toBe(204)
+
+    const tokenRows = await db.query<{ revoked_at: Date | string | null }>(
+      `SELECT revoked_at FROM device_tokens WHERE token = $1`,
+      ["fcm-token-1"],
+    )
+    expect(tokenRows.rows[0].revoked_at).toBeTruthy()
+  })
+
+  it("dispatches canvas update pushes to only the paired peer for durable milestones", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(inviter.accessToken, "actor-token")
+    await registerFcmToken(recipient.accessToken, "peer-token")
+
+    const first = await app.injectWS("/canvas/sync")
+    first.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: inviter.accessToken,
+        pairSessionId: inviter.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    await nextWsJson(first)
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP_BATCH",
+        batchId: "push-batch-1",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          addStrokeOperation("push-op-1", "push-stroke", 1, 1),
+          appendPointsOperation("push-op-2", "push-stroke", [{ x: 2, y: 2 }]),
+          finishStrokeOperation("push-op-3", "push-stroke"),
+        ],
+      }),
+    )
+    await nextWsJson(first)
+    await eventually(() => pushSender.sentMessages.length === 1)
+
+    const message = pushSender.sentMessages[0]
+    expect(message.tokens).toEqual(["peer-token"])
+    expect(message.data).toMatchObject({
+      type: "CANVAS_UPDATED",
+      pairSessionId: inviter.pairSessionId,
+      latestRevision: "3",
+      snapshotRevision: "3",
+      actorUserId: inviter.userId,
+    })
+    expect(message.android.priority).toBe("high")
+    expect(message.android.collapseKey).toBe(`canvas-${inviter.pairSessionId}`)
+    first.close()
+  })
+
+  it("debounces canvas update pushes and sends the latest revision", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "debounced-peer-token")
+    const first = await app.injectWS("/canvas/sync")
+    first.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: inviter.accessToken,
+        pairSessionId: inviter.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    await nextWsJson(first)
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP_BATCH",
+        batchId: "debounce-batch-1",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          clearCanvasOperation("debounce-op-1"),
+          clearCanvasOperation("debounce-op-2"),
+          clearCanvasOperation("debounce-op-3"),
+        ],
+      }),
+    )
+    await nextWsJson(first)
+    await eventually(() => pushSender.sentMessages.length === 1)
+    expect(pushSender.sentMessages[0].data.latestRevision).toBe("3")
+    first.close()
+  })
+
+  it("marks permanently invalid push tokens revoked", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "invalid-peer-token")
+    pushSender.invalidTokens.add("invalid-peer-token")
+    const first = await app.injectWS("/canvas/sync")
+    first.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: inviter.accessToken,
+        pairSessionId: inviter.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    await nextWsJson(first)
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP",
+        operation: clearCanvasOperation("invalid-token-op"),
+      }),
+    )
+    await nextWsJson(first)
+    await eventually(async () => {
+      const rows = await db.query<{ revoked_at: Date | string | null }>(
+        `SELECT revoked_at FROM device_tokens WHERE token = $1`,
+        ["invalid-peer-token"],
+      )
+      return Boolean(rows.rows[0]?.revoked_at)
+    })
+    first.close()
+  })
+
   async function signIn(email: string, name: string) {
     const response = await app.inject({
       method: "POST",
@@ -558,6 +715,20 @@ describe("Mulberry backend", () => {
       recipient: { ...recipient, pairSessionId },
     }
   }
+
+  async function registerFcmToken(accessToken: string, token: string) {
+    const response = await app.inject({
+      method: "POST",
+      url: "/devices/fcm-token",
+      headers: bearer(accessToken),
+      payload: {
+        token,
+        platform: "ANDROID",
+        appEnvironment: "dev",
+      },
+    })
+    expect(response.statusCode).toBe(200)
+  }
 })
 
 function bearer(accessToken: string) {
@@ -572,6 +743,15 @@ function nextWsJson(socket: { once: (event: string, listener: (raw: unknown) => 
       resolve(JSON.parse(String(raw)))
     })
   })
+}
+
+async function eventually(predicate: () => boolean | Promise<boolean>) {
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < 1_000) {
+    if (await predicate()) return
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error("Condition was not met")
 }
 
 function addStrokeOperation(
@@ -636,5 +816,17 @@ function clearCanvasOperation(clientOperationId: string) {
     strokeId: null,
     payload: {},
     clientCreatedAt: new Date().toISOString(),
+  }
+}
+
+class RecordingPushSender implements PushSender {
+  readonly sentMessages: CanvasUpdatedPushMessage[] = []
+  readonly invalidTokens = new Set<string>()
+
+  async sendCanvasUpdated(message: CanvasUpdatedPushMessage) {
+    this.sentMessages.push(message)
+    return {
+      invalidTokens: message.tokens.filter((token) => this.invalidTokens.has(token)),
+    }
   }
 }

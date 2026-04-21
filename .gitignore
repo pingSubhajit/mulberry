@@ -6,3 +6,4 @@ dist
 # Environment files
 .env*
 !.env.example
+/apps/mobile/app/src/dev/google-services.json

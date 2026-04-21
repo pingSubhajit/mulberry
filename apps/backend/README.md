@@ -43,6 +43,19 @@ Then fill in:
 GOOGLE_SERVER_CLIENT_ID=your-google-oauth-server-client-id
 ```
 
+## Firebase Cloud Messaging
+
+Background canvas catch-up uses FCM only when Firebase Admin credentials are configured.
+For local builds without credentials, the backend uses a no-op sender so tests and foreground
+WebSocket sync still run normally.
+
+Use one of these environment variables outside source control:
+
+```text
+FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/path/to/service-account.json
+FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+```
+
 ## End-to-End Flow
 
 1. Start Docker Compose from the repo root.

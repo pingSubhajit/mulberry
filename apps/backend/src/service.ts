@@ -12,16 +12,20 @@ import type {
   ClientCanvasOperationBatch,
   ClientCanvasOperation,
   CreateInviteResponse,
+  DeviceTokenRecord,
+  DeviceTokenRow,
   GoogleIdentity,
   InviteRecord,
   InviteStatus,
   PairSessionRecord,
   ProfileRecord,
+  RegisterFcmTokenRequest,
   RedeemInviteResponse,
   SessionRecord,
   UserRecord,
 } from "./domain.js"
 import type { GoogleTokenVerifier } from "./googleAuth.js"
+import type { PushDispatchService } from "./push.js"
 
 export class HttpError extends Error {
   constructor(
@@ -55,6 +59,7 @@ export class MulberryService {
   constructor(
     private readonly db: Database,
     private readonly googleVerifier: GoogleTokenVerifier,
+    private readonly pushDispatchService?: PushDispatchService,
   ) {}
 
   async authenticateWithGoogle(idToken: string): Promise<AuthResponse> {
@@ -75,6 +80,68 @@ export class MulberryService {
     await this.db.query(
       `UPDATE sessions SET revoked_at = NOW() WHERE access_token = $1 AND revoked_at IS NULL`,
       [accessToken],
+    )
+  }
+
+  async registerFcmToken(
+    accessToken: string,
+    request: RegisterFcmTokenRequest,
+  ): Promise<DeviceTokenRecord> {
+    const context = await this.requireSessionContext(accessToken)
+    if (!request.token?.trim()) {
+      throw new HttpError(400, "token is required")
+    }
+    if (request.platform !== "ANDROID") {
+      throw new HttpError(400, "Unsupported device platform")
+    }
+    if (!request.appEnvironment?.trim()) {
+      throw new HttpError(400, "appEnvironment is required")
+    }
+
+    const tokenId = randomUUID()
+    const rows = await this.db.query<DeviceTokenRow>(
+      `
+      INSERT INTO device_tokens (
+        id,
+        user_id,
+        token,
+        platform,
+        app_environment,
+        last_seen_at,
+        revoked_at
+      ) VALUES ($1, $2, $3, $4, $5, NOW(), NULL)
+      ON CONFLICT (token) DO UPDATE SET
+        user_id = EXCLUDED.user_id,
+        platform = EXCLUDED.platform,
+        app_environment = EXCLUDED.app_environment,
+        last_seen_at = NOW(),
+        revoked_at = NULL
+      RETURNING id, user_id, token, platform, app_environment, last_seen_at, revoked_at
+      `,
+      [
+        tokenId,
+        context.user.id,
+        request.token.trim(),
+        request.platform,
+        request.appEnvironment.trim(),
+      ],
+    )
+    return this.deviceTokenToRecord(rows.rows[0])
+  }
+
+  async unregisterFcmToken(accessToken: string, token: string): Promise<void> {
+    const context = await this.requireSessionContext(accessToken)
+    if (!token.trim()) {
+      throw new HttpError(400, "token is required")
+    }
+
+    await this.db.query(
+      `
+      UPDATE device_tokens
+      SET revoked_at = NOW()
+      WHERE user_id = $1 AND token = $2 AND revoked_at IS NULL
+      `,
+      [context.user.id, token.trim()],
     )
   }
 
@@ -416,7 +483,15 @@ export class MulberryService {
       `,
       [id],
     )
-    return this.canvasOperationToEnvelope(rows.rows[0])
+    const accepted = this.canvasOperationToEnvelope(rows.rows[0])
+    if (shouldSendCanvasUpdatePush(accepted.type)) {
+      this.pushDispatchService?.enqueueCanvasUpdated(
+        context.pairSession.id,
+        context.user.id,
+        accepted.serverRevision,
+      )
+    }
+    return accepted
   }
 
   private async authResponseForSession(session: SessionRecord): Promise<AuthResponse> {
@@ -842,6 +917,18 @@ export class MulberryService {
     }
   }
 
+  private deviceTokenToRecord(row: DeviceTokenRow): DeviceTokenRecord {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      token: row.token,
+      platform: row.platform,
+      appEnvironment: row.app_environment,
+      lastSeenAt: new Date(row.last_seen_at).toISOString(),
+      revokedAt: row.revoked_at ? new Date(row.revoked_at).toISOString() : null,
+    }
+  }
+
   private async getPendingInvite(userId: string): Promise<InviteRecord | null> {
     const rows = await this.db.query<InviteRecord>(
       `
@@ -976,6 +1063,10 @@ function normalizeCanvasSnapshot(raw: unknown): { strokes: MaterializedStroke[] 
     }
   }
   return { strokes: [] }
+}
+
+function shouldSendCanvasUpdatePush(type: string): boolean {
+  return type === "FINISH_STROKE" || type === "DELETE_STROKE" || type === "CLEAR_CANVAS"
 }
 
 function normalizeStroke(raw: unknown): MaterializedStroke | null {

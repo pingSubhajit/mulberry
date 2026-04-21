@@ -17,6 +17,7 @@ import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.network.GoogleAuthRequest
 import com.subhajit.mulberry.network.RefreshRequest
 import com.subhajit.mulberry.network.toDomainBootstrap
+import com.subhajit.mulberry.sync.FcmTokenRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -27,7 +28,8 @@ import kotlinx.coroutines.flow.map
 class CredentialManagerAuthRepository @Inject constructor(
     private val apiService: MulberryApiService,
     private val sessionBootstrapRepository: SessionBootstrapRepository,
-    private val appConfig: AppConfig
+    private val appConfig: AppConfig,
+    private val fcmTokenRepository: FcmTokenRepository
 ) : AuthRepository {
 
     override val authState: Flow<AuthState> = sessionBootstrapRepository.state.map { state ->
@@ -92,6 +94,7 @@ class CredentialManagerAuthRepository @Inject constructor(
             )
         )
         sessionBootstrapRepository.cacheBootstrap(authResponse.bootstrapState.toDomainBootstrap())
+        fcmTokenRepository.syncTokenWithBackend()
     }
 
     override suspend fun refreshSession(): Result<Unit> = runCatching {
@@ -110,9 +113,11 @@ class CredentialManagerAuthRepository @Inject constructor(
             )
         )
         sessionBootstrapRepository.cacheBootstrap(response.bootstrapState.toDomainBootstrap())
+        fcmTokenRepository.syncTokenWithBackend()
     }
 
     override suspend fun logout(): Result<Unit> = runCatching {
+        fcmTokenRepository.unregisterRegisteredToken()
         runCatching { apiService.logout() }
         val wallpaperConfigured = sessionBootstrapRepository.state.first().hasWallpaperConfigured
         sessionBootstrapRepository.cacheSession(null)

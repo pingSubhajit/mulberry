@@ -41,6 +41,14 @@
                 android:name="android.service.wallpaper"
                 android:resource="@xml/mulberry_wallpaper" />
         </service>
+
+        <service
+            android:name=".sync.MulberryFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>
