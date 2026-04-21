@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.home
 
 import android.content.Intent
+import android.graphics.Typeface as AndroidTypeface
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,6 +10,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,6 +71,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
@@ -87,6 +91,7 @@ import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
+import com.subhajit.mulberry.ui.theme.MulberrySecondaryFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
@@ -155,7 +160,6 @@ fun CanvasHomeRoute(
     CanvasHomeScreen(
         uiState = uiState,
         wallpaperPresets = viewModel.wallpaperPresets,
-        onNavigateToCanvas = onNavigateToCanvas,
         onNavigateToLockScreen = onNavigateToLockScreen,
         onNavigateToSettings = onNavigateToSettings,
         onInviteRequested = viewModel::onInviteRequested,
@@ -167,7 +171,18 @@ fun CanvasHomeRoute(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
             )
         },
-        onWallpaperPresetSelected = viewModel::onWallpaperPresetSelected
+        onWallpaperPresetSelected = viewModel::onWallpaperPresetSelected,
+        onCanvasPress = viewModel::onCanvasPress,
+        onCanvasDrag = viewModel::onCanvasDrag,
+        onCanvasRelease = viewModel::onCanvasRelease,
+        onCanvasTap = viewModel::onCanvasTap,
+        onCanvasViewportChanged = viewModel::onCanvasViewportChanged,
+        onColorSelected = viewModel::onColorSelected,
+        onBrushWidthChanged = viewModel::onBrushWidthChanged,
+        onEraserToggle = viewModel::onEraserToggle,
+        onClearRequested = viewModel::onClearRequested,
+        onClearDismissed = viewModel::onClearDismissed,
+        onClearConfirmed = viewModel::onClearConfirmed
     )
 }
 
@@ -176,7 +191,6 @@ fun CanvasHomeRoute(
 private fun CanvasHomeScreen(
     uiState: CanvasHomeUiState,
     wallpaperPresets: List<WallpaperPreset>,
-    onNavigateToCanvas: () -> Unit,
     onNavigateToLockScreen: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onInviteRequested: () -> Unit,
@@ -184,7 +198,18 @@ private fun CanvasHomeScreen(
     onShareInviteClicked: () -> Unit,
     onSetUpLockScreen: () -> Unit,
     onUploadWallpaperBackground: () -> Unit,
-    onWallpaperPresetSelected: (Int) -> Unit
+    onWallpaperPresetSelected: (Int) -> Unit,
+    onCanvasPress: (StrokePoint) -> Unit,
+    onCanvasDrag: (StrokePoint) -> Unit,
+    onCanvasRelease: () -> Unit,
+    onCanvasTap: (StrokePoint) -> Unit,
+    onCanvasViewportChanged: (Int, Int) -> Unit,
+    onColorSelected: (Long) -> Unit,
+    onBrushWidthChanged: (Float) -> Unit,
+    onEraserToggle: () -> Unit,
+    onClearRequested: () -> Unit,
+    onClearDismissed: () -> Unit,
+    onClearConfirmed: () -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { MainAppTab.entries.size })
     val coroutineScope = rememberCoroutineScope()
@@ -193,7 +218,7 @@ private fun CanvasHomeScreen(
         MainAppTab.Canvas -> if (uiState.bootstrapState.pairingStatus == PairingStatus.UNPAIRED) {
             stringResource(R.string.home_unpaired_title)
         } else {
-            stringResource(R.string.home_tab_canvas)
+            stringResource(R.string.home_paired_title)
         }
 
         MainAppTab.LockScreen -> stringResource(R.string.home_lockscreen_title)
@@ -204,6 +229,12 @@ private fun CanvasHomeScreen(
             inviteSheet = uiState.inviteSheet,
             onDismiss = onInviteSheetDismissed,
             onShareInviteClicked = onShareInviteClicked
+        )
+    }
+    if (uiState.showClearConfirmation) {
+        ClearCanvasConfirmationDialog(
+            onDismiss = onClearDismissed,
+            onConfirm = onClearConfirmed
         )
     }
 
@@ -232,7 +263,15 @@ private fun CanvasHomeScreen(
                 MainAppTab.Canvas -> CanvasHomePane(
                     uiState = uiState,
                     onInviteRequested = onInviteRequested,
-                    onNavigateToCanvas = onNavigateToCanvas
+                    onCanvasPress = onCanvasPress,
+                    onCanvasDrag = onCanvasDrag,
+                    onCanvasRelease = onCanvasRelease,
+                    onCanvasTap = onCanvasTap,
+                    onCanvasViewportChanged = onCanvasViewportChanged,
+                    onColorSelected = onColorSelected,
+                    onBrushWidthChanged = onBrushWidthChanged,
+                    onEraserToggle = onEraserToggle,
+                    onClearRequested = onClearRequested
                 )
 
                 MainAppTab.LockScreen -> LockScreenHomePane(
@@ -318,7 +357,15 @@ private fun MainAppHeader(
 private fun CanvasHomePane(
     uiState: CanvasHomeUiState,
     onInviteRequested: () -> Unit,
-    onNavigateToCanvas: () -> Unit
+    onCanvasPress: (StrokePoint) -> Unit,
+    onCanvasDrag: (StrokePoint) -> Unit,
+    onCanvasRelease: () -> Unit,
+    onCanvasTap: (StrokePoint) -> Unit,
+    onCanvasViewportChanged: (Int, Int) -> Unit,
+    onColorSelected: (Long) -> Unit,
+    onBrushWidthChanged: (Float) -> Unit,
+    onEraserToggle: () -> Unit,
+    onClearRequested: () -> Unit
 ) {
     val userName = uiState.bootstrapState.userDisplayName
         ?.takeIf { it.isNotBlank() }
@@ -378,13 +425,236 @@ private fun CanvasHomePane(
             }
         }
     } else {
-        PairedPaneCard(
-            title = stringResource(R.string.home_tab_canvas),
-            body = stringResource(R.string.home_canvas_paired_body, uiState.canvasState.strokes.size),
-            button = stringResource(R.string.home_open_canvas),
-            testTag = TestTags.HOME_OPEN_CANVAS_BUTTON,
-            onClick = onNavigateToCanvas
+        PairedCanvasPane(
+            uiState = uiState,
+            onCanvasPress = onCanvasPress,
+            onCanvasDrag = onCanvasDrag,
+            onCanvasRelease = onCanvasRelease,
+            onCanvasTap = onCanvasTap,
+            onCanvasViewportChanged = onCanvasViewportChanged,
+            onColorSelected = onColorSelected,
+            onBrushWidthChanged = onBrushWidthChanged,
+            onEraserToggle = onEraserToggle,
+            onClearRequested = onClearRequested,
+            modifier = Modifier.testTag(TestTags.HOME_OPEN_CANVAS_BUTTON)
         )
+    }
+}
+
+@Composable
+private fun PairedCanvasPane(
+    uiState: CanvasHomeUiState,
+    onCanvasPress: (StrokePoint) -> Unit,
+    onCanvasDrag: (StrokePoint) -> Unit,
+    onCanvasRelease: () -> Unit,
+    onCanvasTap: (StrokePoint) -> Unit,
+    onCanvasViewportChanged: (Int, Int) -> Unit,
+    onColorSelected: (Long) -> Unit,
+    onBrushWidthChanged: (Float) -> Unit,
+    onEraserToggle: () -> Unit,
+    onClearRequested: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp)
+            .padding(top = 34.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color(0xFFFCF4F5))
+                .border(
+                    width = 2.dp,
+                    color = Color(0x4DB31329),
+                    shape = RoundedCornerShape(24.dp)
+                )
+        ) {
+            DrawingCanvas(
+                canvasState = uiState.canvasState,
+                activeTool = uiState.toolState.activeTool,
+                onDrawStart = onCanvasPress,
+                onDrawPoint = onCanvasDrag,
+                onDrawEnd = onCanvasRelease,
+                onEraseTap = onCanvasTap,
+                onCanvasSizeChanged = onCanvasViewportChanged,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
+            )
+
+            if (uiState.canvasState.isEmpty) {
+                CanvasBlankStateGuidance(
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 22.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CanvasActionButton(
+                    drawableRes = R.drawable.canvas_action_erase,
+                    contentDescription = stringResource(R.string.home_canvas_erase_content_description),
+                    selected = uiState.toolState.activeTool == DrawingTool.ERASE,
+                    onClick = onEraserToggle
+                )
+                CanvasActionButton(
+                    drawableRes = R.drawable.canvas_action_clear,
+                    contentDescription = stringResource(R.string.home_canvas_clear_content_description),
+                    selected = false,
+                    onClick = onClearRequested
+                )
+            }
+        }
+
+        CanvasControlTray(
+            uiState = uiState,
+            onBrushWidthChanged = onBrushWidthChanged,
+            onColorSelected = onColorSelected
+        )
+    }
+}
+
+@Composable
+private fun CanvasBlankStateGuidance(modifier: Modifier = Modifier) {
+    val guidanceFontFamily = rememberMulberryGuidanceFontFamily()
+
+    Column(
+        modifier = modifier.padding(horizontal = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.home_paired_canvas_guidance_title),
+            color = MulberryPrimary,
+            fontFamily = guidanceFontFamily,
+            fontSize = 20.sp,
+            lineHeight = 20.sp,
+            letterSpacing = 0.25.sp,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = stringResource(R.string.home_paired_canvas_guidance_body),
+            color = Color(0x99A39E9B),
+            fontFamily = guidanceFontFamily,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+            letterSpacing = 0.25.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(252.dp)
+        )
+    }
+}
+
+@Composable
+private fun rememberMulberryGuidanceFontFamily(): FontFamily {
+    val context = LocalContext.current
+    return remember(context) {
+        runCatching {
+            FontFamily(AndroidTypeface.createFromAsset(context.assets, "fonts/virgil.woff2"))
+        }.getOrDefault(MulberrySecondaryFontFamily)
+    }
+}
+
+@Composable
+private fun CanvasActionButton(
+    drawableRes: Int,
+    contentDescription: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(50.dp)
+            .shadow(
+                elevation = 14.dp,
+                shape = CircleShape,
+                clip = false,
+                ambientColor = Color(0x1A3D3D3D),
+                spotColor = Color(0x1A3D3D3D)
+            )
+            .clip(CircleShape)
+            .background(if (selected) Color(0xFFFFC6CE) else Color(0xFFFFD6DA))
+            .border(
+                width = if (selected) 2.dp else 0.dp,
+                color = if (selected) MulberryPrimary else Color.Transparent,
+                shape = CircleShape
+            )
+            .clickable(onClick = onClick)
+            .padding(7.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(drawableRes),
+            contentDescription = contentDescription,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit
+        )
+    }
+}
+
+@Composable
+private fun CanvasControlTray(
+    uiState: CanvasHomeUiState,
+    onBrushWidthChanged: (Float) -> Unit,
+    onColorSelected: (Long) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(69.dp)
+            .shadow(
+                elevation = 15.dp,
+                shape = RoundedCornerShape(500.dp),
+                clip = false,
+                ambientColor = Color(0x26000000),
+                spotColor = Color(0x26000000)
+            )
+            .clip(RoundedCornerShape(500.dp))
+            .background(Color(0xFFFFF4F5))
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(168.dp)
+                .height(36.dp)
+                .clip(RoundedCornerShape(500.dp))
+                .background(Color.White)
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Slider(
+                value = uiState.toolState.selectedWidth,
+                onValueChange = onBrushWidthChanged,
+                valueRange = DrawingDefaults.MIN_WIDTH..DrawingDefaults.MAX_WIDTH,
+                colors = SliderDefaults.colors(
+                    thumbColor = MulberryPrimary,
+                    activeTrackColor = MulberryPrimary,
+                    inactiveTrackColor = Color(0xFFFFEBED)
+                ),
+                modifier = Modifier.testTag(TestTags.BRUSH_WIDTH_SLIDER)
+            )
+        }
+
+        uiState.palette.forEach { color ->
+            ColorSwatch(
+                colorArgb = color,
+                isSelected = color == uiState.toolState.selectedColorArgb &&
+                    uiState.toolState.activeTool == DrawingTool.DRAW,
+                onClick = { onColorSelected(color) },
+                size = 47.dp
+            )
+        }
     }
 }
 
@@ -462,41 +732,28 @@ private fun LockScreenHomePane(
 }
 
 @Composable
-private fun PairedPaneCard(
-    title: String,
-    body: String,
-    button: String,
-    testTag: String,
-    onClick: () -> Unit
+private fun ClearCanvasConfirmationDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(20.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(testTag)
-                .clickable(onClick = onClick)
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.home_clear_canvas_title)) },
+        text = { Text(stringResource(R.string.home_clear_canvas_body)) },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                modifier = Modifier.testTag(TestTags.CLEAR_CONFIRM_BUTTON)
             ) {
-                Text(title, style = MaterialTheme.typography.titleLarge)
-                Text(body, style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    text = button,
-                    color = MulberryPrimary,
-                    fontFamily = PoppinsFontFamily,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                Text(stringResource(R.string.home_clear_canvas_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.home_clear_canvas_cancel))
             }
         }
-    }
+    )
 }
 
 @Composable
@@ -899,23 +1156,9 @@ private fun CanvasSurfaceScreen(
     onClearConfirmed: () -> Unit
 ) {
     if (uiState.showClearConfirmation) {
-        AlertDialog(
-            onDismissRequest = onClearDismissed,
-            title = { Text("Clear canvas?") },
-            text = { Text("This removes all local strokes from the canvas.") },
-            confirmButton = {
-                TextButton(
-                    onClick = onClearConfirmed,
-                    modifier = Modifier.testTag(TestTags.CLEAR_CONFIRM_BUTTON)
-                ) {
-                    Text("Clear")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = onClearDismissed) {
-                    Text("Cancel")
-                }
-            }
+        ClearCanvasConfirmationDialog(
+            onDismiss = onClearDismissed,
+            onConfirm = onClearConfirmed
         )
     }
 
@@ -1007,7 +1250,8 @@ private fun CanvasSurfaceScreen(
 private fun ColorSwatch(
     colorArgb: Long,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    size: Dp = 40.dp
 ) {
     val outlineColor = if (isSelected) {
         MaterialTheme.colorScheme.primary
@@ -1017,7 +1261,7 @@ private fun ColorSwatch(
 
     Surface(
         modifier = Modifier
-            .size(40.dp)
+            .size(size)
             .clickable(onClick = onClick)
             .border(
                 width = if (isSelected) 3.dp else 1.dp,

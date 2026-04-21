@@ -58,6 +58,7 @@
     <string name="home_default_user_name">there</string>
     <string name="home_header_welcome">Welcome</string>
     <string name="home_unpaired_title">Ask your partner out</string>
+    <string name="home_paired_title">What will you send?</string>
     <string name="home_lockscreen_title">Set your lock screen</string>
     <string name="home_profile_photo_content_description">Profile photo</string>
     <string name="home_unpaired_pair_title">%1$s &amp; who?</string>
@@ -69,6 +70,14 @@
     <string name="home_open_lockscreen">Open lock screen</string>
     <string name="home_lockscreen_setup_button">Set as lock screen</string>
     <string name="home_canvas_paired_body">Local strokes: %1$d</string>
+    <string name="home_paired_canvas_guidance_title">Draw them something cute</string>
+    <string name="home_paired_canvas_guidance_body">Whatever you draw will appear at the lockscreen of their phone</string>
+    <string name="home_canvas_erase_content_description">Erase strokes</string>
+    <string name="home_canvas_clear_content_description">Clear canvas</string>
+    <string name="home_clear_canvas_title">Clear canvas?</string>
+    <string name="home_clear_canvas_body">This removes all strokes from the shared canvas.</string>
+    <string name="home_clear_canvas_confirm">Clear</string>
+    <string name="home_clear_canvas_cancel">Cancel</string>
     <string name="home_lockscreen_selected_body">Mulberry is set as your wallpaper.</string>
     <string name="home_lockscreen_unselected_body">Set up Mulberry as your live lock screen wallpaper.</string>
     <string name="home_invite_sheet_title">Invite your partner</string>
