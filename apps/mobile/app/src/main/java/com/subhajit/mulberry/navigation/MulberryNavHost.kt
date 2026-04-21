@@ -89,6 +89,9 @@ fun MulberryNavHost(
         composable(AppRoute.InviteCodeEntry.route) {
             ReleaseStartupGateAfterFirstFrame()
             InviteCodeEntryRoute(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
                 onNavigateToBootstrap = {
                     navController.navigate(AppRoute.Bootstrap.route) {
                         popUpTo(AppRoute.InviteCodeEntry.route) {
