@@ -132,7 +132,12 @@ class DefaultCanvasRuntime @Inject constructor(
             is CanvasRuntimeEvent.EraseAt -> handleEraseAt(event.point)
             CanvasRuntimeEvent.ClearCanvas -> handleClearCanvas()
             is CanvasRuntimeEvent.RemoteOperation -> applyRemoteOperation(event.operation)
-            is CanvasRuntimeEvent.RemoteBatch -> event.operations.forEach { applyRemoteOperation(it) }
+            is CanvasRuntimeEvent.RemoteBatch -> handleRecoveryOperations(
+                CanvasRuntimeEvent.RecoveryOperations(
+                    operations = event.operations,
+                    publishAtomically = true
+                )
+            )
             is CanvasRuntimeEvent.RecoveryOperations -> handleRecoveryOperations(event)
             is CanvasRuntimeEvent.RecoverySnapshot -> handleRecoverySnapshot(event)
             is CanvasRuntimeEvent.FlowControl -> handleFlowControl(event)
@@ -409,7 +414,7 @@ class DefaultCanvasRuntime @Inject constructor(
     }
 
     private companion object {
-        const val DEFAULT_APPEND_HZ = 30
+        const val DEFAULT_APPEND_HZ = 20
         const val MIN_APPEND_HZ = 10
     }
 }

@@ -5,7 +5,6 @@ import com.subhajit.mulberry.canvas.CanvasRuntimeEvent
 import com.subhajit.mulberry.canvas.FlowControlMode
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
-import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.network.MulberryApiService
@@ -37,6 +36,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
     private val client: CanvasSyncClient,
     private val sessionBootstrapRepository: SessionBootstrapRepository,
     private val syncMetadataRepository: SyncMetadataRepository,
+    private val syncOutboxStore: SyncOutboxStore,
     private val canvasRuntime: CanvasRuntime,
     private val apiService: MulberryApiService,
     private val recoveryPolicy: CanvasRecoveryPolicy,
@@ -46,19 +46,18 @@ class DefaultCanvasSyncRepository @Inject constructor(
     override val syncState: StateFlow<SyncState> = _syncState
 
     private val syncEnabled = MutableStateFlow(false)
-    private val pendingOperations = MutableStateFlow<List<CanvasSyncOperation>>(emptyList())
     private val messageMutex = Mutex()
     private val sendMutex = Mutex()
     private val revisionBuffer = TreeMap<Long, ServerCanvasOperation>()
-    private val sentOperationIds = mutableSetOf<String>()
+    private val inFlightBatchIds = mutableSetOf<String>()
     private var isRecoveringGap = false
     private var sendScheduled = false
-    private var pendingPersistenceScheduled = false
     private var started = false
     private var currentUserId: String? = null
     private var activeAccessToken: String? = null
     private var activePairSessionId: String? = null
     private var lastForegroundStoppedAt: Long? = null
+    private var lastAppliedRevisionCache = 0L
 
     override fun start() {
         if (!started) {
@@ -76,7 +75,10 @@ class DefaultCanvasSyncRepository @Inject constructor(
 
     private fun startCollectors() {
         applicationScope.launch {
-            pendingOperations.value = syncMetadataRepository.metadata.first().pendingOperations
+            syncOutboxStore.migrateLegacyPendingOperations()
+            syncOutboxStore.resetInFlightToPending()
+            lastAppliedRevisionCache =
+                syncMetadataRepository.metadata.first().lastAppliedServerRevision
         }
 
         applicationScope.launch {
@@ -117,6 +119,8 @@ class DefaultCanvasSyncRepository @Inject constructor(
                     _syncState.value = SyncState.Connecting
                     canvasRuntime.setSyncState(SyncState.Connecting)
                     val metadata = syncMetadataRepository.metadata.first()
+                    lastAppliedRevisionCache = metadata.lastAppliedServerRevision
+                    syncOutboxStore.resetInFlightToPending()
                     client.connect(
                         accessToken = session.accessToken,
                         pairSessionId = bootstrap.pairSessionId,
@@ -138,27 +142,20 @@ class DefaultCanvasSyncRepository @Inject constructor(
     }
 
     override suspend fun queueLocalOperation(operation: CanvasSyncOperation) {
-        val next = pendingOperations.value + operation
-        pendingOperations.value = next
+        syncOutboxStore.enqueue(operation)
         if (syncState.value is SyncState.Connected) {
             schedulePendingSend()
-        }
-        if (operation.type != DrawingOperationType.APPEND_POINTS) {
-            syncMetadataRepository.setPendingOperations(next)
-        } else {
-            schedulePendingPersistence()
         }
     }
 
     override suspend fun reset() {
-        pendingOperations.value = emptyList()
         syncEnabled.value = false
         revisionBuffer.clear()
-        sentOperationIds.clear()
+        inFlightBatchIds.clear()
         isRecoveringGap = false
         sendScheduled = false
-        pendingPersistenceScheduled = false
         syncMetadataRepository.reset()
+        syncOutboxStore.clear()
         disconnectActiveSocket()
     }
 
@@ -166,19 +163,13 @@ class DefaultCanvasSyncRepository @Inject constructor(
         when (message) {
             is CanvasSyncMessage.Ready -> handleReady(message)
             is CanvasSyncMessage.Ack -> {
-                sentOperationIds.remove(message.clientOperationId)
-                val next = pendingOperations.value
-                    .filterNot { it.clientOperationId == message.clientOperationId }
-                pendingOperations.value = next
-                syncMetadataRepository.setPendingOperations(next)
+                syncOutboxStore.acknowledge(listOf(message.clientOperationId))
                 message.operation?.let { enqueueAndDrain(listOf(it)) }
+                schedulePendingSend()
             }
             is CanvasSyncMessage.AckBatch -> {
-                sentOperationIds.removeAll(message.ackedClientOperationIds.toSet())
-                val ackedIds = message.ackedClientOperationIds.toSet()
-                val next = pendingOperations.value.filterNot { it.clientOperationId in ackedIds }
-                pendingOperations.value = next
-                syncMetadataRepository.setPendingOperations(next)
+                inFlightBatchIds.remove(message.batchId)
+                syncOutboxStore.acknowledge(message.ackedClientOperationIds)
                 enqueueAndDrain(message.operations)
                 schedulePendingSend()
             }
@@ -223,13 +214,13 @@ class DefaultCanvasSyncRepository @Inject constructor(
     private suspend fun handleReady(message: CanvasSyncMessage.Ready) {
         _syncState.value = SyncState.Recovering
         canvasRuntime.setSyncState(SyncState.Recovering)
-        val lastApplied = syncMetadataRepository.metadata.first().lastAppliedServerRevision
+        val lastApplied = lastAppliedRevisionCache
         val input = CanvasRecoveryInput(
             lastAppliedRevision = lastApplied,
             latestRevision = message.latestRevision,
             missedOperationCount = message.missedOperations.size,
             idleDurationMs = foregroundIdleDurationMs(),
-            hasPendingLocalOperations = pendingOperations.value.isNotEmpty(),
+            hasPendingLocalOperations = syncOutboxStore.hasPendingOperations(),
             reason = if (
                 message.missedOperations.isEmpty() &&
                 message.latestRevision > lastApplied
@@ -277,6 +268,8 @@ class DefaultCanvasSyncRepository @Inject constructor(
             )
             canvasRuntime.setSyncState(SyncState.Connecting)
             val metadata = syncMetadataRepository.metadata.first()
+            lastAppliedRevisionCache = metadata.lastAppliedServerRevision
+            syncOutboxStore.resetInFlightToPending()
             currentUserId = session.userId
             activeAccessToken = session.accessToken
             activePairSessionId = bootstrap.pairSessionId
@@ -294,19 +287,19 @@ class DefaultCanvasSyncRepository @Inject constructor(
         _syncState.value = SyncState.Recovering
         canvasRuntime.setSyncState(SyncState.Recovering)
         runCatching {
-            val afterRevision = syncMetadataRepository.metadata.first().lastAppliedServerRevision
+            val afterRevision = lastAppliedRevisionCache
             apiService.getCanvasOperations(afterRevision)
                 .operations
                 .map { it.toDomainOperation() }
         }.onSuccess { operations ->
-            val lastApplied = syncMetadataRepository.metadata.first().lastAppliedServerRevision
+            val lastApplied = lastAppliedRevisionCache
             val latestRevision = operations.lastOrNull()?.serverRevision ?: lastApplied
             val input = CanvasRecoveryInput(
                 lastAppliedRevision = lastApplied,
                 latestRevision = latestRevision,
                 missedOperationCount = operations.size,
                 idleDurationMs = foregroundIdleDurationMs(),
-                hasPendingLocalOperations = pendingOperations.value.isNotEmpty(),
+                hasPendingLocalOperations = syncOutboxStore.hasPendingOperations(),
                 reason = if (operations.isEmpty() && latestRevision > lastApplied) {
                     CanvasRecoveryReason.EMPTY_TAIL_GAP
                 } else {
@@ -346,68 +339,60 @@ class DefaultCanvasSyncRepository @Inject constructor(
         sendMutex.withLock {
             sendScheduled = false
             if (syncState.value !is SyncState.Connected) return@withLock
-            val unsent = pendingOperations.value
-                .filterNot { it.clientOperationId in sentOperationIds }
-                .take(MAX_OPERATIONS_PER_BATCH)
+            if (inFlightBatchIds.size >= MAX_IN_FLIGHT_BATCHES) return@withLock
+            val unsent = syncOutboxStore.nextBatch(
+                maxOperations = MAX_OPERATIONS_PER_BATCH,
+                maxPayloadBytes = MAX_BATCH_PAYLOAD_BYTES
+            )
             if (unsent.isEmpty()) return@withLock
             val batchId = UUID.randomUUID().toString()
-            unsent.forEach { sentOperationIds.add(it.clientOperationId) }
-            client.sendBatch(batchId, unsent)
-            if (pendingOperations.value.size > unsent.size) {
-                schedulePendingSend()
+            when (val result = client.sendBatch(batchId, unsent)) {
+                is CanvasSendResult.Accepted -> {
+                    syncOutboxStore.markInFlight(unsent, batchId)
+                    inFlightBatchIds.add(batchId)
+                    if (
+                        result.queueSizeBytes < MAX_SOCKET_QUEUE_BYTES &&
+                        inFlightBatchIds.size < MAX_IN_FLIGHT_BATCHES &&
+                        syncOutboxStore.hasPendingOperations()
+                    ) {
+                        schedulePendingSend()
+                    }
+                }
+                CanvasSendResult.Rejected -> {
+                    delay(REJECTED_SEND_RETRY_DELAY_MS)
+                    schedulePendingSend()
+                }
             }
         }
     }
 
-    private fun schedulePendingPersistence() {
-        if (pendingPersistenceScheduled) return
-        pendingPersistenceScheduled = true
-        applicationScope.launch {
-            delay(PENDING_PERSISTENCE_DELAY_MS)
-            pendingPersistenceScheduled = false
-            syncMetadataRepository.setPendingOperations(pendingOperations.value)
-        }
+    private suspend fun persistLastAppliedRevision(revision: Long) {
+        if (revision <= lastAppliedRevisionCache) return
+        lastAppliedRevisionCache = revision
+        syncMetadataRepository.setLastAppliedServerRevision(revision)
     }
 
-    private suspend fun enqueueAndDrain(
-        operations: List<ServerCanvasOperation>,
-        allowRecovery: Boolean = true
-    ) {
-        val lastApplied = syncMetadataRepository.metadata.first().lastAppliedServerRevision
-        operations
-            .filter { it.serverRevision > lastApplied }
-            .sortedBy { it.serverRevision }
-            .forEach { operation ->
-                revisionBuffer.putIfAbsent(operation.serverRevision, operation)
-            }
-        drainReadyRevisions()
-        recoverIfGapRemains(allowRecovery)
-    }
-
-    private suspend fun drainReadyRevisions() {
+    private suspend fun applyServerBatchBeforeAdvancing(operations: List<ServerCanvasOperation>) {
         val userId = currentUserId
-        while (true) {
-            val expectedNext = syncMetadataRepository.metadata.first().lastAppliedServerRevision + 1
-            val operation = revisionBuffer.remove(expectedNext) ?: return
-            if (operation.actorUserId == userId) {
-                syncMetadataRepository.setLastAppliedServerRevision(operation.serverRevision)
-            } else {
-                canvasRuntime.submit(CanvasRuntimeEvent.RemoteOperation(operation))
-                syncMetadataRepository.setLastAppliedServerRevision(operation.serverRevision)
-            }
+        val remoteOperations = operations.filterNot { it.actorUserId == userId }
+        if (remoteOperations.isNotEmpty()) {
+            canvasRuntime.submitAndAwait(CanvasRuntimeEvent.RemoteBatch(remoteOperations))
+        }
+        persistLastAppliedRevision(operations.last().serverRevision)
+    }
+
+    private suspend fun fetchAndApplyTailFrom(revision: Long) {
+        val tail = apiService.getCanvasOperations(revision)
+            .operations
+            .map { it.toDomainOperation() }
+            .filter { it.serverRevision > revision }
+            .sortedBy { it.serverRevision }
+        if (tail.isNotEmpty()) {
+            applyRecoveryOperationsAtomically(tail)
         }
     }
 
-    private suspend fun recoverIfGapRemains(allowRecovery: Boolean) {
-        if (!allowRecovery || revisionBuffer.isEmpty()) return
-        val expectedNext = syncMetadataRepository.metadata.first().lastAppliedServerRevision + 1
-        if (revisionBuffer.firstKey() > expectedNext) {
-            recoverFromServer(CanvasRecoveryReason.REVISION_GAP)
-        }
-    }
-
-    private suspend fun recoverFromSnapshot() {
-        if (!canReplaceFromSnapshot()) return
+    private suspend fun recoverFromSnapshotAndTail() {
         val snapshot = apiService.getCanvasSnapshot()
         if (!canReplaceFromSnapshot()) return
         canvasRuntime.submitAndAwait(
@@ -423,21 +408,63 @@ class DefaultCanvasSyncRepository @Inject constructor(
                         }
                     )
                 },
-                serverRevision = snapshot.revision
+                serverRevision = snapshot.snapshotRevision
             )
         )
-        syncMetadataRepository.setLastAppliedServerRevision(snapshot.revision)
+        persistLastAppliedRevision(snapshot.snapshotRevision)
         revisionBuffer.clear()
+        if (snapshot.latestRevision > snapshot.snapshotRevision) {
+            fetchAndApplyTailFrom(snapshot.snapshotRevision)
+        }
     }
 
-    private fun canReplaceFromSnapshot(): Boolean =
-        pendingOperations.value.isEmpty() &&
+    private suspend fun enqueueAndDrain(
+        operations: List<ServerCanvasOperation>,
+        allowRecovery: Boolean = true
+    ) {
+        val lastApplied = lastAppliedRevisionCache
+        operations
+            .filter { it.serverRevision > lastApplied }
+            .sortedBy { it.serverRevision }
+            .forEach { operation ->
+                revisionBuffer.putIfAbsent(operation.serverRevision, operation)
+            }
+        drainReadyRevisions()
+        recoverIfGapRemains(allowRecovery)
+    }
+
+    private suspend fun drainReadyRevisions() {
+        val readyOperations = mutableListOf<ServerCanvasOperation>()
+        while (true) {
+            val expectedNext = lastAppliedRevisionCache + readyOperations.size + 1
+            val operation = revisionBuffer.remove(expectedNext) ?: break
+            readyOperations += operation
+        }
+        if (readyOperations.isNotEmpty()) {
+            applyServerBatchBeforeAdvancing(readyOperations)
+        }
+    }
+
+    private suspend fun recoverIfGapRemains(allowRecovery: Boolean) {
+        if (!allowRecovery || revisionBuffer.isEmpty()) return
+        val expectedNext = lastAppliedRevisionCache + 1
+        if (revisionBuffer.firstKey() > expectedNext) {
+            recoverFromServer(CanvasRecoveryReason.REVISION_GAP)
+        }
+    }
+
+    private suspend fun recoverFromSnapshot() {
+        if (!canReplaceFromSnapshot()) return
+        recoverFromSnapshotAndTail()
+    }
+
+    private suspend fun canReplaceFromSnapshot(): Boolean =
+        !syncOutboxStore.hasPendingOperations() &&
             canvasRuntime.renderState.value.localActiveStroke == null
 
     private suspend fun applyRecoveryOperationsAtomically(operations: List<ServerCanvasOperation>) {
-        val lastApplied = syncMetadataRepository.metadata.first().lastAppliedServerRevision
         val ordered = operations
-            .filter { it.serverRevision > lastApplied }
+            .filter { it.serverRevision > lastAppliedRevisionCache }
             .sortedBy { it.serverRevision }
         if (ordered.isEmpty()) return
 
@@ -452,7 +479,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
                 )
             )
         }
-        syncMetadataRepository.setLastAppliedServerRevision(ordered.last().serverRevision)
+        persistLastAppliedRevision(ordered.last().serverRevision)
     }
 
     private fun foregroundIdleDurationMs(): Long =
@@ -461,20 +488,13 @@ class DefaultCanvasSyncRepository @Inject constructor(
         } ?: 0L
 
     private fun disconnectActiveSocket() {
-        val pending = pendingOperations.value
-        if (pending.isNotEmpty()) {
-            applicationScope.launch {
-                syncMetadataRepository.setPendingOperations(pending)
-            }
-        }
         currentUserId = null
         activeAccessToken = null
         activePairSessionId = null
         revisionBuffer.clear()
-        sentOperationIds.clear()
+        inFlightBatchIds.clear()
         isRecoveringGap = false
         sendScheduled = false
-        pendingPersistenceScheduled = false
         client.disconnect()
         _syncState.value = SyncState.Disconnected
         canvasRuntime.stop()
@@ -482,7 +502,10 @@ class DefaultCanvasSyncRepository @Inject constructor(
 
     private companion object {
         const val BATCH_DELAY_MS = 16L
-        const val PENDING_PERSISTENCE_DELAY_MS = 250L
-        const val MAX_OPERATIONS_PER_BATCH = 64
+        const val MAX_OPERATIONS_PER_BATCH = 32
+        const val MAX_BATCH_PAYLOAD_BYTES = 64 * 1024
+        const val MAX_IN_FLIGHT_BATCHES = 2
+        const val MAX_SOCKET_QUEUE_BYTES = 512L * 1024L
+        const val REJECTED_SEND_RETRY_DELAY_MS = 250L
     }
 }

@@ -76,6 +76,8 @@ data class CanvasOpsResponse(
 data class CanvasSnapshotResponse(
     val pairSessionId: String,
     val revision: Long,
+    val snapshotRevision: Long = revision,
+    val latestRevision: Long = revision,
     val snapshot: CanvasSnapshotPayload,
     val updatedAt: String?
 )

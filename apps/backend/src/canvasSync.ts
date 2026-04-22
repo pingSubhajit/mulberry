@@ -213,10 +213,22 @@ export class CanvasSyncHub {
     connections.forEach((socket) => this.send(socket, payload))
   }
 
-  private send(socket: WebSocket, payload: unknown): void {
-    if (socket.readyState === 1) {
-      socket.send(JSON.stringify(payload))
+  private send(socket: WebSocket, payload: unknown): boolean {
+    if (socket.readyState !== 1) {
+      return false
     }
+    if (socket.bufferedAmount > MAX_SOCKET_BUFFERED_BYTES) {
+      socket.send(JSON.stringify({
+        type: "FLOW_CONTROL",
+        mode: "SLOW_DOWN",
+        maxAppendHz: 10,
+        reason: "socket_backpressure",
+      }))
+      socket.close(1013, "socket_backpressure")
+      return false
+    }
+    socket.send(JSON.stringify(payload))
+    return true
   }
 
   private remove(socket: WebSocket): void {
@@ -232,6 +244,7 @@ export class CanvasSyncHub {
 }
 
 const SLOW_DOWN_OPERATION_THRESHOLD = 48
+const MAX_SOCKET_BUFFERED_BYTES = 1_048_576
 
 export function isRemoteOperationFromOtherUser(
   operation: CanvasOperationEnvelope,

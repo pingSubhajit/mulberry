@@ -85,6 +85,7 @@ interface PendingCanvasUpdate {
   pairSessionId: string
   actorUserId: string
   latestRevision: number
+  snapshotRevision: number
 }
 
 export interface PushDispatchOptions {
@@ -111,11 +112,13 @@ export class PushDispatchService {
     pairSessionId: string,
     actorUserId: string,
     latestRevision: number,
+    snapshotRevision = latestRevision,
   ): void {
     this.pendingByPairSession.set(pairSessionId, {
       pairSessionId,
       actorUserId,
       latestRevision,
+      snapshotRevision,
     })
 
     const existing = this.timers.get(pairSessionId)
@@ -161,6 +164,7 @@ export class PushDispatchService {
       pairSessionId: pending.pairSessionId,
       actorUserId: pending.actorUserId,
       latestRevision: pending.latestRevision,
+      snapshotRevision: pending.snapshotRevision,
       tokenCount: tokens.length,
     })
 
@@ -172,7 +176,7 @@ export class PushDispatchService {
           type: "CANVAS_UPDATED",
           pairSessionId: pending.pairSessionId,
           latestRevision: String(pending.latestRevision),
-          snapshotRevision: String(pending.latestRevision),
+          snapshotRevision: String(pending.snapshotRevision),
           actorUserId: pending.actorUserId,
         },
         android: {

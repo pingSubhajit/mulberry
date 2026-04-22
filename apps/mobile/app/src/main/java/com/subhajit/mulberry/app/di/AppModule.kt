@@ -50,7 +50,10 @@ import com.subhajit.mulberry.sync.DefaultCanvasSyncRepository
 import com.subhajit.mulberry.sync.FcmTokenRepository
 import com.subhajit.mulberry.sync.FirebaseFcmTokenRepository
 import com.subhajit.mulberry.sync.OkHttpCanvasSyncClient
+import com.subhajit.mulberry.sync.DefaultRemoteOperationApplier
+import com.subhajit.mulberry.sync.RemoteOperationApplier
 import com.subhajit.mulberry.sync.SyncMetadataRepository
+import com.subhajit.mulberry.sync.SyncOutboxDao
 import com.subhajit.mulberry.sync.WorkManagerBackgroundCanvasSyncScheduler
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
@@ -175,6 +178,12 @@ abstract class AppBindingsModule {
 
     @Binds
     @Singleton
+    abstract fun bindRemoteOperationApplier(
+        implementation: DefaultRemoteOperationApplier
+    ): RemoteOperationApplier
+
+    @Binds
+    @Singleton
     abstract fun bindFcmTokenRepository(
         implementation: FirebaseFcmTokenRepository
     ): FcmTokenRepository
@@ -246,6 +255,10 @@ object AppProvidesModule {
     @Provides
     fun provideCanvasMetadataDao(database: DrawingDatabase): CanvasMetadataDao =
         database.canvasMetadataDao()
+
+    @Provides
+    fun provideSyncOutboxDao(database: DrawingDatabase): SyncOutboxDao =
+        database.syncOutboxDao()
 
     @Provides
     @Singleton

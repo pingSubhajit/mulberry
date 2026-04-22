@@ -19,6 +19,17 @@ describe("Mulberry backend", () => {
     await runMigrations(pool)
     db = {
       query: pool.query.bind(pool),
+      transaction: async (fn) => {
+        await pool.query("BEGIN")
+        try {
+          const result = await fn({ query: pool.query.bind(pool) })
+          await pool.query("COMMIT")
+          return result
+        } catch (error) {
+          await pool.query("ROLLBACK")
+          throw error
+        }
+      },
       end: async () => {
         await pool.end()
       },
@@ -559,10 +570,74 @@ describe("Mulberry backend", () => {
 
     expect(snapshot.statusCode).toBe(200)
     expect(snapshot.json().revision).toBe(7)
+    expect(snapshot.json().snapshotRevision).toBe(7)
+    expect(snapshot.json().latestRevision).toBe(7)
     expect(snapshot.json().snapshot.strokes.map((stroke: { id: string }) => stroke.id))
       .toEqual(["current-stroke"])
     expect(tail.json().operations.map((operation: { serverRevision: number }) => operation.serverRevision))
       .toEqual([6, 7])
+    first.close()
+  })
+
+  it("defers snapshot materialization for in-progress strokes until finish", async () => {
+    const { inviter } = await pairUsers()
+    const first = await app.injectWS("/canvas/sync")
+
+    first.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: inviter.accessToken,
+        pairSessionId: inviter.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    await nextWsJson(first)
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP_BATCH",
+        batchId: "in-progress-batch",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          addStrokeOperation("in-progress-op-1", "in-progress-stroke", 1, 1),
+          appendPointsOperation("in-progress-op-2", "in-progress-stroke", [{ x: 2, y: 2 }]),
+        ],
+      }),
+    )
+
+    const inProgressAck = await nextWsJson(first)
+    expect(inProgressAck.type).toBe("ACK_BATCH")
+    expect(inProgressAck.ackedThroughRevision).toBe(2)
+
+    const inProgressSnapshot = await app.inject({
+      method: "GET",
+      url: "/canvas/snapshot",
+      headers: bearer(inviter.accessToken),
+    })
+
+    expect(inProgressSnapshot.statusCode).toBe(200)
+    expect(inProgressSnapshot.json().snapshotRevision).toBe(0)
+    expect(inProgressSnapshot.json().latestRevision).toBe(2)
+    expect(inProgressSnapshot.json().snapshot.strokes).toEqual([])
+
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP_BATCH",
+        batchId: "finish-in-progress-batch",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [finishStrokeOperation("in-progress-op-3", "in-progress-stroke")],
+      }),
+    )
+    await nextWsJson(first)
+
+    const finishedSnapshot = await app.inject({
+      method: "GET",
+      url: "/canvas/snapshot",
+      headers: bearer(inviter.accessToken),
+    })
+    const stroke = finishedSnapshot.json().snapshot.strokes[0]
+    expect(finishedSnapshot.json().snapshotRevision).toBe(3)
+    expect(finishedSnapshot.json().latestRevision).toBe(3)
+    expect(stroke.points).toEqual([{ x: 1, y: 1 }, { x: 2, y: 2 }])
     first.close()
   })
 

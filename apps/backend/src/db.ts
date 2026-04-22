@@ -2,6 +2,7 @@ import pg from "pg"
 
 export interface Database {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<{ rows: T[] }>
+  transaction<T>(fn: (db: Pick<Database, "query">) => Promise<T>): Promise<T>
   end(): Promise<void>
 }
 
@@ -88,9 +89,16 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
     CREATE TABLE IF NOT EXISTS canvas_snapshots (
       pair_session_id TEXT PRIMARY KEY REFERENCES pair_sessions(id) ON DELETE CASCADE,
       revision BIGINT NOT NULL DEFAULT 0,
+      latest_revision BIGINT NOT NULL DEFAULT 0,
       snapshot_json JSONB NOT NULL DEFAULT '{"strokes":[]}'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE canvas_snapshots
+      ADD COLUMN IF NOT EXISTS latest_revision BIGINT NOT NULL DEFAULT 0;
+
+    UPDATE canvas_snapshots
+    SET latest_revision = GREATEST(latest_revision, revision);
   `)
 }
 
@@ -99,6 +107,20 @@ export async function createDatabase(databaseUrl: string): Promise<Database> {
   await runMigrations(pool as unknown as Pick<Database, "query">)
   return {
     query: pool.query.bind(pool),
+    transaction: async (fn) => {
+      const client = await pool.connect()
+      try {
+        await client.query("BEGIN")
+        const result = await fn({ query: client.query.bind(client) })
+        await client.query("COMMIT")
+        return result
+      } catch (error) {
+        await client.query("ROLLBACK")
+        throw error
+      } finally {
+        client.release()
+      }
+    },
     end: async () => {
       await pool.end()
     },

@@ -109,6 +109,8 @@ export interface CanvasOpsResponse {
 
 export interface CanvasSnapshotResponse {
   pairSessionId: string
+  snapshotRevision: number
+  latestRevision: number
   revision: number
   snapshot: unknown
   updatedAt: string | null

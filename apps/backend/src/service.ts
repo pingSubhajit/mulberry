@@ -372,7 +372,8 @@ export class MulberryService {
     operation: ClientCanvasOperation,
   ): Promise<CanvasOperationEnvelope> {
     const context = await this.requireCanvasSessionContext(accessToken, pairSessionId)
-    return this.acceptCanvasOperation(context, operation)
+    const accepted = await this.acceptCanvasOperationBatch(context, [operation])
+    return accepted[0]
   }
 
   async acceptCanvasOperationBatchForSession(
@@ -391,11 +392,7 @@ export class MulberryService {
       throw new HttpError(413, "CLIENT_OP_BATCH is too large")
     }
 
-    const accepted: CanvasOperationEnvelope[] = []
-    for (const operation of batch.operations) {
-      accepted.push(await this.acceptCanvasOperation(context, operation))
-    }
-    return accepted
+    return this.acceptCanvasOperationBatch(context, batch.operations)
   }
 
   async listCanvasOperations(
@@ -414,9 +411,12 @@ export class MulberryService {
   async getCanvasSnapshot(accessToken: string): Promise<CanvasSnapshotResponse> {
     const context = await this.requireDefaultCanvasSessionContext(accessToken)
     const row = await this.getOrCreateCanvasSnapshot(context.pairSession.id)
+    const snapshotRevision = Number(row.revision)
     return {
       pairSessionId: context.pairSession.id,
-      revision: Number(row.revision),
+      snapshotRevision,
+      latestRevision: Number(row.latest_revision),
+      revision: snapshotRevision,
       snapshot: row.snapshot_json,
       updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
     }
@@ -426,82 +426,132 @@ export class MulberryService {
     context: CanvasSessionContext,
     operation: ClientCanvasOperation,
   ): Promise<CanvasOperationEnvelope> {
-    if (!operation.clientOperationId.trim()) {
-      throw new HttpError(400, "clientOperationId is required")
-    }
-    if (!operation.type) {
-      throw new HttpError(400, "operation type is required")
-    }
+    const accepted = await this.acceptCanvasOperationBatch(context, [operation])
+    return accepted[0]
+  }
 
-    const duplicate = await this.db.query<CanvasOperationRecord>(
-      `
-      SELECT id, pair_session_id, server_revision, client_operation_id, actor_user_id,
-        type, stroke_id, payload_json, client_created_at, created_at
-      FROM canvas_operations
-      WHERE pair_session_id = $1 AND actor_user_id = $2 AND client_operation_id = $3
-      LIMIT 1
-      `,
-      [context.pairSession.id, context.user.id, operation.clientOperationId],
-    )
-    if (duplicate.rows[0]) {
-      return this.canvasOperationToEnvelope(duplicate.rows[0])
-    }
-
-    const latestRevision = await this.getLatestCanvasRevision(context.pairSession.id)
-    const nextRevision = latestRevision + 1
-    const id = randomUUID()
-    const clientCreatedAt = validDateOrNow(operation.clientCreatedAt)
-    await this.db.query(
-      `
-      INSERT INTO canvas_operations (
-        id,
-        pair_session_id,
-        server_revision,
-        client_operation_id,
-        actor_user_id,
-        type,
-        stroke_id,
-        payload_json,
-        client_created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
-      `,
-      [
-        id,
-        context.pairSession.id,
-        nextRevision,
-        operation.clientOperationId,
-        context.user.id,
-        operation.type,
-        operation.strokeId ?? null,
-        JSON.stringify(operation.payload ?? {}),
-        clientCreatedAt.toISOString(),
-      ],
-    )
-
-    await this.applyOperationToSnapshot(context.pairSession.id, {
-      type: operation.type,
-      strokeId: operation.strokeId ?? null,
-      payload: operation.payload,
-      revision: nextRevision,
+  private async acceptCanvasOperationBatch(
+    context: CanvasSessionContext,
+    operations: ClientCanvasOperation[],
+  ): Promise<CanvasOperationEnvelope[]> {
+    operations.forEach((operation) => {
+      if (!operation.clientOperationId.trim()) {
+        throw new HttpError(400, "clientOperationId is required")
+      }
+      if (!operation.type) {
+        throw new HttpError(400, "operation type is required")
+      }
     })
 
-    const rows = await this.db.query<CanvasOperationRecord>(
-      `
-      SELECT id, pair_session_id, server_revision, client_operation_id, actor_user_id,
-        type, stroke_id, payload_json, client_created_at, created_at
-      FROM canvas_operations
-      WHERE id = $1
-      `,
-      [id],
+    const { accepted, latestRevision, snapshotRevision, shouldPushCanvasUpdate } = await this.db.transaction(
+      async (tx) => {
+        const snapshotRow = await this.getOrCreateCanvasSnapshot(context.pairSession.id, tx, true)
+        let latestRevision = Number(snapshotRow.latest_revision)
+        let snapshotRevision = Number(snapshotRow.revision)
+        const snapshot = normalizeCanvasSnapshot(snapshotRow.snapshot_json)
+        const acceptedRecords: CanvasOperationRecord[] = []
+        let snapshotChanged = false
+        let shouldPushCanvasUpdate = false
+
+        for (const operation of operations) {
+          const duplicate = await tx.query<CanvasOperationRecord>(
+            `
+            SELECT id, pair_session_id, server_revision, client_operation_id, actor_user_id,
+              type, stroke_id, payload_json, client_created_at, created_at
+            FROM canvas_operations
+            WHERE pair_session_id = $1 AND actor_user_id = $2 AND client_operation_id = $3
+            LIMIT 1
+            `,
+            [context.pairSession.id, context.user.id, operation.clientOperationId],
+          )
+          if (duplicate.rows[0]) {
+            acceptedRecords.push(duplicate.rows[0])
+            latestRevision = Math.max(latestRevision, Number(duplicate.rows[0].server_revision))
+            continue
+          }
+
+          latestRevision += 1
+          const id = randomUUID()
+          const clientCreatedAt = validDateOrNow(operation.clientCreatedAt)
+          const rows = await tx.query<CanvasOperationRecord>(
+            `
+            INSERT INTO canvas_operations (
+              id,
+              pair_session_id,
+              server_revision,
+              client_operation_id,
+              actor_user_id,
+              type,
+              stroke_id,
+              payload_json,
+              client_created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+            RETURNING id, pair_session_id, server_revision, client_operation_id, actor_user_id,
+              type, stroke_id, payload_json, client_created_at, created_at
+            `,
+            [
+              id,
+              context.pairSession.id,
+              latestRevision,
+              operation.clientOperationId,
+              context.user.id,
+              operation.type,
+              operation.strokeId ?? null,
+              JSON.stringify(operation.payload ?? {}),
+              clientCreatedAt.toISOString(),
+            ],
+          )
+          const acceptedRecord = rows.rows[0]
+          acceptedRecords.push(acceptedRecord)
+          const materialized = await this.materializeDurableOperation(
+            tx,
+            context.pairSession.id,
+            acceptedRecord,
+            snapshot,
+          )
+          if (materialized) {
+            snapshotRevision = Number(acceptedRecord.server_revision)
+            snapshotChanged = true
+            shouldPushCanvasUpdate = true
+          }
+        }
+
+        await tx.query(
+          `
+          UPDATE canvas_snapshots
+          SET latest_revision = $2,
+            revision = $3,
+            snapshot_json = CASE WHEN $4 THEN $5::jsonb ELSE snapshot_json END,
+            updated_at = CASE WHEN $4 THEN NOW() ELSE updated_at END
+          WHERE pair_session_id = $1
+          `,
+          [
+            context.pairSession.id,
+            latestRevision,
+            snapshotRevision,
+            snapshotChanged,
+            JSON.stringify(snapshot),
+          ],
+        )
+
+        return {
+          accepted: acceptedRecords.map((row) => this.canvasOperationToEnvelope(row)),
+          latestRevision,
+          snapshotRevision,
+          shouldPushCanvasUpdate,
+        }
+      },
     )
-    const accepted = this.canvasOperationToEnvelope(rows.rows[0])
-    if (shouldSendCanvasUpdatePush(accepted.type)) {
+
+    if (shouldPushCanvasUpdate) {
       this.pushDispatchService?.enqueueCanvasUpdated(
         context.pairSession.id,
         context.user.id,
-        accepted.serverRevision,
+        latestRevision,
+        snapshotRevision,
       )
     }
+
     return accepted
   }
 
@@ -813,7 +863,18 @@ export class MulberryService {
   }
 
   private async getLatestCanvasRevision(pairSessionId: string): Promise<number> {
-    const rows = await this.db.query<{ revision: string | number }>(
+    const rows = await this.db.query<{ latest_revision: string | number }>(
+      `
+      SELECT latest_revision
+      FROM canvas_snapshots
+      WHERE pair_session_id = $1
+      `,
+      [pairSessionId],
+    )
+    if (rows.rows[0]) {
+      return Number(rows.rows[0].latest_revision)
+    }
+    const fallback = await this.db.query<{ revision: string | number }>(
       `
       SELECT COALESCE(MAX(server_revision), 0) AS revision
       FROM canvas_operations
@@ -821,7 +882,7 @@ export class MulberryService {
       `,
       [pairSessionId],
     )
-    return Number(rows.rows[0]?.revision ?? 0)
+    return Number(fallback.rows[0]?.revision ?? 0)
   }
 
   private async listCanvasOperationsForPair(
@@ -843,10 +904,31 @@ export class MulberryService {
 
   private async getOrCreateCanvasSnapshot(pairSessionId: string): Promise<{
     revision: string | number
+    latest_revision: string | number
+    snapshot_json: unknown
+    updated_at: Date | string
+  }>
+  private async getOrCreateCanvasSnapshot(
+    pairSessionId: string,
+    db: Pick<Database, "query">,
+    lockForUpdate: true,
+  ): Promise<{
+    revision: string | number
+    latest_revision: string | number
+    snapshot_json: unknown
+    updated_at: Date | string
+  }>
+  private async getOrCreateCanvasSnapshot(
+    pairSessionId: string,
+    db: Pick<Database, "query"> = this.db,
+    lockForUpdate = false,
+  ): Promise<{
+    revision: string | number
+    latest_revision: string | number
     snapshot_json: unknown
     updated_at: Date | string
   }> {
-    await this.db.query(
+    await db.query(
       `
       INSERT INTO canvas_snapshots (pair_session_id)
       VALUES ($1)
@@ -854,79 +936,94 @@ export class MulberryService {
       `,
       [pairSessionId],
     )
-    const rows = await this.db.query<{
+    const rows = await db.query<{
       revision: string | number
+      latest_revision: string | number
       snapshot_json: unknown
       updated_at: Date | string
     }>(
       `
-      SELECT revision, snapshot_json, updated_at
+      SELECT revision, latest_revision, snapshot_json, updated_at
       FROM canvas_snapshots
       WHERE pair_session_id = $1
+      ${lockForUpdate ? "FOR UPDATE" : ""}
       `,
       [pairSessionId],
     )
     return rows.rows[0]
   }
 
-  private async applyOperationToSnapshot(
+  private async materializeDurableOperation(
+    db: Pick<Database, "query">,
     pairSessionId: string,
-    operation: {
-      type: string
-      strokeId: string | null
-      payload: unknown
-      revision: number
-    },
-  ): Promise<void> {
-    const snapshotRow = await this.getOrCreateCanvasSnapshot(pairSessionId)
-    const snapshot = normalizeCanvasSnapshot(snapshotRow.snapshot_json)
+    operation: CanvasOperationRecord,
+    snapshot: { strokes: MaterializedStroke[] },
+  ): Promise<boolean> {
     switch (operation.type) {
-      case "ADD_STROKE": {
-        const payload = operation.payload as Partial<MaterializedStroke> & {
+      case "FINISH_STROKE": {
+        const strokeId = operation.stroke_id
+        if (!strokeId) return false
+        const stroke = await this.reconstructFinishedStroke(db, pairSessionId, strokeId, Number(operation.server_revision))
+        if (!stroke) return false
+        snapshot.strokes = snapshot.strokes.filter((stroke) => stroke.id !== strokeId)
+        snapshot.strokes.push(stroke)
+        return true
+      }
+      case "DELETE_STROKE":
+        snapshot.strokes = snapshot.strokes.filter((stroke) => stroke.id !== operation.stroke_id)
+        return true
+      case "CLEAR_CANVAS": {
+        snapshot.strokes = []
+        return true
+      }
+      default:
+        return false
+    }
+  }
+
+  private async reconstructFinishedStroke(
+    db: Pick<Database, "query">,
+    pairSessionId: string,
+    strokeId: string,
+    throughRevision: number,
+  ): Promise<MaterializedStroke | null> {
+    const rows = await db.query<CanvasOperationRecord>(
+      `
+      SELECT id, pair_session_id, server_revision, client_operation_id, actor_user_id,
+        type, stroke_id, payload_json, client_created_at, created_at
+      FROM canvas_operations
+      WHERE pair_session_id = $1
+        AND stroke_id = $2
+        AND server_revision <= $3
+        AND type IN ('ADD_STROKE', 'APPEND_POINTS')
+      ORDER BY server_revision ASC
+      `,
+      [pairSessionId, strokeId, throughRevision],
+    )
+    let stroke: MaterializedStroke | null = null
+    for (const operation of rows.rows) {
+      if (operation.type === "ADD_STROKE") {
+        const payload = operation.payload_json as Partial<MaterializedStroke> & {
           firstPoint?: { x: number; y: number }
         }
-        const strokeId = operation.strokeId ?? payload.id
-        if (!strokeId || !payload.firstPoint) break
-        snapshot.strokes = snapshot.strokes.filter((stroke) => stroke.id !== strokeId)
-        snapshot.strokes.push({
+        const firstPoint = normalizeCanvasPoint(payload.firstPoint)
+        if (!firstPoint) continue
+        stroke = {
           id: strokeId,
           colorArgb: Number(payload.colorArgb ?? 0xff111111),
           width: Number(payload.width ?? 8),
           createdAt: Number(payload.createdAt ?? Date.now()),
-          points: [payload.firstPoint],
-          finished: false,
-        })
-        break
-      }
-      case "APPEND_POINTS": {
-        const payload = operation.payload as { points?: Array<{ x: number; y: number }> }
-        const stroke = snapshot.strokes.find((item) => item.id === operation.strokeId)
-        if (stroke && Array.isArray(payload.points)) {
-          stroke.points.push(...payload.points)
+          points: [firstPoint],
+          finished: true,
         }
-        break
+      } else if (operation.type === "APPEND_POINTS" && stroke) {
+        const payload = operation.payload_json as { points?: Array<{ x: number; y: number }> }
+        if (Array.isArray(payload.points)) {
+          stroke.points.push(...payload.points.map(normalizeCanvasPoint).filter((point): point is { x: number; y: number } => point !== null))
+        }
       }
-      case "FINISH_STROKE": {
-        const stroke = snapshot.strokes.find((item) => item.id === operation.strokeId)
-        if (stroke) stroke.finished = true
-        break
-      }
-      case "DELETE_STROKE":
-        snapshot.strokes = snapshot.strokes.filter((stroke) => stroke.id !== operation.strokeId)
-        break
-      case "CLEAR_CANVAS":
-        snapshot.strokes = []
-        break
     }
-
-    await this.db.query(
-      `
-      UPDATE canvas_snapshots
-      SET revision = $2, snapshot_json = $3::jsonb, updated_at = NOW()
-      WHERE pair_session_id = $1
-      `,
-      [pairSessionId, operation.revision, JSON.stringify(snapshot)],
-    )
+    return stroke
   }
 
   private canvasOperationToEnvelope(row: CanvasOperationRecord): CanvasOperationEnvelope {
@@ -1091,8 +1188,10 @@ function normalizeCanvasSnapshot(raw: unknown): { strokes: MaterializedStroke[] 
   return { strokes: [] }
 }
 
-function shouldSendCanvasUpdatePush(type: string): boolean {
-  return type === "FINISH_STROKE" || type === "DELETE_STROKE" || type === "CLEAR_CANVAS"
+function normalizeCanvasPoint(raw: unknown): { x: number; y: number } | null {
+  if (typeof raw !== "object" || raw === null) return null
+  const item = raw as { x?: unknown; y?: unknown }
+  return { x: Number(item.x ?? 0), y: Number(item.y ?? 0) }
 }
 
 function normalizeStroke(raw: unknown): MaterializedStroke | null {

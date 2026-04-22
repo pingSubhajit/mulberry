@@ -29,8 +29,10 @@ interface BackgroundCanvasSyncCoordinator {
 class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
     private val sessionBootstrapRepository: SessionBootstrapRepository,
     private val syncMetadataRepository: SyncMetadataRepository,
+    private val syncOutboxStore: SyncOutboxStore,
     private val apiService: MulberryApiService,
     private val drawingRepository: DrawingRepository,
+    private val remoteOperationApplier: RemoteOperationApplier,
     private val wallpaperCoordinator: WallpaperCoordinator
 ) : BackgroundCanvasSyncCoordinator {
     override suspend fun syncToLatestSnapshot(
@@ -45,6 +47,9 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         }
         if (pairSessionId != null && pairSessionId != bootstrap.pairSessionId) {
             return@runCatching skip("pair session mismatch")
+        }
+        if (syncOutboxStore.hasPendingOperations()) {
+            return@runCatching skip("local outbox has pending work")
         }
 
         val localRevision = syncMetadataRepository.metadata.first().lastAppliedServerRevision
@@ -61,7 +66,7 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         if (snapshot.pairSessionId != bootstrap.pairSessionId) {
             return@runCatching skip("snapshot pair session mismatch")
         }
-        if (snapshot.revision < localRevision) {
+        if (snapshot.latestRevision < localRevision) {
             return@runCatching BackgroundCanvasSyncResult.AlreadyCurrent
         }
 
@@ -77,14 +82,23 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
                     }
                 )
             },
-            serverRevision = snapshot.revision
+            serverRevision = snapshot.snapshotRevision
         )
-        syncMetadataRepository.setLastAppliedServerRevision(snapshot.revision)
+        syncMetadataRepository.setLastAppliedServerRevision(snapshot.snapshotRevision)
+        if (snapshot.latestRevision > snapshot.snapshotRevision) {
+            apiService.getCanvasOperations(snapshot.snapshotRevision)
+                .operations
+                .map { it.toDomainOperation() }
+                .filter { it.serverRevision > snapshot.snapshotRevision }
+                .sortedBy { it.serverRevision }
+                .forEach { remoteOperationApplier.apply(it) }
+        }
         wallpaperCoordinator.ensureSnapshotCurrent()
         wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
         Log.i(
             TAG,
-            "Background snapshot sync applied revision=${snapshot.revision} " +
+            "Background snapshot sync applied snapshotRevision=${snapshot.snapshotRevision} " +
+                "latestRevision=${snapshot.latestRevision} " +
                 "strokeCount=${snapshot.snapshot.strokes.size}"
         )
         BackgroundCanvasSyncResult.Synced
