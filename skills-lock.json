@@ -6,6 +6,11 @@
       "sourceType": "github",
       "computedHash": "d0ece1b2164ce1376e4ab6e98d6ac079df3a2a94f5f02224362b6a1ce2516ae9"
     },
+    "play-store-screenshots": {
+      "source": "mobile-dev-ci/play-store-screenshots",
+      "sourceType": "github",
+      "computedHash": "cac1e229fe6a41fab0223d96cd75b5375a99caa7ce53af9c613ef1a5502e0c3e"
+    },
     "privacy-policy": {
       "source": "phuryn/pm-skills",
       "sourceType": "github",

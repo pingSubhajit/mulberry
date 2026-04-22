@@ -194,7 +194,7 @@ pnpm --filter @mulberry/backend build
 pnpm --filter @mulberry/backend test
 ```
 
-Railway still builds the backend through the root `Dockerfile`, which uses `apps/backend/package-lock.json` and `npm ci` inside the Docker image. The PNPM workspace layer is for local monorepo development; it does not replace the backend deployment path.
+Railway still builds the backend through the root `Dockerfile`. The Docker image uses the root PNPM workspace lockfile and builds only `@mulberry/backend`, so the backend deployment path stays independent from the web and Android apps.
 
 ### Web
 

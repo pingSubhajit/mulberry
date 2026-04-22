@@ -1,19 +1,24 @@
 FROM node:22-alpine AS deps
-WORKDIR /app/apps/backend
-COPY apps/backend/package.json apps/backend/package-lock.json ./
-RUN npm ci
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.33.1 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/backend/package.json ./apps/backend/package.json
+RUN pnpm install --filter @mulberry/backend --frozen-lockfile
 
 FROM deps AS build
-COPY apps/backend/tsconfig.json ./
-COPY apps/backend/src ./src
-COPY apps/backend/test ./test
-RUN npm run build
+COPY apps/backend/tsconfig.json ./apps/backend/tsconfig.json
+COPY apps/backend/src ./apps/backend/src
+COPY apps/backend/test ./apps/backend/test
+RUN pnpm --filter @mulberry/backend build
 
 FROM node:22-alpine AS runner
-WORKDIR /app/apps/backend
+WORKDIR /app
 ENV NODE_ENV=production
-COPY apps/backend/package.json apps/backend/package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-COPY --from=build /app/apps/backend/dist ./dist
+RUN corepack enable && corepack prepare pnpm@10.33.1 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/backend/package.json ./apps/backend/package.json
+RUN pnpm install --filter @mulberry/backend --prod --frozen-lockfile && pnpm store prune
+COPY --from=build /app/apps/backend/dist ./apps/backend/dist
+WORKDIR /app/apps/backend
 EXPOSE 8080
 CMD ["node", "dist/src/server.js"]
