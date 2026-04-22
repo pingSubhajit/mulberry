@@ -24,12 +24,12 @@ class AppConfigFactoryTest {
     fun `maps prod environment fields into config`() {
         val config = AppConfigFactory.fromFields(
             environmentName = "prod",
-            apiBaseUrl = "https://api.mulberry.app",
+            apiBaseUrl = "https://api.mulberry.my",
             enableDebugMenu = false
         )
 
         assertEquals(AppEnvironment.PROD, config.environment)
-        assertEquals("https://api.mulberry.app", config.apiBaseUrl)
+        assertEquals("https://api.mulberry.my", config.apiBaseUrl)
         assertFalse(config.enableDebugMenu)
         assertFalse(config.defaultFeatureFlags.showDeveloperBootstrapActions)
     }

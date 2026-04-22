@@ -126,7 +126,7 @@ The backend reads configuration from environment variables:
 | --- | --- | --- |
 | `PORT` | No | API port. Defaults to `8080`. |
 | `DATABASE_URL` | No | PostgreSQL connection string. Docker Compose sets this automatically. |
-| `ALLOW_DEV_GOOGLE_TOKENS` | No | Allows development Google tokens when `true`. Enabled in local Compose. |
+| `ALLOW_DEV_GOOGLE_TOKENS` | No | Allows development Google tokens when `true`. Defaults to `false` when `NODE_ENV=production`; local Compose enables it. |
 | `GOOGLE_SERVER_CLIENT_ID` | For real auth | OAuth server client ID used to verify Google ID tokens. |
 | `FIREBASE_SERVICE_ACCOUNT_PATH` | For FCM | Path to a Firebase service account JSON file. |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | For FCM | Inline Firebase service account JSON. |
@@ -146,18 +146,20 @@ The Android app has two product flavors:
 | Flavor | API base URL | Debug menu |
 | --- | --- | --- |
 | `dev` | `http://10.0.2.2:8080/` | Enabled |
-| `prod` | `https://api.mulberry.app/` | Disabled |
+| `prod` | `PROD_API_BASE_URL`, default `https://api.mulberry.my/` | Disabled |
 
-`GOOGLE_SERVER_CLIENT_ID` can be provided through `apps/mobile/local.properties` or the shell environment:
+`GOOGLE_SERVER_CLIENT_ID` and `PROD_API_BASE_URL` can be provided through `apps/mobile/local.properties` or the shell environment:
 
 ```properties
 GOOGLE_SERVER_CLIENT_ID=your-google-oauth-server-client-id
+PROD_API_BASE_URL=https://your-production-api.example/
 ```
 
-If you are building from a clean checkout, add the Firebase client config expected by the dev flavor:
+If you are building from a clean checkout, add the Firebase client config expected by each flavor you build:
 
 ```text
 apps/mobile/app/src/dev/google-services.json
+apps/mobile/app/src/prod/google-services.json
 ```
 
 ## Development commands

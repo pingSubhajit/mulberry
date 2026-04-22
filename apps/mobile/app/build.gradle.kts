@@ -25,6 +25,8 @@ fun quotedBuildConfigValue(value: String): String =
     "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 val googleServerClientId = localConfigValue("GOOGLE_SERVER_CLIENT_ID")
+val prodApiBaseUrl = localConfigValue("PROD_API_BASE_URL")
+    .ifBlank { "https://api.mulberry.my/" }
 
 android {
     namespace = "com.subhajit.mulberry"
@@ -59,7 +61,7 @@ android {
         create("prod") {
             dimension = "environment"
             buildConfigField("String", "APP_ENVIRONMENT", "\"prod\"")
-            buildConfigField("String", "API_BASE_URL", "\"https://api.mulberry.app/\"")
+            buildConfigField("String", "API_BASE_URL", quotedBuildConfigValue(prodApiBaseUrl))
             buildConfigField("boolean", "ENABLE_DEBUG_MENU", "false")
             buildConfigField(
                 "String",

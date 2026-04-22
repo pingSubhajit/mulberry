@@ -7,4 +7,5 @@ dist
 .env*
 !.env.example
 /apps/mobile/app/src/dev/google-services.json
+/apps/mobile/app/src/prod/google-services.json
 /temp/
