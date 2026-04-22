@@ -1,0 +1,14 @@
+.git
+.idea
+.env
+.env.*
+!.env.example
+node_modules
+dist
+temp
+
+apps/mobile/.gradle
+apps/mobile/build
+apps/mobile/app/build
+apps/mobile/app/src/dev/google-services.json
+apps/mobile/app/src/prod/google-services.json
