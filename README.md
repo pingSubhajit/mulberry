@@ -6,9 +6,11 @@
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=flat-square&logo=kotlin&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![Fastify](https://img.shields.io/badge/Fastify-5.x-000000?style=flat-square&logo=fastify&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)
+![Turborepo](https://img.shields.io/badge/Turborepo-2.x-EF4444?style=flat-square&logo=turborepo&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 
-Mulberry is a paired-device Android app for two people who share a persistent drawing canvas. The foreground app is where users draw, pair, and manage settings; the lock screen shows the latest local canvas snapshot through an Android live wallpaper.
+Mulberry is a paired-device Android app for two people who share a persistent drawing canvas, with a Next.js landing site in the same Turborepo workspace. The foreground app is where users draw, pair, and manage settings; the lock screen shows the latest local canvas snapshot through an Android live wallpaper.
 
 The product is built for ambient connection, not group collaboration. Active devices synchronize quickly over WebSocket, while sleeping or backgrounded devices converge later through push-triggered recovery and revision reconciliation.
 
@@ -62,7 +64,8 @@ The backend owns authentication, pairing, operation ordering, replay, and snapsh
 .
 ├── apps
 │   ├── backend              # Fastify + TypeScript API, WebSocket sync, Postgres migrations
-│   └── mobile               # Android app built with Kotlin, Compose, Hilt, Room, WorkManager
+│   ├── mobile               # Android app built with Kotlin, Compose, Hilt, Room, WorkManager
+│   └── web                  # Next.js landing site with ShadCN/Tailwind styling
 ├── docs
 │   ├── product-prd.pdf      # Product requirements and platform constraints
 │   └── implementation-plan.pdf
@@ -70,6 +73,8 @@ The backend owns authentication, pairing, operation ordering, replay, and snapsh
 │   └── banner.png           # README banner
 ├── scripts
 │   └── reset-local-onboarding.sh
+├── pnpm-workspace.yaml      # PNPM workspace package map
+├── turbo.json               # Turborepo task pipeline
 ├── docker-compose.yml       # Local Postgres + backend
 └── .env.example
 ```
@@ -77,7 +82,7 @@ The backend owns authentication, pairing, operation ordering, replay, and snapsh
 ## Prerequisites
 
 - Docker Desktop or another Docker Compose runtime
-- Node.js 22+ for backend development outside Docker
+- Node.js 22+ and PNPM 10+ for monorepo development outside Docker
 - Android Studio or Android SDK command-line tools
 - JDK 17 or a compatible Android Gradle Plugin runtime
 - A Firebase project if you want real FCM behavior
@@ -164,27 +169,52 @@ apps/mobile/app/src/prod/google-services.json
 
 ## Development commands
 
+Install JavaScript workspace dependencies from the repository root:
+
+```bash
+pnpm install
+```
+
+Run all Turborepo build tasks:
+
+```bash
+pnpm build
+```
+
 ### Backend
 
 ```bash
-cd apps/backend
-npm install
-npm run dev
+pnpm --filter @mulberry/backend dev
 ```
 
 Useful backend commands:
 
 ```bash
-npm run build
-npm test
+pnpm --filter @mulberry/backend build
+pnpm --filter @mulberry/backend test
+```
+
+Railway still builds the backend through the root `Dockerfile`, which uses `apps/backend/package-lock.json` and `npm ci` inside the Docker image. The PNPM workspace layer is for local monorepo development; it does not replace the backend deployment path.
+
+### Web
+
+```bash
+pnpm --filter @mulberry/web dev
+```
+
+Useful web commands:
+
+```bash
+pnpm --filter @mulberry/web build
+pnpm --filter @mulberry/web typecheck
 ```
 
 ### Android
 
 ```bash
-cd apps/mobile
-./gradlew :app:assembleDevDebug
-./gradlew :app:installDevDebug
+pnpm --filter @mulberry/mobile build
+pnpm --filter @mulberry/mobile install:dev
+pnpm --filter @mulberry/mobile test
 ```
 
 From the repository root, reset the local Docker database:
@@ -221,15 +251,13 @@ Canvas operations are stored as an ordered log. The server assigns authoritative
 Run backend tests:
 
 ```bash
-cd apps/backend
-npm test
+pnpm --filter @mulberry/backend test
 ```
 
 Run Android unit tests:
 
 ```bash
-cd apps/mobile
-./gradlew test
+pnpm --filter @mulberry/mobile test
 ```
 
 The current test coverage includes route handling, app bootstrap resolution, feature flags, drawing stroke behavior, wallpaper placement/status logic, sync JSON parsing, and recovery policy behavior.

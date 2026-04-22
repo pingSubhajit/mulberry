@@ -1,0 +1,10 @@
+{
+  "name": "@mulberry/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "./gradlew :app:assembleDevDebug",
+    "test": "./gradlew :app:testDevDebugUnitTest",
+    "install:dev": "./gradlew :app:installDevDebug"
+  }
+}

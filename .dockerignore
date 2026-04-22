@@ -5,6 +5,9 @@
 !.env.example
 node_modules
 dist
+.next
+.turbo
+*.tsbuildinfo
 temp
 
 apps/mobile/.gradle

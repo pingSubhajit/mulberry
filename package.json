@@ -1,0 +1,21 @@
+{
+  "name": "mulberry",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.1",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "build:web": "turbo build --filter=@mulberry/web",
+    "dev:web": "turbo dev --filter=@mulberry/web",
+    "build:backend": "turbo build --filter=@mulberry/backend",
+    "dev:backend": "turbo dev --filter=@mulberry/backend",
+    "build:mobile": "turbo build --filter=@mulberry/mobile",
+    "test:mobile": "turbo test --filter=@mulberry/mobile"
+  },
+  "devDependencies": {
+    "turbo": "^2.9.6"
+  }
+}
