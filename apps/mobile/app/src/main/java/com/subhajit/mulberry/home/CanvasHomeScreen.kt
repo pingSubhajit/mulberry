@@ -49,6 +49,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -978,8 +979,15 @@ private fun InviteCodeBottomSheet(
     onDismiss: () -> Unit,
     onShareInviteClicked: () -> Unit
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(sheetState) {
+        sheetState.expand()
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         modifier = Modifier.testTag(TestTags.HOME_INVITE_SHEET),
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         containerColor = Color.White,

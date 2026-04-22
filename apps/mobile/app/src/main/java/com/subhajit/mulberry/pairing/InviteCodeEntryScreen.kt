@@ -33,9 +33,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -298,7 +301,14 @@ private fun InviteCodeInput(
     onCodeChanged: (String) -> Unit,
     onSubmit: () -> Unit
 ) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
     var showCursor by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -317,7 +327,9 @@ private fun InviteCodeInput(
             imeAction = ImeAction.Done
         ),
         keyboardActions = KeyboardActions(onDone = { onSubmit() }),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester),
         decorationBox = { innerTextField ->
             Box(modifier = Modifier.fillMaxWidth()) {
                 Row(

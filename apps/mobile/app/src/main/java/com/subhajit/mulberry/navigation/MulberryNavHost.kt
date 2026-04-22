@@ -70,10 +70,9 @@ fun MulberryNavHost(
             ReleaseStartupGateAfterFirstFrame()
             OnboardingDetailsRoute(
                 onNavigateToBootstrap = {
-                    navController.navigate(AppRoute.Bootstrap.route) {
-                        popUpTo(AppRoute.OnboardingName.route)
-                        launchSingleTop = true
-                    }
+                    navController.navigateToBootstrapClearingOnboarding(
+                        fallbackPopRoute = AppRoute.OnboardingDetails
+                    )
                 }
             )
         }
@@ -108,12 +107,9 @@ fun MulberryNavHost(
                     navController.popBackStack()
                 },
                 onNavigateToBootstrap = {
-                    navController.navigate(AppRoute.Bootstrap.route) {
-                        popUpTo(AppRoute.InviteCodeEntry.route) {
-                            inclusive = true
-                        }
-                        launchSingleTop = true
-                    }
+                    navController.navigateToBootstrapClearingOnboarding(
+                        fallbackPopRoute = AppRoute.InviteCodeEntry
+                    )
                 }
             )
         }
@@ -122,12 +118,9 @@ fun MulberryNavHost(
             ReleaseStartupGateAfterFirstFrame()
             InviteAcceptanceRoute(
                 onNavigateToBootstrap = {
-                    navController.navigate(AppRoute.Bootstrap.route) {
-                        popUpTo(AppRoute.InviteAcceptance.route) {
-                            inclusive = true
-                        }
-                        launchSingleTop = true
-                    }
+                    navController.navigateToBootstrapClearingOnboarding(
+                        fallbackPopRoute = AppRoute.InviteAcceptance
+                    )
                 }
             )
         }
@@ -177,4 +170,26 @@ fun MulberryNavHost(
             )
         }
     }
+}
+
+private fun NavHostController.navigateToBootstrapClearingOnboarding(fallbackPopRoute: AppRoute) {
+    val popRoute = if (hasBackStackEntry(AppRoute.OnboardingName)) {
+        AppRoute.OnboardingName
+    } else {
+        fallbackPopRoute
+    }
+
+    navigate(AppRoute.Bootstrap.route) {
+        popUpTo(popRoute.route) {
+            inclusive = true
+        }
+        launchSingleTop = true
+    }
+}
+
+private fun NavHostController.hasBackStackEntry(route: AppRoute): Boolean = try {
+    getBackStackEntry(route.route)
+    true
+} catch (_: IllegalArgumentException) {
+    false
 }
