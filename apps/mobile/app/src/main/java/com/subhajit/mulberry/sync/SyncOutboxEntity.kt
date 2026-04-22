@@ -14,12 +14,13 @@ enum class SyncOutboxStatus {
 @Entity(
     tableName = "sync_outbox",
     indices = [
-        Index(value = ["status", "createdAt"]),
+        Index(value = ["status", "sequenceNumber"]),
         Index(value = ["batchId"])
     ]
 )
 data class SyncOutboxEntity(
     @PrimaryKey val clientOperationId: String,
+    val sequenceNumber: Long,
     val type: DrawingOperationType,
     val strokeId: String?,
     val payloadJson: String,
@@ -40,9 +41,10 @@ data class SyncOutboxEntity(
         )
 
     companion object {
-        fun fromDomain(operation: CanvasSyncOperation): SyncOutboxEntity =
+        fun fromDomain(operation: CanvasSyncOperation, sequenceNumber: Long): SyncOutboxEntity =
             SyncOutboxEntity(
                 clientOperationId = operation.clientOperationId,
+                sequenceNumber = sequenceNumber,
                 type = operation.type,
                 strokeId = operation.strokeId,
                 payloadJson = operation.payload.toJsonObject().toString(),

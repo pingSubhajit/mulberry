@@ -1,5 +1,7 @@
 package com.subhajit.mulberry.network
 
+import com.google.gson.JsonObject
+
 data class GoogleAuthRequest(
     val idToken: String
 )
@@ -71,6 +73,20 @@ data class AcceptInviteResponse(
 
 data class CanvasOpsResponse(
     val operations: List<CanvasOperationEnvelopeResponse>
+)
+
+data class CanvasOperationBatchRequest(
+    val batchId: String,
+    val operations: List<ClientCanvasOperationRequest>,
+    val clientCreatedAt: String
+)
+
+data class ClientCanvasOperationRequest(
+    val clientOperationId: String,
+    val type: String,
+    val strokeId: String?,
+    val payload: JsonObject,
+    val clientCreatedAt: String
 )
 
 data class CanvasSnapshotResponse(

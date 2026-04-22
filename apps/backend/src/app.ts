@@ -5,6 +5,7 @@ import type { AppConfig } from "./config.js"
 import { loadConfig } from "./config.js"
 import { createDatabase, type Database } from "./db.js"
 import { DefaultGoogleTokenVerifier, type GoogleTokenVerifier } from "./googleAuth.js"
+import type { ClientCanvasOperation } from "./domain.js"
 import {
   createPushSender,
   PushDispatchService,
@@ -148,6 +149,23 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       requireBearerToken(request),
       Number.isFinite(afterRevision) ? afterRevision : 0,
     )
+  })
+
+  app.post("/canvas/ops/batch", async (request) => {
+    const body = request.body as {
+      batchId?: string
+      operations?: unknown[]
+      clientCreatedAt?: string
+    }
+    const accepted = await service.acceptCanvasOperationBatchForAuthenticatedPair(
+      requireBearerToken(request),
+      {
+        batchId: body.batchId ?? "",
+        operations: (body.operations ?? []) as ClientCanvasOperation[],
+        clientCreatedAt: body.clientCreatedAt ?? new Date().toISOString(),
+      },
+    )
+    return { operations: accepted }
   })
 
   app.get("/canvas/snapshot", async (request) => {

@@ -48,6 +48,9 @@ interface MulberryApiService {
     @GET("/canvas/ops")
     suspend fun getCanvasOperations(@Query("afterRevision") afterRevision: Long): CanvasOpsResponse
 
+    @POST("/canvas/ops/batch")
+    suspend fun postCanvasOperationBatch(@Body request: CanvasOperationBatchRequest): CanvasOpsResponse
+
     @GET("/canvas/snapshot")
     suspend fun getCanvasSnapshot(): CanvasSnapshotResponse
 }

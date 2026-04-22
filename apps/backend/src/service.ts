@@ -395,6 +395,24 @@ export class MulberryService {
     return this.acceptCanvasOperationBatch(context, batch.operations)
   }
 
+  async acceptCanvasOperationBatchForAuthenticatedPair(
+    accessToken: string,
+    batch: ClientCanvasOperationBatch,
+  ): Promise<CanvasOperationEnvelope[]> {
+    const context = await this.requireDefaultCanvasSessionContext(accessToken)
+    if (!batch.batchId.trim()) {
+      throw new HttpError(400, "batchId is required")
+    }
+    if (!Array.isArray(batch.operations) || batch.operations.length === 0) {
+      throw new HttpError(400, "CLIENT_OP_BATCH requires operations")
+    }
+    if (batch.operations.length > 128) {
+      throw new HttpError(413, "CLIENT_OP_BATCH is too large")
+    }
+
+    return this.acceptCanvasOperationBatch(context, batch.operations)
+  }
+
   async listCanvasOperations(
     accessToken: string,
     afterRevision: number,

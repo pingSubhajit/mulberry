@@ -16,11 +16,14 @@ interface SyncOutboxDao {
         SELECT *
         FROM sync_outbox
         WHERE status = 'PENDING'
-        ORDER BY createdAt ASC
+        ORDER BY sequenceNumber ASC, createdAt ASC
         LIMIT :limit
         """
     )
     suspend fun pendingCandidates(limit: Int): List<SyncOutboxEntity>
+
+    @Query("SELECT COALESCE(MAX(sequenceNumber), 0) FROM sync_outbox")
+    suspend fun maxSequenceNumber(): Long
 
     @Query(
         """
@@ -49,6 +52,19 @@ interface SyncOutboxDao {
     )
     suspend fun resetInFlightToPending()
 
+    @Query(
+        """
+        UPDATE sync_outbox
+        SET status = 'PENDING',
+            batchId = NULL,
+            lastSentAt = NULL
+        WHERE status = 'IN_FLIGHT'
+          AND lastSentAt IS NOT NULL
+          AND lastSentAt < :staleBefore
+        """
+    )
+    suspend fun resetStaleInFlightToPending(staleBefore: Long): Int
+
     @Query("DELETE FROM sync_outbox WHERE clientOperationId IN (:clientOperationIds)")
     suspend fun deleteByClientOperationIds(clientOperationIds: List<String>)
 
@@ -57,6 +73,9 @@ interface SyncOutboxDao {
 
     @Query("SELECT COUNT(*) FROM sync_outbox")
     suspend fun count(): Int
+
+    @Query("SELECT COUNT(*) FROM sync_outbox WHERE status = :status")
+    suspend fun countByStatus(status: SyncOutboxStatus): Int
 
     @Query("SELECT COUNT(*) FROM sync_outbox")
     fun observeCount(): Flow<Int>

@@ -5,6 +5,7 @@ import com.google.gson.JsonObject
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.network.CanvasOperationEnvelopeResponse
+import com.subhajit.mulberry.network.ClientCanvasOperationRequest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -124,6 +125,15 @@ fun List<CanvasSyncOperation>.toBatchWireJson(batchId: String): String = gson.to
         clientCreatedAt = nowIsoString()
     )
 )
+
+fun CanvasSyncOperation.toClientRequest(): ClientCanvasOperationRequest =
+    ClientCanvasOperationRequest(
+        clientOperationId = clientOperationId,
+        type = type.name,
+        strokeId = strokeId,
+        payload = payload.toJsonObject(),
+        clientCreatedAt = clientCreatedAt
+    )
 
 fun helloJson(
     accessToken: String,

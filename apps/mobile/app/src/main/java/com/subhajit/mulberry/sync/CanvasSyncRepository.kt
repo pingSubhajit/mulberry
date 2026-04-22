@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.sync
 
+import android.util.Log
 import com.subhajit.mulberry.canvas.CanvasRuntime
 import com.subhajit.mulberry.canvas.CanvasRuntimeEvent
 import com.subhajit.mulberry.canvas.FlowControlMode
@@ -306,8 +307,8 @@ class DefaultCanvasSyncRepository @Inject constructor(
                     reason
                 }
             )
-            if (recoveryPolicy.shouldUseSnapshot(input)) {
-                recoverFromSnapshot()
+            if (recoveryPolicy.shouldUseSnapshot(input) && canReplaceFromSnapshot()) {
+                recoverFromSnapshotAndTail()
             } else {
                 applyRecoveryOperationsAtomically(operations)
             }
@@ -335,11 +336,36 @@ class DefaultCanvasSyncRepository @Inject constructor(
         }
     }
 
+    private fun scheduleAckTimeoutCheck() {
+        applicationScope.launch {
+            delay(ACK_TIMEOUT_MS)
+            sendPendingBatch()
+        }
+    }
+
     private suspend fun sendPendingBatch() {
         sendMutex.withLock {
             sendScheduled = false
             if (syncState.value !is SyncState.Connected) return@withLock
-            if (inFlightBatchIds.size >= MAX_IN_FLIGHT_BATCHES) return@withLock
+            val outboxSummary = syncOutboxStore.summary()
+            if (outboxSummary.inFlight > 0 || inFlightBatchIds.size >= MAX_IN_FLIGHT_BATCHES) {
+                val resetCount = syncOutboxStore.resetStaleInFlightToPending(
+                    staleBefore = System.currentTimeMillis() - ACK_TIMEOUT_MS
+                )
+                if (resetCount > 0) {
+                    Log.w(TAG, "Reset stale in-flight canvas sync operations count=$resetCount")
+                    inFlightBatchIds.clear()
+                    reconnectIfStillPaired()
+                } else if (inFlightBatchIds.isEmpty()) {
+                    Log.w(
+                        TAG,
+                        "Room outbox has in-flight canvas sync operations without active batch " +
+                            "count=${outboxSummary.inFlight}"
+                    )
+                    scheduleAckTimeoutCheck()
+                }
+                return@withLock
+            }
             val unsent = syncOutboxStore.nextBatch(
                 maxOperations = MAX_OPERATIONS_PER_BATCH,
                 maxPayloadBytes = MAX_BATCH_PAYLOAD_BYTES
@@ -350,6 +376,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
                 is CanvasSendResult.Accepted -> {
                     syncOutboxStore.markInFlight(unsent, batchId)
                     inFlightBatchIds.add(batchId)
+                    scheduleAckTimeoutCheck()
                     if (
                         result.queueSizeBytes < MAX_SOCKET_QUEUE_BYTES &&
                         inFlightBatchIds.size < MAX_IN_FLIGHT_BATCHES &&
@@ -504,8 +531,10 @@ class DefaultCanvasSyncRepository @Inject constructor(
         const val BATCH_DELAY_MS = 16L
         const val MAX_OPERATIONS_PER_BATCH = 32
         const val MAX_BATCH_PAYLOAD_BYTES = 64 * 1024
-        const val MAX_IN_FLIGHT_BATCHES = 2
+        const val MAX_IN_FLIGHT_BATCHES = 1
         const val MAX_SOCKET_QUEUE_BYTES = 512L * 1024L
         const val REJECTED_SEND_RETRY_DELAY_MS = 250L
+        const val ACK_TIMEOUT_MS = 8_000L
+        const val TAG = "MulberrySync"
     }
 }

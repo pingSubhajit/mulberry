@@ -6,8 +6,11 @@ import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.drawing.DrawingRepository
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
+import com.subhajit.mulberry.network.CanvasOperationBatchRequest
 import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
+import java.time.Instant
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
@@ -48,8 +51,30 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         if (pairSessionId != null && pairSessionId != bootstrap.pairSessionId) {
             return@runCatching skip("pair session mismatch")
         }
-        if (syncOutboxStore.hasPendingOperations()) {
-            return@runCatching skip("local outbox has pending work")
+        val resetStaleCount = syncOutboxStore.resetStaleInFlightToPending(
+            staleBefore = System.currentTimeMillis() - BACKGROUND_IN_FLIGHT_STALE_MS
+        )
+        if (resetStaleCount > 0) {
+            Log.i(
+                TAG,
+                "Reset stale background in-flight outbox operations count=$resetStaleCount"
+            )
+        }
+        val outboxSummary = syncOutboxStore.summary()
+        if (outboxSummary.pending > 0) {
+            Log.i(
+                TAG,
+                "Flushing local outbox before background snapshot " +
+                    "pending=${outboxSummary.pending} inFlight=${outboxSummary.inFlight}"
+            )
+            flushPendingOutbox()
+        }
+        val remainingOutbox = syncOutboxStore.summary()
+        if (remainingOutbox.total > 0) {
+            return@runCatching skip(
+                "local outbox has pending work " +
+                    "pending=${remainingOutbox.pending} inFlight=${remainingOutbox.inFlight}"
+            )
         }
 
         val localRevision = syncMetadataRepository.metadata.first().lastAppliedServerRevision
@@ -58,15 +83,19 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
             "Background snapshot sync check localRevision=$localRevision " +
                 "latestRevisionHint=$latestRevisionHint pairSessionId=${bootstrap.pairSessionId}"
         )
-        if (latestRevisionHint != null && latestRevisionHint < localRevision) {
-            return@runCatching BackgroundCanvasSyncResult.AlreadyCurrent
-        }
 
         val snapshot = apiService.getCanvasSnapshot()
         if (snapshot.pairSessionId != bootstrap.pairSessionId) {
             return@runCatching skip("snapshot pair session mismatch")
         }
         if (snapshot.latestRevision < localRevision) {
+            Log.i(
+                TAG,
+                "Background snapshot is behind local state; refreshing wallpaper from local DB " +
+                    "snapshotLatestRevision=${snapshot.latestRevision} localRevision=$localRevision"
+            )
+            wallpaperCoordinator.ensureSnapshotCurrent()
+            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
             return@runCatching BackgroundCanvasSyncResult.AlreadyCurrent
         }
 
@@ -109,7 +138,34 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         return BackgroundCanvasSyncResult.Skipped
     }
 
+    private suspend fun flushPendingOutbox() {
+        repeat(MAX_BACKGROUND_OUTBOX_BATCHES) {
+            val operations = syncOutboxStore.nextBatch(
+                maxOperations = MAX_BACKGROUND_OUTBOX_OPERATIONS,
+                maxPayloadBytes = MAX_BACKGROUND_OUTBOX_PAYLOAD_BYTES
+            )
+            if (operations.isEmpty()) return
+            val response = apiService.postCanvasOperationBatch(
+                CanvasOperationBatchRequest(
+                    batchId = UUID.randomUUID().toString(),
+                    operations = operations.map { it.toClientRequest() },
+                    clientCreatedAt = Instant.now().toString()
+                )
+            )
+            syncOutboxStore.acknowledge(response.operations.map { it.clientOperationId })
+            Log.i(
+                TAG,
+                "Flushed background outbox batch operations=${response.operations.size} " +
+                    "latestAcceptedRevision=${response.operations.maxOfOrNull { it.serverRevision }}"
+            )
+        }
+    }
+
     private companion object {
         const val TAG = "MulberryBgSync"
+        const val MAX_BACKGROUND_OUTBOX_BATCHES = 8
+        const val MAX_BACKGROUND_OUTBOX_OPERATIONS = 32
+        const val MAX_BACKGROUND_OUTBOX_PAYLOAD_BYTES = 64 * 1024
+        const val BACKGROUND_IN_FLIGHT_STALE_MS = 8_000L
     }
 }

@@ -14,7 +14,7 @@ import com.subhajit.mulberry.sync.SyncOutboxEntity
         CanvasMetadataEntity::class,
         SyncOutboxEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(RoomConverters::class)
