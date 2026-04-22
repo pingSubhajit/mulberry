@@ -38,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -166,6 +167,7 @@ private fun OnboardingDetailsScreen(
                     onValueChange = onPartnerNameChanged,
                     label = stringResource(R.string.onboarding_partner_name_label),
                     placeholder = stringResource(R.string.onboarding_partner_name_placeholder),
+                    capitalization = KeyboardCapitalization.Sentences,
                     imeAction = ImeAction.Next
                 )
 
