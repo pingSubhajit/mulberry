@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
 
 class AppConfigFactoryTest {
     @Test
@@ -17,6 +18,7 @@ class AppConfigFactoryTest {
         assertEquals(AppEnvironment.DEV, config.environment)
         assertEquals("https://dev.api.elaris.local", config.apiBaseUrl)
         assertTrue(config.enableDebugMenu)
+        assertEquals(CanvasStrokeRenderMode.Hybrid, config.canvasStrokeRenderMode)
         assertTrue(config.defaultFeatureFlags.showDeveloperBootstrapActions)
     }
 
@@ -31,6 +33,26 @@ class AppConfigFactoryTest {
         assertEquals(AppEnvironment.PROD, config.environment)
         assertEquals("https://api.mulberry.my", config.apiBaseUrl)
         assertFalse(config.enableDebugMenu)
+        assertEquals(CanvasStrokeRenderMode.Hybrid, config.canvasStrokeRenderMode)
         assertFalse(config.defaultFeatureFlags.showDeveloperBootstrapActions)
+    }
+
+    @Test
+    fun `maps canvas stroke render mode aliases into config`() {
+        val dryBrushConfig = AppConfigFactory.fromFields(
+            environmentName = "dev",
+            apiBaseUrl = "https://dev.api.elaris.local",
+            enableDebugMenu = true,
+            canvasStrokeRenderMode = "dry-brush-only"
+        )
+        val roundConfig = AppConfigFactory.fromFields(
+            environmentName = "dev",
+            apiBaseUrl = "https://dev.api.elaris.local",
+            enableDebugMenu = true,
+            canvasStrokeRenderMode = "round_stroke_only"
+        )
+
+        assertEquals(CanvasStrokeRenderMode.DryBrushOnly, dryBrushConfig.canvasStrokeRenderMode)
+        assertEquals(CanvasStrokeRenderMode.RoundStrokeOnly, roundConfig.canvasStrokeRenderMode)
     }
 }

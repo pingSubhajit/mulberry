@@ -27,6 +27,8 @@ fun quotedBuildConfigValue(value: String): String =
 val googleServerClientId = localConfigValue("GOOGLE_SERVER_CLIENT_ID")
 val prodApiBaseUrl = localConfigValue("PROD_API_BASE_URL")
     .ifBlank { "https://api.mulberry.my/" }
+val canvasStrokeRenderMode = localConfigValue("CANVAS_STROKE_RENDER_MODE")
+    .ifBlank { "hybrid" }
 
 android {
     namespace = "com.subhajit.mulberry"
@@ -54,6 +56,11 @@ android {
             buildConfigField("boolean", "ENABLE_DEBUG_MENU", "true")
             buildConfigField(
                 "String",
+                "CANVAS_STROKE_RENDER_MODE",
+                quotedBuildConfigValue(canvasStrokeRenderMode)
+            )
+            buildConfigField(
+                "String",
                 "GOOGLE_SERVER_CLIENT_ID",
                 quotedBuildConfigValue(googleServerClientId)
             )
@@ -63,6 +70,11 @@ android {
             buildConfigField("String", "APP_ENVIRONMENT", "\"prod\"")
             buildConfigField("String", "API_BASE_URL", quotedBuildConfigValue(prodApiBaseUrl))
             buildConfigField("boolean", "ENABLE_DEBUG_MENU", "false")
+            buildConfigField(
+                "String",
+                "CANVAS_STROKE_RENDER_MODE",
+                quotedBuildConfigValue(canvasStrokeRenderMode)
+            )
             buildConfigField(
                 "String",
                 "GOOGLE_SERVER_CLIENT_ID",

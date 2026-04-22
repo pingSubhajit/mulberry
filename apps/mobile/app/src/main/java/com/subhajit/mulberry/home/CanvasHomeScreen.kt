@@ -485,7 +485,8 @@ private fun PairedCanvasPane(
                 onCanvasSizeChanged = onCanvasViewportChanged,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(8.dp)
+                    .padding(8.dp),
+                strokeRenderMode = uiState.canvasStrokeRenderMode
             )
 
             if (uiState.canvasState.isEmpty) {
@@ -1219,7 +1220,8 @@ private fun CanvasSurfaceScreen(
                     onDrawEnd = onCanvasRelease,
                     onEraseTap = onCanvasTap,
                     onCanvasSizeChanged = onCanvasViewportChanged,
-                    modifier = Modifier.padding(8.dp)
+                    modifier = Modifier.padding(8.dp),
+                    strokeRenderMode = uiState.canvasStrokeRenderMode
                 )
             }
 

@@ -24,7 +24,10 @@ import androidx.compose.ui.unit.IntSize
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.drawing.model.CanvasState
 import com.subhajit.mulberry.drawing.model.DrawingTool
-import com.subhajit.mulberry.drawing.render.DryBrushStrokeRenderer
+import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
+import com.subhajit.mulberry.drawing.render.committedStrokeBitmapRenderer
+import com.subhajit.mulberry.drawing.render.committedStrokeVisualRenderer
+import com.subhajit.mulberry.drawing.render.liveStrokeVisualRenderer
 import com.subhajit.mulberry.drawing.model.Stroke as DrawingStroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 
@@ -37,11 +40,12 @@ fun DrawingCanvas(
     onDrawEnd: () -> Unit,
     onEraseTap: (StrokePoint) -> Unit,
     onCanvasSizeChanged: (Int, Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    strokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.Hybrid
 ) {
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    val committedStrokeCache = remember(canvasState.strokes, canvasSize) {
-        buildCommittedStrokeCache(canvasSize, canvasState.strokes)
+    val committedStrokeCache = remember(canvasState.strokes, canvasSize, strokeRenderMode) {
+        buildCommittedStrokeCache(canvasSize, canvasState.strokes, strokeRenderMode)
     }
     val gestureModifier = if (activeTool == DrawingTool.DRAW) {
         Modifier.pointerInput(activeTool) {
@@ -82,26 +86,38 @@ fun DrawingCanvas(
             .testTag(TestTags.DRAWING_CANVAS)
             .then(gestureModifier)
     ) {
-        committedStrokeCache?.let { drawImage(it) } ?: canvasState.strokes.forEach { drawStroke(it) }
-        canvasState.remoteActiveStrokes.forEach { drawStroke(it) }
-        canvasState.activeStroke?.let { drawStroke(it) }
+        committedStrokeCache?.let { drawImage(it) }
+            ?: canvasState.strokes.forEach { drawCommittedStroke(it, strokeRenderMode) }
+        canvasState.remoteActiveStrokes.forEach { drawLiveStroke(it, strokeRenderMode) }
+        canvasState.activeStroke?.let { drawLiveStroke(it, strokeRenderMode) }
     }
 }
 
 private fun buildCommittedStrokeCache(
     canvasSize: IntSize,
-    strokes: List<DrawingStroke>
+    strokes: List<DrawingStroke>,
+    strokeRenderMode: CanvasStrokeRenderMode
 ): ImageBitmap? {
     if (canvasSize.width <= 0 || canvasSize.height <= 0 || strokes.isEmpty()) return null
 
     val bitmap = Bitmap.createBitmap(canvasSize.width, canvasSize.height, Bitmap.Config.ARGB_8888)
     val canvas = AndroidCanvas(bitmap)
-    DryBrushStrokeRenderer.drawStrokes(canvas, strokes)
+    strokeRenderMode.committedStrokeBitmapRenderer().drawStrokes(canvas, strokes)
     return bitmap.asImageBitmap()
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStroke(stroke: DrawingStroke) {
-    with(DryBrushStrokeRenderer) { drawStroke(stroke) }
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCommittedStroke(
+    stroke: DrawingStroke,
+    strokeRenderMode: CanvasStrokeRenderMode
+) {
+    with(strokeRenderMode.committedStrokeVisualRenderer()) { drawStroke(stroke) }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLiveStroke(
+    stroke: DrawingStroke,
+    strokeRenderMode: CanvasStrokeRenderMode
+) {
+    with(strokeRenderMode.liveStrokeVisualRenderer()) { drawStroke(stroke) }
 }
 
 private fun Offset.toStrokePoint(): StrokePoint = StrokePoint(x = x, y = y)

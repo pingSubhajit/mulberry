@@ -20,6 +20,7 @@ import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.drawing.model.ToolState
+import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
 import com.subhajit.mulberry.pairing.CreateInviteResult
 import com.subhajit.mulberry.pairing.InviteRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
@@ -77,6 +78,7 @@ data class CanvasHomeUiState(
     val isWallpaperBusy: Boolean = false,
     val wallpaperErrorMessage: String? = null,
     val showClearConfirmation: Boolean = false,
+    val canvasStrokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.Hybrid,
     val palette: List<Long> = DrawingDefaults.palette
 )
 
@@ -186,7 +188,8 @@ class CanvasHomeViewModel @Inject constructor(
             selectedWallpaperPresetResId = wallpaperControls.selectedPreset,
             isWallpaperBusy = wallpaperControls.isBusy,
             wallpaperErrorMessage = wallpaperControls.error,
-            showClearConfirmation = inviteControls.clearDialogVisible
+            showClearConfirmation = inviteControls.clearDialogVisible,
+            canvasStrokeRenderMode = appConfig.canvasStrokeRenderMode
         )
     }.stateIn(
         scope = viewModelScope,

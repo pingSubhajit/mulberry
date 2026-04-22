@@ -3,6 +3,7 @@ package com.subhajit.mulberry.wallpaper
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.subhajit.mulberry.core.config.AppConfigFactory
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataEntity
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.data.local.StrokeEntity
@@ -31,7 +32,11 @@ class DefaultCanvasSnapshotRendererTest {
             context = context,
             database = database,
             drawingDao = database.drawingDao(),
-            canvasMetadataDao = database.canvasMetadataDao()
+            canvasMetadataDao = database.canvasMetadataDao(),
+            appConfig = AppConfigFactory.fromFields(
+                environmentName = "dev",
+                apiBaseUrl = "http://localhost"
+            )
         )
     }
 

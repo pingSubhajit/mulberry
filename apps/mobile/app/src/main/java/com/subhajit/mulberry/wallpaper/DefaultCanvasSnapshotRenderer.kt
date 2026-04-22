@@ -7,13 +7,14 @@ import android.graphics.Canvas
 import android.graphics.Point
 import androidx.core.graphics.createBitmap
 import androidx.room.withTransaction
+import com.subhajit.mulberry.core.config.AppConfig
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataEntity
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.data.local.DrawingDao
 import com.subhajit.mulberry.drawing.data.local.toDomain
 import com.subhajit.mulberry.drawing.model.Stroke
-import com.subhajit.mulberry.drawing.render.DryBrushStrokeRenderer
+import com.subhajit.mulberry.drawing.render.committedStrokeBitmapRenderer
 import com.subhajit.mulberry.drawing.render.transformed
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.FileOutputStream
@@ -27,7 +28,8 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: DrawingDatabase,
     private val drawingDao: DrawingDao,
-    private val canvasMetadataDao: CanvasMetadataDao
+    private val canvasMetadataDao: CanvasMetadataDao,
+    private val appConfig: AppConfig
 ) : CanvasSnapshotRenderer {
 
     override suspend fun renderCurrentSnapshot(): SnapshotRenderResult = withContext(Dispatchers.IO) {
@@ -117,7 +119,7 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
             screenHeight = screenHeight
         )
 
-        DryBrushStrokeRenderer.drawStrokes(
+        appConfig.canvasStrokeRenderMode.committedStrokeBitmapRenderer().drawStrokes(
             canvas = canvas,
             strokes = strokes.map { stroke ->
                 stroke.transformed(
