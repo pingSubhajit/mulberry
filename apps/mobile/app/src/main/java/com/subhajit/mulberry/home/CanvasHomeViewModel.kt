@@ -23,6 +23,7 @@ import com.subhajit.mulberry.drawing.model.ToolState
 import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
 import com.subhajit.mulberry.pairing.CreateInviteResult
 import com.subhajit.mulberry.pairing.InviteRepository
+import com.subhajit.mulberry.settings.PairingDisconnectCoordinator
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageState
 import com.subhajit.mulberry.wallpaper.DefaultWallpaperPresets
@@ -48,6 +49,13 @@ enum class MainAppTab {
     LockScreen
 }
 
+enum class HomePairingSheetMode {
+    Hidden,
+    ShareInvite,
+    JoinCodeEntry,
+    PairingConfirmed
+}
+
 data class InviteSheetUiState(
     val code: String? = null,
     val expiresAt: String? = null,
@@ -59,6 +67,17 @@ data class InviteSheetUiState(
     val hasCode: Boolean
         get() = !code.isNullOrBlank()
 }
+
+data class JoinCodeUiState(
+    val code: String = "",
+    val isSubmitting: Boolean = false,
+    val errorMessage: String? = null
+)
+
+data class PairingConfirmationUiState(
+    val isDisconnecting: Boolean = false,
+    val errorMessage: String? = null
+)
 
 data class CanvasHomeUiState(
     val environmentLabel: String = "",
@@ -72,8 +91,10 @@ data class CanvasHomeUiState(
     val wallpaperStatus: WallpaperStatusState = WallpaperStatusState(),
     val backgroundImageState: BackgroundImageState = BackgroundImageState(),
     val currentInvite: CreateInviteResult? = null,
-    val isInviteSheetVisible: Boolean = false,
+    val pairingSheetMode: HomePairingSheetMode = HomePairingSheetMode.Hidden,
     val inviteSheet: InviteSheetUiState = InviteSheetUiState(),
+    val joinCode: JoinCodeUiState = JoinCodeUiState(),
+    val pairingConfirmation: PairingConfirmationUiState = PairingConfirmationUiState(),
     val selectedWallpaperPresetResId: Int? = null,
     val isWallpaperBusy: Boolean = false,
     val wallpaperErrorMessage: String? = null,
@@ -97,12 +118,15 @@ class CanvasHomeViewModel @Inject constructor(
     private val canvasRuntime: CanvasRuntime,
     private val backgroundImageRepository: BackgroundImageRepository,
     private val wallpaperCoordinator: WallpaperCoordinator,
+    private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     appConfig: AppConfig
 ) : ViewModel() {
     private val showClearConfirmation = MutableStateFlow(false)
-    private val showInviteSheet = MutableStateFlow(false)
+    private val pairingSheetMode = MutableStateFlow(HomePairingSheetMode.Hidden)
     private val inviteLoadingState = MutableStateFlow(false)
     private val inviteErrorState = MutableStateFlow<String?>(null)
+    private val joinCodeState = MutableStateFlow(JoinCodeUiState())
+    private val pairingConfirmationState = MutableStateFlow(PairingConfirmationUiState())
     private val selectedWallpaperPresetState = MutableStateFlow<Int?>(null)
     private val wallpaperBusyState = MutableStateFlow(false)
     private val wallpaperErrorState = MutableStateFlow<String?>(null)
@@ -137,19 +161,30 @@ class CanvasHomeViewModel @Inject constructor(
         )
     }
 
-    private val inviteControls = combine(
+    private val inviteControlsBase = combine(
         showClearConfirmation,
-        showInviteSheet,
+        pairingSheetMode,
         inviteLoadingState,
         inviteErrorState,
         currentTimeMillis
-    ) { clearDialogVisible, inviteSheetVisible, inviteLoading, inviteError, nowMillis ->
+    ) { clearDialogVisible, sheetMode, inviteLoading, inviteError, nowMillis ->
         InviteControlState(
             clearDialogVisible = clearDialogVisible,
-            inviteSheetVisible = inviteSheetVisible,
+            sheetMode = sheetMode,
             inviteLoading = inviteLoading,
             inviteError = inviteError,
             nowMillis = nowMillis
+        )
+    }
+
+    private val inviteControls = combine(
+        inviteControlsBase,
+        joinCodeState,
+        pairingConfirmationState
+    ) { controls, joinCode, confirmation ->
+        controls.copy(
+            joinCode = joinCode,
+            confirmation = confirmation
         )
     }
 
@@ -179,12 +214,14 @@ class CanvasHomeViewModel @Inject constructor(
             wallpaperStatus = baseState.wallpaperStatus,
             backgroundImageState = baseState.backgroundState,
             currentInvite = baseState.currentInvite,
-            isInviteSheetVisible = inviteControls.inviteSheetVisible,
+            pairingSheetMode = inviteControls.sheetMode,
             inviteSheet = baseState.currentInvite.toInviteSheetUiState(
                 nowMillis = inviteControls.nowMillis,
                 isLoading = inviteControls.inviteLoading,
                 errorMessage = inviteControls.inviteError
             ),
+            joinCode = inviteControls.joinCode,
+            pairingConfirmation = inviteControls.confirmation,
             selectedWallpaperPresetResId = wallpaperControls.selectedPreset,
             isWallpaperBusy = wallpaperControls.isBusy,
             wallpaperErrorMessage = wallpaperControls.error,
@@ -208,6 +245,37 @@ class CanvasHomeViewModel @Inject constructor(
                 delay(1_000)
             }
         }
+        viewModelScope.launch {
+            var previousStatus: PairingStatus? = null
+            sessionRepository.state.collect { state ->
+                val oldStatus = previousStatus
+                previousStatus = state.pairingStatus
+                if (
+                    oldStatus != null &&
+                    oldStatus != PairingStatus.PAIRED &&
+                    state.pairingStatus == PairingStatus.PAIRED
+                ) {
+                    inviteLoadingState.value = false
+                    joinCodeState.value = JoinCodeUiState()
+                    pairingConfirmationState.value = PairingConfirmationUiState()
+                    pairingSheetMode.value = HomePairingSheetMode.PairingConfirmed
+                }
+            }
+        }
+        viewModelScope.launch {
+            while (true) {
+                val state = uiState.value
+                val activeInvite = state.currentInvite
+                if (
+                    state.bootstrapState.pairingStatus != PairingStatus.PAIRED &&
+                    activeInvite != null &&
+                    !activeInvite.isExpiredAt(System.currentTimeMillis())
+                ) {
+                    bootstrapRepository.refreshBootstrap()
+                }
+                delay(2_000)
+            }
+        }
     }
 
     fun onWallpaperConfiguredChanged(configured: Boolean) {
@@ -229,7 +297,7 @@ class CanvasHomeViewModel @Inject constructor(
     }
 
     fun onInviteRequested() {
-        showInviteSheet.value = true
+        pairingSheetMode.value = HomePairingSheetMode.ShareInvite
         viewModelScope.launch {
             val existingInvite = uiState.value.currentInvite
             if (existingInvite != null && !existingInvite.isExpiredAt(System.currentTimeMillis())) {
@@ -250,9 +318,86 @@ class CanvasHomeViewModel @Inject constructor(
         }
     }
 
-    fun onInviteSheetDismissed() {
-        showInviteSheet.value = false
+    fun onPairingSheetDismissed() {
+        pairingSheetMode.value = HomePairingSheetMode.Hidden
+        inviteErrorState.value = null
+        joinCodeState.value = JoinCodeUiState()
+        pairingConfirmationState.value = PairingConfirmationUiState()
         refreshBootstrapState()
+    }
+
+    fun onInviteSheetDismissed() {
+        onPairingSheetDismissed()
+    }
+
+    fun onJoinCodeRequested() {
+        pairingSheetMode.value = HomePairingSheetMode.JoinCodeEntry
+        joinCodeState.value = JoinCodeUiState()
+        inviteErrorState.value = null
+        pairingConfirmationState.value = PairingConfirmationUiState()
+    }
+
+    fun onJoinCodeChanged(code: String) {
+        val sanitizedCode = code.filter(Char::isDigit).take(6)
+        joinCodeState.value = joinCodeState.value.copy(
+            code = sanitizedCode,
+            errorMessage = null
+        )
+    }
+
+    fun onJoinCodeSubmitted() {
+        val code = joinCodeState.value.code
+        if (code.length != 6 || joinCodeState.value.isSubmitting) return
+
+        viewModelScope.launch {
+            joinCodeState.value = joinCodeState.value.copy(
+                isSubmitting = true,
+                errorMessage = null
+            )
+            val redeemedInvite = inviteRepository.redeemInvite(code).getOrElse { error ->
+                joinCodeState.value = joinCodeState.value.copy(
+                    isSubmitting = false,
+                    errorMessage = error.message ?: "Unable to redeem invite code"
+                )
+                return@launch
+            }
+            inviteRepository.acceptInvite(redeemedInvite.inviteId)
+                .onSuccess {
+                    joinCodeState.value = JoinCodeUiState()
+                    pairingConfirmationState.value = PairingConfirmationUiState()
+                    bootstrapRepository.refreshBootstrap()
+                    pairingSheetMode.value = HomePairingSheetMode.PairingConfirmed
+                }
+                .onFailure { error ->
+                    joinCodeState.value = joinCodeState.value.copy(
+                        isSubmitting = false,
+                        errorMessage = error.message ?: "Unable to accept invite"
+                    )
+                }
+        }
+    }
+
+    fun onDisconnectFromConfirmation() {
+        if (pairingConfirmationState.value.isDisconnecting) return
+
+        viewModelScope.launch {
+            pairingConfirmationState.value = pairingConfirmationState.value.copy(
+                isDisconnecting = true,
+                errorMessage = null
+            )
+            pairingDisconnectCoordinator.disconnectPartner()
+                .onSuccess {
+                    pairingConfirmationState.value = PairingConfirmationUiState()
+                    pairingSheetMode.value = HomePairingSheetMode.Hidden
+                    bootstrapRepository.refreshBootstrap()
+                }
+                .onFailure { error ->
+                    pairingConfirmationState.value = PairingConfirmationUiState(
+                        isDisconnecting = false,
+                        errorMessage = error.message ?: "Unable to disconnect partner"
+                    )
+                }
+        }
     }
 
     fun onShareInviteClicked() {
@@ -408,10 +553,12 @@ class CanvasHomeViewModel @Inject constructor(
 
     private data class InviteControlState(
         val clearDialogVisible: Boolean,
-        val inviteSheetVisible: Boolean,
+        val sheetMode: HomePairingSheetMode,
         val inviteLoading: Boolean,
         val inviteError: String?,
-        val nowMillis: Long
+        val nowMillis: Long,
+        val joinCode: JoinCodeUiState = JoinCodeUiState(),
+        val confirmation: PairingConfirmationUiState = PairingConfirmationUiState()
     )
 
     private data class WallpaperControlState(

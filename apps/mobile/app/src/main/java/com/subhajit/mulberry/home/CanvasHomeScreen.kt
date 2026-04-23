@@ -33,6 +33,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -54,12 +57,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -67,15 +75,20 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
@@ -99,7 +112,17 @@ import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.ui.WallpaperBackgroundSelectionSection
 import com.subhajit.mulberry.wallpaper.ui.WallpaperLockScreenPreview
 import com.subhajit.mulberry.wallpaper.ui.WallpaperPrimaryButton
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import nl.dionsegijn.konfetti.compose.KonfettiView
+import nl.dionsegijn.konfetti.core.Angle
+import nl.dionsegijn.konfetti.core.Party
+import nl.dionsegijn.konfetti.core.Position
+import nl.dionsegijn.konfetti.core.Spread
+import nl.dionsegijn.konfetti.core.emitter.Emitter
+import nl.dionsegijn.konfetti.core.models.Shape
+import nl.dionsegijn.konfetti.core.models.Size as KonfettiSize
+import java.util.concurrent.TimeUnit
 
 @Composable
 fun CanvasHomeRoute(
@@ -164,8 +187,12 @@ fun CanvasHomeRoute(
         onNavigateToLockScreen = onNavigateToLockScreen,
         onNavigateToSettings = onNavigateToSettings,
         onInviteRequested = viewModel::onInviteRequested,
-        onInviteSheetDismissed = viewModel::onInviteSheetDismissed,
+        onPairingSheetDismissed = viewModel::onPairingSheetDismissed,
         onShareInviteClicked = viewModel::onShareInviteClicked,
+        onJoinCodeRequested = viewModel::onJoinCodeRequested,
+        onJoinCodeChanged = viewModel::onJoinCodeChanged,
+        onJoinCodeSubmitted = viewModel::onJoinCodeSubmitted,
+        onDisconnectFromConfirmation = viewModel::onDisconnectFromConfirmation,
         onSetUpLockScreen = viewModel::onSetUpLockScreenClicked,
         onUploadWallpaperBackground = {
             backgroundPicker.launch(
@@ -195,8 +222,12 @@ private fun CanvasHomeScreen(
     onNavigateToLockScreen: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onInviteRequested: () -> Unit,
-    onInviteSheetDismissed: () -> Unit,
+    onPairingSheetDismissed: () -> Unit,
     onShareInviteClicked: () -> Unit,
+    onJoinCodeRequested: () -> Unit,
+    onJoinCodeChanged: (String) -> Unit,
+    onJoinCodeSubmitted: () -> Unit,
+    onDisconnectFromConfirmation: () -> Unit,
     onSetUpLockScreen: () -> Unit,
     onUploadWallpaperBackground: () -> Unit,
     onWallpaperPresetSelected: (Int) -> Unit,
@@ -225,11 +256,27 @@ private fun CanvasHomeScreen(
         MainAppTab.LockScreen -> stringResource(R.string.home_lockscreen_title)
     }
 
-    if (uiState.isInviteSheetVisible) {
-        InviteCodeBottomSheet(
+    when (uiState.pairingSheetMode) {
+        HomePairingSheetMode.Hidden -> Unit
+        HomePairingSheetMode.ShareInvite -> InviteCodeBottomSheet(
             inviteSheet = uiState.inviteSheet,
-            onDismiss = onInviteSheetDismissed,
+            onDismiss = onPairingSheetDismissed,
             onShareInviteClicked = onShareInviteClicked
+        )
+
+        HomePairingSheetMode.JoinCodeEntry -> JoinCodeBottomSheet(
+            joinCode = uiState.joinCode,
+            onCodeChanged = onJoinCodeChanged,
+            onSubmit = onJoinCodeSubmitted,
+            onDismiss = onPairingSheetDismissed
+        )
+
+        HomePairingSheetMode.PairingConfirmed -> PairingConfirmedBottomSheet(
+            userName = uiState.bootstrapState.userDisplayName,
+            partnerName = uiState.bootstrapState.partnerDisplayName,
+            confirmation = uiState.pairingConfirmation,
+            onDismiss = onPairingSheetDismissed,
+            onDisconnect = onDisconnectFromConfirmation
         )
     }
     if (uiState.showClearConfirmation) {
@@ -239,63 +286,67 @@ private fun CanvasHomeScreen(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.White)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .testTag(TestTags.HOME_SCREEN)
-    ) {
-        MainAppHeader(
-            userName = uiState.bootstrapState.userDisplayName,
-            userPhotoUrl = uiState.bootstrapState.userPhotoUrl,
-            title = headerTitle,
-            onProfileClick = onNavigateToSettings
-        )
-
-        HorizontalPager(
-            state = pagerState,
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) { page ->
-            when (MainAppTab.entries[page]) {
-                MainAppTab.Canvas -> CanvasHomePane(
-                    uiState = uiState,
-                    onInviteRequested = onInviteRequested,
-                    onCanvasPress = onCanvasPress,
-                    onCanvasDrag = onCanvasDrag,
-                    onCanvasRelease = onCanvasRelease,
-                    onCanvasTap = onCanvasTap,
-                    onCanvasViewportChanged = onCanvasViewportChanged,
-                    onColorSelected = onColorSelected,
-                    onBrushWidthChanged = onBrushWidthChanged,
-                    onEraserToggle = onEraserToggle,
-                    onClearRequested = onClearRequested
-                )
+                .fillMaxSize()
+                .background(Color.White)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .testTag(TestTags.HOME_SCREEN)
+        ) {
+            MainAppHeader(
+                userName = uiState.bootstrapState.userDisplayName,
+                userPhotoUrl = uiState.bootstrapState.userPhotoUrl,
+                title = headerTitle,
+                onProfileClick = onNavigateToSettings
+            )
 
-                MainAppTab.LockScreen -> LockScreenHomePane(
-                    uiState = uiState,
-                    presets = wallpaperPresets,
-                    onSetUpLockScreen = onSetUpLockScreen,
-                    onUploadFromGallery = onUploadWallpaperBackground,
-                    onPresetSelected = onWallpaperPresetSelected
-                )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) { page ->
+                when (MainAppTab.entries[page]) {
+                    MainAppTab.Canvas -> CanvasHomePane(
+                        uiState = uiState,
+                        onInviteRequested = onInviteRequested,
+                        onJoinCodeRequested = onJoinCodeRequested,
+                        onCanvasPress = onCanvasPress,
+                        onCanvasDrag = onCanvasDrag,
+                        onCanvasRelease = onCanvasRelease,
+                        onCanvasTap = onCanvasTap,
+                        onCanvasViewportChanged = onCanvasViewportChanged,
+                        onColorSelected = onColorSelected,
+                        onBrushWidthChanged = onBrushWidthChanged,
+                        onEraserToggle = onEraserToggle,
+                        onClearRequested = onClearRequested
+                    )
+
+                    MainAppTab.LockScreen -> LockScreenHomePane(
+                        uiState = uiState,
+                        presets = wallpaperPresets,
+                        onSetUpLockScreen = onSetUpLockScreen,
+                        onUploadFromGallery = onUploadWallpaperBackground,
+                        onPresetSelected = onWallpaperPresetSelected
+                    )
+                }
             }
+
+            MainAppBottomNavigation(
+                selectedTab = selectedTab,
+                onTabSelected = { tab ->
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(MainAppTab.entries.indexOf(tab))
+                    }
+                },
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 10.dp, bottom = 12.dp)
+            )
         }
 
-        MainAppBottomNavigation(
-            selectedTab = selectedTab,
-            onTabSelected = { tab ->
-                coroutineScope.launch {
-                    pagerState.animateScrollToPage(MainAppTab.entries.indexOf(tab))
-                }
-            },
-            modifier = Modifier
-                .padding(horizontal = 20.dp)
-                .padding(top = 10.dp, bottom = 12.dp)
-        )
     }
 }
 
@@ -358,6 +409,7 @@ private fun MainAppHeader(
 private fun CanvasHomePane(
     uiState: CanvasHomeUiState,
     onInviteRequested: () -> Unit,
+    onJoinCodeRequested: () -> Unit,
     onCanvasPress: (StrokePoint) -> Unit,
     onCanvasDrag: (StrokePoint) -> Unit,
     onCanvasRelease: () -> Unit,
@@ -424,6 +476,29 @@ private fun CanvasHomePane(
                     fontWeight = FontWeight.Medium
                 )
             }
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                text = buildAnnotatedString {
+                    append(stringResource(R.string.home_enter_code_prompt))
+                    append(" ")
+                    withStyle(SpanStyle(color = MulberryPrimary, fontWeight = FontWeight.SemiBold)) {
+                        append(stringResource(R.string.home_enter_code_action))
+                    }
+                },
+                color = Color(0xFF737373),
+                fontFamily = PoppinsFontFamily,
+                fontSize = 15.sp,
+                lineHeight = 22.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onJoinCodeRequested
+                    )
+                    .testTag(TestTags.HOME_ENTER_CODE_BUTTON)
+            )
         }
     } else {
         PairedCanvasPane(
@@ -1084,6 +1159,399 @@ private fun InviteCodeBottomSheet(
                 )
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun JoinCodeBottomSheet(
+    joinCode: JoinCodeUiState,
+    onCodeChanged: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(sheetState) {
+        sheetState.expand()
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        modifier = Modifier.testTag(TestTags.HOME_JOIN_CODE_SHEET),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = Color.White,
+        dragHandle = { HomeSheetDragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = stringResource(R.string.home_join_sheet_title),
+                color = Color.Black,
+                fontFamily = PoppinsFontFamily,
+                fontSize = 20.sp,
+                lineHeight = 28.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+            Text(
+                text = "(•••) •••",
+                color = MulberryPrimary,
+                fontFamily = PoppinsFontFamily,
+                fontSize = 20.sp,
+                lineHeight = 27.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+            HomeInviteCodeInput(
+                code = joinCode.code,
+                onCodeChanged = onCodeChanged,
+                onSubmit = {
+                    if (joinCode.code.length == 6 && !joinCode.isSubmitting) {
+                        onSubmit()
+                    }
+                }
+            )
+            joinCode.errorMessage?.let { error ->
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+            Spacer(modifier = Modifier.height(18.dp))
+            Button(
+                onClick = onSubmit,
+                enabled = joinCode.code.length == 6 && !joinCode.isSubmitting,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .testTag(TestTags.HOME_JOIN_CODE_SUBMIT_BUTTON),
+                shape = RoundedCornerShape(15.38.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MulberryPrimary,
+                    disabledContainerColor = MulberryPrimary.copy(alpha = 0.45f),
+                    disabledContentColor = Color.White.copy(alpha = 0.80f)
+                )
+            ) {
+                Text(
+                    text = if (joinCode.isSubmitting) {
+                        stringResource(R.string.invite_acceptance_connecting)
+                    } else {
+                        stringResource(R.string.invite_code_continue)
+                    },
+                    color = Color.White,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 18.sp,
+                    lineHeight = 24.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PairingConfirmedBottomSheet(
+    userName: String?,
+    partnerName: String?,
+    confirmation: PairingConfirmationUiState,
+    onDismiss: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val displayName = userName?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.home_default_user_name)
+    val resolvedPartnerName = partnerName?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.app_name)
+
+    LaunchedEffect(sheetState) {
+        sheetState.expand()
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        modifier = Modifier.testTag(TestTags.HOME_PAIRING_CONFIRMED_SHEET),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = Color.White,
+        dragHandle = { HomeSheetDragHandle() }
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 22.dp)
+                    .zIndex(1f),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = stringResource(R.string.invite_acceptance_welcome, displayName),
+                    color = MulberryPrimary,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 18.sp,
+                    lineHeight = 24.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = stringResource(R.string.home_pairing_confirmed_title, resolvedPartnerName),
+                    color = Color(0xFF030A14),
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 24.sp,
+                    lineHeight = 30.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(18.dp))
+                Image(
+                    painter = painterResource(R.drawable.invite_acceptance_couple),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(236.dp)
+                )
+                Spacer(modifier = Modifier.height(18.dp))
+                Button(
+                    onClick = onDismiss,
+                    enabled = !confirmation.isDisconnecting,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(15.38.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MulberryPrimary,
+                        disabledContainerColor = MulberryPrimary.copy(alpha = 0.45f)
+                    )
+                ) {
+                    Text(
+                        text = stringResource(R.string.invite_acceptance_continue),
+                        color = Color.White,
+                        fontFamily = PoppinsFontFamily,
+                        fontSize = 18.sp,
+                        lineHeight = 24.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = buildAnnotatedString {
+                        append(stringResource(R.string.invite_acceptance_wrong_partner))
+                        append(" ")
+                        withStyle(SpanStyle(color = MulberryPrimary, fontWeight = FontWeight.SemiBold)) {
+                            append(
+                                if (confirmation.isDisconnecting) {
+                                    stringResource(R.string.home_pairing_disconnect_progress)
+                                } else {
+                                    stringResource(R.string.invite_acceptance_disconnect)
+                                }
+                            )
+                        }
+                    },
+                    color = Color.Black.copy(alpha = 0.40f),
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 12.sp,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            enabled = !confirmation.isDisconnecting,
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onDisconnect
+                        )
+                        .testTag(TestTags.HOME_PAIRING_CONFIRMED_DISCONNECT_BUTTON)
+                )
+                confirmation.errorMessage?.let { error ->
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.error,
+                        fontFamily = PoppinsFontFamily,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+            PairingConfetti(
+                modifier = Modifier
+                    .matchParentSize()
+                    .zIndex(2f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PairingConfetti(modifier: Modifier = Modifier) {
+    val parties = remember {
+        val colors = listOf(
+            0xFFB31329.toInt(),
+            0xFFFF4D6D.toInt(),
+            0xFFFFB000.toInt(),
+            0xFFFFE066.toInt(),
+            0xFFFF7A3D.toInt(),
+            0xFF00A878.toInt(),
+            0xFF6C5CE7.toInt(),
+            0xFFFFF4F5.toInt()
+        )
+        val sizes = listOf(KonfettiSize(6), KonfettiSize(9), KonfettiSize(12))
+        val shapes = listOf(Shape.Square, Shape.Circle, Shape.Rectangle(0.35f))
+        listOf(
+            Party(
+                angle = Angle.RIGHT - 12,
+                spread = Spread.WIDE,
+                speed = 22f,
+                maxSpeed = 44f,
+                damping = 0.90f,
+                size = sizes,
+                shapes = shapes,
+                colors = colors,
+                timeToLive = 3_200L,
+                position = Position.Relative(0.0, 0.42),
+                emitter = Emitter(duration = 360, TimeUnit.MILLISECONDS).max(70)
+            ),
+            Party(
+                angle = Angle.LEFT + 12,
+                spread = Spread.WIDE,
+                speed = 22f,
+                maxSpeed = 44f,
+                damping = 0.90f,
+                size = sizes,
+                shapes = shapes,
+                colors = colors,
+                timeToLive = 3_200L,
+                position = Position.Relative(1.0, 0.42),
+                emitter = Emitter(duration = 360, TimeUnit.MILLISECONDS).max(70)
+            )
+        )
+    }
+
+    KonfettiView(
+        modifier = modifier,
+        parties = parties
+    )
+}
+
+@Composable
+private fun HomeSheetDragHandle() {
+    Box(
+        modifier = Modifier
+            .padding(top = 8.dp, bottom = 19.dp)
+            .size(width = 44.dp, height = 4.dp)
+            .clip(RoundedCornerShape(100.dp))
+            .background(Color(0xFFDEDEDE))
+    )
+}
+
+@Composable
+private fun HomeInviteCodeInput(
+    code: String,
+    onCodeChanged: (String) -> Unit,
+    onSubmit: () -> Unit
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    var showCursor by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(530)
+            showCursor = !showCursor
+        }
+    }
+
+    BasicTextField(
+        value = code,
+        onValueChange = { value -> onCodeChanged(value.filter(Char::isDigit).take(6)) },
+        singleLine = true,
+        textStyle = TextStyle(color = Color.Transparent),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.NumberPassword,
+            imeAction = ImeAction.Done
+        ),
+        keyboardActions = KeyboardActions(onDone = { onSubmit() }),
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester),
+        decorationBox = { innerTextField ->
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    repeat(6) { index ->
+                        HomeInviteCodeCell(
+                            digit = code.getOrNull(index),
+                            isActive = index == code.length.coerceAtMost(5) && code.length < 6,
+                            showCursor = showCursor,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .size(1.dp)
+                        .alpha(0f)
+                ) {
+                    innerTextField()
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun HomeInviteCodeCell(
+    digit: Char?,
+    isActive: Boolean,
+    showCursor: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .aspectRatio(0.84f)
+            .clip(RoundedCornerShape(15.38.dp))
+            .background(Color(0xFFF3F3F3)),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (isActive) {
+            Box(
+                modifier = Modifier
+                    .size(width = 2.dp, height = 32.dp)
+                    .alpha(if (showCursor) 1f else 0f)
+                    .background(MulberryPrimary)
+            )
+        }
+        Text(
+            text = digit?.toString() ?: "0",
+            color = if (digit == null) Color.Black.copy(alpha = 0.40f) else Color(0xFF070B14),
+            fontFamily = PoppinsFontFamily,
+            fontSize = 30.sp,
+            lineHeight = 34.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 

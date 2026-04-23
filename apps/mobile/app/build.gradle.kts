@@ -150,6 +150,7 @@ dependencies {
     implementation(libs.androidx.ink.brush.compose)
     implementation(libs.androidx.ink.rendering)
     implementation(libs.androidx.ink.nativeloader)
+    implementation(libs.konfetti.compose)
     kapt(libs.hilt.compiler)
     kapt(libs.androidx.hilt.compiler)
     kapt(libs.androidx.room.compiler)

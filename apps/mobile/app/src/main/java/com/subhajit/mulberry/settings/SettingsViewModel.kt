@@ -61,7 +61,6 @@ class SettingsViewModel @Inject constructor(
     featureFlagProvider: FeatureFlagProvider,
     private val developerOptionsRepository: DeveloperOptionsRepository,
     private val authRepository: AuthRepository,
-    private val pairingSettingsRepository: PairingSettingsRepository,
     private val drawingRepository: DrawingRepository,
     private val canvasSyncRepository: CanvasSyncRepository,
     private val syncMetadataRepository: SyncMetadataRepository,
@@ -70,6 +69,7 @@ class SettingsViewModel @Inject constructor(
     private val backgroundImageRepository: BackgroundImageRepository,
     private val canvasSnapshotRenderer: CanvasSnapshotRenderer,
     private val wallpaperCoordinator: WallpaperCoordinator,
+    private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     appConfig: AppConfig
 ) : ViewModel() {
     private val _effects = MutableSharedFlow<SettingsEffect>()
@@ -169,12 +169,7 @@ class SettingsViewModel @Inject constructor(
 
     fun onDisconnectPartner() {
         viewModelScope.launchWithBusy {
-            pairingSettingsRepository.disconnectPartner().getOrThrow()
-            canvasSyncRepository.reset()
-            drawingRepository.resetAllDrawingState()
-            canvasSnapshotRenderer.clearSnapshots()
-            wallpaperCoordinator.ensureSnapshotCurrent()
-            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+            pairingDisconnectCoordinator.disconnectPartner().getOrThrow()
             _effects.emit(SettingsEffect.RestartFromBootstrap)
         }
     }

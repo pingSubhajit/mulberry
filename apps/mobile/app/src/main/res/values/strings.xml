@@ -64,6 +64,8 @@
     <string name="home_unpaired_pair_title">%1$s &amp; who?</string>
     <string name="home_unpaired_body">Invite your partner to Mulberry to unlock the full experience</string>
     <string name="home_invite_button">Share invite code</string>
+    <string name="home_enter_code_prompt">Have a code?</string>
+    <string name="home_enter_code_action">Enter code</string>
     <string name="home_tab_canvas">Canvas</string>
     <string name="home_tab_lockscreen">Lock screen</string>
     <string name="home_open_canvas">Open canvas</string>
@@ -85,4 +87,7 @@
     <string name="home_invite_countdown_expired">Expired</string>
     <string name="home_invite_sheet_body">Share this code with your partner and ask them to enter it after they have signed up for Mulberry</string>
     <string name="home_invite_share_chooser_title">Share invite code</string>
+    <string name="home_join_sheet_title">Enter invite code</string>
+    <string name="home_pairing_confirmed_title">You and %1$s are paired on Mulberry</string>
+    <string name="home_pairing_disconnect_progress">Disconnecting...</string>
 </resources>
