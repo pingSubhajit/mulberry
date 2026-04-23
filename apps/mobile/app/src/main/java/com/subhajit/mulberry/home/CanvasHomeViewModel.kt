@@ -255,6 +255,7 @@ class CanvasHomeViewModel @Inject constructor(
                     oldStatus != PairingStatus.PAIRED &&
                     state.pairingStatus == PairingStatus.PAIRED
                 ) {
+                    inviteRepository.clearCurrentInvite()
                     inviteLoadingState.value = false
                     joinCodeState.value = JoinCodeUiState()
                     pairingConfirmationState.value = PairingConfirmationUiState()
@@ -299,11 +300,7 @@ class CanvasHomeViewModel @Inject constructor(
     fun onInviteRequested() {
         pairingSheetMode.value = HomePairingSheetMode.ShareInvite
         viewModelScope.launch {
-            val existingInvite = uiState.value.currentInvite
-            if (existingInvite != null && !existingInvite.isExpiredAt(System.currentTimeMillis())) {
-                inviteErrorState.value = null
-                return@launch
-            }
+            inviteRepository.clearCurrentInvite()
             inviteLoadingState.value = true
             inviteErrorState.value = null
             inviteRepository.createInvite()
@@ -389,6 +386,7 @@ class CanvasHomeViewModel @Inject constructor(
                 .onSuccess {
                     pairingConfirmationState.value = PairingConfirmationUiState()
                     pairingSheetMode.value = HomePairingSheetMode.Hidden
+                    inviteRepository.clearCurrentInvite()
                     bootstrapRepository.refreshBootstrap()
                 }
                 .onFailure { error ->
@@ -411,10 +409,7 @@ class CanvasHomeViewModel @Inject constructor(
     }
 
     private suspend fun ensureShareableInvite(): Result<CreateInviteResult> {
-        val existingInvite = uiState.value.currentInvite
-        if (existingInvite != null && !existingInvite.isExpiredAt(System.currentTimeMillis())) {
-            return Result.success(existingInvite)
-        }
+        inviteRepository.clearCurrentInvite()
         inviteLoadingState.value = true
         inviteErrorState.value = null
         return inviteRepository.createInvite()

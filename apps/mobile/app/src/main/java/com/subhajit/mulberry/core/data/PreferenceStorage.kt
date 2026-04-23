@@ -34,6 +34,7 @@ object PreferenceStorage {
         stringPreferencesKey("onboarding_draft_anniversary_date")
     val syncLastAppliedServerRevision =
         stringPreferencesKey("sync_last_applied_server_revision")
+    val syncPairSessionId = stringPreferencesKey("sync_pair_session_id")
     val syncLastError = stringPreferencesKey("sync_last_error")
     val syncPendingOperationsJson = stringPreferencesKey("sync_pending_operations_json")
     val fcmToken = stringPreferencesKey("fcm_token")

@@ -51,6 +51,7 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         if (pairSessionId != null && pairSessionId != bootstrap.pairSessionId) {
             return@runCatching skip("pair session mismatch")
         }
+        preparePairSessionScope(bootstrap.pairSessionId)
         val resetStaleCount = syncOutboxStore.resetStaleInFlightToPending(
             staleBefore = System.currentTimeMillis() - BACKGROUND_IN_FLIGHT_STALE_MS
         )
@@ -136,6 +137,20 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
     private fun skip(reason: String): BackgroundCanvasSyncResult {
         Log.i(TAG, "Skipping background snapshot sync reason=$reason")
         return BackgroundCanvasSyncResult.Skipped
+    }
+
+    private suspend fun preparePairSessionScope(pairSessionId: String) {
+        val metadata = syncMetadataRepository.metadata.first()
+        if (metadata.pairSessionId == pairSessionId) return
+
+        Log.i(
+            TAG,
+            "Switching background canvas sync scope " +
+                "from=${metadata.pairSessionId ?: "none"} to=$pairSessionId"
+        )
+        syncOutboxStore.clear()
+        syncMetadataRepository.resetForPairSession(pairSessionId)
+        drawingRepository.resetAllDrawingState()
     }
 
     private suspend fun flushPendingOutbox() {

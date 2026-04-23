@@ -74,6 +74,11 @@ class DefaultWallpaperCoordinator @Inject constructor(
         }
     }
 
+    override suspend fun notifyWallpaperUpdated() {
+        refreshWallpaperSelection()
+        WallpaperRenderBus.requestRedraw()
+    }
+
     override fun wallpaperStatus(): Flow<WallpaperStatusState> = combine(
         selectedState,
         backgroundImageRepository.backgroundState,

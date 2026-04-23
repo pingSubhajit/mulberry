@@ -113,19 +113,19 @@ class DefaultCanvasSyncRepository @Inject constructor(
                     }
                     activeAccessToken = session.accessToken
                     activePairSessionId = bootstrap.pairSessionId
+                    val lastAppliedRevision = preparePairSessionScope(bootstrap.pairSessionId)
                     canvasRuntime.start(
                         pairSessionId = bootstrap.pairSessionId,
                         userId = session.userId
                     )
                     _syncState.value = SyncState.Connecting
                     canvasRuntime.setSyncState(SyncState.Connecting)
-                    val metadata = syncMetadataRepository.metadata.first()
-                    lastAppliedRevisionCache = metadata.lastAppliedServerRevision
+                    lastAppliedRevisionCache = lastAppliedRevision
                     syncOutboxStore.resetInFlightToPending()
                     client.connect(
                         accessToken = session.accessToken,
                         pairSessionId = bootstrap.pairSessionId,
-                        lastAppliedServerRevision = metadata.lastAppliedServerRevision
+                        lastAppliedServerRevision = lastAppliedRevision
                     )
                 } else {
                     disconnectActiveSocket()
@@ -157,6 +157,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
         sendScheduled = false
         syncMetadataRepository.reset()
         syncOutboxStore.clear()
+        canvasRuntime.reset()
         disconnectActiveSocket()
     }
 
@@ -268,8 +269,8 @@ class DefaultCanvasSyncRepository @Inject constructor(
                 userId = session.userId
             )
             canvasRuntime.setSyncState(SyncState.Connecting)
-            val metadata = syncMetadataRepository.metadata.first()
-            lastAppliedRevisionCache = metadata.lastAppliedServerRevision
+            val lastAppliedRevision = preparePairSessionScope(bootstrap.pairSessionId)
+            lastAppliedRevisionCache = lastAppliedRevision
             syncOutboxStore.resetInFlightToPending()
             currentUserId = session.userId
             activeAccessToken = session.accessToken
@@ -277,7 +278,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
             client.connect(
                 accessToken = session.accessToken,
                 pairSessionId = bootstrap.pairSessionId,
-                lastAppliedServerRevision = metadata.lastAppliedServerRevision
+                lastAppliedServerRevision = lastAppliedRevision
             )
         }
     }
@@ -397,6 +398,32 @@ class DefaultCanvasSyncRepository @Inject constructor(
         if (revision <= lastAppliedRevisionCache) return
         lastAppliedRevisionCache = revision
         syncMetadataRepository.setLastAppliedServerRevision(revision)
+    }
+
+    private suspend fun preparePairSessionScope(pairSessionId: String): Long {
+        val metadata = syncMetadataRepository.metadata.first()
+        if (metadata.pairSessionId == pairSessionId) {
+            return metadata.lastAppliedServerRevision
+        }
+
+        Log.i(
+            TAG,
+            "Switching canvas sync scope " +
+                "from=${metadata.pairSessionId ?: "none"} to=$pairSessionId"
+        )
+        revisionBuffer.clear()
+        inFlightBatchIds.clear()
+        isRecoveringGap = false
+        sendScheduled = false
+        syncOutboxStore.clear()
+        syncMetadataRepository.resetForPairSession(pairSessionId)
+        canvasRuntime.submitAndAwait(
+            CanvasRuntimeEvent.RecoverySnapshot(
+                strokes = emptyList(),
+                serverRevision = 0L
+            )
+        )
+        return 0L
     }
 
     private suspend fun applyServerBatchBeforeAdvancing(operations: List<ServerCanvasOperation>) {

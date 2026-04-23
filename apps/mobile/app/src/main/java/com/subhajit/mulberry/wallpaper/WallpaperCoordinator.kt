@@ -7,5 +7,7 @@ interface WallpaperCoordinator {
 
     suspend fun notifyWallpaperUpdatedIfSelected()
 
+    suspend fun notifyWallpaperUpdated()
+
     fun wallpaperStatus(): Flow<WallpaperStatusState>
 }

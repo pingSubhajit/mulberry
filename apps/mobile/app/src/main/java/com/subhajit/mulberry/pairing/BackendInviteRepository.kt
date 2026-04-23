@@ -18,6 +18,10 @@ class BackendInviteRepository @Inject constructor(
 
     override val currentInvite: Flow<CreateInviteResult?> = currentInviteState
 
+    override fun clearCurrentInvite() {
+        currentInviteState.value = null
+    }
+
     override suspend fun createInvite(): Result<CreateInviteResult> = runCatching {
         val response = apiService.createInvite()
         CreateInviteResult(
@@ -42,10 +46,12 @@ class BackendInviteRepository @Inject constructor(
     override suspend fun acceptInvite(inviteId: String): Result<Unit> = runCatching {
         val response = apiService.acceptInvite(inviteId)
         sessionBootstrapRepository.cacheBootstrap(response.bootstrapState.toDomainBootstrap())
+        clearCurrentInvite()
     }
 
     override suspend fun declineInvite(inviteId: String): Result<Unit> = runCatching {
         val response = apiService.declineInvite(inviteId)
         sessionBootstrapRepository.cacheBootstrap(response.toDomainBootstrap())
+        clearCurrentInvite()
     }
 }

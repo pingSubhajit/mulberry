@@ -33,6 +33,7 @@ interface CanvasRuntime {
 
     fun start(pairSessionId: String, userId: String)
     fun stop()
+    fun reset()
     fun submit(event: CanvasRuntimeEvent)
     suspend fun submitAndAwait(event: CanvasRuntimeEvent)
     fun setSyncState(syncState: SyncState)
@@ -105,6 +106,18 @@ class DefaultCanvasRuntime @Inject constructor(
             it.copy(
                 localActiveStroke = null,
                 remoteActiveStrokes = emptyMap(),
+                syncState = SyncState.Disconnected
+            )
+        }
+    }
+
+    override fun reset() {
+        activePairSessionId = null
+        activeUserId = null
+        pendingAppendPoints.clear()
+        _renderState.update {
+            CanvasRenderState(
+                toolState = it.toolState,
                 syncState = SyncState.Disconnected
             )
         }

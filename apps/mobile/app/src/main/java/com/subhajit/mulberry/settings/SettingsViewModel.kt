@@ -154,7 +154,7 @@ class SettingsViewModel @Inject constructor(
             canvasSnapshotRenderer.clearSnapshots()
             backgroundImageRepository.clearBackground()
             wallpaperCoordinator.ensureSnapshotCurrent()
-            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+            wallpaperCoordinator.notifyWallpaperUpdated()
             _effects.emit(SettingsEffect.RestartFromBootstrap)
         }
     }

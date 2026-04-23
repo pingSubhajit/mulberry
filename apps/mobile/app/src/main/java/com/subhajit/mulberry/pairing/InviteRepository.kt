@@ -19,6 +19,8 @@ data class InviteRedemptionResult(
 interface InviteRepository {
     val currentInvite: Flow<CreateInviteResult?>
 
+    fun clearCurrentInvite()
+
     suspend fun createInvite(): Result<CreateInviteResult>
 
     suspend fun redeemInvite(code: String): Result<InviteRedemptionResult>

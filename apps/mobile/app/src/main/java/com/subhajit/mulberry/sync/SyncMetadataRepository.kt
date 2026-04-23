@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 data class SyncMetadata(
+    val pairSessionId: String? = null,
     val lastAppliedServerRevision: Long = 0L,
     val lastError: String? = null,
     val pendingOperations: List<CanvasSyncOperation> = emptyList()
@@ -23,6 +24,7 @@ interface SyncMetadataRepository {
     val metadata: Flow<SyncMetadata>
 
     suspend fun setLastAppliedServerRevision(revision: Long)
+    suspend fun resetForPairSession(pairSessionId: String)
     suspend fun setLastError(message: String?)
     suspend fun setPendingOperations(operations: List<CanvasSyncOperation>)
     suspend fun reset()
@@ -37,6 +39,7 @@ class DataStoreSyncMetadataRepository @Inject constructor(
 
     override val metadata: Flow<SyncMetadata> = dataStore.data.map { preferences ->
         SyncMetadata(
+            pairSessionId = preferences[PreferenceStorage.syncPairSessionId],
             lastAppliedServerRevision = preferences[PreferenceStorage.syncLastAppliedServerRevision]
                 ?.toLongOrNull() ?: 0L,
             lastError = preferences[PreferenceStorage.syncLastError],
@@ -54,6 +57,15 @@ class DataStoreSyncMetadataRepository @Inject constructor(
     override suspend fun setLastAppliedServerRevision(revision: Long) {
         dataStore.edit { preferences ->
             preferences[PreferenceStorage.syncLastAppliedServerRevision] = revision.toString()
+        }
+    }
+
+    override suspend fun resetForPairSession(pairSessionId: String) {
+        dataStore.edit { preferences ->
+            preferences[PreferenceStorage.syncPairSessionId] = pairSessionId
+            preferences[PreferenceStorage.syncLastAppliedServerRevision] = "0"
+            preferences.remove(PreferenceStorage.syncLastError)
+            preferences.remove(PreferenceStorage.syncPendingOperationsJson)
         }
     }
 
@@ -80,6 +92,7 @@ class DataStoreSyncMetadataRepository @Inject constructor(
 
     override suspend fun reset() {
         dataStore.edit { preferences ->
+            preferences.remove(PreferenceStorage.syncPairSessionId)
             preferences.remove(PreferenceStorage.syncLastAppliedServerRevision)
             preferences.remove(PreferenceStorage.syncLastError)
             preferences.remove(PreferenceStorage.syncPendingOperationsJson)
