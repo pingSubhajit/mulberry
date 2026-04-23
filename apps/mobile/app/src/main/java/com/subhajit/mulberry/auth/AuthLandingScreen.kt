@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,7 +47,9 @@ import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.metadata.AuthLandingMetadata
 import com.subhajit.mulberry.core.ui.metadata.AuthProviderId
 import com.subhajit.mulberry.core.ui.metadata.MulberryUiMetadataProvider
+import com.subhajit.mulberry.ui.theme.MulberryDarkBackground
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.ui.theme.mulberryAppColors
 
 data class AuthLandingUiState(
     val isLoading: Boolean = false,
@@ -95,11 +98,12 @@ private fun AuthLandingScreen(
     onGoogleSignIn: () -> Unit
 ) {
     val googleProvider = metadata.providers.first { it.id == AuthProviderId.GOOGLE }
+    val appColors = MaterialTheme.mulberryAppColors
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF070009))
+            .background(MulberryDarkBackground)
             .testTag(TestTags.AUTH_LANDING_SCREEN)
     ) {
         Image(
@@ -154,7 +158,7 @@ private fun AuthLandingScreen(
 
             uiState.errorMessage?.let {
                 Surface(
-                    color = Color(0xDFFFFFFF),
+                    color = appColors.authMessageSurface,
                     contentColor = Color(0xFFB31329),
                     shape = RoundedCornerShape(18.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -177,10 +181,10 @@ private fun AuthLandingScreen(
                 enabled = !uiState.isLoading && googleProvider.enabled,
                 shape = RoundedCornerShape(15.38.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color(0xFF595959),
-                    disabledContainerColor = Color.White.copy(alpha = 0.72f),
-                    disabledContentColor = Color(0xFF595959).copy(alpha = 0.72f)
+                    containerColor = appColors.authButtonSurface,
+                    contentColor = appColors.authButtonContent,
+                    disabledContainerColor = appColors.authButtonSurface.copy(alpha = 0.72f),
+                    disabledContentColor = appColors.authButtonContent.copy(alpha = 0.72f)
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -194,7 +198,7 @@ private fun AuthLandingScreen(
                 ) {
                     if (uiState.isLoading) {
                         CircularProgressIndicator(
-                            color = Color(0xFF595959),
+                            color = appColors.authButtonContent,
                             strokeWidth = 2.dp,
                             modifier = Modifier.size(21.dp)
                         )

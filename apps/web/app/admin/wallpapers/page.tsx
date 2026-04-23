@@ -182,12 +182,12 @@ export default function WallpaperAdminPage() {
 
   if (!isUnlocked) {
     return (
-      <main className="min-h-screen bg-[#fffaf7] text-brand-ink">
+      <main className="min-h-screen bg-background text-foreground">
         <header className="mx-auto flex w-full max-w-[94rem] items-center justify-between px-5 py-6 sm:px-8 lg:px-10">
           <Link href="/" className="text-sm font-semibold tracking-[-0.03em] text-brand">
             mulberry
           </Link>
-          <Link href="/" className="text-sm font-medium text-brand-ink/58 transition hover:text-brand-ink">
+          <Link href="/" className="text-sm font-medium text-muted-foreground transition hover:text-foreground">
             Home
           </Link>
         </header>
@@ -199,7 +199,7 @@ export default function WallpaperAdminPage() {
           <h1 className="mt-5 text-4xl font-semibold tracking-[-0.065em] sm:text-5xl">
             Unlock the catalog.
           </h1>
-          <p className="mt-4 max-w-md text-sm leading-6 text-brand-ink/58">
+          <p className="mt-4 max-w-md text-sm leading-6 text-muted-foreground">
             Enter the admin password once. This browser will remember it for future uploads and
             catalog edits.
           </p>
@@ -213,7 +213,7 @@ export default function WallpaperAdminPage() {
                 onChange={(event) => setPasswordInput(event.target.value)}
                 placeholder="Admin password"
                 autoFocus
-                className="h-14 w-full rounded-2xl border border-brand-ink/16 bg-white/70 px-5 text-base font-medium outline-none transition placeholder:text-brand-ink/42 focus:border-brand focus:ring-4 focus:ring-brand/10"
+                className="h-14 w-full rounded-2xl border border-soft-border bg-elevated px-5 text-base font-medium text-elevated-foreground outline-none transition placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/10"
               />
             </label>
             <Button
@@ -231,19 +231,19 @@ export default function WallpaperAdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#fffaf7] text-brand-ink">
+    <main className="min-h-screen bg-background text-foreground">
       <header className="mx-auto flex w-full max-w-[94rem] items-center justify-between px-5 py-6 sm:px-8 lg:px-10">
         <Link href="/" className="text-sm font-semibold tracking-[-0.03em] text-brand">
           mulberry
         </Link>
-        <div className="flex items-center gap-6 text-sm font-medium text-brand-ink/58">
-          <button type="button" onClick={() => loadAdminCatalog()} className="transition hover:text-brand-ink">
+        <div className="flex items-center gap-6 text-sm font-medium text-muted-foreground">
+          <button type="button" onClick={() => loadAdminCatalog()} className="transition hover:text-foreground">
             Refresh
           </button>
-          <button type="button" onClick={lockAdmin} className="transition hover:text-brand-ink">
+          <button type="button" onClick={lockAdmin} className="transition hover:text-foreground">
             Lock
           </button>
-          <Link href="/" className="transition hover:text-brand-ink">
+          <Link href="/" className="transition hover:text-foreground">
             Home
           </Link>
         </div>
@@ -256,14 +256,14 @@ export default function WallpaperAdminPage() {
         <h1 className="mt-5 text-4xl font-semibold tracking-[-0.065em] sm:text-5xl">
           Curate the Mulberry background shelf.
         </h1>
-        <p className="mt-4 max-w-md text-sm leading-6 text-brand-ink/58">
+        <p className="mt-4 max-w-md text-sm leading-6 text-muted-foreground">
           Upload one image. The backend creates the thumbnail, preview, and optimized full
           wallpaper variants.
         </p>
 
         <form onSubmit={onUpload} className="mt-9 w-full space-y-4">
           <fieldset disabled={isUploading} className="space-y-4">
-            <label className="group block cursor-pointer rounded-[2rem] border-2 border-dashed border-brand-ink/30 bg-white/45 px-6 py-10 text-center transition hover:border-brand hover:bg-white focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10 disabled:pointer-events-none disabled:opacity-70">
+            <label className="group block cursor-pointer rounded-[2rem] border-2 border-dashed border-soft-border bg-soft-surface px-6 py-10 text-center transition hover:border-brand hover:bg-soft-surface-hover focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10 disabled:pointer-events-none disabled:opacity-70">
               <input
                 name="image"
                 type="file"
@@ -275,7 +275,7 @@ export default function WallpaperAdminPage() {
               <span className="block text-lg font-semibold tracking-[-0.04em]">
                 {selectedFileName ?? "Upload image"}
               </span>
-              <span className="mt-2 block text-xs font-medium text-brand-ink/48">
+              <span className="mt-2 block text-xs font-medium text-muted-foreground">
                 Supported file types: jpeg, jpg, png, webp
               </span>
             </label>
@@ -286,7 +286,7 @@ export default function WallpaperAdminPage() {
                 name="title"
                 required
                 placeholder="Name"
-                className="h-14 w-full rounded-2xl border border-brand-ink/16 bg-white/70 px-5 text-base font-medium outline-none transition placeholder:text-brand-ink/42 focus:border-brand focus:ring-4 focus:ring-brand/10"
+                className="h-14 w-full rounded-2xl border border-soft-border bg-elevated px-5 text-base font-medium text-elevated-foreground outline-none transition placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/10"
               />
             </label>
 
@@ -296,7 +296,7 @@ export default function WallpaperAdminPage() {
                 name="description"
                 rows={3}
                 placeholder="Description"
-                className="w-full resize-none rounded-2xl border border-brand-ink/16 bg-white/70 px-5 py-4 text-base font-medium outline-none transition placeholder:text-brand-ink/42 focus:border-brand focus:ring-4 focus:ring-brand/10"
+                className="w-full resize-none rounded-2xl border border-soft-border bg-elevated px-5 py-4 text-base font-medium text-elevated-foreground outline-none transition placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/10"
               />
             </label>
 
@@ -326,7 +326,7 @@ export default function WallpaperAdminPage() {
 
       <section className="mx-auto w-full max-w-[98rem] px-5 pb-24 sm:px-8 lg:px-10">
         {items.length === 0 ? (
-          <div className="rounded-[2rem] border border-dashed border-brand-ink/16 bg-white/45 px-6 py-16 text-center text-sm font-medium text-brand-ink/50">
+          <div className="rounded-[2rem] border border-dashed border-soft-border bg-soft-surface px-6 py-16 text-center text-sm font-medium text-muted-foreground">
             No wallpapers yet.
           </div>
         ) : (
@@ -348,7 +348,7 @@ export default function WallpaperAdminPage() {
                     }
                     onClick={() => deleteWallpaper(item.id)}
                     disabled={Boolean(deletingId) || isUploading}
-                    className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/92 text-brand-ink shadow-sm transition hover:text-brand disabled:opacity-40"
+                    className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-elevated text-elevated-foreground shadow-sm transition hover:text-brand disabled:opacity-40"
                   >
                     {deletingId === item.id ? (
                       <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -359,10 +359,10 @@ export default function WallpaperAdminPage() {
                 </div>
 
                 <div className="mt-4 space-y-2">
-                  <h3 className="text-lg font-semibold tracking-[-0.04em] text-brand-ink">
+                  <h3 className="text-lg font-semibold tracking-[-0.04em] text-foreground">
                     {item.title}
                   </h3>
-                  <p className="text-sm leading-6 text-brand-ink/58">{item.description}</p>
+                  <p className="text-sm leading-6 text-muted-foreground">{item.description}</p>
                 </div>
               </article>
             ))}

@@ -25,6 +25,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -63,6 +64,7 @@ import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.MulberryPrimaryLight
 import com.subhajit.mulberry.ui.theme.MulberrySurfaceVariant
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.ui.theme.mulberryAppColors
 
 private enum class SettingsPane {
     Home,
@@ -149,9 +151,9 @@ private fun SettingsScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.background)
             .testTag(TestTags.SETTINGS_SCREEN),
-        containerColor = Color.White,
+        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
         Column(
@@ -214,7 +216,7 @@ private fun SettingsHeader(
         }
         Text(
             text = title,
-            color = Color(0xFF070B14),
+            color = MaterialTheme.colorScheme.onBackground,
             fontFamily = PoppinsFontFamily,
             fontWeight = FontWeight.SemiBold,
             fontSize = 34.sp,
@@ -224,7 +226,7 @@ private fun SettingsHeader(
         if (subtitle.isNotBlank()) {
             Text(
                 text = subtitle,
-                color = Color.Black.copy(alpha = 0.58f),
+                color = MaterialTheme.mulberryAppColors.mutedText,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 14.sp,
                 lineHeight = 21.sp
@@ -401,7 +403,7 @@ private fun PrivacyLegalPane() {
         SoftCard {
             Text(
                 text = "Terms of Service",
-                color = Color(0xFF070B14),
+                color = MaterialTheme.colorScheme.onSurface,
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp
@@ -409,7 +411,7 @@ private fun PrivacyLegalPane() {
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = "Coming before public release.",
-                color = Color.Black.copy(alpha = 0.52f),
+                color = MaterialTheme.mulberryAppColors.mutedText,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 13.sp,
                 lineHeight = 20.sp
@@ -421,7 +423,7 @@ private fun PrivacyLegalPane() {
         ModalBottomSheet(
             onDismissRequest = { showPolicy = false },
             sheetState = sheetState,
-            containerColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
         ) {
             PrivacyPolicySheetContent(onDismiss = { showPolicy = false })
@@ -446,7 +448,7 @@ private fun AboutPane(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "A shared canvas for the lock screen.",
-                color = Color.Black.copy(alpha = 0.62f),
+                color = MaterialTheme.mulberryAppColors.mutedText,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 14.sp,
                 lineHeight = 22.sp
@@ -588,7 +590,7 @@ private fun SyncStatusCard(uiState: SettingsUiState) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Sync",
-                    color = Color(0xFF070B14),
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp
@@ -596,7 +598,7 @@ private fun SyncStatusCard(uiState: SettingsUiState) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = syncSummary(uiState),
-                    color = Color.Black.copy(alpha = 0.54f),
+                    color = MaterialTheme.mulberryAppColors.mutedText,
                     fontFamily = PoppinsFontFamily,
                     fontSize = 13.sp,
                     lineHeight = 19.sp
@@ -626,7 +628,7 @@ private fun SettingsNavCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    color = Color(0xFF070B14),
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp
@@ -634,7 +636,7 @@ private fun SettingsNavCard(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = body,
-                    color = Color.Black.copy(alpha = 0.52f),
+                    color = MaterialTheme.mulberryAppColors.mutedText,
                     fontFamily = PoppinsFontFamily,
                     fontSize = 13.sp,
                     lineHeight = 19.sp,
@@ -669,7 +671,7 @@ private fun IdentityCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    color = Color(0xFF070B14),
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 20.sp,
@@ -678,7 +680,7 @@ private fun IdentityCard(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = body,
-                    color = Color.Black.copy(alpha = 0.54f),
+                    color = MaterialTheme.mulberryAppColors.mutedText,
                     fontFamily = PoppinsFontFamily,
                     fontSize = 13.sp,
                     lineHeight = 20.sp
@@ -714,7 +716,7 @@ private fun SettingsValueRow(
     ) {
         Text(
             text = label,
-            color = Color.Black.copy(alpha = 0.52f),
+            color = MaterialTheme.mulberryAppColors.mutedText,
             fontFamily = PoppinsFontFamily,
             fontSize = 13.sp,
             lineHeight = 19.sp,
@@ -722,7 +724,7 @@ private fun SettingsValueRow(
         )
         Text(
             text = value,
-            color = Color(0xFF070B14),
+            color = MaterialTheme.colorScheme.onSurface,
             fontFamily = PoppinsFontFamily,
             fontWeight = FontWeight.Medium,
             fontSize = 13.sp,
@@ -749,14 +751,14 @@ private fun ToggleRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                color = Color(0xFF070B14),
+                color = MaterialTheme.colorScheme.onSurface,
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp
             )
             Text(
                 text = body,
-                color = Color.Black.copy(alpha = 0.48f),
+                color = MaterialTheme.mulberryAppColors.mutedText,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 12.sp,
                 lineHeight = 18.sp
@@ -775,7 +777,7 @@ private fun SoftCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
-            .background(Color(0xFFFFF7F8))
+            .background(MaterialTheme.mulberryAppColors.softSurface)
             .border(1.dp, MulberryPrimary.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
             .padding(18.dp),
         content = content
@@ -795,7 +797,7 @@ private fun SettingsAvatar(
             .size(size)
             .clip(CircleShape)
             .background(if (muted) MulberrySurfaceVariant else MulberryPrimary)
-            .border(4.dp, Color(0xFFFFEDF0), CircleShape),
+            .border(4.dp, MaterialTheme.mulberryAppColors.softBorder, CircleShape),
         contentAlignment = Alignment.Center
     ) {
         if (!photoUrl.isNullOrBlank()) {
@@ -822,7 +824,7 @@ private fun StatusPill(text: String) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
-            .background(MulberryPrimaryLight)
+            .background(MaterialTheme.mulberryAppColors.softSurfaceAlt)
             .padding(horizontal = 12.dp, vertical = 7.dp)
     ) {
         Text(
@@ -909,7 +911,7 @@ private fun ConfirmationDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    AlertDialog(
+        AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
@@ -935,7 +937,7 @@ private fun ConfirmationDialog(
                 Text("Cancel", fontFamily = PoppinsFontFamily)
             }
         },
-        containerColor = Color.White,
+        containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(24.dp)
     )
 }

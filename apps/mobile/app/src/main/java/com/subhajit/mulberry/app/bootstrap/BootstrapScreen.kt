@@ -7,12 +7,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.navigation.AppRoute
+import com.subhajit.mulberry.ui.theme.MulberryDarkBackground
 
 @Composable
 fun BootstrapRoute(
@@ -33,7 +33,7 @@ private fun BootstrapScreen() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF070009))
+            .background(MulberryDarkBackground)
             .testTag(TestTags.BOOTSTRAP_SCREEN)
     )
 }

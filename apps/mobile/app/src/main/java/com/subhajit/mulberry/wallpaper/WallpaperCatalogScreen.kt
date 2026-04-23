@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,9 +45,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
-import com.subhajit.mulberry.core.ui.OnboardingLightSystemBars
+import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 
@@ -57,7 +59,7 @@ fun WallpaperCatalogRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    ApplySystemBarStyle(OnboardingLightSystemBars)
+    ApplySystemBarStyle(rememberOnboardingSystemBarStyle())
 
     WallpaperCatalogScreen(
         uiState = uiState,
@@ -77,6 +79,7 @@ private fun WallpaperCatalogScreen(
     onWallpaperSelected: (RemoteWallpaper) -> Unit
 ) {
     val gridState = rememberLazyGridState()
+    val appColors = MaterialTheme.mulberryAppColors
 
     LaunchedEffect(gridState, uiState.canLoadMore, uiState.wallpapers.size) {
         snapshotFlow {
@@ -91,7 +94,7 @@ private fun WallpaperCatalogScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(horizontal = 20.dp)
@@ -105,7 +108,7 @@ private fun WallpaperCatalogScreen(
             CatalogBackButton(onClick = onBack)
             Text(
                 text = stringResource(R.string.wallpaper_catalog_title),
-                color = Color(0xFF030A14),
+                color = MaterialTheme.colorScheme.onBackground,
                 style = TextStyle(
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.SemiBold,
@@ -206,6 +209,7 @@ private fun RemoteWallpaperCard(
 @Composable
 private fun CatalogBackButton(onClick: () -> Unit) {
     val interactionSource = MutableInteractionSource()
+    val iconColor = MaterialTheme.mulberryAppColors.iconMuted
     Box(
         modifier = Modifier
             .padding(end = 8.dp)
@@ -220,21 +224,21 @@ private fun CatalogBackButton(onClick: () -> Unit) {
         Canvas(modifier = Modifier.size(24.dp)) {
             val strokeWidth = 2.dp.toPx()
             drawLine(
-                color = Color(0xFF46514D),
+                color = iconColor,
                 start = center.copy(x = size.width * 0.22f),
                 end = center.copy(x = size.width * 0.78f),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Square
             )
             drawLine(
-                color = Color(0xFF46514D),
+                color = iconColor,
                 start = center.copy(x = size.width * 0.22f),
                 end = center.copy(x = size.width * 0.44f, y = size.height * 0.28f),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Square
             )
             drawLine(
-                color = Color(0xFF46514D),
+                color = iconColor,
                 start = center.copy(x = size.width * 0.22f),
                 end = center.copy(x = size.width * 0.44f, y = size.height * 0.72f),
                 strokeWidth = strokeWidth,
@@ -267,9 +271,10 @@ private fun CheckmarkIcon() {
 
 @Composable
 private fun EmptyCatalogState() {
+    val appColors = MaterialTheme.mulberryAppColors
     Text(
         text = stringResource(R.string.wallpaper_catalog_empty),
-        color = Color(0xFF676A70),
+        color = appColors.mutedText,
         textAlign = TextAlign.Center,
         modifier = Modifier.fillMaxWidth()
     )
@@ -281,6 +286,7 @@ private fun ErrorCatalogState(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val appColors = MaterialTheme.mulberryAppColors
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -288,7 +294,7 @@ private fun ErrorCatalogState(
     ) {
         Text(
             text = message,
-            color = Color(0xFF676A70),
+            color = appColors.mutedText,
             textAlign = TextAlign.Center
         )
         Text(

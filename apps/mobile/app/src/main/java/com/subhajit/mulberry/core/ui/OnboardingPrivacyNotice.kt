@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -35,17 +36,14 @@ import androidx.compose.ui.unit.sp
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
-
-private val AgreementText = Color.Black.copy(alpha = 0.40f)
-private val AgreementLinkText = Color.Black.copy(alpha = 0.50f)
-private val SheetText = Color(0xFF171016)
-private val SheetMutedText = Color.Black.copy(alpha = 0.54f)
+import com.subhajit.mulberry.ui.theme.mulberryAppColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingPrivacyNotice(modifier: Modifier = Modifier) {
     var showPolicy by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val appColors = MaterialTheme.mulberryAppColors
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -54,7 +52,7 @@ fun OnboardingPrivacyNotice(modifier: Modifier = Modifier) {
     ) {
         Text(
             text = "${stringResource(R.string.privacy_policy_agreement)} ",
-            color = AgreementText,
+            color = appColors.subtleText,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Normal,
@@ -65,7 +63,7 @@ fun OnboardingPrivacyNotice(modifier: Modifier = Modifier) {
         )
         Text(
             text = stringResource(R.string.privacy_policy),
-            color = AgreementLinkText,
+            color = appColors.mutedText,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.SemiBold,
@@ -81,7 +79,7 @@ fun OnboardingPrivacyNotice(modifier: Modifier = Modifier) {
         ModalBottomSheet(
             onDismissRequest = { showPolicy = false },
             sheetState = sheetState,
-            containerColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
         ) {
             PrivacyPolicySheetContent(onDismiss = { showPolicy = false })
@@ -92,6 +90,7 @@ fun OnboardingPrivacyNotice(modifier: Modifier = Modifier) {
 @Composable
 fun PrivacyPolicySheetContent(onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val appColors = MaterialTheme.mulberryAppColors
     val policyText = remember {
         context.resources.openRawResource(R.raw.privacy_policy)
             .bufferedReader()
@@ -110,7 +109,7 @@ fun PrivacyPolicySheetContent(onDismiss: () -> Unit) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = stringResource(R.string.privacy_policy_sheet_title),
-                color = SheetText,
+                color = MaterialTheme.colorScheme.onSurface,
                 style = TextStyle(
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.SemiBold,
@@ -120,7 +119,7 @@ fun PrivacyPolicySheetContent(onDismiss: () -> Unit) {
             )
             Text(
                 text = stringResource(R.string.privacy_policy_sheet_updated),
-                color = SheetMutedText,
+                color = appColors.mutedText,
                 style = TextStyle(
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.Medium,
@@ -132,7 +131,7 @@ fun PrivacyPolicySheetContent(onDismiss: () -> Unit) {
 
         Text(
             text = policyText,
-            color = SheetText.copy(alpha = 0.80f),
+            color = appColors.mutedText,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Normal,

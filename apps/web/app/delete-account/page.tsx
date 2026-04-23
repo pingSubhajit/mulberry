@@ -69,12 +69,12 @@ export default function DeleteAccountPage() {
       <section className="mx-auto grid max-w-6xl gap-10 px-5 pb-24 sm:px-8 lg:grid-cols-[16rem_1fr] lg:px-10">
         <aside className="hidden lg:block">
           <nav className="sticky top-8 text-sm">
-            <p className="mb-4 font-semibold text-brand-ink">Contents</p>
+            <p className="mb-4 font-semibold text-foreground">Contents</p>
             <ol className="grid gap-2 text-muted-foreground">
               <li>
                 <Link
                   href="#request"
-                  className="block px-3 py-2 transition hover:bg-brand-soft hover:text-brand"
+                  className="block px-3 py-2 transition hover:bg-soft-surface hover:text-brand"
                 >
                   How to request deletion
                 </Link>
@@ -82,7 +82,7 @@ export default function DeleteAccountPage() {
               <li>
                 <Link
                   href="#deleted"
-                  className="block px-3 py-2 transition hover:bg-brand-soft hover:text-brand"
+                  className="block px-3 py-2 transition hover:bg-soft-surface hover:text-brand"
                 >
                   Data deleted
                 </Link>
@@ -90,7 +90,7 @@ export default function DeleteAccountPage() {
               <li>
                 <Link
                   href="#retained"
-                  className="block px-3 py-2 transition hover:bg-brand-soft hover:text-brand"
+                  className="block px-3 py-2 transition hover:bg-soft-surface hover:text-brand"
                 >
                   Data retained
                 </Link>
@@ -101,7 +101,7 @@ export default function DeleteAccountPage() {
 
         <article className="grid gap-14">
           <section id="request" className="scroll-mt-8">
-            <h2 className="text-3xl font-semibold leading-tight text-brand-ink sm:text-4xl">
+            <h2 className="text-3xl font-semibold leading-tight text-foreground sm:text-4xl">
               How to request account deletion
             </h2>
             <p className="mt-5 max-w-3xl text-base leading-8 text-muted-foreground">
@@ -112,9 +112,9 @@ export default function DeleteAccountPage() {
               . Requests are handled manually so Mulberry can verify the account
               owner before deleting account data.
             </p>
-            <ol className="mt-6 grid gap-3 text-base leading-7 text-brand-ink/78">
+            <ol className="mt-6 grid gap-3 text-base leading-7 text-soft-surface-foreground">
               {requestSteps.map((step, index) => (
-                <li key={step} className="flex gap-4 bg-brand-soft/55 p-4">
+                <li key={step} className="flex gap-4 bg-soft-surface p-4">
                   <span className="flex size-8 shrink-0 items-center justify-center bg-brand text-sm font-semibold text-white">
                     {index + 1}
                   </span>
@@ -125,7 +125,7 @@ export default function DeleteAccountPage() {
           </section>
 
           <section id="deleted" className="scroll-mt-8">
-            <h2 className="text-3xl font-semibold leading-tight text-brand-ink sm:text-4xl">
+            <h2 className="text-3xl font-semibold leading-tight text-foreground sm:text-4xl">
               Data deleted or anonymized
             </h2>
             <p className="mt-5 max-w-3xl text-base leading-8 text-muted-foreground">
@@ -138,7 +138,7 @@ export default function DeleteAccountPage() {
           </section>
 
           <section id="retained" className="scroll-mt-8">
-            <h2 className="text-3xl font-semibold leading-tight text-brand-ink sm:text-4xl">
+            <h2 className="text-3xl font-semibold leading-tight text-foreground sm:text-4xl">
               Data kept and retention periods
             </h2>
             <p className="mt-5 max-w-3xl text-base leading-8 text-muted-foreground">
@@ -168,7 +168,7 @@ function SiteHeader() {
       </Link>
       <Link
         href="/privacy"
-        className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-brand-ink/65 transition hover:text-brand"
+        className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-muted-foreground transition hover:text-brand"
       >
         Privacy
       </Link>
@@ -178,7 +178,7 @@ function SiteHeader() {
 
 function DataList({ items }: { items: string[] }) {
   return (
-    <ul className="mt-6 grid gap-2 bg-brand-soft/55 p-5 text-base leading-7 text-brand-ink/78">
+    <ul className="mt-6 grid gap-2 bg-soft-surface p-5 text-base leading-7 text-soft-surface-foreground">
       {items.map((item) => (
         <li key={item} className="flex gap-3">
           <span className="mt-3 size-1.5 shrink-0 rounded-full bg-brand" />

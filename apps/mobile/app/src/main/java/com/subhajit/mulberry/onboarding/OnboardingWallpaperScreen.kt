@@ -31,6 +31,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -70,22 +71,17 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
-import com.subhajit.mulberry.core.ui.OnboardingLightSystemBars
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.ui.theme.MulberryError
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
 import com.subhajit.mulberry.wallpaper.ui.WallpaperBackgroundSelectionSection
 import com.subhajit.mulberry.wallpaper.ui.WallpaperLockScreenPreview
 import kotlin.math.max
-
-private val OnboardingBackground = Color.White
-private val HeadingInk = Color(0xFF030A14)
-private val MutedInk = Color(0xFF676A70)
-private val UploadBackground = Color(0xFFFFEBED)
-private val PreviewFrame = Color(0xFFD2D2D2)
 
 @Composable
 fun OnboardingWallpaperRoute(
@@ -126,7 +122,7 @@ fun OnboardingWallpaperRoute(
         }
     }
 
-    ApplySystemBarStyle(OnboardingLightSystemBars)
+    ApplySystemBarStyle(rememberOnboardingSystemBarStyle())
 
     OnboardingWallpaperScreen(
         uiState = uiState,
@@ -161,6 +157,7 @@ private fun OnboardingWallpaperScreen(
     val scrollState = rememberScrollState()
     val helpSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showHelp by remember { mutableStateOf(false) }
+    val appColors = MaterialTheme.mulberryAppColors
 
     LaunchedEffect(uiState.wallpaperStatus.isWallpaperSelected) {
         if (uiState.wallpaperStatus.isWallpaperSelected) {
@@ -172,7 +169,7 @@ private fun OnboardingWallpaperScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(OnboardingBackground)
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
@@ -250,7 +247,7 @@ private fun OnboardingWallpaperScreen(
         ModalBottomSheet(
             onDismissRequest = { showHelp = false },
             sheetState = helpSheetState,
-            containerColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
         ) {
             WallpaperHelpSheet(onDismiss = { showHelp = false })
@@ -307,6 +304,7 @@ private fun WallpaperCompletionSection(
 
 @Composable
 private fun WallpaperHelpSheet(onDismiss: () -> Unit) {
+    val appColors = MaterialTheme.mulberryAppColors
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -317,7 +315,7 @@ private fun WallpaperHelpSheet(onDismiss: () -> Unit) {
     ) {
         Text(
             text = stringResource(R.string.onboarding_wallpaper_help_title),
-            color = HeadingInk,
+            color = MaterialTheme.colorScheme.onSurface,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.SemiBold,
@@ -327,7 +325,7 @@ private fun WallpaperHelpSheet(onDismiss: () -> Unit) {
         )
         Text(
             text = stringResource(R.string.onboarding_wallpaper_help_body),
-            color = HeadingInk.copy(alpha = 0.78f),
+            color = appColors.mutedText,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Normal,
@@ -350,6 +348,7 @@ private fun WallpaperHelpSheet(onDismiss: () -> Unit) {
 
 @Composable
 private fun HelpStep(text: String) {
+    val appColors = MaterialTheme.mulberryAppColors
     Row(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.Top
@@ -363,7 +362,7 @@ private fun HelpStep(text: String) {
         )
         Text(
             text = text,
-            color = HeadingInk.copy(alpha = 0.78f),
+            color = appColors.mutedText,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Medium,
@@ -378,6 +377,7 @@ private fun HelpStep(text: String) {
 private fun WallpaperHeader(
     onHelp: () -> Unit
 ) {
+    val appColors = MaterialTheme.mulberryAppColors
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -396,7 +396,7 @@ private fun WallpaperHeader(
             )
             Text(
                 text = stringResource(R.string.onboarding_wallpaper_help),
-                color = MutedInk,
+                color = appColors.mutedText,
                 style = TextStyle(
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.Medium,
@@ -415,7 +415,7 @@ private fun WallpaperHeader(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = stringResource(R.string.onboarding_wallpaper_title),
-                color = HeadingInk,
+                color = MaterialTheme.colorScheme.onBackground,
                 style = TextStyle(
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.SemiBold,
@@ -425,7 +425,7 @@ private fun WallpaperHeader(
             )
             Text(
                 text = stringResource(R.string.onboarding_wallpaper_description),
-                color = HeadingInk,
+                color = MaterialTheme.colorScheme.onBackground,
                 style = TextStyle(
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.Normal,

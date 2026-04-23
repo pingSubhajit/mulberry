@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
@@ -52,19 +53,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
-import com.subhajit.mulberry.core.ui.OnboardingLightSystemBars
 import com.subhajit.mulberry.core.ui.OnboardingPrivacyNotice
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.ui.theme.MulberryError
 import com.subhajit.mulberry.ui.theme.MulberryInk
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import kotlinx.coroutines.delay
-
-private val InviteBackground = Color.White
-private val CodeCellBackground = Color(0xFFF3F3F3)
-private val CodePlaceholderText = Color.Black.copy(alpha = 0.40f)
-private val HelpText = Color.Black.copy(alpha = 0.60f)
 
 data class InviteCodeEntryUiState(
     val code: String = "",
@@ -92,7 +89,7 @@ fun InviteCodeEntryRoute(
         }
     }
 
-    ApplySystemBarStyle(OnboardingLightSystemBars)
+    ApplySystemBarStyle(rememberOnboardingSystemBarStyle())
 
     InviteCodeEntryScreen(
         uiState = uiState,
@@ -109,10 +106,11 @@ private fun InviteCodeEntryScreen(
     onSubmit: () -> Unit,
     onNavigateBack: () -> Unit
 ) {
+    val appColors = MaterialTheme.mulberryAppColors
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(InviteBackground)
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
@@ -145,7 +143,7 @@ private fun InviteCodeEntryScreen(
                 )
                 Text(
                     text = stringResource(R.string.invite_code_title),
-                    color = Color(0xFF030A14),
+                    color = MaterialTheme.colorScheme.onBackground,
                     style = TextStyle(
                         fontFamily = PoppinsFontFamily,
                         fontWeight = FontWeight.SemiBold,
@@ -232,6 +230,7 @@ private fun InviteCodeTopBar(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val appColors = MaterialTheme.mulberryAppColors
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -243,7 +242,7 @@ private fun InviteCodeTopBar(
         BackButton(onClick = onNavigateBack)
         Text(
             text = stringResource(R.string.invite_code_help),
-            color = HelpText,
+            color = appColors.mutedText,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Medium,
@@ -267,7 +266,7 @@ private fun BackButton(onClick: () -> Unit) {
             ),
         contentAlignment = Alignment.Center
     ) {
-        val arrowColor = Color(0xFF3F4946)
+        val arrowColor = MaterialTheme.mulberryAppColors.iconMuted
         Canvas(modifier = Modifier.size(24.dp)) {
             val strokeWidth = 2.dp.toPx()
             drawLine(
@@ -366,7 +365,7 @@ private fun CodeCell(
     Row(
         modifier = Modifier
             .size(width = 51.dp, height = 66.dp)
-            .background(CodeCellBackground, RoundedCornerShape(15.38.dp)),
+            .background(MaterialTheme.mulberryAppColors.inputSurface, RoundedCornerShape(15.38.dp)),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -380,7 +379,7 @@ private fun CodeCell(
         }
         Text(
             text = digit?.toString() ?: "0",
-            color = if (digit == null) CodePlaceholderText else MulberryInk,
+            color = if (digit == null) MaterialTheme.mulberryAppColors.subtleText else MulberryInk,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Normal,

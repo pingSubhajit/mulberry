@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,18 +49,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
-import com.subhajit.mulberry.core.ui.OnboardingLightSystemBars
 import com.subhajit.mulberry.core.ui.OnboardingPrivacyNotice
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.data.bootstrap.PendingInviteSummary
 import com.subhajit.mulberry.ui.theme.MulberryError
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
-
-private val InviteAcceptanceBackground = Color.White
-private val InviteAcceptanceInk = Color(0xFF030A14)
-private val HelpText = Color.Black.copy(alpha = 0.60f)
-private val MutedText = Color.Black.copy(alpha = 0.40f)
+import com.subhajit.mulberry.ui.theme.mulberryAppColors
 
 data class InviteAcceptanceUiState(
     val pendingInvite: PendingInviteSummary? = null,
@@ -86,7 +83,7 @@ fun InviteAcceptanceRoute(
         }
     }
 
-    ApplySystemBarStyle(OnboardingLightSystemBars)
+    ApplySystemBarStyle(rememberOnboardingSystemBarStyle())
 
     InviteAcceptanceScreen(
         uiState = uiState,
@@ -101,6 +98,7 @@ private fun InviteAcceptanceScreen(
     onAccept: () -> Unit,
     onDecline: () -> Unit
 ) {
+    val appColors = MaterialTheme.mulberryAppColors
     val invite = uiState.pendingInvite
     val recipientName = invite?.recipientDisplayName
         ?.takeIf { it.isNotBlank() }
@@ -112,7 +110,7 @@ private fun InviteAcceptanceScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(InviteAcceptanceBackground)
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
@@ -176,6 +174,7 @@ private fun InviteAcceptanceTopBar(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val appColors = MaterialTheme.mulberryAppColors
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -187,7 +186,7 @@ private fun InviteAcceptanceTopBar(
         BackButton(onClick = onNavigateBack)
         Text(
             text = stringResource(R.string.invite_code_help),
-            color = HelpText,
+            color = appColors.mutedText,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Medium,
@@ -201,6 +200,7 @@ private fun InviteAcceptanceTopBar(
 @Composable
 private fun BackButton(onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
+    val iconColor = MaterialTheme.mulberryAppColors.iconMuted
     Box(
         modifier = Modifier
             .size(48.dp)
@@ -214,21 +214,21 @@ private fun BackButton(onClick: () -> Unit) {
         Canvas(modifier = Modifier.size(24.dp)) {
             val strokeWidth = 2.dp.toPx()
             drawLine(
-                color = Color(0xFF46514D),
+                color = iconColor,
                 start = center.copy(x = size.width * 0.22f),
                 end = center.copy(x = size.width * 0.78f),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Square
             )
             drawLine(
-                color = Color(0xFF46514D),
+                color = iconColor,
                 start = center.copy(x = size.width * 0.22f),
                 end = center.copy(x = size.width * 0.44f, y = size.height * 0.28f),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Square
             )
             drawLine(
-                color = Color(0xFF46514D),
+                color = iconColor,
                 start = center.copy(x = size.width * 0.22f),
                 end = center.copy(x = size.width * 0.44f, y = size.height * 0.72f),
                 strokeWidth = strokeWidth,
@@ -273,7 +273,7 @@ private fun InviteAcceptanceHeader(
             )
             Text(
                 text = stringResource(R.string.invite_acceptance_title, inviterName),
-                color = InviteAcceptanceInk,
+                color = MaterialTheme.colorScheme.onBackground,
                 style = TextStyle(
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.SemiBold,
@@ -295,6 +295,7 @@ private fun InviteAcceptanceActions(
     onAccept: () -> Unit,
     onDecline: () -> Unit
 ) {
+    val appColors = MaterialTheme.mulberryAppColors
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -338,7 +339,7 @@ private fun InviteAcceptanceActions(
                     append(stringResource(R.string.invite_acceptance_disconnect))
                 }
             },
-            color = MutedText,
+            color = appColors.subtleText,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Normal,

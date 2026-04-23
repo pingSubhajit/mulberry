@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -49,12 +50,10 @@ import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import com.subhajit.mulberry.wallpaper.RemoteWallpaper
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import kotlin.math.max
-
-private val UploadBackground = Color(0xFFFFEBED)
-private val PreviewFrame = Color(0xFFD2D2D2)
 
 @Composable
 fun WallpaperLockScreenPreview(
@@ -65,6 +64,7 @@ fun WallpaperLockScreenPreview(
     width: Dp = 233.dp,
     height: Dp = 428.dp
 ) {
+    val appColors = MaterialTheme.mulberryAppColors
     val imageBitmap = remember(assetPath, assetUpdatedAt) {
         assetPath?.let { path ->
             decodeSampledBitmap(path, targetWidth = 492, targetHeight = 856)?.asImageBitmap()
@@ -76,7 +76,7 @@ fun WallpaperLockScreenPreview(
         modifier = modifier
             .size(width = width, height = height)
             .clip(previewShape)
-            .background(PreviewFrame)
+            .background(appColors.previewFrame)
             .padding(6.dp)
             .clip(previewShape)
     ) {
@@ -232,13 +232,14 @@ private fun PreviewClock(modifier: Modifier = Modifier) {
 
 @Composable
 private fun UploadBackgroundButton(onClick: () -> Unit) {
+    val appColors = MaterialTheme.mulberryAppColors
     val radius = 15.38.dp
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(115.dp)
             .clip(RoundedCornerShape(radius))
-            .background(UploadBackground)
+            .background(appColors.softSurfaceAlt)
             .dashedBorder(MulberryPrimary, radius)
             .clickable(onClick = onClick)
             .testTag(TestTags.ONBOARDING_WALLPAPER_UPLOAD_BUTTON),

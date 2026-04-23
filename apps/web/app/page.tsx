@@ -39,7 +39,7 @@ export default function LandingPage() {
           </p>
 
           <div className="mt-7 flex justify-center">
-            <Button asChild size="lg" className="shadow-none hover:shadow-none bg-white text-brand-ink hover:bg-white/90">
+            <Button asChild size="lg" className="bg-white text-brand-ink shadow-none hover:bg-white/90 hover:shadow-none">
               <Link href={GOOGLE_PLAY_DOWNLOAD_URL}>
                 <Image
                   src="/brand/google-play.svg"
@@ -72,7 +72,7 @@ export default function LandingPage() {
         <div className="mx-auto w-full p-3 md:p-4">
           <div className="mx-auto grid max-w-[92rem] gap-6 p-5 md:grid-cols-3 md:p-6 lg:p-8">
             {notes.map((note) => (
-              <article key={note.title} className="text-brand-ink">
+              <article key={note.title} className="text-foreground">
                 <div className="relative mb-7 aspect-[4/3] overflow-hidden rounded-[1.5rem] bg-white/10">
                   <Image
                     src={note.image}
@@ -85,7 +85,7 @@ export default function LandingPage() {
                 <h2 className="text-2xl font-semibold tracking-[-0.045em] lg:text-3xl">
                   {note.title}
                 </h2>
-                <p className="mt-3 max-w-sm text-sm leading-6 text-brand-ink/72 lg:text-base">
+                <p className="mt-3 max-w-sm text-sm leading-6 text-muted-foreground lg:text-base">
                   {note.description}
                 </p>
               </article>

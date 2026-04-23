@@ -27,6 +27,12 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+  --color-soft-surface: hsl(var(--soft-surface));
+  --color-soft-surface-foreground: hsl(var(--soft-surface-foreground));
+  --color-soft-surface-hover: hsl(var(--soft-surface-hover));
+  --color-soft-border: hsl(var(--soft-border));
+  --color-elevated: hsl(var(--elevated));
+  --color-elevated-foreground: hsl(var(--elevated-foreground));
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 4px);
   --radius-sm: calc(var(--radius) - 8px);
@@ -51,7 +57,45 @@
   --border: 348 45% 86%;
   --input: 348 45% 86%;
   --ring: 352 82% 39%;
+  --soft-surface: 348 100% 97%;
+  --soft-surface-foreground: 222 46% 7%;
+  --soft-surface-hover: 348 100% 95%;
+  --soft-border: 348 28% 88%;
+  --elevated: 0 0% 100%;
+  --elevated-foreground: 222 46% 7%;
   --radius: 1.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-brand-soft: #211517;
+    --color-brand-muted: #8a5560;
+    --color-brand-ink: #ffffff;
+    --background: 0 0% 6.27%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 9.5%;
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 9.5%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 352 82% 39%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 352 28% 17%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 74%;
+    --accent: 27 100% 63%;
+    --accent-foreground: 222 46% 7%;
+    --destructive: 0 72% 56%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 352 82% 39%;
+    --soft-surface: 350 16% 11%;
+    --soft-surface-foreground: 0 0% 100%;
+    --soft-surface-hover: 350 18% 13%;
+    --soft-border: 350 14% 17%;
+    --elevated: 0 0% 10%;
+    --elevated-foreground: 0 0% 100%;
+  }
 }
 
 * {
@@ -64,7 +108,7 @@ html {
 
 body {
   min-height: 100vh;
-  background: #fffaf7;
+  background: hsl(var(--background));
   color: hsl(var(--foreground));
   font-family: var(--font-sans);
   text-rendering: optimizeLegibility;

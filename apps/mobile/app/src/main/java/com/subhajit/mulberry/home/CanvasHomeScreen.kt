@@ -109,6 +109,7 @@ import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.MulberrySecondaryFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import com.subhajit.mulberry.wallpaper.RemoteWallpaper
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
@@ -333,7 +334,7 @@ private fun CanvasHomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.White)
+                .background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .testTag(TestTags.HOME_SCREEN)
@@ -420,7 +421,7 @@ private fun MainAppHeader(
                         append(displayName)
                     }
                 },
-                color = Color(0xFF070B14),
+                color = MaterialTheme.colorScheme.onBackground,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 16.sp,
                 lineHeight = 22.sp,
@@ -429,7 +430,7 @@ private fun MainAppHeader(
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = title,
-                color = Color(0xFF070B14),
+                color = MaterialTheme.colorScheme.onBackground,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 28.sp,
                 lineHeight = 38.sp,
@@ -485,7 +486,7 @@ private fun CanvasHomePane(
             Spacer(modifier = Modifier.height(34.dp))
             Text(
                 text = stringResource(R.string.home_unpaired_pair_title, userName),
-                color = Color(0xFF0A0C14),
+                color = MaterialTheme.colorScheme.onBackground,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 17.sp,
                 lineHeight = 24.sp,
@@ -495,7 +496,7 @@ private fun CanvasHomePane(
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = stringResource(R.string.home_unpaired_body),
-                color = Color(0xFF737373),
+                color = MaterialTheme.mulberryAppColors.mutedText,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 15.sp,
                 lineHeight = 20.sp,
@@ -530,7 +531,7 @@ private fun CanvasHomePane(
                         append(stringResource(R.string.home_enter_code_action))
                     }
                 },
-                color = Color(0xFF737373),
+                color = MaterialTheme.mulberryAppColors.mutedText,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 15.sp,
                 lineHeight = 22.sp,
@@ -588,10 +589,10 @@ private fun PairedCanvasPane(
                 .fillMaxWidth()
                 .weight(1f)
                 .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFFFCF4F5))
+                .background(MaterialTheme.mulberryAppColors.softSurface)
                 .border(
                     width = 2.dp,
-                    color = Color(0x4DB31329),
+                    color = MulberryPrimary.copy(alpha = 0.30f),
                     shape = RoundedCornerShape(24.dp)
                 )
         ) {
@@ -664,7 +665,7 @@ private fun CanvasBlankStateGuidance(modifier: Modifier = Modifier) {
         )
         Text(
             text = stringResource(R.string.home_paired_canvas_guidance_body),
-            color = Color(0x99A39E9B),
+            color = MaterialTheme.mulberryAppColors.mutedText,
             fontFamily = guidanceFontFamily,
             fontSize = 14.sp,
             lineHeight = 20.sp,
@@ -703,7 +704,13 @@ private fun CanvasActionButton(
                 spotColor = Color(0x1A3D3D3D)
             )
             .clip(CircleShape)
-            .background(if (selected) Color(0xFFFFC6CE) else Color(0xFFFFD6DA))
+            .background(
+                if (selected) {
+                    MaterialTheme.mulberryAppColors.softSurfaceSelected
+                } else {
+                    MaterialTheme.mulberryAppColors.softSurfaceStrong
+                }
+            )
             .border(
                 width = if (selected) 2.dp else 0.dp,
                 color = if (selected) MulberryPrimary else Color.Transparent,
@@ -740,7 +747,7 @@ private fun CanvasControlTray(
                 spotColor = Color(0x26000000)
             )
             .clip(RoundedCornerShape(500.dp))
-            .background(Color(0xFFFFF4F5))
+            .background(MaterialTheme.mulberryAppColors.softSurface)
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -751,7 +758,7 @@ private fun CanvasControlTray(
                 .width(168.dp)
                 .height(36.dp)
                 .clip(RoundedCornerShape(500.dp))
-                .background(Color.White)
+                .background(MaterialTheme.colorScheme.surface)
                 .padding(horizontal = 10.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -762,7 +769,7 @@ private fun CanvasControlTray(
                 colors = SliderDefaults.colors(
                     thumbColor = MulberryPrimary,
                     activeTrackColor = MulberryPrimary,
-                    inactiveTrackColor = Color(0xFFFFEBED)
+                    inactiveTrackColor = MaterialTheme.mulberryAppColors.softSurfaceAlt
                 ),
                 modifier = Modifier.testTag(TestTags.BRUSH_WIDTH_SLIDER)
             )
@@ -942,7 +949,7 @@ private fun ProfileAvatar(
     Box(
         modifier = avatarModifier
             .size(size)
-            .border(borderWidth, Color(0xFFFFEDF0), CircleShape)
+            .border(borderWidth, MaterialTheme.mulberryAppColors.softBorder, CircleShape)
             .clip(CircleShape)
             .background(MulberryPrimary),
         contentAlignment = Alignment.Center
@@ -970,9 +977,9 @@ private fun QuestionAvatar(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .size(139.dp)
-            .border(8.dp, Color(0xFFFFEDF0), CircleShape)
+            .border(8.dp, MaterialTheme.mulberryAppColors.softBorder, CircleShape)
             .clip(CircleShape)
-            .background(Color(0xFFFFF8F9)),
+            .background(MaterialTheme.mulberryAppColors.softSurface),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -997,7 +1004,7 @@ private fun MainAppBottomNavigation(
             .fillMaxWidth()
             .height(60.dp)
             .clip(RoundedCornerShape(7.dp))
-            .background(Color.White),
+            .background(MaterialTheme.colorScheme.surface),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         MainAppBottomNavItem(
@@ -1023,7 +1030,7 @@ private fun MainAppBottomNavItem(
     modifier: Modifier = Modifier
 ) {
     val activeColor = MulberryPrimary
-    val inactiveColor = Color(0xFFC5C5C5)
+    val inactiveColor = MaterialTheme.mulberryAppColors.iconMuted
     val itemColor = if (selected) activeColor else inactiveColor
     val label = when (tab) {
         MainAppTab.Canvas -> stringResource(R.string.home_tab_canvas)
@@ -1034,7 +1041,9 @@ private fun MainAppBottomNavItem(
         modifier = modifier
             .fillMaxHeight()
             .clip(RoundedCornerShape(7.dp))
-            .background(if (selected) Color(0xFFFFEEF1) else Color.Transparent)
+            .background(
+                if (selected) MaterialTheme.mulberryAppColors.softSurfaceSelected else Color.Transparent
+            )
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -1117,14 +1126,14 @@ private fun InviteCodeBottomSheet(
         sheetState = sheetState,
         modifier = Modifier.testTag(TestTags.HOME_INVITE_SHEET),
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        containerColor = Color.White,
+        containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = {
             Box(
                 modifier = Modifier
                     .padding(top = 8.dp, bottom = 19.dp)
                     .size(width = 44.dp, height = 4.dp)
                     .clip(RoundedCornerShape(100.dp))
-                    .background(Color(0xFFDEDEDE))
+                    .background(MaterialTheme.mulberryAppColors.dragHandle)
             )
         }
     ) {
@@ -1137,7 +1146,7 @@ private fun InviteCodeBottomSheet(
         ) {
             Text(
                 text = stringResource(R.string.home_invite_sheet_title),
-                color = Color.Black,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 20.sp,
                 lineHeight = 28.sp,
@@ -1169,7 +1178,7 @@ private fun InviteCodeBottomSheet(
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = stringResource(R.string.home_invite_sheet_body),
-                color = Color.Black,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 12.sp,
                 lineHeight = 18.sp,
@@ -1232,7 +1241,7 @@ private fun JoinCodeBottomSheet(
         sheetState = sheetState,
         modifier = Modifier.testTag(TestTags.HOME_JOIN_CODE_SHEET),
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        containerColor = Color.White,
+        containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = { HomeSheetDragHandle() }
     ) {
         Column(
@@ -1244,7 +1253,7 @@ private fun JoinCodeBottomSheet(
         ) {
             Text(
                 text = stringResource(R.string.home_join_sheet_title),
-                color = Color.Black,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 20.sp,
                 lineHeight = 28.sp,
@@ -1336,7 +1345,7 @@ private fun PairingConfirmedBottomSheet(
         sheetState = sheetState,
         modifier = Modifier.testTag(TestTags.HOME_PAIRING_CONFIRMED_SHEET),
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        containerColor = Color.White,
+        containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = { HomeSheetDragHandle() }
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
@@ -1360,7 +1369,7 @@ private fun PairingConfirmedBottomSheet(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = stringResource(R.string.home_pairing_confirmed_title, resolvedPartnerName),
-                    color = Color(0xFF030A14),
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontFamily = PoppinsFontFamily,
                     fontSize = 24.sp,
                     lineHeight = 30.sp,
@@ -1411,7 +1420,7 @@ private fun PairingConfirmedBottomSheet(
                             )
                         }
                     },
-                    color = Color.Black.copy(alpha = 0.40f),
+                    color = MaterialTheme.mulberryAppColors.subtleText,
                     fontFamily = PoppinsFontFamily,
                     fontSize = 12.sp,
                     lineHeight = 20.sp,
@@ -1505,7 +1514,7 @@ private fun HomeSheetDragHandle() {
             .padding(top = 8.dp, bottom = 19.dp)
             .size(width = 44.dp, height = 4.dp)
             .clip(RoundedCornerShape(100.dp))
-            .background(Color(0xFFDEDEDE))
+            .background(MaterialTheme.mulberryAppColors.dragHandle)
     )
 }
 
@@ -1583,7 +1592,7 @@ private fun HomeInviteCodeCell(
         modifier = modifier
             .aspectRatio(0.84f)
             .clip(RoundedCornerShape(15.38.dp))
-            .background(Color(0xFFF3F3F3)),
+            .background(MaterialTheme.mulberryAppColors.inputSurface),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1597,7 +1606,11 @@ private fun HomeInviteCodeCell(
         }
         Text(
             text = digit?.toString() ?: "0",
-            color = if (digit == null) Color.Black.copy(alpha = 0.40f) else Color(0xFF070B14),
+            color = if (digit == null) {
+                MaterialTheme.mulberryAppColors.subtleText
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
             fontFamily = PoppinsFontFamily,
             fontSize = 30.sp,
             lineHeight = 34.sp,
@@ -1619,12 +1632,12 @@ private fun InviteCodeCells(code: String) {
                     .weight(1f)
                     .aspectRatio(0.84f)
                     .clip(RoundedCornerShape(15.38.dp))
-                    .background(Color(0xFFF3F3F3)),
+                    .background(MaterialTheme.mulberryAppColors.inputSurface),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = digit.toString(),
-                    color = Color.Black,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontFamily = PoppinsFontFamily,
                     fontSize = 30.sp,
                     lineHeight = 34.sp,

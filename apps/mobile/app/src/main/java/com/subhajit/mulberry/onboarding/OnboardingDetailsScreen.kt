@@ -21,6 +21,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -46,10 +47,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
-import com.subhajit.mulberry.core.ui.OnboardingLightSystemBars
 import com.subhajit.mulberry.core.ui.OnboardingPrivacyNotice
 import com.subhajit.mulberry.core.ui.OnboardingTextField
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.core.ui.metadata.MulberryUiMetadataProvider
 import com.subhajit.mulberry.ui.theme.MulberryError
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
@@ -58,9 +59,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
-
-private val OnboardingBackground = Color.White
-private val HeadingInk = Color(0xFF030A14)
 
 data class OnboardingDetailsUiState(
     val draft: UserProfileDraft = UserProfileDraft(),
@@ -87,7 +85,7 @@ fun OnboardingDetailsRoute(
         }
     }
 
-    ApplySystemBarStyle(OnboardingLightSystemBars)
+    ApplySystemBarStyle(rememberOnboardingSystemBarStyle())
 
     OnboardingDetailsScreen(
         uiState = uiState,
@@ -113,7 +111,7 @@ private fun OnboardingDetailsScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(OnboardingBackground)
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
@@ -148,7 +146,7 @@ private fun OnboardingDetailsScreen(
                 )
                 Text(
                     text = stringResource(R.string.onboarding_details_title),
-                    color = HeadingInk,
+                    color = MaterialTheme.colorScheme.onBackground,
                     style = TextStyle(
                         fontFamily = PoppinsFontFamily,
                         fontWeight = FontWeight.SemiBold,

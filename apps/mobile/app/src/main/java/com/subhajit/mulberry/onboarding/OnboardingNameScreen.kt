@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,14 +45,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.OnboardingPrivacyNotice
-import com.subhajit.mulberry.core.ui.OnboardingLightSystemBars
 import com.subhajit.mulberry.core.ui.OnboardingTextField
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.core.ui.metadata.MulberryUiMetadataProvider
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
-
-private val OnboardingBackground = Color.White
+import com.subhajit.mulberry.ui.theme.mulberryAppColors
 
 sealed interface OnboardingNameEffect {
     data object NavigateToDetails : OnboardingNameEffect
@@ -75,7 +75,7 @@ fun OnboardingNameRoute(
         }
     }
 
-    ApplySystemBarStyle(OnboardingLightSystemBars)
+    ApplySystemBarStyle(rememberOnboardingSystemBarStyle())
 
     OnboardingNameScreen(
         uiState = uiState,
@@ -92,10 +92,11 @@ private fun OnboardingNameScreen(
     onContinue: () -> Unit,
     onEnterCode: () -> Unit
 ) {
+    val appColors = MaterialTheme.mulberryAppColors
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(OnboardingBackground)
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
@@ -116,7 +117,7 @@ private fun OnboardingNameScreen(
             Spacer(modifier = Modifier.height(32.dp))
             Text(
                 text = stringResource(R.string.onboarding_name_title),
-                color = Color(0xFF030A14),
+                color = MaterialTheme.colorScheme.onBackground,
                 style = TextStyle(
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.SemiBold,
@@ -181,6 +182,7 @@ private fun OnboardingNameScreen(
 
 @Composable
 private fun EnterCodePrompt(onEnterCode: () -> Unit) {
+    val appColors = MaterialTheme.mulberryAppColors
     val interactionSource = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
@@ -197,7 +199,7 @@ private fun EnterCodePrompt(onEnterCode: () -> Unit) {
     ) {
         Text(
             text = stringResource(R.string.onboarding_enter_code_prompt),
-            color = Color.Black.copy(alpha = 0.79f),
+            color = appColors.mutedText,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Medium,

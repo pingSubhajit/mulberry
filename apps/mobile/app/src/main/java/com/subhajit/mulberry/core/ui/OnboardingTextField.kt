@@ -13,22 +13,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.subhajit.mulberry.ui.theme.MulberryInk
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
-
-private val OnboardingFieldBackground = Color(0xFFF3F3F3)
-private val OnboardingPlaceholderColor = Color.Black.copy(alpha = 0.60f)
+import com.subhajit.mulberry.ui.theme.mulberryAppColors
 
 @Composable
 fun OnboardingTextField(
@@ -45,6 +42,7 @@ fun OnboardingTextField(
     onClick: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val appColors = MaterialTheme.mulberryAppColors
     val clickableModifier = if (onClick != null) {
         modifier
             .fillMaxWidth()
@@ -78,7 +76,7 @@ fun OnboardingTextField(
             fontWeight = FontWeight.Normal,
             fontSize = 16.sp,
             lineHeight = 24.sp,
-            color = MulberryInk
+            color = MaterialTheme.colorScheme.onSurface
         ),
         keyboardOptions = KeyboardOptions(
             capitalization = capitalization,
@@ -105,17 +103,18 @@ private fun OnboardingTextFieldContainer(
     modifier: Modifier = Modifier,
     innerTextField: (@Composable () -> Unit)? = null
 ) {
+    val appColors = MaterialTheme.mulberryAppColors
     Column(
         modifier = modifier
             .fillMaxWidth()
             .height(66.dp)
-            .background(OnboardingFieldBackground, RoundedCornerShape(15.38.dp))
+            .background(appColors.inputSurface, RoundedCornerShape(15.38.dp))
             .padding(horizontal = 13.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.Center
     ) {
         Text(
             text = label,
-            color = Color.Black,
+            color = MaterialTheme.colorScheme.onSurface,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Medium,
@@ -131,7 +130,7 @@ private fun OnboardingTextFieldContainer(
             if (value.isEmpty()) {
                 Text(
                     text = placeholder,
-                    color = OnboardingPlaceholderColor,
+                    color = appColors.mutedText,
                     style = TextStyle(
                         fontFamily = PoppinsFontFamily,
                         fontWeight = FontWeight.Normal,
@@ -142,7 +141,7 @@ private fun OnboardingTextFieldContainer(
             } else if (innerTextField == null) {
                 Text(
                     text = value,
-                    color = MulberryInk,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = TextStyle(
                         fontFamily = PoppinsFontFamily,
                         fontWeight = FontWeight.Normal,

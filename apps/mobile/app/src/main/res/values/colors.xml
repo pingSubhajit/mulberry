@@ -4,13 +4,13 @@
     <color name="mulberry_primary_dark">#7E0D1D</color>
     <color name="mulberry_primary_light">#F7DDE2</color>
     <color name="mulberry_accent">#FF6A2A</color>
-    <color name="mulberry_auth_scrim">#070009</color>
+    <color name="mulberry_auth_scrim">#101010</color>
     <color name="surface_light">#FFFAFA</color>
-    <color name="surface_dark">#120008</color>
+    <color name="surface_dark">#101010</color>
     <color name="surface_variant_light">#F5EAED</color>
-    <color name="surface_variant_dark">#291019</color>
+    <color name="surface_variant_dark">#242424</color>
     <color name="text_primary_light">#171016</color>
-    <color name="text_primary_dark">#FFF7F8</color>
+    <color name="text_primary_dark">#FFFFFFFF</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>
