@@ -56,6 +56,16 @@ FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/path/to/service-account.json
 FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 ```
 
+## Production Deployment On Fly.io
+
+The checked-in production deployment config lives at:
+
+- [fly.toml](/Users/subho/Documents/Workspace/Projects/elaris/fly.toml)
+- [fly.secrets.example](/Users/subho/Documents/Workspace/Projects/elaris/apps/backend/fly.secrets.example)
+- [Fly migration runbook](/Users/subho/Documents/Workspace/Projects/elaris/docs/flyio-backend-migration.md)
+
+The production target is a single always-on Fly machine in `bom` (Mumbai) behind the stable public domain `https://api.mulberry.my/`. Supabase remains the database and wallpaper-storage backend.
+
 ## End-to-End Flow
 
 1. Start Docker Compose from the repo root.

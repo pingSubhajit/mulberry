@@ -22,6 +22,7 @@ The product is built for ambient connection, not group collaboration. Active dev
 - [Prerequisites](#prerequisites)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
+- [Production deployment](#production-deployment)
 - [Development commands](#development-commands)
 - [API overview](#api-overview)
 - [Testing](#testing)
@@ -135,6 +136,10 @@ The backend reads configuration from environment variables:
 | `GOOGLE_SERVER_CLIENT_ID` | For real auth | OAuth server client ID used to verify Google ID tokens. |
 | `FIREBASE_SERVICE_ACCOUNT_PATH` | For FCM | Path to a Firebase service account JSON file. |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | For FCM | Inline Firebase service account JSON. |
+| `SUPABASE_URL` | For wallpaper storage | Supabase project URL for wallpaper admin and catalog storage access. |
+| `SUPABASE_SERVICE_ROLE_KEY` | For wallpaper storage | Supabase service-role key used by the backend for wallpaper management. |
+| `SUPABASE_WALLPAPER_BUCKET` | For wallpaper storage | Bucket name used to store wallpaper assets. |
+| `WALLPAPER_ADMIN_PASSWORD` | For wallpaper admin | Admin header secret required by the wallpaper management routes. |
 
 For real Google Sign-In, update `.env`:
 
@@ -167,6 +172,16 @@ apps/mobile/app/src/dev/google-services.json
 apps/mobile/app/src/prod/google-services.json
 ```
 
+## Production deployment
+
+Fly.io is the canonical production deployment target for the backend configuration in this repository. The Fly app uses the existing root `Dockerfile`, serves the same public API contract at `https://api.mulberry.my/`, and keeps Supabase as the source of truth for Postgres and wallpaper storage.
+
+Use the checked-in Fly config:
+
+- [fly.toml](/Users/subho/Documents/Workspace/Projects/elaris/fly.toml)
+- [apps/backend/fly.secrets.example](/Users/subho/Documents/Workspace/Projects/elaris/apps/backend/fly.secrets.example)
+- [docs/flyio-backend-migration.md](/Users/subho/Documents/Workspace/Projects/elaris/docs/flyio-backend-migration.md)
+
 ## Development commands
 
 Install JavaScript workspace dependencies from the repository root:
@@ -194,7 +209,7 @@ pnpm --filter @mulberry/backend build
 pnpm --filter @mulberry/backend test
 ```
 
-Railway still builds the backend through the root `Dockerfile`. The Docker image uses the root PNPM workspace lockfile and builds only `@mulberry/backend`, so the backend deployment path stays independent from the web and Android apps.
+Fly.io deployment uses the root `Dockerfile`. During migration, Railway can continue to use the same image and public domain while DNS rollback remains in place. The Docker image uses the root PNPM workspace lockfile and builds only `@mulberry/backend`, so the backend deployment path stays independent from the web and Android apps.
 
 ### Web
 
