@@ -17,8 +17,9 @@ val localProperties = Properties().apply {
 }
 
 fun localConfigValue(key: String): String =
-    localProperties.getProperty(key)
-        ?: System.getenv(key)
+    localProperties.getProperty(key)?.takeUnless(String::isBlank)
+        ?: providers.gradleProperty(key).orNull?.takeUnless(String::isBlank)
+        ?: System.getenv(key)?.takeUnless(String::isBlank)
         ?: ""
 
 fun quotedBuildConfigValue(value: String): String =
@@ -29,6 +30,16 @@ val prodApiBaseUrl = localConfigValue("PROD_API_BASE_URL")
     .ifBlank { "https://api.mulberry.my/" }
 val canvasStrokeRenderMode = localConfigValue("CANVAS_STROKE_RENDER_MODE")
     .ifBlank { "hybrid" }
+val releaseStoreFile = localConfigValue("RELEASE_STORE_FILE")
+val releaseStorePassword = localConfigValue("RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = localConfigValue("RELEASE_KEY_ALIAS")
+val releaseKeyPassword = localConfigValue("RELEASE_KEY_PASSWORD")
+val hasReleaseSigningConfig = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all(String::isNotBlank)
 
 android {
     namespace = "com.subhajit.mulberry"
@@ -83,6 +94,17 @@ android {
         }
     }
 
+    if (hasReleaseSigningConfig) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -90,6 +112,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasReleaseSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
@@ -108,6 +133,7 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
 }
 
 kapt {
