@@ -57,46 +57,12 @@ export function createPushSender(options: FirebasePushSenderOptions): PushSender
     return new NoopPushSender()
   }
   const serviceAccount = options.serviceAccountJson
-    ? parseServiceAccountJson(options.serviceAccountJson)
+    ? JSON.parse(options.serviceAccountJson)
     : JSON.parse(readFileSync(options.serviceAccountPath ?? "", "utf8"))
   const app = getApps()[0] ?? initializeApp({
     credential: cert(serviceAccount),
   })
   return new FirebaseAdminPushSender(getMessaging(app))
-}
-
-export function parseServiceAccountJson(raw: string): Record<string, unknown> {
-  const trimmed = raw.trim()
-  const candidates = [
-    trimmed,
-    trimmed.replace(/\\"/g, "\""),
-  ]
-
-  for (const candidate of candidates) {
-    const parsed = tryParseJson(candidate)
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>
-    }
-    if (typeof parsed === "string") {
-      const reparsed = tryParseJson(parsed)
-      if (reparsed && typeof reparsed === "object" && !Array.isArray(reparsed)) {
-        return reparsed as Record<string, unknown>
-      }
-    }
-  }
-
-  throw new Error(
-    "Invalid FIREBASE_SERVICE_ACCOUNT_JSON. Provide raw service-account JSON " +
-      "or remove extra escaping before importing the Fly secret.",
-  )
-}
-
-function tryParseJson(value: string): unknown {
-  try {
-    return JSON.parse(value)
-  } catch {
-    return null
-  }
 }
 
 export class FirebaseAdminPushSender implements PushSender {
