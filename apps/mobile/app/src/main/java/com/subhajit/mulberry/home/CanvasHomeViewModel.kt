@@ -27,6 +27,8 @@ import com.subhajit.mulberry.settings.PairingDisconnectCoordinator
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageState
 import com.subhajit.mulberry.wallpaper.DefaultWallpaperPresets
+import com.subhajit.mulberry.wallpaper.RemoteWallpaper
+import com.subhajit.mulberry.wallpaper.WallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.WallpaperStatusState
@@ -96,6 +98,8 @@ data class CanvasHomeUiState(
     val joinCode: JoinCodeUiState = JoinCodeUiState(),
     val pairingConfirmation: PairingConfirmationUiState = PairingConfirmationUiState(),
     val selectedWallpaperPresetResId: Int? = null,
+    val selectedRemoteWallpaperId: String? = null,
+    val recentRemoteWallpapers: List<RemoteWallpaper> = emptyList(),
     val isWallpaperBusy: Boolean = false,
     val wallpaperErrorMessage: String? = null,
     val showClearConfirmation: Boolean = false,
@@ -117,6 +121,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val inviteRepository: InviteRepository,
     private val canvasRuntime: CanvasRuntime,
     private val backgroundImageRepository: BackgroundImageRepository,
+    private val wallpaperCatalogRepository: WallpaperCatalogRepository,
     private val wallpaperCoordinator: WallpaperCoordinator,
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     appConfig: AppConfig
@@ -127,7 +132,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val inviteErrorState = MutableStateFlow<String?>(null)
     private val joinCodeState = MutableStateFlow(JoinCodeUiState())
     private val pairingConfirmationState = MutableStateFlow(PairingConfirmationUiState())
-    private val selectedWallpaperPresetState = MutableStateFlow<Int?>(null)
+    private val recentRemoteWallpapersState = MutableStateFlow<List<RemoteWallpaper>>(emptyList())
     private val wallpaperBusyState = MutableStateFlow(false)
     private val wallpaperErrorState = MutableStateFlow<String?>(null)
     private val currentTimeMillis = MutableStateFlow(System.currentTimeMillis())
@@ -189,12 +194,12 @@ class CanvasHomeViewModel @Inject constructor(
     }
 
     private val wallpaperControls = combine(
-        selectedWallpaperPresetState,
+        recentRemoteWallpapersState,
         wallpaperBusyState,
         wallpaperErrorState
-    ) { selectedWallpaperPreset, wallpaperBusy, wallpaperError ->
+    ) { recentRemoteWallpapers, wallpaperBusy, wallpaperError ->
         WallpaperControlState(
-            selectedPreset = selectedWallpaperPreset,
+            recentRemoteWallpapers = recentRemoteWallpapers,
             isBusy = wallpaperBusy,
             error = wallpaperError
         )
@@ -222,7 +227,9 @@ class CanvasHomeViewModel @Inject constructor(
             ),
             joinCode = inviteControls.joinCode,
             pairingConfirmation = inviteControls.confirmation,
-            selectedWallpaperPresetResId = wallpaperControls.selectedPreset,
+            selectedWallpaperPresetResId = baseState.backgroundState.selectedPresetResId,
+            selectedRemoteWallpaperId = baseState.backgroundState.selectedRemoteWallpaperId,
+            recentRemoteWallpapers = wallpaperControls.recentRemoteWallpapers,
             isWallpaperBusy = wallpaperControls.isBusy,
             wallpaperErrorMessage = wallpaperControls.error,
             showClearConfirmation = inviteControls.clearDialogVisible,
@@ -243,6 +250,13 @@ class CanvasHomeViewModel @Inject constructor(
             while (true) {
                 currentTimeMillis.value = System.currentTimeMillis()
                 delay(1_000)
+            }
+        }
+        viewModelScope.launch {
+            runCatching {
+                wallpaperCatalogRepository.fetchPage(cursor = null, limit = 4)
+            }.onSuccess { page ->
+                recentRemoteWallpapersState.value = page.items
             }
         }
         viewModelScope.launch {
@@ -496,7 +510,6 @@ class CanvasHomeViewModel @Inject constructor(
     fun onBackgroundImageSelected(uri: Uri) {
         viewModelScope.launch {
             runWallpaperUpdate {
-                selectedWallpaperPresetState.value = null
                 backgroundImageRepository.importBackground(uri)
             }
         }
@@ -505,7 +518,6 @@ class CanvasHomeViewModel @Inject constructor(
     fun onBackgroundImageCleared() {
         viewModelScope.launch {
             runWallpaperUpdate {
-                selectedWallpaperPresetState.value = null
                 backgroundImageRepository.clearBackground()
             }
         }
@@ -514,14 +526,17 @@ class CanvasHomeViewModel @Inject constructor(
     fun onWallpaperPresetSelected(drawableResId: Int) {
         viewModelScope.launch {
             runWallpaperUpdate {
-                selectedWallpaperPresetState.value = drawableResId
                 backgroundImageRepository.importBundledBackground(drawableResId)
             }
         }
     }
 
-    fun onRemoteWallpaperSelected() {
-        selectedWallpaperPresetState.value = null
+    fun onRemoteWallpaperSelected(wallpaper: RemoteWallpaper) {
+        viewModelScope.launch {
+            runWallpaperUpdate {
+                backgroundImageRepository.importRemoteBackground(wallpaper)
+            }
+        }
     }
 
     fun onSetUpLockScreenClicked() {
@@ -573,7 +588,7 @@ class CanvasHomeViewModel @Inject constructor(
     )
 
     private data class WallpaperControlState(
-        val selectedPreset: Int?,
+        val recentRemoteWallpapers: List<RemoteWallpaper>,
         val isBusy: Boolean,
         val error: String?
     )
@@ -591,8 +606,6 @@ class CanvasHomeViewModel @Inject constructor(
 
     private suspend fun ensureDefaultBackgroundIfNeeded() {
         if (!backgroundImageRepository.getCurrentBackgroundState().isConfigured) {
-            selectedWallpaperPresetState.value = selectedWallpaperPresetState.value
-                ?: R.drawable.wallpaper_default_bg
             backgroundImageRepository.importBundledBackground(R.drawable.wallpaper_default_bg)
         }
     }

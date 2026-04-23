@@ -91,7 +91,6 @@ private val PreviewFrame = Color(0xFFD2D2D2)
 fun OnboardingWallpaperRoute(
     onNavigateHome: () -> Unit,
     onNavigateToWallpaperCatalog: () -> Unit,
-    remoteWallpaperSelectedAt: Long = 0L,
     viewModel: OnboardingWallpaperViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -112,12 +111,6 @@ fun OnboardingWallpaperRoute(
                 OnboardingWallpaperEffect.OpenWallpaperSetup ->
                     WallpaperIntentFactory.openWallpaperPicker(context)
             }
-        }
-    }
-
-    LaunchedEffect(remoteWallpaperSelectedAt) {
-        if (remoteWallpaperSelectedAt > 0L) {
-            viewModel.onRemoteWallpaperSelected()
         }
     }
 
@@ -147,6 +140,7 @@ fun OnboardingWallpaperRoute(
             )
         },
         onPresetSelected = viewModel::onPresetSelected,
+        onRemoteWallpaperSelected = viewModel::onRemoteWallpaperSelected,
         onAllDone = viewModel::onAllDoneClicked
     )
 }
@@ -161,6 +155,7 @@ private fun OnboardingWallpaperScreen(
     onViewMoreWallpapers: () -> Unit,
     onUploadFromGallery: () -> Unit,
     onPresetSelected: (Int) -> Unit,
+    onRemoteWallpaperSelected: (com.subhajit.mulberry.wallpaper.RemoteWallpaper) -> Unit,
     onAllDone: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -225,10 +220,13 @@ private fun OnboardingWallpaperScreen(
             }
 
             WallpaperBackgroundSelectionSection(
+                remoteWallpapers = uiState.recentRemoteWallpapers,
                 presets = presets,
                 selectedPresetResId = uiState.selectedPresetResId,
+                selectedRemoteWallpaperId = uiState.selectedRemoteWallpaperId,
                 onUploadFromGallery = onUploadFromGallery,
                 onPresetSelected = onPresetSelected,
+                onRemoteWallpaperSelected = onRemoteWallpaperSelected,
                 onViewMoreWallpapers = onViewMoreWallpapers
             )
 

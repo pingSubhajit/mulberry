@@ -10,6 +10,8 @@ import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageState
 import com.subhajit.mulberry.wallpaper.DefaultWallpaperPresets
+import com.subhajit.mulberry.wallpaper.RemoteWallpaper
+import com.subhajit.mulberry.wallpaper.WallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.WallpaperStatusState
@@ -29,6 +31,8 @@ data class OnboardingWallpaperUiState(
     val wallpaperStatus: WallpaperStatusState = WallpaperStatusState(),
     val backgroundImageState: BackgroundImageState = BackgroundImageState(),
     @DrawableRes val selectedPresetResId: Int? = null,
+    val selectedRemoteWallpaperId: String? = null,
+    val recentRemoteWallpapers: List<RemoteWallpaper> = emptyList(),
     val isBusy: Boolean = false,
     val errorMessage: String? = null
 ) {
@@ -45,11 +49,12 @@ sealed interface OnboardingWallpaperEffect {
 class OnboardingWallpaperViewModel @Inject constructor(
     sessionBootstrapRepository: SessionBootstrapRepository,
     private val backgroundImageRepository: BackgroundImageRepository,
-    private val wallpaperCoordinator: WallpaperCoordinator
+    private val wallpaperCoordinator: WallpaperCoordinator,
+    private val wallpaperCatalogRepository: WallpaperCatalogRepository
 ) : ViewModel() {
     private val busyState = MutableStateFlow(false)
     private val errorState = MutableStateFlow<String?>(null)
-    private val selectedPresetState = MutableStateFlow<Int?>(null)
+    private val recentRemoteWallpapersState = MutableStateFlow<List<RemoteWallpaper>>(emptyList())
 
     val presets: List<WallpaperPreset> = DefaultWallpaperPresets
 
@@ -67,15 +72,17 @@ class OnboardingWallpaperViewModel @Inject constructor(
 
     val uiState = combine(
         baseState,
-        selectedPresetState,
+        recentRemoteWallpapersState,
         busyState,
         errorState
-    ) { baseState, selectedPreset, isBusy, errorMessage ->
+    ) { baseState, recentRemoteWallpapers, isBusy, errorMessage ->
         OnboardingWallpaperUiState(
             bootstrapState = baseState.bootstrapState,
             wallpaperStatus = baseState.wallpaperStatus,
             backgroundImageState = baseState.backgroundState,
-            selectedPresetResId = selectedPreset,
+            selectedPresetResId = baseState.backgroundState.selectedPresetResId,
+            selectedRemoteWallpaperId = baseState.backgroundState.selectedRemoteWallpaperId,
+            recentRemoteWallpapers = recentRemoteWallpapers,
             isBusy = isBusy,
             errorMessage = errorMessage
         )
@@ -90,10 +97,19 @@ class OnboardingWallpaperViewModel @Inject constructor(
     private val _effects = MutableSharedFlow<OnboardingWallpaperEffect>()
     val effects = _effects.asSharedFlow()
 
+    init {
+        viewModelScope.launch {
+            runCatching {
+                wallpaperCatalogRepository.fetchPage(cursor = null, limit = 4)
+            }.onSuccess { page ->
+                recentRemoteWallpapersState.value = page.items
+            }
+        }
+    }
+
     fun onGalleryBackgroundSelected(uri: Uri) {
         viewModelScope.launch {
             runBackgroundUpdate {
-                selectedPresetState.value = null
                 backgroundImageRepository.importBackground(uri)
             }
         }
@@ -102,14 +118,17 @@ class OnboardingWallpaperViewModel @Inject constructor(
     fun onPresetSelected(@DrawableRes drawableResId: Int) {
         viewModelScope.launch {
             runBackgroundUpdate {
-                selectedPresetState.value = drawableResId
                 backgroundImageRepository.importBundledBackground(drawableResId)
             }
         }
     }
 
-    fun onRemoteWallpaperSelected() {
-        selectedPresetState.value = null
+    fun onRemoteWallpaperSelected(wallpaper: RemoteWallpaper) {
+        viewModelScope.launch {
+            runBackgroundUpdate {
+                backgroundImageRepository.importRemoteBackground(wallpaper)
+            }
+        }
     }
 
     fun onSetUpLockScreenClicked() {
@@ -155,7 +174,6 @@ class OnboardingWallpaperViewModel @Inject constructor(
 
     private suspend fun ensureDefaultBackgroundIfNeeded() {
         if (!backgroundImageRepository.getCurrentBackgroundState().isConfigured) {
-            selectedPresetState.update { it ?: R.drawable.wallpaper_default_bg }
             backgroundImageRepository.importBundledBackground(R.drawable.wallpaper_default_bg)
         }
     }

@@ -27,6 +27,9 @@ object PreferenceStorage {
     val wallpaperConfigured = booleanPreferencesKey("wallpaper_configured")
     val backgroundImagePath = stringPreferencesKey("background_image_path")
     val backgroundImageUpdatedAt = stringPreferencesKey("background_image_updated_at")
+    val backgroundImagePresetResId = stringPreferencesKey("background_image_preset_res_id")
+    val backgroundImageRemoteWallpaperId =
+        stringPreferencesKey("background_image_remote_wallpaper_id")
     val onboardingDraftDisplayName = stringPreferencesKey("onboarding_draft_display_name")
     val onboardingDraftPartnerDisplayName =
         stringPreferencesKey("onboarding_draft_partner_display_name")

@@ -109,6 +109,7 @@ import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.MulberrySecondaryFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.wallpaper.RemoteWallpaper
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.ui.WallpaperBackgroundSelectionSection
@@ -133,7 +134,6 @@ fun CanvasHomeRoute(
     onNavigateToCanvas: () -> Unit,
     onNavigateToLockScreen: () -> Unit,
     onNavigateToWallpaperCatalog: () -> Unit,
-    remoteWallpaperSelectedAt: Long = 0L,
     onNavigateToSettings: () -> Unit,
     viewModel: CanvasHomeViewModel = hiltViewModel()
 ) {
@@ -150,12 +150,6 @@ fun CanvasHomeRoute(
 
     LaunchedEffect(viewModel) {
         viewModel.refreshBootstrapState()
-    }
-
-    LaunchedEffect(remoteWallpaperSelectedAt) {
-        if (remoteWallpaperSelectedAt > 0L) {
-            viewModel.onRemoteWallpaperSelected()
-        }
     }
 
     LaunchedEffect(viewModel, context) {
@@ -215,6 +209,7 @@ fun CanvasHomeRoute(
             )
         },
         onWallpaperPresetSelected = viewModel::onWallpaperPresetSelected,
+        onRemoteWallpaperSelected = viewModel::onRemoteWallpaperSelected,
         onCanvasPress = viewModel::onCanvasPress,
         onCanvasDrag = viewModel::onCanvasDrag,
         onCanvasRelease = viewModel::onCanvasRelease,
@@ -250,6 +245,7 @@ private fun CanvasHomeScreen(
     onViewMoreWallpapers: () -> Unit,
     onUploadWallpaperBackground: () -> Unit,
     onWallpaperPresetSelected: (Int) -> Unit,
+    onRemoteWallpaperSelected: (RemoteWallpaper) -> Unit,
     onCanvasPress: (StrokePoint) -> Unit,
     onCanvasDrag: (StrokePoint) -> Unit,
     onCanvasRelease: () -> Unit,
@@ -377,7 +373,8 @@ private fun CanvasHomeScreen(
                         onSetUpLockScreen = onSetUpLockScreen,
                         onViewMoreWallpapers = onViewMoreWallpapers,
                         onUploadFromGallery = onUploadWallpaperBackground,
-                        onPresetSelected = onWallpaperPresetSelected
+                        onPresetSelected = onWallpaperPresetSelected,
+                        onRemoteWallpaperSelected = onRemoteWallpaperSelected
                     )
                 }
             }
@@ -790,7 +787,8 @@ private fun LockScreenHomePane(
     onSetUpLockScreen: () -> Unit,
     onViewMoreWallpapers: () -> Unit,
     onUploadFromGallery: () -> Unit,
-    onPresetSelected: (Int) -> Unit
+    onPresetSelected: (Int) -> Unit,
+    onRemoteWallpaperSelected: (RemoteWallpaper) -> Unit
 ) {
     val selectedPreviewResId = presets
         .firstOrNull { it.drawableResId == uiState.selectedWallpaperPresetResId }
@@ -841,10 +839,13 @@ private fun LockScreenHomePane(
             }
 
             WallpaperBackgroundSelectionSection(
+                remoteWallpapers = uiState.recentRemoteWallpapers,
                 presets = presets,
                 selectedPresetResId = uiState.selectedWallpaperPresetResId,
+                selectedRemoteWallpaperId = uiState.selectedRemoteWallpaperId,
                 onUploadFromGallery = onUploadFromGallery,
                 onPresetSelected = onPresetSelected,
+                onRemoteWallpaperSelected = onRemoteWallpaperSelected,
                 onViewMoreWallpapers = onViewMoreWallpapers
             )
         }

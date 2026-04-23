@@ -25,8 +25,6 @@ import com.subhajit.mulberry.pairing.PairingHubRoute
 import com.subhajit.mulberry.settings.SettingsRoute
 import com.subhajit.mulberry.wallpaper.WallpaperCatalogRoute
 
-private const val REMOTE_WALLPAPER_SELECTED_AT_KEY = "remote_wallpaper_selected_at"
-
 @Composable
 fun MulberryNavHost(
     navController: NavHostController = rememberNavController()
@@ -111,13 +109,9 @@ fun MulberryNavHost(
             )
         }
 
-        composable(AppRoute.OnboardingWallpaper.route) { backStackEntry ->
+        composable(AppRoute.OnboardingWallpaper.route) {
             ReleaseStartupGateAfterFirstFrame()
-            val remoteWallpaperSelectedAt by backStackEntry.savedStateHandle
-                .getStateFlow(REMOTE_WALLPAPER_SELECTED_AT_KEY, 0L)
-                .collectAsStateWithLifecycle()
             OnboardingWallpaperRoute(
-                remoteWallpaperSelectedAt = remoteWallpaperSelectedAt,
                 onNavigateToWallpaperCatalog = {
                     navController.navigate(AppRoute.WallpaperCatalog.route)
                 },
@@ -166,15 +160,11 @@ fun MulberryNavHost(
             )
         }
 
-        composable(AppRoute.CanvasHome.route) { backStackEntry ->
+        composable(AppRoute.CanvasHome.route) {
             ReleaseStartupGateAfterFirstFrame()
-            val remoteWallpaperSelectedAt by backStackEntry.savedStateHandle
-                .getStateFlow(REMOTE_WALLPAPER_SELECTED_AT_KEY, 0L)
-                .collectAsStateWithLifecycle()
             CanvasHomeRoute(
                 shortcutAction = shortcutAction,
                 onShortcutActionHandled = AppShortcutActionController::markHandled,
-                remoteWallpaperSelectedAt = remoteWallpaperSelectedAt,
                 onNavigateToCanvas = {
                     navController.navigate(AppRoute.CanvasSurface.route)
                 },
@@ -205,13 +195,7 @@ fun MulberryNavHost(
         composable(AppRoute.WallpaperCatalog.route) {
             ReleaseStartupGateAfterFirstFrame()
             WallpaperCatalogRoute(
-                onNavigateBack = { navController.popBackStack() },
-                onWallpaperSelected = {
-                    navController.previousBackStackEntry
-                        ?.savedStateHandle
-                        ?.set(REMOTE_WALLPAPER_SELECTED_AT_KEY, System.currentTimeMillis())
-                    navController.popBackStack()
-                }
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

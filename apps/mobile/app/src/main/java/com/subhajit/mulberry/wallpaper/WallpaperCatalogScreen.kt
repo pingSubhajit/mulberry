@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.wallpaper
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,16 +20,18 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -50,18 +53,9 @@ import kotlinx.coroutines.flow.filter
 @Composable
 fun WallpaperCatalogRoute(
     onNavigateBack: () -> Unit,
-    onWallpaperSelected: () -> Unit,
     viewModel: WallpaperCatalogViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-    LaunchedEffect(viewModel) {
-        viewModel.effects.collect { effect ->
-            when (effect) {
-                WallpaperCatalogEffect.WallpaperSelected -> onWallpaperSelected()
-            }
-        }
-    }
 
     ApplySystemBarStyle(OnboardingLightSystemBars)
 
@@ -105,43 +99,21 @@ private fun WallpaperCatalogScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 24.dp, bottom = 26.dp),
+                .padding(top = 11.dp, bottom = 26.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Text(
-                    text = "‹",
-                    color = Color(0xFF3F4543),
-                    style = TextStyle(
-                        fontFamily = PoppinsFontFamily,
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 42.sp,
-                        lineHeight = 42.sp
-                    )
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.wallpaper_catalog_eyebrow),
-                    color = MulberryPrimary,
-                    style = TextStyle(
-                        fontFamily = PoppinsFontFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 16.sp,
-                        lineHeight = 22.sp
-                    )
-                )
-                Text(
-                    text = stringResource(R.string.wallpaper_catalog_title),
-                    color = Color(0xFF030A14),
-                    style = TextStyle(
-                        fontFamily = PoppinsFontFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 32.sp,
-                        lineHeight = 38.sp
-                    )
-                )
-            }
+            CatalogBackButton(onClick = onBack)
+            Text(
+                text = stringResource(R.string.wallpaper_catalog_title),
+                color = Color(0xFF030A14),
+                style = TextStyle(
+                    fontFamily = PoppinsFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    lineHeight = 38.sp
+                ),
+                modifier = Modifier.weight(1f)
+            )
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
@@ -170,6 +142,7 @@ private fun WallpaperCatalogScreen(
                         RemoteWallpaperCard(
                             wallpaper = wallpaper,
                             isSelected = uiState.selectedWallpaperId == wallpaper.id,
+                            isApplying = uiState.applyingWallpaperId == wallpaper.id,
                             onClick = { onWallpaperSelected(wallpaper) }
                         )
                     }
@@ -193,43 +166,101 @@ private fun WallpaperCatalogScreen(
 private fun RemoteWallpaperCard(
     wallpaper: RemoteWallpaper,
     isSelected: Boolean,
+    isApplying: Boolean,
     onClick: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(171f / 133f)
-                .clip(RoundedCornerShape(15.38.dp))
-                .clickable(enabled = !isSelected, onClick = onClick)
-        ) {
-            AsyncImage(
-                model = wallpaper.thumbnailUrl,
-                contentDescription = wallpaper.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-            if (isSelected) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.42f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(171f / 133f)
+            .clip(RoundedCornerShape(15.38.dp))
+            .clickable(enabled = !isApplying, onClick = onClick)
+    ) {
+        AsyncImage(
+            model = wallpaper.thumbnailUrl,
+            contentDescription = wallpaper.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        if (isSelected || isApplying) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.46f)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isApplying) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.5.dp,
+                        modifier = Modifier.size(30.dp)
+                    )
+                } else {
+                    CheckmarkIcon()
                 }
             }
         }
-        Text(
-            text = wallpaper.title,
-            color = Color(0xFF030A14),
-            maxLines = 1,
-            style = TextStyle(
-                fontFamily = PoppinsFontFamily,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                lineHeight = 18.sp
+    }
+}
+
+@Composable
+private fun CatalogBackButton(onClick: () -> Unit) {
+    val interactionSource = MutableInteractionSource()
+    Box(
+        modifier = Modifier
+            .padding(end = 8.dp)
+            .size(48.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(24.dp)) {
+            val strokeWidth = 2.dp.toPx()
+            drawLine(
+                color = Color(0xFF46514D),
+                start = center.copy(x = size.width * 0.22f),
+                end = center.copy(x = size.width * 0.78f),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Square
             )
+            drawLine(
+                color = Color(0xFF46514D),
+                start = center.copy(x = size.width * 0.22f),
+                end = center.copy(x = size.width * 0.44f, y = size.height * 0.28f),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Square
+            )
+            drawLine(
+                color = Color(0xFF46514D),
+                start = center.copy(x = size.width * 0.22f),
+                end = center.copy(x = size.width * 0.44f, y = size.height * 0.72f),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Square
+            )
+        }
+    }
+}
+
+@Composable
+private fun CheckmarkIcon() {
+    Canvas(modifier = Modifier.size(34.dp)) {
+        val strokeWidth = 4.dp.toPx()
+        drawLine(
+            color = Color.White,
+            start = Offset(size.width * 0.22f, size.height * 0.54f),
+            end = Offset(size.width * 0.43f, size.height * 0.74f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = Color.White,
+            start = Offset(size.width * 0.43f, size.height * 0.74f),
+            end = Offset(size.width * 0.80f, size.height * 0.30f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
         )
     }
 }

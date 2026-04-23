@@ -44,10 +44,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.wallpaper.RemoteWallpaper
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import kotlin.math.max
 
@@ -103,31 +105,51 @@ fun WallpaperLockScreenPreview(
 
 @Composable
 fun WallpaperBackgroundSelectionSection(
+    remoteWallpapers: List<RemoteWallpaper>,
     presets: List<WallpaperPreset>,
     @DrawableRes selectedPresetResId: Int?,
+    selectedRemoteWallpaperId: String?,
     onUploadFromGallery: () -> Unit,
     onPresetSelected: (Int) -> Unit,
+    onRemoteWallpaperSelected: (RemoteWallpaper) -> Unit,
     onViewMoreWallpapers: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val wallpaperItems = buildList<WallpaperSelectionItem> {
+        remoteWallpapers.forEach { wallpaper ->
+            add(WallpaperSelectionItem.Remote(wallpaper))
+        }
+        presets.forEach { preset ->
+            add(WallpaperSelectionItem.Preset(preset))
+        }
+    }
     Column(
         verticalArrangement = Arrangement.spacedBy(28.dp),
         modifier = modifier.testTag(TestTags.ONBOARDING_WALLPAPER_BACKGROUND_SECTION)
     ) {
         UploadBackgroundButton(onClick = onUploadFromGallery)
         Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            presets.chunked(2).forEach { row ->
+            wallpaperItems.chunked(2).forEach { row ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    row.forEach { preset ->
-                        PresetCard(
-                            preset = preset,
-                            isSelected = selectedPresetResId == preset.drawableResId,
-                            onClick = { onPresetSelected(preset.drawableResId) },
-                            modifier = Modifier.weight(1f)
-                        )
+                    row.forEach { item ->
+                        when (item) {
+                            is WallpaperSelectionItem.Preset -> PresetCard(
+                                preset = item.preset,
+                                isSelected = selectedPresetResId == item.preset.drawableResId,
+                                onClick = { onPresetSelected(item.preset.drawableResId) },
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            is WallpaperSelectionItem.Remote -> RemoteWallpaperCard(
+                                wallpaper = item.wallpaper,
+                                isSelected = selectedRemoteWallpaperId == item.wallpaper.id,
+                                onClick = { onRemoteWallpaperSelected(item.wallpaper) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                     if (row.size == 1) {
                         Spacer(modifier = Modifier.weight(1f))
@@ -139,6 +161,11 @@ fun WallpaperBackgroundSelectionSection(
             }
         }
     }
+}
+
+private sealed interface WallpaperSelectionItem {
+    data class Preset(val preset: WallpaperPreset) : WallpaperSelectionItem
+    data class Remote(val wallpaper: RemoteWallpaper) : WallpaperSelectionItem
 }
 
 @Composable
@@ -309,6 +336,39 @@ private fun PresetCard(
         Image(
             painter = painterResource(preset.thumbnailDrawableResId),
             contentDescription = preset.label,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.46f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CheckmarkIcon()
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemoteWallpaperCard(
+    wallpaper: RemoteWallpaper,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(15.38.dp)
+    Box(
+        modifier = modifier
+            .aspectRatio(171f / 133f)
+            .clip(shape)
+            .clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = wallpaper.thumbnailUrl,
+            contentDescription = wallpaper.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
