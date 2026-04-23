@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-feature android:name="android.software.live_wallpaper" />
 
     <application
@@ -20,13 +21,27 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.Mulberry.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <activity
+            android:name=".ClearDoodlesShortcutActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/shortcut_clear_doodles_short_label"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:theme="@style/Theme.Mulberry.ShortcutDialog" />
 
         <service
             android:name=".wallpaper.MulberryWallpaperService"

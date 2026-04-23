@@ -11,6 +11,7 @@ import com.subhajit.mulberry.core.flags.FeatureFlags
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 import com.subhajit.mulberry.drawing.DrawingRepository
+import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.sync.BackgroundCanvasSyncCoordinator
 import com.subhajit.mulberry.sync.CanvasSyncRepository
 import com.subhajit.mulberry.sync.FcmTokenRepository
@@ -70,6 +71,7 @@ class SettingsViewModel @Inject constructor(
     private val canvasSnapshotRenderer: CanvasSnapshotRenderer,
     private val wallpaperCoordinator: WallpaperCoordinator,
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
+    private val apiService: MulberryApiService,
     appConfig: AppConfig
 ) : ViewModel() {
     private val _effects = MutableSharedFlow<SettingsEffect>()
@@ -209,6 +211,13 @@ class SettingsViewModel @Inject constructor(
             wallpaperCoordinator.ensureSnapshotCurrent()
             wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
             _effects.emit(SettingsEffect.Message("Wallpaper snapshot regenerated"))
+        }
+    }
+
+    fun onSendDebugPairingNotification() {
+        viewModelScope.launchWithBusy {
+            apiService.sendDebugPairingConfirmationPush()
+            _effects.emit(SettingsEffect.Message("Pairing notification sent to partner"))
         }
     }
 

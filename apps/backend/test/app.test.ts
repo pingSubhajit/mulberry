@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createApp } from "../src/app.js"
 import { runMigrations, type Database } from "../src/db.js"
-import type { CanvasUpdatedPushMessage, PushSender } from "../src/push.js"
+import type { MulberryPushMessage, PushSender } from "../src/push.js"
 
 describe("Mulberry backend", () => {
   let app: FastifyInstance
@@ -206,6 +206,71 @@ describe("Mulberry backend", () => {
     })
     expect(inviterBootstrap.statusCode).toBe(200)
     expect(inviterBootstrap.json().partnerPhotoUrl).toBe(recipientPhoto)
+  })
+
+  it("pushes a pairing confirmation to the inviter when the invitee accepts", async () => {
+    const inviter = await signIn("subhajit@elaris.dev", "Subhajit")
+    await completeProfile(inviter.accessToken, "Subhajit", "Ankita", "2026-01-01")
+    await registerFcmToken(inviter.accessToken, "inviter-token")
+    const createInvite = await app.inject({
+      method: "POST",
+      url: "/invites",
+      headers: bearer(inviter.accessToken),
+    })
+    const invite = createInvite.json()
+
+    const recipient = await signIn("ankita@elaris.dev", "Ankita")
+    await completeProfile(recipient.accessToken, "Ankita", "Subhajit", "2026-01-01")
+    await app.inject({
+      method: "POST",
+      url: "/invites/redeem",
+      headers: bearer(recipient.accessToken),
+      payload: { code: invite.code },
+    })
+    const accept = await app.inject({
+      method: "POST",
+      url: `/invites/${invite.inviteId}/accept`,
+      headers: bearer(recipient.accessToken),
+    })
+
+    expect(accept.statusCode).toBe(200)
+    await eventually(() => pushSender.sentMessages.length === 1)
+    expect(pushSender.sentMessages[0]).toMatchObject({
+      tokens: ["inviter-token"],
+      data: {
+        type: "PAIRING_CONFIRMED",
+        pairSessionId: accept.json().pairSessionId,
+        actorUserId: recipient.userId,
+        actorDisplayName: "Ankita",
+      },
+      android: {
+        priority: "high",
+        collapseKey: `pairing-${accept.json().pairSessionId}`,
+      },
+    })
+  })
+
+  it("sends a debug pairing confirmation push to the paired peer", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-token")
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/debug/pairing-confirmation-push",
+      headers: bearer(inviter.accessToken),
+    })
+
+    expect(response.statusCode).toBe(200)
+    await eventually(() => pushSender.sentMessages.length === 1)
+    expect(pushSender.sentMessages[0]).toMatchObject({
+      tokens: ["recipient-token"],
+      data: {
+        type: "PAIRING_CONFIRMED",
+        pairSessionId: inviter.pairSessionId,
+        actorUserId: inviter.userId,
+        actorDisplayName: "Subhajit",
+      },
+    })
   })
 
   it("disconnects a paired session while preserving user profiles", async () => {
@@ -758,7 +823,10 @@ describe("Mulberry backend", () => {
     )
     await nextWsJson(first)
     await eventually(() => pushSender.sentMessages.length === 1)
-    expect(pushSender.sentMessages[0].data.latestRevision).toBe("3")
+    expect(pushSender.sentMessages[0].data).toMatchObject({
+      type: "CANVAS_UPDATED",
+      latestRevision: "3",
+    })
     first.close()
   })
 
@@ -963,10 +1031,10 @@ function clearCanvasOperation(clientOperationId: string) {
 }
 
 class RecordingPushSender implements PushSender {
-  readonly sentMessages: CanvasUpdatedPushMessage[] = []
+  readonly sentMessages: MulberryPushMessage[] = []
   readonly invalidTokens = new Set<string>()
 
-  async sendCanvasUpdated(message: CanvasUpdatedPushMessage) {
+  async send(message: MulberryPushMessage) {
     this.sentMessages.push(message)
     return {
       invalidTokens: message.tokens.filter((token) => this.invalidTokens.has(token)),

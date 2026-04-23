@@ -1,10 +1,15 @@
 package com.subhajit.mulberry.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavHostController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
+import com.subhajit.mulberry.app.shortcut.AppShortcutActionController
 import com.subhajit.mulberry.app.bootstrap.BootstrapRoute
 import com.subhajit.mulberry.app.bootstrap.ReleaseStartupGateAfterFirstFrame
 import com.subhajit.mulberry.auth.AuthLandingRoute
@@ -23,6 +28,32 @@ import com.subhajit.mulberry.settings.SettingsRoute
 fun MulberryNavHost(
     navController: NavHostController = rememberNavController()
 ) {
+    val shortcutAction by AppShortcutActionController.pendingAction.collectAsStateWithLifecycle()
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route
+
+    LaunchedEffect(shortcutAction, currentRoute) {
+        val action = shortcutAction ?: return@LaunchedEffect
+        when (currentRoute) {
+            AppRoute.CanvasSurface.route,
+            AppRoute.LockScreenPlaceholder.route,
+            AppRoute.Settings.route -> navController.navigate(AppRoute.CanvasHome.route) {
+                launchSingleTop = true
+                popUpTo(AppRoute.CanvasHome.route) {
+                    inclusive = false
+                }
+            }
+
+            AppRoute.AuthLanding.route,
+            AppRoute.OnboardingName.route,
+            AppRoute.OnboardingDetails.route,
+            AppRoute.OnboardingWallpaper.route,
+            AppRoute.PairingHub.route,
+            AppRoute.InviteCodeEntry.route,
+            AppRoute.InviteAcceptance.route -> AppShortcutActionController.markHandled(action)
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = AppRoute.Bootstrap.route
@@ -128,6 +159,8 @@ fun MulberryNavHost(
         composable(AppRoute.CanvasHome.route) {
             ReleaseStartupGateAfterFirstFrame()
             CanvasHomeRoute(
+                shortcutAction = shortcutAction,
+                onShortcutActionHandled = AppShortcutActionController::markHandled,
                 onNavigateToCanvas = {
                     navController.navigate(AppRoute.CanvasSurface.route)
                 },

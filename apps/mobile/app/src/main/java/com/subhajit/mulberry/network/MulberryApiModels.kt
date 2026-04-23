@@ -147,3 +147,7 @@ data class DeviceTokenResponse(
     val lastSeenAt: String,
     val revokedAt: String?
 )
+
+data class DebugActionResponse(
+    val ok: Boolean
+)

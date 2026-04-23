@@ -122,7 +122,8 @@ fun SettingsRoute(
             if (!it) pane = SettingsPane.Home
         },
         onForceSyncNow = viewModel::onForceSyncNow,
-        onRegenerateWallpaperSnapshot = viewModel::onRegenerateWallpaperSnapshot
+        onRegenerateWallpaperSnapshot = viewModel::onRegenerateWallpaperSnapshot,
+        onSendDebugPairingNotification = viewModel::onSendDebugPairingNotification
     )
 }
 
@@ -142,7 +143,8 @@ private fun SettingsScreen(
     onVersionTapped: () -> Unit,
     onDeveloperOptionsEnabledChanged: (Boolean) -> Unit,
     onForceSyncNow: () -> Unit,
-    onRegenerateWallpaperSnapshot: () -> Unit
+    onRegenerateWallpaperSnapshot: () -> Unit,
+    onSendDebugPairingNotification: () -> Unit
 ) {
     Scaffold(
         modifier = Modifier
@@ -184,7 +186,8 @@ private fun SettingsScreen(
                     onClearFeatureOverrides = onClearFeatureOverrides,
                     onSeedDemoSession = onSeedDemoSession,
                     onFeatureFlagChanged = onFeatureFlagChanged,
-                    onResetAppState = onResetAppState
+                    onResetAppState = onResetAppState,
+                    onSendDebugPairingNotification = onSendDebugPairingNotification
                 )
             }
         }
@@ -473,7 +476,8 @@ private fun DeveloperOptionsPane(
     onClearFeatureOverrides: () -> Unit,
     onSeedDemoSession: () -> Unit,
     onFeatureFlagChanged: (FeatureFlag, Boolean) -> Unit,
-    onResetAppState: () -> Unit
+    onResetAppState: () -> Unit,
+    onSendDebugPairingNotification: () -> Unit
 ) {
     var showResetConfirmation by remember { mutableStateOf(false) }
 
@@ -510,6 +514,12 @@ private fun DeveloperOptionsPane(
         )
         SettingsPrimaryButton("Force sync now", uiState.isBusy, onForceSyncNow)
         SettingsSecondaryButton("Regenerate wallpaper snapshot", uiState.isBusy, onRegenerateWallpaperSnapshot)
+        SettingsSecondaryButton(
+            text = "Mock partner joined notification",
+            isBusy = uiState.isBusy,
+            onClick = onSendDebugPairingNotification,
+            enabled = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED
+        )
 
         if (uiState.enableDebugMenu) {
             SectionTitle("Debug Flags")
@@ -858,11 +868,12 @@ private fun SettingsPrimaryButton(
 private fun SettingsSecondaryButton(
     text: String,
     isBusy: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
     OutlinedButton(
         onClick = onClick,
-        enabled = !isBusy,
+        enabled = enabled && !isBusy,
         modifier = Modifier.fillMaxWidth().height(54.dp),
         shape = RoundedCornerShape(15.38.dp)
     ) {

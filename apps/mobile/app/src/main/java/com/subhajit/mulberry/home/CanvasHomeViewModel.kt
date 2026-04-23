@@ -334,6 +334,18 @@ class CanvasHomeViewModel @Inject constructor(
         pairingConfirmationState.value = PairingConfirmationUiState()
     }
 
+    fun onPairingConfirmationRequested() {
+        viewModelScope.launch {
+            bootstrapRepository.refreshBootstrap()
+            inviteRepository.clearCurrentInvite()
+            inviteLoadingState.value = false
+            inviteErrorState.value = null
+            joinCodeState.value = JoinCodeUiState()
+            pairingConfirmationState.value = PairingConfirmationUiState()
+            pairingSheetMode.value = HomePairingSheetMode.PairingConfirmed
+        }
+    }
+
     fun onJoinCodeChanged(code: String) {
         val sanitizedCode = code.filter(Char::isDigit).take(6)
         joinCodeState.value = joinCodeState.value.copy(

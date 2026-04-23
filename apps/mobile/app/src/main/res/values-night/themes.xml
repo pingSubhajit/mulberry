@@ -14,4 +14,12 @@
         <item name="windowSplashScreenAnimatedIcon">@drawable/brand_splash_icon</item>
         <item name="postSplashScreenTheme">@style/Theme.Mulberry</item>
     </style>
+
+    <style name="Theme.Mulberry.ShortcutDialog" parent="Theme.Material3.DayNight.Dialog.Alert">
+        <item name="colorPrimary">@color/mulberry_primary</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/mulberry_accent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowCloseOnTouchOutside">true</item>
+    </style>
 </resources>

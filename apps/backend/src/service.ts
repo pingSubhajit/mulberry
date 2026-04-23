@@ -310,6 +310,13 @@ export class MulberryService {
       [invite.id],
     )
 
+    const recipientProfile = await this.getProfile(context.user.id)
+    this.pushDispatchService?.enqueuePairingConfirmed(
+      pairId,
+      context.user.id,
+      recipientProfile?.display_name ?? "Your partner",
+    )
+
     return {
       pairSessionId: pairId,
       bootstrapState: await this.buildBootstrap(context.user.id),
@@ -345,6 +352,22 @@ export class MulberryService {
 
     await this.db.query(`DELETE FROM pair_sessions WHERE id = $1`, [pairSession.id])
     return this.buildBootstrap(context.user.id)
+  }
+
+  async sendDebugPairingConfirmed(accessToken: string): Promise<{ ok: true }> {
+    const context = await this.requireSessionContext(accessToken)
+    const pairSession = await this.getPairSession(context.user.id)
+    if (!pairSession) {
+      throw new HttpError(400, "User is not paired")
+    }
+
+    const profile = await this.getProfile(context.user.id)
+    this.pushDispatchService?.enqueuePairingConfirmed(
+      pairSession.id,
+      context.user.id,
+      profile?.display_name ?? "Your partner",
+    )
+    return { ok: true }
   }
 
   async bootstrapCanvasSync(

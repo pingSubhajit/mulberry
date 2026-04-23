@@ -99,7 +99,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.subhajit.mulberry.R
+import com.subhajit.mulberry.app.shortcut.AppShortcutAction
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.data.bootstrap.AuthStatus
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.DrawingTool
@@ -126,6 +128,8 @@ import java.util.concurrent.TimeUnit
 
 @Composable
 fun CanvasHomeRoute(
+    shortcutAction: AppShortcutAction? = null,
+    onShortcutActionHandled: (AppShortcutAction) -> Unit = {},
     onNavigateToCanvas: () -> Unit,
     onNavigateToLockScreen: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -183,6 +187,7 @@ fun CanvasHomeRoute(
 
     CanvasHomeScreen(
         uiState = uiState,
+        shortcutAction = shortcutAction,
         wallpaperPresets = viewModel.wallpaperPresets,
         onNavigateToLockScreen = onNavigateToLockScreen,
         onNavigateToSettings = onNavigateToSettings,
@@ -190,6 +195,7 @@ fun CanvasHomeRoute(
         onPairingSheetDismissed = viewModel::onPairingSheetDismissed,
         onShareInviteClicked = viewModel::onShareInviteClicked,
         onJoinCodeRequested = viewModel::onJoinCodeRequested,
+        onPairingConfirmationRequested = viewModel::onPairingConfirmationRequested,
         onJoinCodeChanged = viewModel::onJoinCodeChanged,
         onJoinCodeSubmitted = viewModel::onJoinCodeSubmitted,
         onDisconnectFromConfirmation = viewModel::onDisconnectFromConfirmation,
@@ -210,7 +216,8 @@ fun CanvasHomeRoute(
         onEraserToggle = viewModel::onEraserToggle,
         onClearRequested = viewModel::onClearRequested,
         onClearDismissed = viewModel::onClearDismissed,
-        onClearConfirmed = viewModel::onClearConfirmed
+        onClearConfirmed = viewModel::onClearConfirmed,
+        onShortcutActionHandled = onShortcutActionHandled
     )
 }
 
@@ -218,6 +225,7 @@ fun CanvasHomeRoute(
 @Composable
 private fun CanvasHomeScreen(
     uiState: CanvasHomeUiState,
+    shortcutAction: AppShortcutAction?,
     wallpaperPresets: List<WallpaperPreset>,
     onNavigateToLockScreen: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -225,6 +233,7 @@ private fun CanvasHomeScreen(
     onPairingSheetDismissed: () -> Unit,
     onShareInviteClicked: () -> Unit,
     onJoinCodeRequested: () -> Unit,
+    onPairingConfirmationRequested: () -> Unit,
     onJoinCodeChanged: (String) -> Unit,
     onJoinCodeSubmitted: () -> Unit,
     onDisconnectFromConfirmation: () -> Unit,
@@ -241,7 +250,8 @@ private fun CanvasHomeScreen(
     onEraserToggle: () -> Unit,
     onClearRequested: () -> Unit,
     onClearDismissed: () -> Unit,
-    onClearConfirmed: () -> Unit
+    onClearConfirmed: () -> Unit,
+    onShortcutActionHandled: (AppShortcutAction) -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { MainAppTab.entries.size })
     val coroutineScope = rememberCoroutineScope()
@@ -254,6 +264,33 @@ private fun CanvasHomeScreen(
         }
 
         MainAppTab.LockScreen -> stringResource(R.string.home_lockscreen_title)
+    }
+    val isHomeReady =
+        uiState.bootstrapState.authStatus == AuthStatus.SIGNED_IN &&
+            uiState.bootstrapState.hasCompletedOnboarding
+
+    LaunchedEffect(shortcutAction, isHomeReady, uiState.bootstrapState.pairingStatus) {
+        val action = shortcutAction ?: return@LaunchedEffect
+        if (!isHomeReady) return@LaunchedEffect
+
+        when (action) {
+            AppShortcutAction.ClearDoodles -> {
+                if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
+                    onClearRequested()
+                }
+                onShortcutActionHandled(action)
+            }
+
+            AppShortcutAction.ChangeWallpaper -> {
+                pagerState.animateScrollToPage(MainAppTab.entries.indexOf(MainAppTab.LockScreen))
+                onShortcutActionHandled(action)
+            }
+
+            AppShortcutAction.ShowPairingConfirmation -> {
+                onPairingConfirmationRequested()
+                onShortcutActionHandled(action)
+            }
+        }
     }
 
     when (uiState.pairingSheetMode) {

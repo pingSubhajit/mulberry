@@ -90,4 +90,9 @@
     <string name="home_join_sheet_title">Enter invite code</string>
     <string name="home_pairing_confirmed_title">You and %1$s are paired on Mulberry</string>
     <string name="home_pairing_disconnect_progress">Disconnecting...</string>
+    <string name="shortcut_clear_doodles_short_label">Clear doodles</string>
+    <string name="shortcut_clear_doodles_long_label">Clear doodles</string>
+    <string name="shortcut_change_wallpaper_short_label">Change Wallpaper</string>
+    <string name="shortcut_change_wallpaper_long_label">Change Wallpaper</string>
+    <string name="shortcut_disabled_message">Shortcut unavailable</string>
 </resources>

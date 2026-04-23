@@ -142,6 +142,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return service.disconnectPairing(requireBearerToken(request))
   })
 
+  app.post("/debug/pairing-confirmation-push", async (request) => {
+    return service.sendDebugPairingConfirmed(requireBearerToken(request))
+  })
+
   app.get("/canvas/ops", async (request) => {
     const query = request.query as { afterRevision?: string }
     const afterRevision = Number(query.afterRevision ?? "0")

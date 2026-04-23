@@ -11,9 +11,18 @@ export interface CanvasUpdatedPushPayload {
   actorUserId: string
 }
 
-export interface CanvasUpdatedPushMessage {
+export interface PairingConfirmedPushPayload {
+  type: "PAIRING_CONFIRMED"
+  pairSessionId: string
+  actorUserId: string
+  actorDisplayName: string
+}
+
+export type MulberryPushPayload = CanvasUpdatedPushPayload | PairingConfirmedPushPayload
+
+export interface MulberryPushMessage {
   tokens: string[]
-  data: CanvasUpdatedPushPayload
+  data: MulberryPushPayload
   android: {
     priority: "high"
     collapseKey: string
@@ -26,13 +35,13 @@ export interface PushSendResult {
 }
 
 export interface PushSender {
-  sendCanvasUpdated(message: CanvasUpdatedPushMessage): Promise<PushSendResult>
+  send(message: MulberryPushMessage): Promise<PushSendResult>
 }
 
 export class NoopPushSender implements PushSender {
-  readonly sentMessages: CanvasUpdatedPushMessage[] = []
+  readonly sentMessages: MulberryPushMessage[] = []
 
-  async sendCanvasUpdated(message: CanvasUpdatedPushMessage): Promise<PushSendResult> {
+  async send(message: MulberryPushMessage): Promise<PushSendResult> {
     this.sentMessages.push(message)
     return { invalidTokens: [] }
   }
@@ -59,7 +68,7 @@ export function createPushSender(options: FirebasePushSenderOptions): PushSender
 export class FirebaseAdminPushSender implements PushSender {
   constructor(private readonly messaging: Messaging) {}
 
-  async sendCanvasUpdated(message: CanvasUpdatedPushMessage): Promise<PushSendResult> {
+  async send(message: MulberryPushMessage): Promise<PushSendResult> {
     if (message.tokens.length === 0) return { invalidTokens: [] }
     const result = await this.messaging.sendEachForMulticast({
       tokens: message.tokens,
@@ -139,6 +148,14 @@ export class PushDispatchService {
     )
   }
 
+  enqueuePairingConfirmed(
+    pairSessionId: string,
+    actorUserId: string,
+    actorDisplayName: string,
+  ): void {
+    void this.sendPairingConfirmed(pairSessionId, actorUserId, actorDisplayName)
+  }
+
   async flushPairSession(pairSessionId: string): Promise<void> {
     const pending = this.pendingByPairSession.get(pairSessionId)
     if (!pending) return
@@ -170,7 +187,7 @@ export class PushDispatchService {
 
     let result: PushSendResult
     try {
-      result = await this.sender.sendCanvasUpdated({
+      result = await this.sender.send({
         tokens,
         data: {
           type: "CANVAS_UPDATED",
@@ -197,6 +214,61 @@ export class PushDispatchService {
     console.info("[push] canvas update sent", {
       pairSessionId: pending.pairSessionId,
       latestRevision: pending.latestRevision,
+      invalidTokenCount: result.invalidTokens.length,
+    })
+
+    if (result.invalidTokens.length > 0) {
+      await this.revokeTokens(result.invalidTokens)
+    }
+  }
+
+  private async sendPairingConfirmed(
+    pairSessionId: string,
+    actorUserId: string,
+    actorDisplayName: string,
+  ): Promise<void> {
+    const tokens = await this.activePeerTokens(pairSessionId, actorUserId)
+    if (tokens.length === 0) {
+      console.info("[push] no active peer tokens for pairing confirmation", {
+        pairSessionId,
+        actorUserId,
+      })
+      return
+    }
+
+    console.info("[push] sending pairing confirmation", {
+      pairSessionId,
+      actorUserId,
+      tokenCount: tokens.length,
+    })
+
+    let result: PushSendResult
+    try {
+      result = await this.sender.send({
+        tokens,
+        data: {
+          type: "PAIRING_CONFIRMED",
+          pairSessionId,
+          actorUserId,
+          actorDisplayName,
+        },
+        android: {
+          priority: "high",
+          collapseKey: `pairing-${pairSessionId}`,
+          ttlMs: this.ttlMs,
+        },
+      })
+    } catch (error) {
+      console.error("[push] pairing confirmation send failed", {
+        pairSessionId,
+        actorUserId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+
+    console.info("[push] pairing confirmation sent", {
+      pairSessionId,
       invalidTokenCount: result.invalidTokens.length,
     })
 
