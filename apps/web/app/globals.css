@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @theme {
   --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
@@ -32,7 +33,7 @@
 }
 
 :root {
-  --background: 36 45% 98%;
+  --background: 32 45% 98%;
   --foreground: 222 46% 7%;
   --card: 0 0% 100%;
   --card-foreground: 222 46% 7%;
@@ -63,10 +64,7 @@ html {
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 12% 12%, rgba(179, 19, 41, 0.11), transparent 28rem),
-    radial-gradient(circle at 84% 8%, rgba(255, 129, 45, 0.16), transparent 26rem),
-    linear-gradient(180deg, #fff8f6 0%, #fffdfb 42%, #fff6f6 100%);
+  background: #fffaf7;
   color: hsl(var(--foreground));
   font-family: var(--font-sans);
   text-rendering: optimizeLegibility;

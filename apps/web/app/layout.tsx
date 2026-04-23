@@ -20,6 +20,9 @@ export const metadata: Metadata = {
     description:
       "Draw something small. Let it appear on your partner's lock screen.",
     images: ["/brand/banner.png"]
+  },
+  icons: {
+    icon: "/icon.svg"
   }
 }
 
