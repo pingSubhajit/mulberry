@@ -4,11 +4,17 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createApp } from "../src/app.js"
 import { runMigrations, type Database } from "../src/db.js"
 import type { MulberryPushMessage, PushSender } from "../src/push.js"
+import type {
+  ProcessedWallpaperImage,
+  WallpaperImageProcessor,
+  WallpaperStorage,
+} from "../src/wallpapers.js"
 
 describe("Mulberry backend", () => {
   let app: FastifyInstance
   let db: Database
   let pushSender: RecordingPushSender
+  let wallpaperStorage: RecordingWallpaperStorage
 
   beforeEach(async () => {
     const memoryDb = newDb({
@@ -35,15 +41,19 @@ describe("Mulberry backend", () => {
       },
     }
     pushSender = new RecordingPushSender()
+    wallpaperStorage = new RecordingWallpaperStorage()
     app = await createApp({
       db,
       pushSender,
       pushOptions: { debounceMs: 20 },
+      wallpaperStorage,
+      wallpaperImageProcessor: new FakeWallpaperImageProcessor(),
       config: {
         port: 8080,
         databaseUrl: "postgres://unused",
         googleClientId: "",
         allowDevGoogleTokens: true,
+        wallpaperAdminPassword: "admin-password",
       },
     })
     await app.ready()
@@ -160,6 +170,188 @@ describe("Mulberry backend", () => {
     const body = response.json()
     expect(body.code).toMatch(/^\d{6}$/)
     expect(body.expiresAt).toBeTruthy()
+  })
+
+  it("returns only published wallpapers in stable cursor pages", async () => {
+    await db.query(
+      `
+        INSERT INTO wallpapers (
+          id,
+          title,
+          description,
+          storage_path,
+          thumbnail_path,
+          preview_path,
+          full_path,
+          width,
+          height,
+          dominant_color,
+          sort_order,
+          published_at,
+          created_at
+        )
+        VALUES
+          ('wallpaper-a', 'A', 'First', 'a/original.webp', 'a/thumb.webp', 'a/preview.webp', 'a/full.webp', 1000, 1600, '#111111', 0, NOW(), '2026-01-01T00:00:03Z'),
+          ('wallpaper-b', 'B', 'Second', 'b/original.webp', 'b/thumb.webp', 'b/preview.webp', 'b/full.webp', 1000, 1600, '#222222', 0, NOW(), '2026-01-01T00:00:02Z'),
+          ('wallpaper-c', 'C', 'Third', 'c/original.webp', 'c/thumb.webp', 'c/preview.webp', 'c/full.webp', 1000, 1600, '#333333', 1, NOW(), '2026-01-01T00:00:01Z'),
+          ('wallpaper-hidden', 'Hidden', 'Hidden', 'h/original.webp', 'h/thumb.webp', 'h/preview.webp', 'h/full.webp', 1000, 1600, '#444444', 0, NULL, '2026-01-01T00:00:04Z')
+      `,
+    )
+
+    const firstPage = await app.inject({
+      method: "GET",
+      url: "/wallpapers?limit=2",
+    })
+
+    expect(firstPage.statusCode).toBe(200)
+    expect(firstPage.json().items.map((item: { id: string }) => item.id)).toEqual([
+      "wallpaper-a",
+      "wallpaper-b",
+    ])
+    expect(firstPage.json().nextCursor).toBeTruthy()
+
+    const secondPage = await app.inject({
+      method: "GET",
+      url: `/wallpapers?limit=2&cursor=${encodeURIComponent(firstPage.json().nextCursor)}`,
+    })
+
+    expect(secondPage.statusCode).toBe(200)
+    expect(secondPage.json().items.map((item: { id: string }) => item.id)).toEqual([
+      "wallpaper-c",
+    ])
+    expect(secondPage.json().nextCursor).toBeNull()
+  })
+
+  it("requires the admin password for wallpaper admin routes", async () => {
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/admin/wallpapers/missing",
+      payload: {
+        title: "Updated",
+      },
+    })
+
+    expect(response.statusCode).toBe(401)
+  })
+
+  it("uploads a wallpaper and stores generated variants", async () => {
+    const multipart = createMultipartPayload({
+      title: "Mulberry Glow",
+      description: "Dark red abstract waves",
+      sortOrder: "3",
+      published: "true",
+      fileName: "wallpaper.png",
+      contentType: "image/png",
+      fileBody: Buffer.from("fake image"),
+    })
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/wallpapers",
+      headers: {
+        "x-wallpaper-admin-password": "admin-password",
+        "content-type": multipart.contentType,
+      },
+      payload: multipart.body,
+    })
+
+    expect(response.statusCode).toBe(200)
+    const body = response.json()
+    expect(body.title).toBe("Mulberry Glow")
+    expect(body.thumbnailUrl).toContain("/thumbnail.webp")
+
+    const rows = await db.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM wallpapers")
+    expect(rows.rows[0].count).toBe("1")
+  })
+
+  it("lists unpublished wallpapers for admin and supports publish updates", async () => {
+    await db.query(
+      `
+        INSERT INTO wallpapers (
+          id,
+          title,
+          description,
+          storage_path,
+          thumbnail_path,
+          preview_path,
+          full_path,
+          width,
+          height,
+          dominant_color,
+          sort_order,
+          published_at
+        )
+        VALUES ('draft-wallpaper', 'Draft', 'Draft wallpaper', 'd/original.webp', 'd/thumb.webp', 'd/preview.webp', 'd/full.webp', 1000, 1600, '#111111', 7, NULL)
+      `,
+    )
+
+    const adminList = await app.inject({
+      method: "GET",
+      url: "/admin/wallpapers",
+      headers: {
+        "x-wallpaper-admin-password": "admin-password",
+      },
+    })
+
+    expect(adminList.statusCode).toBe(200)
+    expect(adminList.json().items[0].published).toBe(false)
+
+    const update = await app.inject({
+      method: "PATCH",
+      url: "/admin/wallpapers/draft-wallpaper",
+      headers: {
+        "x-wallpaper-admin-password": "admin-password",
+      },
+      payload: {
+        title: "Published Draft",
+        published: true,
+      },
+    })
+
+    expect(update.statusCode).toBe(200)
+    expect(update.json().title).toBe("Published Draft")
+  })
+
+  it("deletes a wallpaper and removes its storage assets", async () => {
+    await db.query(
+      `
+        INSERT INTO wallpapers (
+          id,
+          title,
+          description,
+          storage_path,
+          thumbnail_path,
+          preview_path,
+          full_path,
+          width,
+          height,
+          dominant_color,
+          sort_order,
+          published_at
+        )
+        VALUES ('delete-wallpaper', 'Delete me', 'To be removed', 'x/original.webp', 'x/thumb.webp', 'x/preview.webp', 'x/full.webp', 1000, 1600, '#111111', 0, NOW())
+      `,
+    )
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/admin/wallpapers/delete-wallpaper",
+      headers: {
+        "x-wallpaper-admin-password": "admin-password",
+      },
+    })
+
+    expect(response.statusCode).toBe(204)
+    const rows = await db.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM wallpapers WHERE id = 'delete-wallpaper'",
+    )
+    expect(rows.rows[0].count).toBe("0")
+    expect(wallpaperStorage.removedPaths).toEqual([
+      "x/original.webp",
+      "x/thumb.webp",
+      "x/preview.webp",
+      "x/full.webp",
+    ])
   })
 
   it("redeems and accepts an invite into a paired session", async () => {
@@ -1030,6 +1222,43 @@ function clearCanvasOperation(clientOperationId: string) {
   }
 }
 
+function createMultipartPayload(input: {
+  title: string
+  description: string
+  sortOrder: string
+  published: string
+  fileName: string
+  contentType: string
+  fileBody: Buffer
+}) {
+  const boundary = `----mulberry-${Date.now()}`
+  const chunks: Buffer[] = []
+  const appendField = (name: string, value: string) => {
+    chunks.push(Buffer.from(`--${boundary}\r\n`))
+    chunks.push(Buffer.from(`Content-Disposition: form-data; name="${name}"\r\n\r\n`))
+    chunks.push(Buffer.from(`${value}\r\n`))
+  }
+
+  appendField("title", input.title)
+  appendField("description", input.description)
+  appendField("sortOrder", input.sortOrder)
+  appendField("published", input.published)
+  chunks.push(Buffer.from(`--${boundary}\r\n`))
+  chunks.push(
+    Buffer.from(
+      `Content-Disposition: form-data; name="image"; filename="${input.fileName}"\r\n` +
+        `Content-Type: ${input.contentType}\r\n\r\n`,
+    ),
+  )
+  chunks.push(input.fileBody)
+  chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`))
+
+  return {
+    body: Buffer.concat(chunks),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  }
+}
+
 class RecordingPushSender implements PushSender {
   readonly sentMessages: MulberryPushMessage[] = []
   readonly invalidTokens = new Set<string>()
@@ -1038,6 +1267,38 @@ class RecordingPushSender implements PushSender {
     this.sentMessages.push(message)
     return {
       invalidTokens: message.tokens.filter((token) => this.invalidTokens.has(token)),
+    }
+  }
+}
+
+class RecordingWallpaperStorage implements WallpaperStorage {
+  readonly uploadedPaths: string[] = []
+  readonly removedPaths: string[] = []
+
+  async upload(path: string): Promise<void> {
+    this.uploadedPaths.push(path)
+  }
+
+  async remove(paths: string[]): Promise<void> {
+    this.removedPaths.push(...paths)
+  }
+
+  publicUrl(path: string): string {
+    return `https://storage.example.test/${path}`
+  }
+}
+
+class FakeWallpaperImageProcessor implements WallpaperImageProcessor {
+  async process(): Promise<ProcessedWallpaperImage> {
+    return {
+      width: 1440,
+      height: 2560,
+      dominantColor: "#B31329",
+      thumbnail: Buffer.from("thumbnail"),
+      preview: Buffer.from("preview"),
+      full: Buffer.from("full"),
+      contentType: "image/webp",
+      extension: "webp",
     }
   }
 }

@@ -11,12 +11,16 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/multipart": "^10.0.0",
     "@fastify/websocket": "^11.2.0",
+    "@supabase/supabase-js": "^2.104.0",
     "@types/ws": "^8.18.1",
     "fastify": "^5.6.1",
     "firebase-admin": "^13.8.0",
     "google-auth-library": "^10.3.0",
     "pg": "^8.16.3",
+    "sharp": "^0.34.5",
     "ws": "^8.20.0"
   },
   "devDependencies": {

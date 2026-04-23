@@ -56,11 +56,13 @@ import com.subhajit.mulberry.sync.SyncMetadataRepository
 import com.subhajit.mulberry.sync.SyncOutboxDao
 import com.subhajit.mulberry.sync.WorkManagerBackgroundCanvasSyncScheduler
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
+import com.subhajit.mulberry.wallpaper.BackendWallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.DataStoreBackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.DefaultCanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.DefaultWallpaperCoordinator
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
+import com.subhajit.mulberry.wallpaper.WallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.WallpaperStatusCalculator
 import dagger.Binds
 import dagger.Module
@@ -115,6 +117,12 @@ abstract class AppBindingsModule {
     abstract fun bindBackgroundImageRepository(
         implementation: DataStoreBackgroundImageRepository
     ): BackgroundImageRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindWallpaperCatalogRepository(
+        implementation: BackendWallpaperCatalogRepository
+    ): WallpaperCatalogRepository
 
     @Binds
     @Singleton

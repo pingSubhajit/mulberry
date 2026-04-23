@@ -151,3 +151,20 @@ data class DeviceTokenResponse(
 data class DebugActionResponse(
     val ok: Boolean
 )
+
+data class WallpaperCatalogResponse(
+    val items: List<RemoteWallpaperResponse> = emptyList(),
+    val nextCursor: String?
+)
+
+data class RemoteWallpaperResponse(
+    val id: String,
+    val title: String,
+    val description: String,
+    val thumbnailUrl: String,
+    val previewUrl: String,
+    val fullImageUrl: String,
+    val width: Int,
+    val height: Int,
+    val dominantColor: String
+)

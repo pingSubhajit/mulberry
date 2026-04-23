@@ -16,12 +16,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 @Singleton
 class DataStoreBackgroundImageRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val dataStore: DataStore<Preferences>
 ) : BackgroundImageRepository {
+    private val publicHttpClient = OkHttpClient()
 
     override val backgroundState: Flow<BackgroundImageState> = dataStore.data
         .map { preferences ->
@@ -57,6 +60,33 @@ class DataStoreBackgroundImageRepository @Inject constructor(
             drawableResId = drawableResId,
             destination = backgroundFile
         )
+
+        val now = System.currentTimeMillis()
+        dataStore.edit { preferences ->
+            preferences[PreferenceStorage.backgroundImagePath] = backgroundFile.absolutePath
+            preferences[PreferenceStorage.backgroundImageUpdatedAt] = now.toString()
+        }
+    }
+
+    override suspend fun importRemoteBackground(remoteWallpaper: RemoteWallpaper) {
+        val request = Request.Builder()
+            .url(remoteWallpaper.fullImageUrl)
+            .get()
+            .build()
+        val backgroundFile = WallpaperFiles.backgroundFile(context)
+        backgroundFile.parentFile?.mkdirs()
+
+        publicHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                error("Unable to download wallpaper")
+            }
+            val body = response.body ?: error("Wallpaper download returned an empty body")
+            backgroundFile.outputStream().use { output ->
+                body.byteStream().use { input ->
+                    input.copyTo(output)
+                }
+            }
+        }
 
         val now = System.currentTimeMillis()
         dataStore.edit { preferences ->

@@ -108,6 +108,10 @@ class OnboardingWallpaperViewModel @Inject constructor(
         }
     }
 
+    fun onRemoteWallpaperSelected() {
+        selectedPresetState.value = null
+    }
+
     fun onSetUpLockScreenClicked() {
         viewModelScope.launch {
             busyState.value = true

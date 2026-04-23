@@ -520,6 +520,10 @@ class CanvasHomeViewModel @Inject constructor(
         }
     }
 
+    fun onRemoteWallpaperSelected() {
+        selectedWallpaperPresetState.value = null
+    }
+
     fun onSetUpLockScreenClicked() {
         viewModelScope.launch {
             wallpaperBusyState.value = true

@@ -56,4 +56,10 @@ interface MulberryApiService {
 
     @GET("/canvas/snapshot")
     suspend fun getCanvasSnapshot(): CanvasSnapshotResponse
+
+    @GET("/wallpapers")
+    suspend fun getWallpapers(
+        @Query("cursor") cursor: String?,
+        @Query("limit") limit: Int
+    ): WallpaperCatalogResponse
 }

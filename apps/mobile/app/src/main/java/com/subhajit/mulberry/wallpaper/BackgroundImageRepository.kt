@@ -13,5 +13,7 @@ interface BackgroundImageRepository {
 
     suspend fun importBundledBackground(@DrawableRes drawableResId: Int)
 
+    suspend fun importRemoteBackground(remoteWallpaper: RemoteWallpaper)
+
     suspend fun clearBackground()
 }

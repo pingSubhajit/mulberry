@@ -5,6 +5,10 @@ export interface AppConfig {
   allowDevGoogleTokens: boolean
   firebaseServiceAccountPath?: string
   firebaseServiceAccountJson?: string
+  supabaseUrl?: string
+  supabaseServiceRoleKey?: string
+  supabaseWallpaperBucket?: string
+  wallpaperAdminPassword?: string
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -27,5 +31,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     allowDevGoogleTokens: (env.ALLOW_DEV_GOOGLE_TOKENS ?? (isProduction ? "false" : "true")) === "true",
     firebaseServiceAccountPath: env.FIREBASE_SERVICE_ACCOUNT_PATH,
     firebaseServiceAccountJson: env.FIREBASE_SERVICE_ACCOUNT_JSON,
+    supabaseUrl: env.SUPABASE_URL,
+    supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+    supabaseWallpaperBucket: env.SUPABASE_WALLPAPER_BUCKET,
+    wallpaperAdminPassword: env.WALLPAPER_ADMIN_PASSWORD,
   }
 }

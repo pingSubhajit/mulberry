@@ -23,6 +23,9 @@ import com.subhajit.mulberry.pairing.InviteAcceptanceRoute
 import com.subhajit.mulberry.pairing.InviteCodeEntryRoute
 import com.subhajit.mulberry.pairing.PairingHubRoute
 import com.subhajit.mulberry.settings.SettingsRoute
+import com.subhajit.mulberry.wallpaper.WallpaperCatalogRoute
+
+private const val REMOTE_WALLPAPER_SELECTED_AT_KEY = "remote_wallpaper_selected_at"
 
 @Composable
 fun MulberryNavHost(
@@ -108,9 +111,16 @@ fun MulberryNavHost(
             )
         }
 
-        composable(AppRoute.OnboardingWallpaper.route) {
+        composable(AppRoute.OnboardingWallpaper.route) { backStackEntry ->
             ReleaseStartupGateAfterFirstFrame()
+            val remoteWallpaperSelectedAt by backStackEntry.savedStateHandle
+                .getStateFlow(REMOTE_WALLPAPER_SELECTED_AT_KEY, 0L)
+                .collectAsStateWithLifecycle()
             OnboardingWallpaperRoute(
+                remoteWallpaperSelectedAt = remoteWallpaperSelectedAt,
+                onNavigateToWallpaperCatalog = {
+                    navController.navigate(AppRoute.WallpaperCatalog.route)
+                },
                 onNavigateHome = {
                     navController.navigate(AppRoute.CanvasHome.route) {
                         popUpTo(AppRoute.OnboardingWallpaper.route) {
@@ -156,16 +166,23 @@ fun MulberryNavHost(
             )
         }
 
-        composable(AppRoute.CanvasHome.route) {
+        composable(AppRoute.CanvasHome.route) { backStackEntry ->
             ReleaseStartupGateAfterFirstFrame()
+            val remoteWallpaperSelectedAt by backStackEntry.savedStateHandle
+                .getStateFlow(REMOTE_WALLPAPER_SELECTED_AT_KEY, 0L)
+                .collectAsStateWithLifecycle()
             CanvasHomeRoute(
                 shortcutAction = shortcutAction,
                 onShortcutActionHandled = AppShortcutActionController::markHandled,
+                remoteWallpaperSelectedAt = remoteWallpaperSelectedAt,
                 onNavigateToCanvas = {
                     navController.navigate(AppRoute.CanvasSurface.route)
                 },
                 onNavigateToLockScreen = {
                     navController.navigate(AppRoute.LockScreenPlaceholder.route)
+                },
+                onNavigateToWallpaperCatalog = {
+                    navController.navigate(AppRoute.WallpaperCatalog.route)
                 },
                 onNavigateToSettings = {
                     navController.navigate(AppRoute.Settings.route)
@@ -182,6 +199,19 @@ fun MulberryNavHost(
             ReleaseStartupGateAfterFirstFrame()
             LockScreenPlaceholderRoute(
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(AppRoute.WallpaperCatalog.route) {
+            ReleaseStartupGateAfterFirstFrame()
+            WallpaperCatalogRoute(
+                onNavigateBack = { navController.popBackStack() },
+                onWallpaperSelected = {
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set(REMOTE_WALLPAPER_SELECTED_AT_KEY, System.currentTimeMillis())
+                    navController.popBackStack()
+                }
             )
         }
 

@@ -12,5 +12,6 @@ sealed class AppRoute(val route: String) {
     data object CanvasHome : AppRoute("canvas_home")
     data object CanvasSurface : AppRoute("canvas_surface")
     data object LockScreenPlaceholder : AppRoute("lockscreen_placeholder")
+    data object WallpaperCatalog : AppRoute("wallpaper_catalog")
     data object Settings : AppRoute("settings")
 }

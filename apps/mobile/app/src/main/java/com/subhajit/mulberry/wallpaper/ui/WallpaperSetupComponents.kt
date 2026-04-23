@@ -107,6 +107,7 @@ fun WallpaperBackgroundSelectionSection(
     @DrawableRes selectedPresetResId: Int?,
     onUploadFromGallery: () -> Unit,
     onPresetSelected: (Int) -> Unit,
+    onViewMoreWallpapers: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -132,6 +133,9 @@ fun WallpaperBackgroundSelectionSection(
                         Spacer(modifier = Modifier.weight(1f))
                     }
                 }
+            }
+            onViewMoreWallpapers?.let { onClick ->
+                MoreWallpapersButton(onClick = onClick)
             }
         }
     }
@@ -229,6 +233,30 @@ private fun UploadBackgroundButton(onClick: () -> Unit) {
                 )
             )
         }
+    }
+}
+
+@Composable
+private fun MoreWallpapersButton(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(RoundedCornerShape(15.38.dp))
+            .background(MulberryPrimary.copy(alpha = 0.08f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = stringResource(R.string.wallpaper_more_action),
+            color = MulberryPrimary,
+            style = TextStyle(
+                fontFamily = PoppinsFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                lineHeight = 22.sp
+            )
+        )
     }
 }
 

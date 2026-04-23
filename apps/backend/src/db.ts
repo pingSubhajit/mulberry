@@ -99,6 +99,27 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
 
     UPDATE canvas_snapshots
     SET latest_revision = GREATEST(latest_revision, revision);
+
+    CREATE TABLE IF NOT EXISTS wallpapers (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      storage_path TEXT NOT NULL,
+      thumbnail_path TEXT NOT NULL,
+      preview_path TEXT NOT NULL,
+      full_path TEXT NOT NULL,
+      width INTEGER NOT NULL,
+      height INTEGER NOT NULL,
+      dominant_color TEXT NOT NULL DEFAULT '#B31329',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      published_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS wallpapers_public_catalog_idx
+      ON wallpapers(sort_order ASC, created_at DESC, id ASC)
+      WHERE published_at IS NOT NULL;
   `)
 }
 

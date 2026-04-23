@@ -90,6 +90,8 @@ private val PreviewFrame = Color(0xFFD2D2D2)
 @Composable
 fun OnboardingWallpaperRoute(
     onNavigateHome: () -> Unit,
+    onNavigateToWallpaperCatalog: () -> Unit,
+    remoteWallpaperSelectedAt: Long = 0L,
     viewModel: OnboardingWallpaperViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -113,6 +115,12 @@ fun OnboardingWallpaperRoute(
         }
     }
 
+    LaunchedEffect(remoteWallpaperSelectedAt) {
+        if (remoteWallpaperSelectedAt > 0L) {
+            viewModel.onRemoteWallpaperSelected()
+        }
+    }
+
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -132,6 +140,7 @@ fun OnboardingWallpaperRoute(
         presets = viewModel.presets,
         onHelp = {},
         onSetUpLockScreen = viewModel::onSetUpLockScreenClicked,
+        onViewMoreWallpapers = onNavigateToWallpaperCatalog,
         onUploadFromGallery = {
             backgroundPicker.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -149,6 +158,7 @@ private fun OnboardingWallpaperScreen(
     presets: List<WallpaperPreset>,
     onHelp: () -> Unit,
     onSetUpLockScreen: () -> Unit,
+    onViewMoreWallpapers: () -> Unit,
     onUploadFromGallery: () -> Unit,
     onPresetSelected: (Int) -> Unit,
     onAllDone: () -> Unit
@@ -218,7 +228,8 @@ private fun OnboardingWallpaperScreen(
                 presets = presets,
                 selectedPresetResId = uiState.selectedPresetResId,
                 onUploadFromGallery = onUploadFromGallery,
-                onPresetSelected = onPresetSelected
+                onPresetSelected = onPresetSelected,
+                onViewMoreWallpapers = onViewMoreWallpapers
             )
 
             WallpaperCompletionSection(

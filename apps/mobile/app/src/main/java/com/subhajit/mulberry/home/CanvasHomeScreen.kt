@@ -132,6 +132,8 @@ fun CanvasHomeRoute(
     onShortcutActionHandled: (AppShortcutAction) -> Unit = {},
     onNavigateToCanvas: () -> Unit,
     onNavigateToLockScreen: () -> Unit,
+    onNavigateToWallpaperCatalog: () -> Unit,
+    remoteWallpaperSelectedAt: Long = 0L,
     onNavigateToSettings: () -> Unit,
     viewModel: CanvasHomeViewModel = hiltViewModel()
 ) {
@@ -148,6 +150,12 @@ fun CanvasHomeRoute(
 
     LaunchedEffect(viewModel) {
         viewModel.refreshBootstrapState()
+    }
+
+    LaunchedEffect(remoteWallpaperSelectedAt) {
+        if (remoteWallpaperSelectedAt > 0L) {
+            viewModel.onRemoteWallpaperSelected()
+        }
     }
 
     LaunchedEffect(viewModel, context) {
@@ -200,6 +208,7 @@ fun CanvasHomeRoute(
         onJoinCodeSubmitted = viewModel::onJoinCodeSubmitted,
         onDisconnectFromConfirmation = viewModel::onDisconnectFromConfirmation,
         onSetUpLockScreen = viewModel::onSetUpLockScreenClicked,
+        onViewMoreWallpapers = onNavigateToWallpaperCatalog,
         onUploadWallpaperBackground = {
             backgroundPicker.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -238,6 +247,7 @@ private fun CanvasHomeScreen(
     onJoinCodeSubmitted: () -> Unit,
     onDisconnectFromConfirmation: () -> Unit,
     onSetUpLockScreen: () -> Unit,
+    onViewMoreWallpapers: () -> Unit,
     onUploadWallpaperBackground: () -> Unit,
     onWallpaperPresetSelected: (Int) -> Unit,
     onCanvasPress: (StrokePoint) -> Unit,
@@ -365,6 +375,7 @@ private fun CanvasHomeScreen(
                         uiState = uiState,
                         presets = wallpaperPresets,
                         onSetUpLockScreen = onSetUpLockScreen,
+                        onViewMoreWallpapers = onViewMoreWallpapers,
                         onUploadFromGallery = onUploadWallpaperBackground,
                         onPresetSelected = onWallpaperPresetSelected
                     )
@@ -777,6 +788,7 @@ private fun LockScreenHomePane(
     uiState: CanvasHomeUiState,
     presets: List<WallpaperPreset>,
     onSetUpLockScreen: () -> Unit,
+    onViewMoreWallpapers: () -> Unit,
     onUploadFromGallery: () -> Unit,
     onPresetSelected: (Int) -> Unit
 ) {
@@ -832,7 +844,8 @@ private fun LockScreenHomePane(
                 presets = presets,
                 selectedPresetResId = uiState.selectedWallpaperPresetResId,
                 onUploadFromGallery = onUploadFromGallery,
-                onPresetSelected = onPresetSelected
+                onPresetSelected = onPresetSelected,
+                onViewMoreWallpapers = onViewMoreWallpapers
             )
         }
 
