@@ -25,11 +25,22 @@ fun localConfigValue(key: String): String =
 fun quotedBuildConfigValue(value: String): String =
     "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
+fun requiredGradleProperty(key: String): String =
+    providers.gradleProperty(key).orNull?.takeUnless(String::isBlank)
+        ?: System.getenv(key)?.takeUnless(String::isBlank)
+        ?: error("Missing required Gradle property: $key")
+
+fun requiredIntGradleProperty(key: String): Int =
+    requiredGradleProperty(key).toIntOrNull()
+        ?: error("Gradle property $key must be an integer")
+
 val googleServerClientId = localConfigValue("GOOGLE_SERVER_CLIENT_ID")
 val prodApiBaseUrl = localConfigValue("PROD_API_BASE_URL")
     .ifBlank { "https://api.mulberry.my/" }
 val canvasStrokeRenderMode = localConfigValue("CANVAS_STROKE_RENDER_MODE")
     .ifBlank { "hybrid" }
+val appVersionCode = requiredIntGradleProperty("MULBERRY_VERSION_CODE")
+val appVersionName = requiredGradleProperty("MULBERRY_VERSION_NAME")
 val releaseStoreFile = localConfigValue("RELEASE_STORE_FILE")
 val releaseStorePassword = localConfigValue("RELEASE_STORE_PASSWORD")
 val releaseKeyAlias = localConfigValue("RELEASE_KEY_ALIAS")
@@ -49,8 +60,8 @@ android {
         applicationId = "com.subhajit.mulberry"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
