@@ -39,7 +39,7 @@ export default function LandingPage() {
           </p>
 
           <div className="mt-7 flex justify-center">
-            <Button asChild size="lg" className="bg-white text-brand-ink shadow-none hover:bg-white/90 hover:shadow-none">
+            <Button asChild size="lg" className="bg-white text-[#090d18] shadow-none hover:bg-white/90 hover:shadow-none">
               <Link href={GOOGLE_PLAY_DOWNLOAD_URL}>
                 <Image
                   src="/brand/google-play.svg"
