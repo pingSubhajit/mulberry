@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -109,6 +110,7 @@ fun WallpaperBackgroundSelectionSection(
     presets: List<WallpaperPreset>,
     @DrawableRes selectedPresetResId: Int?,
     selectedRemoteWallpaperId: String?,
+    applyingRemoteWallpaperId: String?,
     onUploadFromGallery: () -> Unit,
     onPresetSelected: (Int) -> Unit,
     onRemoteWallpaperSelected: (RemoteWallpaper) -> Unit,
@@ -146,6 +148,7 @@ fun WallpaperBackgroundSelectionSection(
                             is WallpaperSelectionItem.Remote -> RemoteWallpaperCard(
                                 wallpaper = item.wallpaper,
                                 isSelected = selectedRemoteWallpaperId == item.wallpaper.id,
+                                isApplying = applyingRemoteWallpaperId == item.wallpaper.id,
                                 onClick = { onRemoteWallpaperSelected(item.wallpaper) },
                                 modifier = Modifier.weight(1f)
                             )
@@ -357,6 +360,7 @@ private fun PresetCard(
 private fun RemoteWallpaperCard(
     wallpaper: RemoteWallpaper,
     isSelected: Boolean,
+    isApplying: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -365,7 +369,7 @@ private fun RemoteWallpaperCard(
         modifier = modifier
             .aspectRatio(171f / 133f)
             .clip(shape)
-            .clickable(onClick = onClick)
+            .clickable(enabled = !isApplying, onClick = onClick)
     ) {
         AsyncImage(
             model = wallpaper.thumbnailUrl,
@@ -373,14 +377,22 @@ private fun RemoteWallpaperCard(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
-        if (isSelected) {
+        if (isSelected || isApplying) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.46f)),
                 contentAlignment = Alignment.Center
             ) {
-                CheckmarkIcon()
+                if (isApplying) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.5.dp,
+                        modifier = Modifier.size(30.dp)
+                    )
+                } else {
+                    CheckmarkIcon()
+                }
             }
         }
     }

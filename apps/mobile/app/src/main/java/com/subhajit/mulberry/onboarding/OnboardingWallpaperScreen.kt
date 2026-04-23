@@ -221,6 +221,7 @@ private fun OnboardingWallpaperScreen(
                 presets = presets,
                 selectedPresetResId = uiState.selectedPresetResId,
                 selectedRemoteWallpaperId = uiState.selectedRemoteWallpaperId,
+                applyingRemoteWallpaperId = uiState.applyingRemoteWallpaperId,
                 onUploadFromGallery = onUploadFromGallery,
                 onPresetSelected = onPresetSelected,
                 onRemoteWallpaperSelected = onRemoteWallpaperSelected,

@@ -32,6 +32,7 @@ data class OnboardingWallpaperUiState(
     val backgroundImageState: BackgroundImageState = BackgroundImageState(),
     @DrawableRes val selectedPresetResId: Int? = null,
     val selectedRemoteWallpaperId: String? = null,
+    val applyingRemoteWallpaperId: String? = null,
     val recentRemoteWallpapers: List<RemoteWallpaper> = emptyList(),
     val isBusy: Boolean = false,
     val errorMessage: String? = null
@@ -54,6 +55,7 @@ class OnboardingWallpaperViewModel @Inject constructor(
 ) : ViewModel() {
     private val busyState = MutableStateFlow(false)
     private val errorState = MutableStateFlow<String?>(null)
+    private val applyingRemoteWallpaperIdState = MutableStateFlow<String?>(null)
     private val recentRemoteWallpapersState = MutableStateFlow<List<RemoteWallpaper>>(emptyList())
 
     val presets: List<WallpaperPreset> = DefaultWallpaperPresets
@@ -73,15 +75,17 @@ class OnboardingWallpaperViewModel @Inject constructor(
     val uiState = combine(
         baseState,
         recentRemoteWallpapersState,
+        applyingRemoteWallpaperIdState,
         busyState,
         errorState
-    ) { baseState, recentRemoteWallpapers, isBusy, errorMessage ->
+    ) { baseState, recentRemoteWallpapers, applyingRemoteWallpaperId, isBusy, errorMessage ->
         OnboardingWallpaperUiState(
             bootstrapState = baseState.bootstrapState,
             wallpaperStatus = baseState.wallpaperStatus,
             backgroundImageState = baseState.backgroundState,
             selectedPresetResId = baseState.backgroundState.selectedPresetResId,
             selectedRemoteWallpaperId = baseState.backgroundState.selectedRemoteWallpaperId,
+            applyingRemoteWallpaperId = applyingRemoteWallpaperId,
             recentRemoteWallpapers = recentRemoteWallpapers,
             isBusy = isBusy,
             errorMessage = errorMessage
@@ -125,9 +129,11 @@ class OnboardingWallpaperViewModel @Inject constructor(
 
     fun onRemoteWallpaperSelected(wallpaper: RemoteWallpaper) {
         viewModelScope.launch {
+            applyingRemoteWallpaperIdState.value = wallpaper.id
             runBackgroundUpdate {
                 backgroundImageRepository.importRemoteBackground(wallpaper)
             }
+            applyingRemoteWallpaperIdState.value = null
         }
     }
 

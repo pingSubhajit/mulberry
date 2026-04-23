@@ -850,6 +850,7 @@ private fun LockScreenHomePane(
                 presets = presets,
                 selectedPresetResId = uiState.selectedWallpaperPresetResId,
                 selectedRemoteWallpaperId = uiState.selectedRemoteWallpaperId,
+                applyingRemoteWallpaperId = uiState.applyingRemoteWallpaperId,
                 onUploadFromGallery = onUploadFromGallery,
                 onPresetSelected = onPresetSelected,
                 onRemoteWallpaperSelected = onRemoteWallpaperSelected,

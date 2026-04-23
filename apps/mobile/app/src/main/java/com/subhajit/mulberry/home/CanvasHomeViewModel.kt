@@ -99,6 +99,7 @@ data class CanvasHomeUiState(
     val pairingConfirmation: PairingConfirmationUiState = PairingConfirmationUiState(),
     val selectedWallpaperPresetResId: Int? = null,
     val selectedRemoteWallpaperId: String? = null,
+    val applyingRemoteWallpaperId: String? = null,
     val recentRemoteWallpapers: List<RemoteWallpaper> = emptyList(),
     val isWallpaperBusy: Boolean = false,
     val wallpaperErrorMessage: String? = null,
@@ -133,6 +134,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val joinCodeState = MutableStateFlow(JoinCodeUiState())
     private val pairingConfirmationState = MutableStateFlow(PairingConfirmationUiState())
     private val recentRemoteWallpapersState = MutableStateFlow<List<RemoteWallpaper>>(emptyList())
+    private val applyingRemoteWallpaperIdState = MutableStateFlow<String?>(null)
     private val wallpaperBusyState = MutableStateFlow(false)
     private val wallpaperErrorState = MutableStateFlow<String?>(null)
     private val currentTimeMillis = MutableStateFlow(System.currentTimeMillis())
@@ -195,11 +197,13 @@ class CanvasHomeViewModel @Inject constructor(
 
     private val wallpaperControls = combine(
         recentRemoteWallpapersState,
+        applyingRemoteWallpaperIdState,
         wallpaperBusyState,
         wallpaperErrorState
-    ) { recentRemoteWallpapers, wallpaperBusy, wallpaperError ->
+    ) { recentRemoteWallpapers, applyingRemoteWallpaperId, wallpaperBusy, wallpaperError ->
         WallpaperControlState(
             recentRemoteWallpapers = recentRemoteWallpapers,
+            applyingRemoteWallpaperId = applyingRemoteWallpaperId,
             isBusy = wallpaperBusy,
             error = wallpaperError
         )
@@ -229,6 +233,7 @@ class CanvasHomeViewModel @Inject constructor(
             pairingConfirmation = inviteControls.confirmation,
             selectedWallpaperPresetResId = baseState.backgroundState.selectedPresetResId,
             selectedRemoteWallpaperId = baseState.backgroundState.selectedRemoteWallpaperId,
+            applyingRemoteWallpaperId = wallpaperControls.applyingRemoteWallpaperId,
             recentRemoteWallpapers = wallpaperControls.recentRemoteWallpapers,
             isWallpaperBusy = wallpaperControls.isBusy,
             wallpaperErrorMessage = wallpaperControls.error,
@@ -533,9 +538,11 @@ class CanvasHomeViewModel @Inject constructor(
 
     fun onRemoteWallpaperSelected(wallpaper: RemoteWallpaper) {
         viewModelScope.launch {
+            applyingRemoteWallpaperIdState.value = wallpaper.id
             runWallpaperUpdate {
                 backgroundImageRepository.importRemoteBackground(wallpaper)
             }
+            applyingRemoteWallpaperIdState.value = null
         }
     }
 
@@ -589,6 +596,7 @@ class CanvasHomeViewModel @Inject constructor(
 
     private data class WallpaperControlState(
         val recentRemoteWallpapers: List<RemoteWallpaper>,
+        val applyingRemoteWallpaperId: String?,
         val isBusy: Boolean,
         val error: String?
     )
