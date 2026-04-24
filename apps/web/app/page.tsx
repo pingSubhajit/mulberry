@@ -8,17 +8,17 @@ const notes = [
   {
     title: "Send little notes, right on their lock screen",
     description: "Finished drawings appear quietly over your wallpaper. It is the quietest way to stay connected to each other.",
-    image: "/bento/card-1.png"
+    image: "/bento/card-1.jpg"
   },
   {
     title: "Private by design, just for the two of you",
     description: "Mulberry creates a one-to-one space made only for you and your partner. No feeds, no followers, no ads.",
-    image: "/bento/card-2.png"
+    image: "/bento/card-2.jpg"
   },
   {
     title: "Draw it fast, send with a heart",
     description: "Let them know you are missing them, or check in if they had their lunch. All without calling or texting.",
-    image: "/bento/card-3.png"
+    image: "/bento/card-3.jpg"
   }
 ]
 
@@ -32,7 +32,7 @@ export default function LandingPage() {
           <h1 className="mx-auto max-w-4xl text-5xl font-semibold leading-[1.03] tracking-[-0.07em] text-white sm:text-6xl lg:text-[5.4rem]">
             Draw something. Let it arrive quietly.
           </h1>
-          <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-white/70 sm:text-lg">
+          <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-white/80 sm:text-lg">
             Mulberry is a minimal Android app for couples to share small drawings
             on each other&apos;s lock screen. No feed. No noise. Just one shared
             canvas.
@@ -57,10 +57,10 @@ export default function LandingPage() {
         <div className="relative mt-8 flex w-full flex-1 items-end justify-center overflow-hidden sm:mt-10">
           <div className="absolute bottom-0 h-28 w-[38rem] rounded-full bg-brand/12 blur-3xl" />
           <Image
-            src="/hero.png"
+            src="/hero.jpg"
             alt="Mulberry app showing a shared canvas and lock-screen wallpaper setup"
-            width={1374}
-            height={2734}
+            width={1344}
+            height={2674}
             priority
             className="relative mb-[-46%] h-auto w-[min(94vw,36rem)] sm:mb-[-38%] lg:mb-[-35%] lg:w-[42rem]"
             sizes="(min-width: 1024px) 42rem, 94vw"
@@ -132,7 +132,7 @@ function SiteHeader() {
       </Link>
       <Link
         href={GOOGLE_PLAY_DOWNLOAD_URL}
-        className="inline-flex min-h-11 items-center rounded-full px-2 text-sm font-medium text-white/65 transition hover:text-white"
+        className="inline-flex min-h-11 items-center rounded-full px-2 text-sm font-medium text-white transition hover:text-white/70"
       >
         Download
       </Link>
