@@ -3,8 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "./gradlew :app:assembleDevDebug",
-    "test": "./gradlew :app:testDevDebugUnitTest",
-    "install:dev": "./gradlew :app:installDevDebug"
+    "build": "JAVA_HOME=\"${JAVA_HOME:-$(/usr/libexec/java_home -v 17)}\" ./gradlew :app:assembleDevDebug",
+    "build:prod:debug": "JAVA_HOME=\"${JAVA_HOME:-$(/usr/libexec/java_home -v 17)}\" ./gradlew :app:assembleProdDebug",
+    "build:prod:release": "JAVA_HOME=\"${JAVA_HOME:-$(/usr/libexec/java_home -v 17)}\" ./gradlew :app:assembleProdRelease",
+    "build:prod:bundle": "JAVA_HOME=\"${JAVA_HOME:-$(/usr/libexec/java_home -v 17)}\" ./gradlew :app:bundleProdRelease",
+    "test": "JAVA_HOME=\"${JAVA_HOME:-$(/usr/libexec/java_home -v 17)}\" ./gradlew :app:testDevDebugUnitTest",
+    "install:dev": "JAVA_HOME=\"${JAVA_HOME:-$(/usr/libexec/java_home -v 17)}\" ./gradlew :app:installDevDebug"
   }
 }

@@ -6,6 +6,7 @@
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
+    "db:clear": "pnpm --dir apps/backend run db:clear",
     "test": "turbo test",
     "typecheck": "turbo typecheck",
     "build:web": "turbo build --filter=@mulberry/web",
@@ -13,6 +14,9 @@
     "build:backend": "turbo build --filter=@mulberry/backend",
     "dev:backend": "turbo dev --filter=@mulberry/backend",
     "build:mobile": "turbo build --filter=@mulberry/mobile",
+    "build:mobile:prod:debug": "pnpm --dir apps/mobile run build:prod:debug",
+    "build:mobile:prod:release": "pnpm --dir apps/mobile run build:prod:release",
+    "build:mobile:prod:bundle": "pnpm --dir apps/mobile run build:prod:bundle",
     "test:mobile": "turbo test --filter=@mulberry/mobile"
   },
   "devDependencies": {
