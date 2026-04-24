@@ -44,10 +44,15 @@ sealed interface CanvasSendResult {
     data object Rejected : CanvasSendResult
 }
 
-interface CanvasSyncClient {
-    val messages: Flow<CanvasSyncMessage>
+data class ConnectionScopedSyncMessage(
+    val generation: Long,
+    val message: CanvasSyncMessage
+)
 
-    fun connect(accessToken: String, pairSessionId: String, lastAppliedServerRevision: Long)
+interface CanvasSyncClient {
+    val messages: Flow<ConnectionScopedSyncMessage>
+
+    fun connect(accessToken: String, pairSessionId: String, lastAppliedServerRevision: Long): Long
     fun send(operation: CanvasSyncOperation): CanvasSendResult
     fun sendBatch(batchId: String, operations: List<CanvasSyncOperation>): CanvasSendResult
     fun disconnect()
@@ -58,8 +63,8 @@ class OkHttpCanvasSyncClient @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val appConfig: AppConfig
 ) : CanvasSyncClient {
-    private val messagesChannel = Channel<CanvasSyncMessage>(capacity = Channel.UNLIMITED)
-    override val messages: Flow<CanvasSyncMessage> = messagesChannel.receiveAsFlow()
+    private val messagesChannel = Channel<ConnectionScopedSyncMessage>(capacity = Channel.UNLIMITED)
+    override val messages: Flow<ConnectionScopedSyncMessage> = messagesChannel.receiveAsFlow()
 
     private var webSocket: WebSocket? = null
     private var connectionGeneration = 0L
@@ -68,7 +73,7 @@ class OkHttpCanvasSyncClient @Inject constructor(
         accessToken: String,
         pairSessionId: String,
         lastAppliedServerRevision: Long
-    ) {
+    ): Long {
         disconnect()
         val generation = ++connectionGeneration
         val request = Request.Builder()
@@ -91,23 +96,25 @@ class OkHttpCanvasSyncClient @Inject constructor(
                     if (generation != connectionGeneration) return
                     val message = runCatching { parseWireMessage(text) }
                         .getOrElse { CanvasSyncMessage.Error("Invalid sync message") }
-                    enqueueMessage(message)
+                    enqueueMessage(generation, message)
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     if (generation != connectionGeneration) return
                     enqueueMessage(
+                        generation,
                         CanvasSyncMessage.Error(t.message ?: "Sync connection failed")
                     )
-                    enqueueMessage(CanvasSyncMessage.Closed)
+                    enqueueMessage(generation, CanvasSyncMessage.Closed)
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     if (generation != connectionGeneration) return
-                    enqueueMessage(CanvasSyncMessage.Closed)
+                    enqueueMessage(generation, CanvasSyncMessage.Closed)
                 }
             }
         )
+        return generation
     }
 
     override fun send(operation: CanvasSyncOperation): CanvasSendResult {
@@ -140,8 +147,8 @@ class OkHttpCanvasSyncClient @Inject constructor(
         webSocket = null
     }
 
-    private fun enqueueMessage(message: CanvasSyncMessage) {
-        messagesChannel.trySend(message)
+    private fun enqueueMessage(generation: Long, message: CanvasSyncMessage) {
+        messagesChannel.trySend(ConnectionScopedSyncMessage(generation, message))
     }
 
     private fun parseWireMessage(raw: String): CanvasSyncMessage = when (parseMessageType(raw)) {

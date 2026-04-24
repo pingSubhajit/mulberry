@@ -13,14 +13,31 @@ data class SyncOutboxSummary(
         get() = pending + inFlight
 }
 
+interface CanvasSyncOutboxStore {
+    suspend fun migrateLegacyPendingOperations()
+    suspend fun enqueue(operation: CanvasSyncOperation)
+    suspend fun nextBatch(maxOperations: Int, maxPayloadBytes: Int): List<CanvasSyncOperation>
+    suspend fun markInFlight(
+        operations: List<CanvasSyncOperation>,
+        batchId: String,
+        sentAt: Long = System.currentTimeMillis()
+    )
+    suspend fun acknowledge(clientOperationIds: List<String>)
+    suspend fun resetInFlightToPending()
+    suspend fun resetStaleInFlightToPending(staleBefore: Long): Int
+    suspend fun hasPendingOperations(): Boolean
+    suspend fun summary(): SyncOutboxSummary
+    suspend fun clear()
+}
+
 @Singleton
 class SyncOutboxStore @Inject constructor(
     private val dao: SyncOutboxDao,
     private val syncMetadataRepository: SyncMetadataRepository
-) {
+) : CanvasSyncOutboxStore {
     private val nextSequence = AtomicLong(0L)
 
-    suspend fun migrateLegacyPendingOperations() {
+    override suspend fun migrateLegacyPendingOperations() {
         val legacyOperations = syncMetadataRepository.metadata.first().pendingOperations
         if (legacyOperations.isEmpty()) return
         legacyOperations.forEach { operation ->
@@ -29,11 +46,14 @@ class SyncOutboxStore @Inject constructor(
         syncMetadataRepository.setPendingOperations(emptyList())
     }
 
-    suspend fun enqueue(operation: CanvasSyncOperation) {
+    override suspend fun enqueue(operation: CanvasSyncOperation) {
         dao.insert(SyncOutboxEntity.fromDomain(operation, allocateSequenceNumber()))
     }
 
-    suspend fun nextBatch(maxOperations: Int, maxPayloadBytes: Int): List<CanvasSyncOperation> {
+    override suspend fun nextBatch(
+        maxOperations: Int,
+        maxPayloadBytes: Int
+    ): List<CanvasSyncOperation> {
         val operations = mutableListOf<CanvasSyncOperation>()
         var sizeBytes = 0
         for (entity in dao.pendingCandidates(maxOperations)) {
@@ -46,36 +66,36 @@ class SyncOutboxStore @Inject constructor(
         return operations
     }
 
-    suspend fun markInFlight(
+    override suspend fun markInFlight(
         operations: List<CanvasSyncOperation>,
         batchId: String,
-        sentAt: Long = System.currentTimeMillis()
+        sentAt: Long
     ) {
         if (operations.isEmpty()) return
         dao.markInFlight(operations.map { it.clientOperationId }, batchId, sentAt)
     }
 
-    suspend fun acknowledge(clientOperationIds: List<String>) {
+    override suspend fun acknowledge(clientOperationIds: List<String>) {
         if (clientOperationIds.isEmpty()) return
         dao.deleteByClientOperationIds(clientOperationIds)
     }
 
-    suspend fun resetInFlightToPending() {
+    override suspend fun resetInFlightToPending() {
         dao.resetInFlightToPending()
     }
 
-    suspend fun resetStaleInFlightToPending(staleBefore: Long): Int =
+    override suspend fun resetStaleInFlightToPending(staleBefore: Long): Int =
         dao.resetStaleInFlightToPending(staleBefore)
 
-    suspend fun hasPendingOperations(): Boolean = dao.count() > 0
+    override suspend fun hasPendingOperations(): Boolean = dao.count() > 0
 
-    suspend fun summary(): SyncOutboxSummary =
+    override suspend fun summary(): SyncOutboxSummary =
         SyncOutboxSummary(
             pending = dao.countByStatus(SyncOutboxStatus.PENDING),
             inFlight = dao.countByStatus(SyncOutboxStatus.IN_FLIGHT)
         )
 
-    suspend fun clear() {
+    override suspend fun clear() {
         dao.clear()
         nextSequence.set(0L)
     }

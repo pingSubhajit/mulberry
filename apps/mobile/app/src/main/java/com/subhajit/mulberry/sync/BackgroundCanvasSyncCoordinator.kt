@@ -32,7 +32,7 @@ interface BackgroundCanvasSyncCoordinator {
 class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
     private val sessionBootstrapRepository: SessionBootstrapRepository,
     private val syncMetadataRepository: SyncMetadataRepository,
-    private val syncOutboxStore: SyncOutboxStore,
+    private val syncOutboxStore: CanvasSyncOutboxStore,
     private val apiService: MulberryApiService,
     private val drawingRepository: DrawingRepository,
     private val remoteOperationApplier: RemoteOperationApplier,

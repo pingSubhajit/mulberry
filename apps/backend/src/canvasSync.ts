@@ -139,7 +139,7 @@ export class CanvasSyncHub {
     this.broadcast(context.pairSessionId, {
       type: "SERVER_OP",
       operation: accepted,
-    })
+    }, socket)
   }
 
   private async handleClientOperationBatch(
@@ -179,7 +179,7 @@ export class CanvasSyncHub {
     this.broadcast(context.pairSessionId, {
       type: "SERVER_OP_BATCH",
       operations: accepted,
-    })
+    }, socket, batchId)
     this.send(socket, {
       type: "FLOW_CONTROL",
       mode: operations.length >= SLOW_DOWN_OPERATION_THRESHOLD ? "SLOW_DOWN" : "NORMAL",
@@ -207,10 +207,34 @@ export class CanvasSyncHub {
     return next
   }
 
-  private broadcast(pairSessionId: string, payload: unknown): void {
+  private broadcast(
+    pairSessionId: string,
+    payload: unknown,
+    excludedSocket?: WebSocket,
+    batchId?: string,
+  ): void {
     const connections = this.connectionsByPairSession.get(pairSessionId)
     if (!connections) return
-    connections.forEach((socket) => this.send(socket, payload))
+    let recipientCount = 0
+    connections.forEach((socket) => {
+      if (socket === excludedSocket) {
+        return
+      }
+      if (this.send(socket, payload)) {
+        recipientCount += 1
+      }
+    })
+    const payloadType =
+      typeof payload === "object" && payload !== null && "type" in payload
+        ? String((payload as { type?: unknown }).type ?? "unknown")
+        : "unknown"
+    console.info("[sync] broadcast", {
+      pairSessionId,
+      payloadType,
+      batchId: batchId ?? null,
+      recipientCount,
+      excludedOrigin: excludedSocket != null,
+    })
   }
 
   private send(socket: WebSocket, payload: unknown): boolean {

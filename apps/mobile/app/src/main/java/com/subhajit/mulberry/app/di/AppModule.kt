@@ -42,6 +42,7 @@ import com.subhajit.mulberry.settings.DeveloperOptionsRepository
 import com.subhajit.mulberry.settings.PairingSettingsRepository
 import com.subhajit.mulberry.sync.CanvasSyncClient
 import com.subhajit.mulberry.sync.CanvasSyncRepository
+import com.subhajit.mulberry.sync.CanvasSyncOutboxStore
 import com.subhajit.mulberry.sync.BackgroundCanvasSyncCoordinator
 import com.subhajit.mulberry.sync.BackgroundCanvasSyncScheduler
 import com.subhajit.mulberry.sync.DataStoreSyncMetadataRepository
@@ -53,6 +54,7 @@ import com.subhajit.mulberry.sync.OkHttpCanvasSyncClient
 import com.subhajit.mulberry.sync.DefaultRemoteOperationApplier
 import com.subhajit.mulberry.sync.RemoteOperationApplier
 import com.subhajit.mulberry.sync.SyncMetadataRepository
+import com.subhajit.mulberry.sync.SyncOutboxStore
 import com.subhajit.mulberry.sync.SyncOutboxDao
 import com.subhajit.mulberry.sync.WorkManagerBackgroundCanvasSyncScheduler
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
@@ -177,6 +179,12 @@ abstract class AppBindingsModule {
     abstract fun bindCanvasSyncRepository(
         implementation: DefaultCanvasSyncRepository
     ): CanvasSyncRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCanvasSyncOutboxStore(
+        implementation: SyncOutboxStore
+    ): CanvasSyncOutboxStore
 
     @Binds
     @Singleton

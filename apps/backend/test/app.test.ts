@@ -724,6 +724,55 @@ describe("Mulberry backend", () => {
     expect(ack.type).toBe("ACK")
     expect(serverOp.type).toBe("SERVER_OP")
     expect(serverOp.operation.serverRevision).toBe(1)
+    await expectNoWsJson(first)
+    first.close()
+    second.close()
+  })
+
+  it("broadcasts accepted canvas batches only to the paired peer", async () => {
+    const { inviter, recipient } = await pairUsers()
+    const first = await app.injectWS("/canvas/sync")
+    const second = await app.injectWS("/canvas/sync")
+
+    first.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: inviter.accessToken,
+        pairSessionId: inviter.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    second.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: recipient.accessToken,
+        pairSessionId: recipient.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    await nextWsJson(first)
+    await nextWsJson(second)
+
+    const senderMessages = nextNWsJson(first, 2)
+    const peerMessage = nextWsJson(second)
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP_BATCH",
+        batchId: "peer-only-batch",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          addStrokeOperation("peer-only-op-1", "peer-only-stroke", 1, 1),
+          finishStrokeOperation("peer-only-op-2", "peer-only-stroke"),
+        ],
+      }),
+    )
+
+    const [messages, serverBatch] = await Promise.all([senderMessages, peerMessage])
+    expect(messages.map((message) => message.type)).toEqual(["ACK_BATCH", "FLOW_CONTROL"])
+    expect(serverBatch.type).toBe("SERVER_OP_BATCH")
+    expect(serverBatch.operations.map((operation: { serverRevision: number }) => operation.serverRevision))
+      .toEqual([1, 2])
+    await expectNoWsJson(first)
     first.close()
     second.close()
   })
@@ -1145,6 +1194,50 @@ function nextWsJson(socket: { once: (event: string, listener: (raw: unknown) => 
     socket.once("message", (raw) => {
       resolve(JSON.parse(String(raw)))
     })
+  })
+}
+
+function nextNWsJson(
+  socket: {
+    on: (event: string, listener: (raw: unknown) => void) => void
+    removeListener: (event: string, listener: (raw: unknown) => void) => void
+  },
+  count: number,
+) {
+  return new Promise<Array<Record<string, any>>>((resolve) => {
+    const messages: Array<Record<string, any>> = []
+    const onMessage = (raw: unknown) => {
+      messages.push(JSON.parse(String(raw)))
+      if (messages.length >= count) {
+        socket.removeListener("message", onMessage)
+        resolve(messages)
+      }
+    }
+    socket.on("message", onMessage)
+  })
+}
+
+function expectNoWsJson(
+  socket: {
+    on: (event: string, listener: (raw: unknown) => void) => void
+    removeListener: (event: string, listener: (raw: unknown) => void) => void
+  },
+  timeoutMs = 50,
+) {
+  return new Promise<void>((resolve, reject) => {
+    const onMessage = (raw: unknown) => {
+      cleanup()
+      reject(new Error(`Unexpected websocket message: ${String(raw)}`))
+    }
+    const cleanup = () => {
+      clearTimeout(timer)
+      socket.removeListener("message", onMessage)
+    }
+    const timer = setTimeout(() => {
+      cleanup()
+      resolve()
+    }, timeoutMs)
+    socket.on("message", onMessage)
   })
 }
 

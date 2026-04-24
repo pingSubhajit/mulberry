@@ -37,7 +37,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
     private val client: CanvasSyncClient,
     private val sessionBootstrapRepository: SessionBootstrapRepository,
     private val syncMetadataRepository: SyncMetadataRepository,
-    private val syncOutboxStore: SyncOutboxStore,
+    private val syncOutboxStore: CanvasSyncOutboxStore,
     private val canvasRuntime: CanvasRuntime,
     private val apiService: MulberryApiService,
     private val recoveryPolicy: CanvasRecoveryPolicy,
@@ -47,13 +47,16 @@ class DefaultCanvasSyncRepository @Inject constructor(
     override val syncState: StateFlow<SyncState> = _syncState
 
     private val syncEnabled = MutableStateFlow(false)
+    private val connectionMutex = Mutex()
     private val messageMutex = Mutex()
     private val sendMutex = Mutex()
     private val revisionBuffer = TreeMap<Long, ServerCanvasOperation>()
     private val inFlightBatchIds = mutableSetOf<String>()
     private var isRecoveringGap = false
     private var sendScheduled = false
+    private var syncStorageInitialized = false
     private var started = false
+    private var activeConnectionGeneration: Long? = null
     private var currentUserId: String? = null
     private var activeAccessToken: String? = null
     private var activePairSessionId: String? = null
@@ -71,17 +74,14 @@ class DefaultCanvasSyncRepository @Inject constructor(
     override fun stop() {
         syncEnabled.value = false
         lastForegroundStoppedAt = System.currentTimeMillis()
-        disconnectActiveSocket()
+        applicationScope.launch {
+            connectionMutex.withLock {
+                disconnectActiveSocket(reason = "app_stop")
+            }
+        }
     }
 
     private fun startCollectors() {
-        applicationScope.launch {
-            syncOutboxStore.migrateLegacyPendingOperations()
-            syncOutboxStore.resetInFlightToPending()
-            lastAppliedRevisionCache =
-                syncMetadataRepository.metadata.first().lastAppliedServerRevision
-        }
-
         applicationScope.launch {
             canvasRuntime.outboundOperations.collect { operation ->
                 queueLocalOperation(operation)
@@ -96,47 +96,14 @@ class DefaultCanvasSyncRepository @Inject constructor(
             ) { enabled, bootstrap, session ->
                 Triple(enabled, bootstrap, session)
             }.collect { (enabled, bootstrap, session) ->
-                if (
-                    enabled &&
-                    session != null &&
-                    bootstrap.pairingStatus == PairingStatus.PAIRED &&
-                    bootstrap.pairSessionId != null
-                ) {
-                    currentUserId = session.userId
-                    if (
-                        activeAccessToken == session.accessToken &&
-                        activePairSessionId == bootstrap.pairSessionId &&
-                        syncState.value !is SyncState.Disconnected &&
-                        syncState.value !is SyncState.Error
-                    ) {
-                        return@collect
-                    }
-                    activeAccessToken = session.accessToken
-                    activePairSessionId = bootstrap.pairSessionId
-                    val lastAppliedRevision = preparePairSessionScope(bootstrap.pairSessionId)
-                    canvasRuntime.start(
-                        pairSessionId = bootstrap.pairSessionId,
-                        userId = session.userId
-                    )
-                    _syncState.value = SyncState.Connecting
-                    canvasRuntime.setSyncState(SyncState.Connecting)
-                    lastAppliedRevisionCache = lastAppliedRevision
-                    syncOutboxStore.resetInFlightToPending()
-                    client.connect(
-                        accessToken = session.accessToken,
-                        pairSessionId = bootstrap.pairSessionId,
-                        lastAppliedServerRevision = lastAppliedRevision
-                    )
-                } else {
-                    disconnectActiveSocket()
-                }
+                handleSyncDemand(enabled, bootstrap, session)
             }
         }
 
         applicationScope.launch {
-            client.messages.collect { message ->
+            client.messages.collect { scopedMessage ->
                 messageMutex.withLock {
-                    handleMessage(message)
+                    handleConnectionScopedMessage(scopedMessage)
                 }
             }
         }
@@ -151,29 +118,71 @@ class DefaultCanvasSyncRepository @Inject constructor(
 
     override suspend fun reset() {
         syncEnabled.value = false
-        revisionBuffer.clear()
-        inFlightBatchIds.clear()
-        isRecoveringGap = false
-        sendScheduled = false
         syncMetadataRepository.reset()
         syncOutboxStore.clear()
         canvasRuntime.reset()
-        disconnectActiveSocket()
+        connectionMutex.withLock {
+            disconnectActiveSocket(reason = "reset")
+        }
     }
 
-    private suspend fun handleMessage(message: CanvasSyncMessage) {
+    private suspend fun handleSyncDemand(
+        enabled: Boolean,
+        bootstrap: com.subhajit.mulberry.data.bootstrap.SessionBootstrapState,
+        session: com.subhajit.mulberry.data.bootstrap.AppSession?
+    ) {
+        if (
+            enabled &&
+            session != null &&
+            bootstrap.pairingStatus == PairingStatus.PAIRED &&
+            bootstrap.pairSessionId != null
+        ) {
+            establishConnection(
+                session = session,
+                pairSessionId = bootstrap.pairSessionId,
+                reason = "state_change",
+                forceReconnect = false,
+                restartRuntime = activeConnectionGeneration == null ||
+                    activeAccessToken != session.accessToken ||
+                    activePairSessionId != bootstrap.pairSessionId ||
+                    syncState.value is SyncState.Disconnected
+            )
+        } else {
+            connectionMutex.withLock {
+                disconnectActiveSocket(reason = "state_change")
+            }
+        }
+    }
+
+    private suspend fun handleConnectionScopedMessage(scopedMessage: ConnectionScopedSyncMessage) {
+        val activeGeneration = activeConnectionGeneration
+        if (activeGeneration == null || scopedMessage.generation != activeGeneration) {
+            Log.i(
+                TAG,
+                "Ignoring stale canvas sync message " +
+                    "type=${scopedMessage.message.logLabel()} " +
+                    "generation=${scopedMessage.generation} activeGeneration=$activeGeneration"
+            )
+            return
+        }
+        handleMessage(scopedMessage.message, scopedMessage.generation)
+    }
+
+    private suspend fun handleMessage(message: CanvasSyncMessage, generation: Long) {
         when (message) {
             is CanvasSyncMessage.Ready -> handleReady(message)
             is CanvasSyncMessage.Ack -> {
+                Log.i(
+                    TAG,
+                    "Received canvas sync ack generation=$generation " +
+                        "clientOperationId=${message.clientOperationId} serverRevision=${message.serverRevision}"
+                )
                 syncOutboxStore.acknowledge(listOf(message.clientOperationId))
                 message.operation?.let { enqueueAndDrain(listOf(it)) }
                 schedulePendingSend()
             }
             is CanvasSyncMessage.AckBatch -> {
-                inFlightBatchIds.remove(message.batchId)
-                syncOutboxStore.acknowledge(message.ackedClientOperationIds)
-                enqueueAndDrain(message.operations)
-                schedulePendingSend()
+                handleAckBatch(message, generation)
             }
             is CanvasSyncMessage.ServerOperation -> {
                 enqueueAndDrain(listOf(message.operation))
@@ -198,17 +207,38 @@ class DefaultCanvasSyncRepository @Inject constructor(
                 recoverFromServer(CanvasRecoveryReason.RESYNC_REQUIRED)
             }
             is CanvasSyncMessage.Error -> {
-                recoverFromSyncError(message.message)
+                reconnectFromCurrentState(
+                    reason = "socket_error",
+                    errorMessage = message.message,
+                    restartRuntime = false
+                )
             }
             CanvasSyncMessage.Closed -> {
-                if (_syncState.value !is SyncState.Disconnected) {
-                    disconnectActiveSocket()
-                    if (syncEnabled.value) {
-                        reconnectIfStillPaired()
-                    }
-                }
+                reconnectFromCurrentState(
+                    reason = "socket_closed",
+                    errorMessage = null,
+                    restartRuntime = false
+                )
             }
         }
+    }
+
+    private suspend fun handleAckBatch(
+        message: CanvasSyncMessage.AckBatch,
+        generation: Long
+    ) {
+        Log.i(
+            TAG,
+            "Received canvas sync batch ack generation=$generation " +
+                "batchId=${message.batchId} opCount=${message.ackedClientOperationIds.size} " +
+                "ackedThroughRevision=${message.ackedThroughRevision}"
+        )
+        sendMutex.withLock {
+            inFlightBatchIds.remove(message.batchId)
+            syncOutboxStore.acknowledge(message.ackedClientOperationIds)
+        }
+        enqueueAndDrain(message.operations)
+        schedulePendingSend()
     }
 
     private suspend fun handleReady(message: CanvasSyncMessage.Ready) {
@@ -252,7 +282,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
         syncMetadataRepository.setLastError(null)
     }
 
-    private suspend fun reconnectIfStillPaired() {
+    private suspend fun reconnectIfStillPaired(reason: String, restartRuntime: Boolean) {
         if (!syncEnabled.value) return
         val bootstrap = sessionBootstrapRepository.state.first()
         val session = sessionBootstrapRepository.session.first()
@@ -261,22 +291,12 @@ class DefaultCanvasSyncRepository @Inject constructor(
             bootstrap.pairingStatus == PairingStatus.PAIRED &&
             bootstrap.pairSessionId != null
         ) {
-            _syncState.value = SyncState.Connecting
-            canvasRuntime.start(
+            establishConnection(
+                session = session,
                 pairSessionId = bootstrap.pairSessionId,
-                userId = session.userId
-            )
-            canvasRuntime.setSyncState(SyncState.Connecting)
-            val lastAppliedRevision = preparePairSessionScope(bootstrap.pairSessionId)
-            lastAppliedRevisionCache = lastAppliedRevision
-            syncOutboxStore.resetInFlightToPending()
-            currentUserId = session.userId
-            activeAccessToken = session.accessToken
-            activePairSessionId = bootstrap.pairSessionId
-            client.connect(
-                accessToken = session.accessToken,
-                pairSessionId = bootstrap.pairSessionId,
-                lastAppliedServerRevision = lastAppliedRevision
+                reason = reason,
+                forceReconnect = true,
+                restartRuntime = restartRuntime
             )
         }
     }
@@ -343,6 +363,8 @@ class DefaultCanvasSyncRepository @Inject constructor(
     }
 
     private suspend fun sendPendingBatch() {
+        var reconnectReason: String? = null
+        var shouldRetryRejectedSend = false
         sendMutex.withLock {
             sendScheduled = false
             if (syncState.value !is SyncState.Connected) return@withLock
@@ -352,16 +374,20 @@ class DefaultCanvasSyncRepository @Inject constructor(
                     staleBefore = System.currentTimeMillis() - ACK_TIMEOUT_MS
                 )
                 if (resetCount > 0) {
-                    Log.w(TAG, "Reset stale in-flight canvas sync operations count=$resetCount")
+                    Log.w(
+                        TAG,
+                        "Repairing canvas sync state reason=stale_inflight_timeout count=$resetCount"
+                    )
                     inFlightBatchIds.clear()
-                    reconnectIfStillPaired()
+                    reconnectReason = "stale_inflight_timeout"
                 } else if (inFlightBatchIds.isEmpty()) {
                     Log.w(
                         TAG,
-                        "Room outbox has in-flight canvas sync operations without active batch " +
+                        "Repairing canvas sync state reason=inflight_without_batch " +
                             "count=${outboxSummary.inFlight}"
                     )
-                    scheduleAckTimeoutCheck()
+                    syncOutboxStore.resetInFlightToPending()
+                    reconnectReason = "inflight_without_batch"
                 }
                 return@withLock
             }
@@ -375,6 +401,11 @@ class DefaultCanvasSyncRepository @Inject constructor(
                 is CanvasSendResult.Accepted -> {
                     syncOutboxStore.markInFlight(unsent, batchId)
                     inFlightBatchIds.add(batchId)
+                    Log.i(
+                        TAG,
+                        "Sent canvas sync batch generation=$activeConnectionGeneration " +
+                            "batchId=$batchId opCount=${unsent.size} queueSizeBytes=${result.queueSizeBytes}"
+                    )
                     scheduleAckTimeoutCheck()
                     if (
                         result.queueSizeBytes < MAX_SOCKET_QUEUE_BYTES &&
@@ -385,10 +416,20 @@ class DefaultCanvasSyncRepository @Inject constructor(
                     }
                 }
                 CanvasSendResult.Rejected -> {
-                    delay(REJECTED_SEND_RETRY_DELAY_MS)
-                    schedulePendingSend()
+                    shouldRetryRejectedSend = true
                 }
             }
+        }
+        reconnectReason?.let { reason ->
+            reconnectIfStillPaired(
+                reason = reason,
+                restartRuntime = false
+            )
+            return
+        }
+        if (shouldRetryRejectedSend) {
+            delay(REJECTED_SEND_RETRY_DELAY_MS)
+            schedulePendingSend()
         }
     }
 
@@ -410,9 +451,8 @@ class DefaultCanvasSyncRepository @Inject constructor(
                 "from=${metadata.pairSessionId ?: "none"} to=$pairSessionId"
         )
         revisionBuffer.clear()
-        inFlightBatchIds.clear()
         isRecoveringGap = false
-        sendScheduled = false
+        resetSendTracking()
         syncOutboxStore.clear()
         syncMetadataRepository.resetForPairSession(pairSessionId)
         canvasRuntime.submitAndAwait(
@@ -539,11 +579,82 @@ class DefaultCanvasSyncRepository @Inject constructor(
             (System.currentTimeMillis() - stoppedAt).coerceAtLeast(0L)
         } ?: 0L
 
-    private suspend fun recoverFromSyncError(message: String) {
-        syncMetadataRepository.setLastError(message)
+    private suspend fun ensureSyncStorageInitializedLocked() {
+        if (syncStorageInitialized) return
+        syncOutboxStore.migrateLegacyPendingOperations()
+        syncOutboxStore.resetInFlightToPending()
+        lastAppliedRevisionCache =
+            syncMetadataRepository.metadata.first().lastAppliedServerRevision
+        syncStorageInitialized = true
+    }
+
+    private suspend fun establishConnection(
+        session: com.subhajit.mulberry.data.bootstrap.AppSession,
+        pairSessionId: String,
+        reason: String,
+        forceReconnect: Boolean,
+        restartRuntime: Boolean
+    ) {
+        connectionMutex.withLock {
+            ensureSyncStorageInitializedLocked()
+            val sameConnection =
+                !forceReconnect &&
+                    activeAccessToken == session.accessToken &&
+                    activePairSessionId == pairSessionId &&
+                    activeConnectionGeneration != null &&
+                    syncState.value !is SyncState.Disconnected &&
+                    syncState.value !is SyncState.Error
+            if (sameConnection) return
+
+            if (forceReconnect || activeConnectionGeneration != null) {
+                clearConnectionStateLocked(
+                    reason = reason,
+                    disconnectClient = true,
+                    stopRuntime = false,
+                    nextState = SyncState.Connecting
+                )
+            }
+
+            syncOutboxStore.resetInFlightToPending()
+            val lastAppliedRevision = preparePairSessionScope(pairSessionId)
+            currentUserId = session.userId
+            activeAccessToken = session.accessToken
+            activePairSessionId = pairSessionId
+            lastAppliedRevisionCache = lastAppliedRevision
+            if (restartRuntime) {
+                canvasRuntime.start(
+                    pairSessionId = pairSessionId,
+                    userId = session.userId
+                )
+            }
+            _syncState.value = SyncState.Connecting
+            canvasRuntime.setSyncState(SyncState.Connecting)
+            val generation = client.connect(
+                accessToken = session.accessToken,
+                pairSessionId = pairSessionId,
+                lastAppliedServerRevision = lastAppliedRevision
+            )
+            activeConnectionGeneration = generation
+            Log.i(
+                TAG,
+                "Connecting canvas sync generation=$generation reason=$reason " +
+                    "pairSessionId=$pairSessionId lastAppliedRevision=$lastAppliedRevision " +
+                    "restartRuntime=$restartRuntime"
+            )
+        }
+    }
+
+    private suspend fun reconnectFromCurrentState(
+        reason: String,
+        errorMessage: String?,
+        restartRuntime: Boolean
+    ) {
+        errorMessage?.let { syncMetadataRepository.setLastError(it) }
         if (!syncEnabled.value) {
-            _syncState.value = SyncState.Error(message)
-            canvasRuntime.setSyncState(SyncState.Error(message))
+            if (errorMessage != null) {
+                _syncState.value = SyncState.Error(errorMessage)
+                canvasRuntime.setSyncState(SyncState.Error(errorMessage))
+            }
             return
         }
 
@@ -554,42 +665,74 @@ class DefaultCanvasSyncRepository @Inject constructor(
             bootstrap.pairingStatus != PairingStatus.PAIRED ||
             bootstrap.pairSessionId == null
         ) {
-            _syncState.value = SyncState.Error(message)
-            canvasRuntime.setSyncState(SyncState.Error(message))
+            if (errorMessage != null) {
+                _syncState.value = SyncState.Error(errorMessage)
+                canvasRuntime.setSyncState(SyncState.Error(errorMessage))
+            } else {
+                disconnectActiveSocket(reason = reason)
+            }
             return
         }
 
-        Log.w(TAG, "Canvas sync error received; reconnecting message=$message")
-        revisionBuffer.clear()
-        inFlightBatchIds.clear()
-        isRecoveringGap = false
-        sendScheduled = false
-        _syncState.value = SyncState.Connecting
-        canvasRuntime.setSyncState(SyncState.Connecting)
-        val lastAppliedRevision = preparePairSessionScope(bootstrap.pairSessionId)
-        lastAppliedRevisionCache = lastAppliedRevision
-        syncOutboxStore.resetInFlightToPending()
-        currentUserId = session.userId
-        activeAccessToken = session.accessToken
-        activePairSessionId = bootstrap.pairSessionId
-        client.connect(
-            accessToken = session.accessToken,
+        if (errorMessage != null) {
+            Log.w(TAG, "Canvas sync reconnect requested reason=$reason message=$errorMessage")
+        } else {
+            Log.w(TAG, "Canvas sync reconnect requested reason=$reason")
+        }
+        establishConnection(
+            session = session,
             pairSessionId = bootstrap.pairSessionId,
-            lastAppliedServerRevision = lastAppliedRevision
+            reason = reason,
+            forceReconnect = true,
+            restartRuntime = restartRuntime
         )
     }
 
-    private fun disconnectActiveSocket() {
+    private suspend fun disconnectActiveSocket(reason: String = "disconnect") {
+        clearConnectionStateLocked(
+            reason = reason,
+            disconnectClient = true,
+            stopRuntime = true,
+            nextState = SyncState.Disconnected
+        )
+    }
+
+    private suspend fun clearConnectionStateLocked(
+        reason: String,
+        disconnectClient: Boolean,
+        stopRuntime: Boolean,
+        nextState: SyncState
+    ) {
+        val generation = activeConnectionGeneration
+        if (generation != null || disconnectClient || stopRuntime) {
+            Log.i(
+                TAG,
+                "Disconnecting canvas sync generation=$generation reason=$reason " +
+                    "disconnectClient=$disconnectClient stopRuntime=$stopRuntime"
+            )
+        }
+        activeConnectionGeneration = null
         currentUserId = null
         activeAccessToken = null
         activePairSessionId = null
         revisionBuffer.clear()
-        inFlightBatchIds.clear()
         isRecoveringGap = false
-        sendScheduled = false
-        client.disconnect()
-        _syncState.value = SyncState.Disconnected
-        canvasRuntime.stop()
+        resetSendTracking()
+        if (disconnectClient) {
+            client.disconnect()
+        }
+        _syncState.value = nextState
+        canvasRuntime.setSyncState(nextState)
+        if (stopRuntime) {
+            canvasRuntime.stop()
+        }
+    }
+
+    private suspend fun resetSendTracking() {
+        sendMutex.withLock {
+            inFlightBatchIds.clear()
+            sendScheduled = false
+        }
     }
 
     private companion object {
@@ -602,4 +745,16 @@ class DefaultCanvasSyncRepository @Inject constructor(
         const val ACK_TIMEOUT_MS = 8_000L
         const val TAG = "MulberrySync"
     }
+}
+
+private fun CanvasSyncMessage.logLabel(): String = when (this) {
+    is CanvasSyncMessage.Ready -> "READY"
+    is CanvasSyncMessage.Ack -> "ACK"
+    is CanvasSyncMessage.AckBatch -> "ACK_BATCH"
+    is CanvasSyncMessage.ServerOperation -> "SERVER_OP"
+    is CanvasSyncMessage.ServerOperationBatch -> "SERVER_OP_BATCH"
+    is CanvasSyncMessage.FlowControl -> "FLOW_CONTROL"
+    CanvasSyncMessage.ResyncRequired -> "RESYNC_REQUIRED"
+    is CanvasSyncMessage.Error -> "ERROR"
+    CanvasSyncMessage.Closed -> "CLOSED"
 }
