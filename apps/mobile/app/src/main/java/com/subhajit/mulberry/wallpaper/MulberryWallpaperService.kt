@@ -106,7 +106,11 @@ class MulberryWallpaperService : WallpaperService() {
             onCorruptFile: suspend (String) -> Unit
         ) {
             val path = filePath ?: return
-            val bitmap = BitmapFactory.decodeFile(path)
+            val bitmap = decodeBitmapForCanvas(
+                path = path,
+                canvasWidth = canvas.width,
+                canvasHeight = canvas.height
+            )
             if (bitmap == null) {
                 onCorruptFile(path)
                 return
@@ -137,6 +141,16 @@ class MulberryWallpaperService : WallpaperService() {
                 bitmap.recycle()
             }
         }
+
+        private fun decodeBitmapForCanvas(
+            path: String,
+            canvasWidth: Int,
+            canvasHeight: Int
+        ) = decodeSampledBitmapFromFile(
+            path = path,
+            targetWidth = canvasWidth.coerceAtLeast(resources.displayMetrics.widthPixels),
+            targetHeight = canvasHeight.coerceAtLeast(resources.displayMetrics.heightPixels)
+        )
     }
 }
 

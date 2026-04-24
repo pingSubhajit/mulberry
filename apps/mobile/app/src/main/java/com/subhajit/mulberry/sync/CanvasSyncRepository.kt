@@ -198,9 +198,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
                 recoverFromServer(CanvasRecoveryReason.RESYNC_REQUIRED)
             }
             is CanvasSyncMessage.Error -> {
-                syncMetadataRepository.setLastError(message.message)
-                _syncState.value = SyncState.Error(message.message)
-                canvasRuntime.setSyncState(SyncState.Error(message.message))
+                recoverFromSyncError(message.message)
             }
             CanvasSyncMessage.Closed -> {
                 if (_syncState.value !is SyncState.Disconnected) {
@@ -540,6 +538,46 @@ class DefaultCanvasSyncRepository @Inject constructor(
         lastForegroundStoppedAt?.let { stoppedAt ->
             (System.currentTimeMillis() - stoppedAt).coerceAtLeast(0L)
         } ?: 0L
+
+    private suspend fun recoverFromSyncError(message: String) {
+        syncMetadataRepository.setLastError(message)
+        if (!syncEnabled.value) {
+            _syncState.value = SyncState.Error(message)
+            canvasRuntime.setSyncState(SyncState.Error(message))
+            return
+        }
+
+        val bootstrap = sessionBootstrapRepository.state.first()
+        val session = sessionBootstrapRepository.session.first()
+        if (
+            session == null ||
+            bootstrap.pairingStatus != PairingStatus.PAIRED ||
+            bootstrap.pairSessionId == null
+        ) {
+            _syncState.value = SyncState.Error(message)
+            canvasRuntime.setSyncState(SyncState.Error(message))
+            return
+        }
+
+        Log.w(TAG, "Canvas sync error received; reconnecting message=$message")
+        revisionBuffer.clear()
+        inFlightBatchIds.clear()
+        isRecoveringGap = false
+        sendScheduled = false
+        _syncState.value = SyncState.Connecting
+        canvasRuntime.setSyncState(SyncState.Connecting)
+        val lastAppliedRevision = preparePairSessionScope(bootstrap.pairSessionId)
+        lastAppliedRevisionCache = lastAppliedRevision
+        syncOutboxStore.resetInFlightToPending()
+        currentUserId = session.userId
+        activeAccessToken = session.accessToken
+        activePairSessionId = bootstrap.pairSessionId
+        client.connect(
+            accessToken = session.accessToken,
+            pairSessionId = bootstrap.pairSessionId,
+            lastAppliedServerRevision = lastAppliedRevision
+        )
+    }
 
     private fun disconnectActiveSocket() {
         currentUserId = null

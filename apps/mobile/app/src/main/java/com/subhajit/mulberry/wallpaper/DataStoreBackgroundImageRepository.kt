@@ -1,10 +1,11 @@
 package com.subhajit.mulberry.wallpaper
 
-import android.content.ContentResolver
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -12,6 +13,7 @@ import androidx.datastore.preferences.core.edit
 import com.subhajit.mulberry.core.data.PreferenceStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -50,37 +52,30 @@ class DataStoreBackgroundImageRepository @Inject constructor(
     override suspend fun importBackground(uri: Uri) {
         withContext(Dispatchers.IO) {
             val backgroundFile = WallpaperFiles.backgroundFile(context)
-            copyUriToFile(
-                contentResolver = context.contentResolver,
-                uri = uri,
-                destination = backgroundFile
+            storeOptimizedBackground(
+                destination = backgroundFile,
+                loadBitmap = { decodeScaledUriBitmap(uri) }
             )
-
-            val now = System.currentTimeMillis()
-            dataStore.edit { preferences ->
-                preferences[PreferenceStorage.backgroundImagePath] = backgroundFile.absolutePath
-                preferences[PreferenceStorage.backgroundImageUpdatedAt] = now.toString()
-                preferences.remove(PreferenceStorage.backgroundImagePresetResId)
-                preferences.remove(PreferenceStorage.backgroundImageRemoteWallpaperId)
-            }
+            persistSelection(
+                assetPath = backgroundFile.absolutePath,
+                selectedPresetResId = null,
+                selectedRemoteWallpaperId = null
+            )
         }
     }
 
     override suspend fun importBundledBackground(@DrawableRes drawableResId: Int) {
         withContext(Dispatchers.IO) {
             val backgroundFile = WallpaperFiles.backgroundFile(context)
-            copyDrawableToFile(
-                drawableResId = drawableResId,
-                destination = backgroundFile
+            storeOptimizedBackground(
+                destination = backgroundFile,
+                loadBitmap = { decodeScaledBundledBitmap(drawableResId) }
             )
-
-            val now = System.currentTimeMillis()
-            dataStore.edit { preferences ->
-                preferences[PreferenceStorage.backgroundImagePath] = backgroundFile.absolutePath
-                preferences[PreferenceStorage.backgroundImageUpdatedAt] = now.toString()
-                preferences[PreferenceStorage.backgroundImagePresetResId] = drawableResId.toString()
-                preferences.remove(PreferenceStorage.backgroundImageRemoteWallpaperId)
-            }
+            persistSelection(
+                assetPath = backgroundFile.absolutePath,
+                selectedPresetResId = drawableResId,
+                selectedRemoteWallpaperId = null
+            )
         }
     }
 
@@ -91,37 +86,36 @@ class DataStoreBackgroundImageRepository @Inject constructor(
                 .get()
                 .build()
             val backgroundFile = WallpaperFiles.backgroundFile(context)
-            backgroundFile.parentFile?.mkdirs()
+            val downloadFile = File.createTempFile("remote-wallpaper", ".img", context.cacheDir)
 
-            publicHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    error("Unable to download wallpaper: HTTP ${response.code}")
-                }
-                val body = response.body ?: error("Wallpaper download returned an empty body")
-                val bitmap = body.byteStream().use { input ->
-                    BitmapFactory.decodeStream(input)
-                } ?: error("Unable to decode downloaded wallpaper")
-
-                try {
-                    backgroundFile.outputStream().use { output ->
-                        check(
-                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
-                        ) {
-                            "Unable to store downloaded wallpaper"
+            try {
+                publicHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        error("Unable to download wallpaper: HTTP ${response.code}")
+                    }
+                    val body = response.body ?: error("Wallpaper download returned an empty body")
+                    downloadFile.outputStream().use { output ->
+                        body.byteStream().use { input ->
+                            input.copyTo(output)
                         }
                     }
-                } finally {
-                    bitmap.recycle()
+                }
+
+                storeOptimizedBackground(
+                    destination = backgroundFile,
+                    loadBitmap = { decodeScaledRemoteBitmap(downloadFile) }
+                )
+            } finally {
+                if (downloadFile.exists()) {
+                    downloadFile.delete()
                 }
             }
 
-            val now = System.currentTimeMillis()
-            dataStore.edit { preferences ->
-                preferences[PreferenceStorage.backgroundImagePath] = backgroundFile.absolutePath
-                preferences[PreferenceStorage.backgroundImageUpdatedAt] = now.toString()
-                preferences.remove(PreferenceStorage.backgroundImagePresetResId)
-                preferences[PreferenceStorage.backgroundImageRemoteWallpaperId] = remoteWallpaper.id
-            }
+            persistSelection(
+                assetPath = backgroundFile.absolutePath,
+                selectedPresetResId = null,
+                selectedRemoteWallpaperId = remoteWallpaper.id
+            )
         }
     }
 
@@ -137,28 +131,108 @@ class DataStoreBackgroundImageRepository @Inject constructor(
         }
     }
 
-    private fun copyUriToFile(
-        contentResolver: ContentResolver,
-        uri: Uri,
-        destination: File
+    private suspend fun persistSelection(
+        assetPath: String,
+        selectedPresetResId: Int?,
+        selectedRemoteWallpaperId: String?
     ) {
-        destination.parentFile?.mkdirs()
-        contentResolver.openInputStream(uri)?.use { input ->
-            destination.outputStream().use { output ->
-                input.copyTo(output)
+        val now = System.currentTimeMillis()
+        dataStore.edit { preferences ->
+            preferences[PreferenceStorage.backgroundImagePath] = assetPath
+            preferences[PreferenceStorage.backgroundImageUpdatedAt] = now.toString()
+            if (selectedPresetResId == null) {
+                preferences.remove(PreferenceStorage.backgroundImagePresetResId)
+            } else {
+                preferences[PreferenceStorage.backgroundImagePresetResId] = selectedPresetResId.toString()
             }
-        } ?: error("Unable to open background image")
-    }
-
-    private fun copyDrawableToFile(
-        @DrawableRes drawableResId: Int,
-        destination: File
-    ) {
-        destination.parentFile?.mkdirs()
-        context.resources.openRawResource(drawableResId).use { input ->
-            destination.outputStream().use { output ->
-                input.copyTo(output)
+            if (selectedRemoteWallpaperId == null) {
+                preferences.remove(PreferenceStorage.backgroundImageRemoteWallpaperId)
+            } else {
+                preferences[PreferenceStorage.backgroundImageRemoteWallpaperId] =
+                    selectedRemoteWallpaperId
             }
         }
+    }
+
+    private fun storeOptimizedBackground(
+        destination: File,
+        loadBitmap: () -> Bitmap?
+    ) {
+        destination.parentFile?.mkdirs()
+        val bitmap = loadBitmap() ?: error("Unable to decode background image")
+        try {
+            destination.outputStream().use { output ->
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                    "Unable to store background image"
+                }
+            }
+        } catch (exception: IOException) {
+            throw IllegalStateException("Unable to store background image", exception)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun optimizedTargetSize(): RenderSurfaceSize = resolveWallpaperRenderSurfaceSize(context)
+
+    private fun profile(): DeviceRenderProfile = resolveDeviceRenderProfile(context)
+
+    private fun scaleForTarget(bitmap: Bitmap, targetSize: RenderSurfaceSize): Bitmap =
+        scaleBitmapToFit(
+            bitmap = bitmap,
+            maxWidth = targetSize.width,
+            maxHeight = targetSize.height,
+            maxPixels = profile().maxWallpaperPixels
+        )
+
+    private fun decodeScaledUriBitmap(uri: Uri): Bitmap? {
+        val targetSize = optimizedTargetSize()
+        return (decodeSampledBitmap(
+            openStream = { context.contentResolver.openInputStream(uri) },
+            targetWidth = targetSize.width,
+            targetHeight = targetSize.height
+        ) ?: decodeFullUriBitmap(uri))?.let { bitmap ->
+            scaleForTarget(bitmap, targetSize)
+        }
+    }
+
+    private fun decodeScaledBundledBitmap(@DrawableRes drawableResId: Int): Bitmap? {
+        val targetSize = optimizedTargetSize()
+        return (decodeSampledBitmap(
+            openStream = { context.resources.openRawResource(drawableResId) },
+            targetWidth = targetSize.width,
+            targetHeight = targetSize.height
+        ) ?: BitmapFactory.decodeResource(context.resources, drawableResId))?.let { bitmap ->
+            scaleForTarget(bitmap, targetSize)
+        }
+    }
+
+    private fun decodeScaledRemoteBitmap(downloadFile: File): Bitmap? {
+        val targetSize = optimizedTargetSize()
+        return (decodeSampledBitmapFromFile(
+            path = downloadFile.absolutePath,
+            targetWidth = targetSize.width,
+            targetHeight = targetSize.height
+        ) ?: decodeFullFileBitmap(downloadFile))?.let { bitmap ->
+            scaleForTarget(bitmap, targetSize)
+        }
+    }
+
+    private fun decodeFullUriBitmap(uri: Uri): Bitmap? = when {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> runCatching {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, _, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            }
+        }.getOrNull()
+        else -> context.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream)
+    }
+
+    private fun decodeFullFileBitmap(file: File): Bitmap? = when {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> runCatching {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, _, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            }
+        }.getOrNull()
+        else -> BitmapFactory.decodeFile(file.absolutePath)
     }
 }

@@ -58,7 +58,7 @@ class OkHttpCanvasSyncClient @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val appConfig: AppConfig
 ) : CanvasSyncClient {
-    private val messagesChannel = Channel<CanvasSyncMessage>(capacity = 256)
+    private val messagesChannel = Channel<CanvasSyncMessage>(capacity = Channel.UNLIMITED)
     override val messages: Flow<CanvasSyncMessage> = messagesChannel.receiveAsFlow()
 
     private var webSocket: WebSocket? = null
@@ -91,20 +91,20 @@ class OkHttpCanvasSyncClient @Inject constructor(
                     if (generation != connectionGeneration) return
                     val message = runCatching { parseWireMessage(text) }
                         .getOrElse { CanvasSyncMessage.Error("Invalid sync message") }
-                    messagesChannel.trySend(message)
+                    enqueueMessage(message)
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     if (generation != connectionGeneration) return
-                    messagesChannel.trySend(
+                    enqueueMessage(
                         CanvasSyncMessage.Error(t.message ?: "Sync connection failed")
                     )
-                    messagesChannel.trySend(CanvasSyncMessage.Closed)
+                    enqueueMessage(CanvasSyncMessage.Closed)
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     if (generation != connectionGeneration) return
-                    messagesChannel.trySend(CanvasSyncMessage.Closed)
+                    enqueueMessage(CanvasSyncMessage.Closed)
                 }
             }
         )
@@ -138,6 +138,10 @@ class OkHttpCanvasSyncClient @Inject constructor(
         connectionGeneration++
         webSocket?.close(1000, "disconnect")
         webSocket = null
+    }
+
+    private fun enqueueMessage(message: CanvasSyncMessage) {
+        messagesChannel.trySend(message)
     }
 
     private fun parseWireMessage(raw: String): CanvasSyncMessage = when (parseMessageType(raw)) {

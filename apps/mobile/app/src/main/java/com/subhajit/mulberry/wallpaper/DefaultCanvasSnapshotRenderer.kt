@@ -90,16 +90,17 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
     }
 
     private fun resolveSnapshotDimensions(): Point {
-        val wallpaperManager = WallpaperManager.getInstance(context)
         val displayMetrics = context.resources.displayMetrics
-        val width = wallpaperManager.desiredMinimumWidth
-            .takeIf { it > 0 }
-            ?: displayMetrics.widthPixels
-        val height = wallpaperManager.desiredMinimumHeight
-            .takeIf { it > 0 }
-            ?: displayMetrics.heightPixels
+        val profile = resolveDeviceRenderProfile(context)
+        val renderSize = resolveWallpaperRenderSurfaceSize(
+            displayWidth = displayMetrics.widthPixels,
+            displayHeight = displayMetrics.heightPixels,
+            desiredWidth = WallpaperManager.getInstance(context).desiredMinimumWidth,
+            desiredHeight = WallpaperManager.getInstance(context).desiredMinimumHeight,
+            profile = profile
+        )
 
-        return Point(width.coerceAtLeast(1), height.coerceAtLeast(1))
+        return Point(renderSize.width, renderSize.height)
     }
 
     private fun drawStrokes(
