@@ -1,37 +1,40 @@
-# If this name is unavailable in your Fly organization, create a unique app name
-# and update this field before the first deploy.
-app = "mulberry-api"
-primary_region = "bom"
+# fly.toml app configuration file generated for mulberry on 2026-04-23T18:31:22Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'mulberry'
+primary_region = 'bom'
 
 [build]
-  dockerfile = "Dockerfile"
-
-[env]
-  NODE_ENV = "production"
-  PORT = "8080"
-  ALLOW_DEV_GOOGLE_TOKENS = "false"
+  dockerfile = 'Dockerfile'
 
 [deploy]
-  strategy = "rolling"
-  max_unavailable = 1
-  wait_timeout = "10m"
+  strategy = 'rolling'
+  max_unavailable = 1.0
+  wait_timeout = '10m0s'
+
+[env]
+  ALLOW_DEV_GOOGLE_TOKENS = 'false'
+  NODE_ENV = 'production'
+  PORT = '8080'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "off"
+  auto_stop_machines = 'off'
 
   [[http_service.checks]]
-    grace_period = "10s"
-    interval = "15s"
-    method = "GET"
-    path = "/health"
-    timeout = "5s"
-    protocol = "http"
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/health'
+    protocol = 'http'
 
     [http_service.checks.headers]
-      X-Forwarded-Proto = "https"
+      X-Forwarded-Proto = 'https'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = 'shared-cpu-1x'
+  memory = '512mb'
