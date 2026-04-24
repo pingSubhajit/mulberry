@@ -5,11 +5,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,7 +35,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -95,7 +101,7 @@ fun OnboardingDetailsRoute(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun OnboardingDetailsScreen(
     uiState: OnboardingDetailsUiState,
@@ -107,6 +113,14 @@ private fun OnboardingDetailsScreen(
     val datePickerState = rememberDatePickerState(
         initialSelectedDateMillis = uiState.draft.anniversaryDate.toUtcDateMillis()
     )
+    val isImeVisible = WindowInsets.isImeVisible
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
 
     Box(
         modifier = Modifier
@@ -165,6 +179,7 @@ private fun OnboardingDetailsScreen(
                     onValueChange = onPartnerNameChanged,
                     label = stringResource(R.string.onboarding_partner_name_label),
                     placeholder = stringResource(R.string.onboarding_partner_name_placeholder),
+                    modifier = Modifier.focusRequester(focusRequester),
                     capitalization = KeyboardCapitalization.Sentences,
                     imeAction = ImeAction.Next
                 )
@@ -226,12 +241,14 @@ private fun OnboardingDetailsScreen(
             }
         }
 
-        OnboardingPrivacyNotice(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 26.dp)
-        )
+        if (!isImeVisible) {
+            OnboardingPrivacyNotice(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 26.dp)
+            )
+        }
 
         if (showDatePicker.value) {
             DatePickerDialog(

@@ -7,12 +7,15 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,7 +32,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -85,6 +91,7 @@ fun OnboardingNameRoute(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun OnboardingNameScreen(
     uiState: UserProfileDraft,
@@ -93,6 +100,15 @@ private fun OnboardingNameScreen(
     onEnterCode: () -> Unit
 ) {
     val appColors = MaterialTheme.mulberryAppColors
+    val isImeVisible = WindowInsets.isImeVisible
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -133,6 +149,7 @@ private fun OnboardingNameScreen(
                 onValueChange = onDisplayNameChanged,
                 label = stringResource(R.string.onboarding_name_label),
                 placeholder = stringResource(R.string.onboarding_name_placeholder),
+                modifier = Modifier.focusRequester(focusRequester),
                 keyboardActions = KeyboardActions(onNext = {
                     if (uiState.isStepOneValid) {
                         onContinue()
@@ -171,12 +188,14 @@ private fun OnboardingNameScreen(
             EnterCodePrompt(onEnterCode = onEnterCode)
         }
 
-        OnboardingPrivacyNotice(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 26.dp)
-        )
+        if (!isImeVisible) {
+            OnboardingPrivacyNotice(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 26.dp)
+            )
+        }
     }
 }
 
