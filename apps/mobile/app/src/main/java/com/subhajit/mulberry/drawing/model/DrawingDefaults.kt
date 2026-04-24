@@ -1,14 +1,14 @@
 package com.subhajit.mulberry.drawing.model
 
 object DrawingDefaults {
-    const val DEFAULT_COLOR_ARGB: Long = 0xFF141414L
+    const val DEFAULT_COLOR_ARGB: Long = 0xFFB31329L
     const val DEFAULT_WIDTH: Float = 10f
     const val MIN_WIDTH: Float = 4f
     const val MAX_WIDTH: Float = 28f
     const val STROKE_HIT_TOLERANCE: Float = 16f
 
     val palette: List<Long> = listOf(
-        0xFFB31329L,
+        DEFAULT_COLOR_ARGB,
         0xFFFF6A2AL,
         0xFFFFE66DL,
         0xFF2457D6L,
