@@ -60,9 +60,8 @@ FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 
 The checked-in production deployment config lives at:
 
-- [fly.toml](/Users/subho/Documents/Workspace/Projects/elaris/fly.toml)
-- [fly.secrets.example](/Users/subho/Documents/Workspace/Projects/elaris/apps/backend/fly.secrets.example)
-- [Fly migration runbook](/Users/subho/Documents/Workspace/Projects/elaris/docs/flyio-backend-migration.md)
+- [fly.toml](../../fly.toml)
+- [fly.secrets.example](fly.secrets.example)
 
 The production target is a single always-on Fly machine in `bom` (Mumbai) behind the stable public domain `https://api.mulberry.my/`. Supabase remains the database and wallpaper-storage backend.
 

@@ -2,6 +2,7 @@
   "name": "@mulberry/mobile",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "build": "JAVA_HOME=\"${JAVA_HOME:-$(/usr/libexec/java_home -v 17)}\" ./gradlew :app:assembleDevDebug",
     "build:prod:debug": "JAVA_HOME=\"${JAVA_HOME:-$(/usr/libexec/java_home -v 17)}\" ./gradlew :app:assembleProdDebug",

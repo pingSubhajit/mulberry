@@ -26,6 +26,9 @@ The product is built for ambient connection, not group collaboration. Active dev
 - [Development commands](#development-commands)
 - [API overview](#api-overview)
 - [Testing](#testing)
+- [Contributing](#contributing)
+- [Security](#security)
+- [License](#license)
 - [Troubleshooting](#troubleshooting)
 
 ## Features
@@ -172,15 +175,24 @@ apps/mobile/app/src/dev/google-services.json
 apps/mobile/app/src/prod/google-services.json
 ```
 
+### Web
+
+The web app reads its public backend API URL from:
+
+```text
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+```
+
+For local web development, copy [apps/web/.env.example](apps/web/.env.example) to `apps/web/.env` if you need to override the default local backend URL.
+
 ## Production deployment
 
 Fly.io is the canonical production deployment target for the backend configuration in this repository. The Fly app uses the existing root `Dockerfile`, serves the same public API contract at `https://api.mulberry.my/`, and keeps Supabase as the source of truth for Postgres and wallpaper storage.
 
 Use the checked-in Fly config:
 
-- [fly.toml](/Users/subho/Documents/Workspace/Projects/elaris/fly.toml)
-- [apps/backend/fly.secrets.example](/Users/subho/Documents/Workspace/Projects/elaris/apps/backend/fly.secrets.example)
-- [docs/flyio-backend-migration.md](/Users/subho/Documents/Workspace/Projects/elaris/docs/flyio-backend-migration.md)
+- [fly.toml](fly.toml)
+- [apps/backend/fly.secrets.example](apps/backend/fly.secrets.example)
 
 ## Development commands
 
@@ -276,6 +288,20 @@ pnpm --filter @mulberry/mobile test
 ```
 
 The current test coverage includes route handling, app bootstrap resolution, feature flags, drawing stroke behavior, wallpaper placement/status logic, sync JSON parsing, and recovery policy behavior.
+
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, especially for changes that touch product direction, privacy, security, backend API contracts, or Android release behavior.
+
+This repository intentionally keeps the root and workspace packages marked as `private` to prevent accidental npm publishing.
+
+## Security
+
+Please do not open public issues for vulnerabilities. Report security concerns using the process in [SECURITY.md](SECURITY.md).
+
+## License
+
+Mulberry is open source under the [MIT License](LICENSE).
 
 ## Troubleshooting
 
