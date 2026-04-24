@@ -149,10 +149,23 @@ fun DrawingCanvas(
     ) {
         val cacheVersion = committedStrokeCache.version
         val committedBitmap = committedStrokeCache.bitmap
-        if (committedBitmap != null) {
+        val currentStrokeIds = canvasState.strokes.map { stroke -> stroke.id }
+        val overlayStrokeStartIndex = resolveCommittedCacheOverlayStartIndex(
+            cacheHasBitmap = committedBitmap != null,
+            cacheStrokeIds = committedStrokeCache.strokeIds,
+            cacheCanvasSize = committedStrokeCache.canvasSize,
+            cacheStrokeRenderMode = committedStrokeCache.strokeRenderMode,
+            currentStrokeIds = currentStrokeIds,
+            currentCanvasSize = canvasSize,
+            currentStrokeRenderMode = strokeRenderMode
+        )
+        if (committedBitmap != null && overlayStrokeStartIndex != null) {
             cacheVersion
             drawIntoCanvas { canvas ->
                 canvas.nativeCanvas.drawBitmap(committedBitmap, 0f, 0f, null)
+            }
+            canvasState.strokes.drop(overlayStrokeStartIndex).forEach { stroke ->
+                drawCommittedStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
             }
         } else {
             canvasState.strokes.forEach { stroke ->
@@ -218,6 +231,23 @@ private fun DrawingStroke.toRenderStroke(canvasSize: IntSize): DrawingStroke =
         width = canvasSize.width.coerceAtLeast(1).toFloat(),
         height = canvasSize.height.coerceAtLeast(1).toFloat()
     )
+
+internal fun resolveCommittedCacheOverlayStartIndex(
+    cacheHasBitmap: Boolean,
+    cacheStrokeIds: List<String>,
+    cacheCanvasSize: IntSize,
+    cacheStrokeRenderMode: CanvasStrokeRenderMode,
+    currentStrokeIds: List<String>,
+    currentCanvasSize: IntSize,
+    currentStrokeRenderMode: CanvasStrokeRenderMode
+): Int? {
+    if (!cacheHasBitmap) return null
+    if (cacheCanvasSize != currentCanvasSize) return null
+    if (cacheStrokeRenderMode != currentStrokeRenderMode) return null
+    if (currentStrokeIds.size < cacheStrokeIds.size) return null
+    if (currentStrokeIds.take(cacheStrokeIds.size) != cacheStrokeIds) return null
+    return cacheStrokeIds.size
+}
 
 private data class CommittedCanvasBitmapCache(
     val bitmap: Bitmap? = null,
