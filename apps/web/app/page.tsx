@@ -2,7 +2,7 @@ import Image from "next/image"
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
-import { CONTACT_MAILTO, GOOGLE_PLAY_DOWNLOAD_URL } from "@/lib/constants"
+import {CONTACT_MAILTO, GITHUB_URL, GOOGLE_PLAY_DOWNLOAD_URL} from "@/lib/constants"
 
 const notes = [
   {
@@ -38,7 +38,7 @@ export default function LandingPage() {
             canvas.
           </p>
 
-          <div className="mt-7 flex justify-center">
+          <div className="mt-7 flex items-center flex-col">
             <Button asChild size="lg" className="bg-white text-[#090d18] shadow-none hover:bg-white/90 hover:shadow-none">
               <Link href={GOOGLE_PLAY_DOWNLOAD_URL}>
                 <Image
@@ -51,6 +51,10 @@ export default function LandingPage() {
                 Google Play
               </Link>
             </Button>
+
+            <p className="mt-2 text-sm">
+              <span className="opacity-80">Check the source on </span>
+              <a target="_blank" className="opacity-80 hover:opacity-100 transition underline italic" href={GITHUB_URL}>Github</a></p>
           </div>
         </div>
 
