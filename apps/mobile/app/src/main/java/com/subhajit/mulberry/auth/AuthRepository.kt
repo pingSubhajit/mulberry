@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.Flow
 interface AuthRepository {
     val authState: Flow<AuthState>
 
+    suspend fun tryAutomaticGoogleSignIn(activity: ComponentActivity): Result<Boolean>
+
     suspend fun signInWithGoogle(activity: ComponentActivity): Result<Unit>
 
     suspend fun refreshSession(): Result<Unit>

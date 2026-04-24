@@ -77,6 +77,12 @@ fun AuthLandingRoute(
         }
     }
 
+    LaunchedEffect(activity) {
+        if (activity != null) {
+            viewModel.onScreenShown(activity)
+        }
+    }
+
     val metadata = remember { MulberryUiMetadataProvider.authLanding }
     ApplySystemBarStyle(metadata.systemBarStyle)
 

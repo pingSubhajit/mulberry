@@ -3,6 +3,7 @@ package com.subhajit.mulberry.auth
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.credentials.exceptions.GetCredentialCancellationException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -17,9 +18,35 @@ class AuthLandingViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AuthLandingUiState())
     val uiState = _uiState.asStateFlow()
+    private var hasAttemptedAutomaticGoogleSignIn = false
 
     private val _effects = MutableSharedFlow<AuthLandingEffect>()
     val effects = _effects.asSharedFlow()
+
+    fun onScreenShown(activity: ComponentActivity) {
+        if (hasAttemptedAutomaticGoogleSignIn || _uiState.value.isLoading) {
+            return
+        }
+        hasAttemptedAutomaticGoogleSignIn = true
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            authRepository.tryAutomaticGoogleSignIn(activity)
+                .onSuccess { didSignIn ->
+                    if (didSignIn) {
+                        _uiState.value = _uiState.value.copy(isLoading = false)
+                        _effects.emit(AuthLandingEffect.NavigateToBootstrap)
+                    } else {
+                        _uiState.value = _uiState.value.copy(isLoading = false)
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = error.toUserMessage()
+                    )
+                }
+        }
+    }
 
     fun onGoogleSignInClicked(activity: ComponentActivity) {
         viewModelScope.launch {
@@ -32,9 +59,22 @@ class AuthLandingViewModel @Inject constructor(
                 .onFailure { error ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = error.message ?: "Unable to sign in"
+                        errorMessage = error.toUserMessage()
                     )
                 }
+        }
+    }
+
+    private fun Throwable.toUserMessage(): String? {
+        val message = message?.trim()
+        return when {
+            this is GetCredentialCancellationException -> null
+            message.isNullOrBlank() -> "Unable to sign in with Google. Please try again."
+            message.contains("Google server client id is not configured", ignoreCase = true) ->
+                "Google sign-in is not configured for this build."
+            message.contains("Unable to parse Google credential", ignoreCase = true) ->
+                "Google sign-in returned an invalid credential. Please try again."
+            else -> "Unable to sign in with Google. Please try again."
         }
     }
 }
