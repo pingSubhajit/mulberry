@@ -50,7 +50,9 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
             canvas = canvas,
             strokes = strokes,
             screenWidth = context.resources.displayMetrics.widthPixels,
-            screenHeight = context.resources.displayMetrics.heightPixels
+            screenHeight = context.resources.displayMetrics.heightPixels,
+            authoredViewportWidth = capturedMetadata.canvasWidthPx,
+            authoredViewportHeight = capturedMetadata.canvasHeightPx
         )
 
         FileOutputStream(snapshotFile).use { output ->
@@ -105,13 +107,17 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
         canvas: Canvas,
         strokes: List<Stroke>,
         screenWidth: Int,
-        screenHeight: Int
+        screenHeight: Int,
+        authoredViewportWidth: Int,
+        authoredViewportHeight: Int
     ) {
         val placement = calculatePlacement(
             bitmapWidth = canvas.width,
             bitmapHeight = canvas.height,
             screenWidth = screenWidth,
-            screenHeight = screenHeight
+            screenHeight = screenHeight,
+            authoredViewportWidth = authoredViewportWidth,
+            authoredViewportHeight = authoredViewportHeight
         )
 
         appConfig.canvasStrokeRenderMode.committedStrokeBitmapRenderer().drawStrokes(
@@ -131,12 +137,16 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
         bitmapWidth: Int,
         bitmapHeight: Int,
         screenWidth: Int,
-        screenHeight: Int
+        screenHeight: Int,
+        authoredViewportWidth: Int,
+        authoredViewportHeight: Int
     ): SnapshotPlacement = calculateSnapshotPlacement(
         bitmapWidth = bitmapWidth,
         bitmapHeight = bitmapHeight,
         screenWidth = screenWidth,
-        screenHeight = screenHeight
+        screenHeight = screenHeight,
+        authoredViewportWidth = authoredViewportWidth,
+        authoredViewportHeight = authoredViewportHeight
     )
 }
 
@@ -164,7 +174,9 @@ internal fun calculateSnapshotPlacement(
     bitmapWidth: Int,
     bitmapHeight: Int,
     screenWidth: Int,
-    screenHeight: Int
+    screenHeight: Int,
+    authoredViewportWidth: Int,
+    authoredViewportHeight: Int
 ): SnapshotPlacement {
     val safeBitmapWidth = bitmapWidth.coerceAtLeast(1)
     val safeBitmapHeight = bitmapHeight.coerceAtLeast(1)
@@ -180,18 +192,38 @@ internal fun calculateSnapshotPlacement(
 
     val viewportLeft = (safeBitmapWidth - viewportWidth) / 2f
     val viewportTop = (safeBitmapHeight - viewportHeight) / 2f
-    val offsetX = viewportLeft
-    val offsetY = viewportTop
+    val authoredAspectRatio = authoredViewportWidth.takeIf { it > 0 }
+        ?.let { safeAuthoredWidth ->
+            authoredViewportHeight.takeIf { it > 0 }?.let { safeAuthoredHeight ->
+                safeAuthoredWidth.toFloat() / safeAuthoredHeight.toFloat()
+            }
+        }
+        ?: (viewportWidth.toFloat() / viewportHeight.toFloat())
+
+    val screenAspectRatio = viewportWidth.toFloat() / viewportHeight.toFloat()
+    val contentWidth: Float
+    val contentHeight: Float
+
+    if (screenAspectRatio > authoredAspectRatio) {
+        contentHeight = viewportHeight.toFloat()
+        contentWidth = contentHeight * authoredAspectRatio
+    } else {
+        contentWidth = viewportWidth.toFloat()
+        contentHeight = contentWidth / authoredAspectRatio
+    }
+
+    val offsetX = viewportLeft + ((viewportWidth - contentWidth) / 2f)
+    val offsetY = viewportTop + ((viewportHeight - contentHeight) / 2f)
 
     return SnapshotPlacement(
-        scale = minOf(viewportWidth, viewportHeight).toFloat(),
+        scale = minOf(contentWidth, contentHeight),
         offsetX = offsetX,
         offsetY = offsetY,
         viewport = SnapshotViewport(
-            left = viewportLeft,
-            top = viewportTop,
-            right = viewportLeft + viewportWidth,
-            bottom = viewportTop + viewportHeight
+            left = offsetX,
+            top = offsetY,
+            right = offsetX + contentWidth,
+            bottom = offsetY + contentHeight
         )
     )
 }

@@ -107,8 +107,6 @@ class DefaultCanvasRuntime @Inject constructor(
         activePairSessionId = null
         activeUserId = null
         pendingAppendPoints.clear()
-        canvasViewportWidthPx = 0
-        canvasViewportHeightPx = 0
         _renderState.update {
             it.copy(
                 localActiveStroke = null,
@@ -173,6 +171,7 @@ class DefaultCanvasRuntime @Inject constructor(
     private suspend fun handleLocalPress(point: StrokePoint) {
         val toolState = _renderState.value.toolState
         if (toolState.activeTool != DrawingTool.DRAW) return
+        if (!hasCanvasViewport()) return
         val stroke = strokeBuilder.startStroke(
             point = point,
             brushStyle = BrushStyle(
@@ -452,6 +451,9 @@ class DefaultCanvasRuntime @Inject constructor(
         const val MIN_APPEND_HZ = 10
         const val DEFAULT_POINT_THRESHOLD_PX = 0.5f
     }
+
+    private fun hasCanvasViewport(): Boolean =
+        canvasViewportWidthPx > 0 && canvasViewportHeightPx > 0
 
     private fun normalizeCurrentWidth(widthPx: Float): Float =
         normalizeStrokeWidth(widthPx, canvasViewportWidthPx, canvasViewportHeightPx)

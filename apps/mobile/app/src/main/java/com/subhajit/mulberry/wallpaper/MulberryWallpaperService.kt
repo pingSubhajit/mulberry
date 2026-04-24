@@ -131,10 +131,19 @@ class MulberryWallpaperService : WallpaperService() {
                         screenHeight = resources.displayMetrics.heightPixels
                     ).toAndroidRect()
                 }
+                val destinationRect = when (scaleMode) {
+                    BitmapScaleMode.CENTER_CROP_TO_CANVAS -> Rect(0, 0, canvas.width, canvas.height)
+                    BitmapScaleMode.CENTERED_SCREEN_VIEWPORT -> centeredScreenSourceRect(
+                        bitmapWidth = canvas.width,
+                        bitmapHeight = canvas.height,
+                        screenWidth = resources.displayMetrics.widthPixels,
+                        screenHeight = resources.displayMetrics.heightPixels
+                    ).toAndroidRect()
+                }
                 canvas.drawBitmap(
                     bitmap,
                     sourceRect,
-                    Rect(0, 0, canvas.width, canvas.height),
+                    destinationRect,
                     null
                 )
             } finally {
