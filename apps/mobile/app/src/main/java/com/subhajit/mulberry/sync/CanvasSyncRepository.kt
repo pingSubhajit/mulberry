@@ -5,7 +5,10 @@ import com.subhajit.mulberry.canvas.CanvasRuntime
 import com.subhajit.mulberry.canvas.CanvasRuntimeEvent
 import com.subhajit.mulberry.canvas.FlowControlMode
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
+import com.subhajit.mulberry.drawing.geometry.containsLegacyGeometry
+import com.subhajit.mulberry.drawing.geometry.hasLegacyGeometry
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
+import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.network.MulberryApiService
@@ -244,6 +247,14 @@ class DefaultCanvasSyncRepository @Inject constructor(
     private suspend fun handleReady(message: CanvasSyncMessage.Ready) {
         _syncState.value = SyncState.Recovering
         canvasRuntime.setSyncState(SyncState.Recovering)
+        if (message.missedOperations.any { operation -> operation.hasLegacyGeometry() }) {
+            clearLegacyCanvasAndQueueReset(reason = "ready_legacy_geometry")
+            _syncState.value = SyncState.Connected
+            canvasRuntime.setSyncState(SyncState.Connected)
+            schedulePendingSend()
+            syncMetadataRepository.setLastError(null)
+            return
+        }
         val lastApplied = lastAppliedRevisionCache
         val input = CanvasRecoveryInput(
             lastAppliedRevision = lastApplied,
@@ -312,6 +323,13 @@ class DefaultCanvasSyncRepository @Inject constructor(
                 .operations
                 .map { it.toDomainOperation() }
         }.onSuccess { operations ->
+            if (operations.any { operation -> operation.hasLegacyGeometry() }) {
+                clearLegacyCanvasAndQueueReset(reason = "recovery_legacy_geometry")
+                _syncState.value = SyncState.Connected
+                canvasRuntime.setSyncState(SyncState.Connected)
+                syncMetadataRepository.setLastError(null)
+                return@onSuccess
+            }
             val lastApplied = lastAppliedRevisionCache
             val latestRevision = operations.lastOrNull()?.serverRevision ?: lastApplied
             val input = CanvasRecoveryInput(
@@ -479,6 +497,10 @@ class DefaultCanvasSyncRepository @Inject constructor(
             .map { it.toDomainOperation() }
             .filter { it.serverRevision > revision }
             .sortedBy { it.serverRevision }
+        if (tail.any { operation -> operation.hasLegacyGeometry() }) {
+            clearLegacyCanvasAndQueueReset(reason = "tail_legacy_geometry")
+            return
+        }
         if (tail.isNotEmpty()) {
             applyRecoveryOperationsAtomically(tail)
         }
@@ -487,19 +509,14 @@ class DefaultCanvasSyncRepository @Inject constructor(
     private suspend fun recoverFromSnapshotAndTail() {
         val snapshot = apiService.getCanvasSnapshot()
         if (!canReplaceFromSnapshot()) return
+        val strokes = snapshot.snapshot.toDomainStrokes()
+        if (strokes.containsLegacyGeometry()) {
+            clearLegacyCanvasAndQueueReset(reason = "snapshot_legacy_geometry")
+            return
+        }
         canvasRuntime.submitAndAwait(
             CanvasRuntimeEvent.RecoverySnapshot(
-                strokes = snapshot.snapshot.strokes.map { stroke ->
-                    Stroke(
-                        id = stroke.id,
-                        colorArgb = stroke.colorArgb,
-                        width = stroke.width,
-                        createdAt = stroke.createdAt,
-                        points = stroke.points.map { point ->
-                            StrokePoint(x = point.x, y = point.y)
-                        }
-                    )
-                },
+                strokes = strokes,
                 serverRevision = snapshot.snapshotRevision
             )
         )
@@ -514,6 +531,10 @@ class DefaultCanvasSyncRepository @Inject constructor(
         operations: List<ServerCanvasOperation>,
         allowRecovery: Boolean = true
     ) {
+        if (operations.any { operation -> operation.hasLegacyGeometry() }) {
+            clearLegacyCanvasAndQueueReset(reason = "stream_legacy_geometry")
+            return
+        }
         val lastApplied = lastAppliedRevisionCache
         operations
             .filter { it.serverRevision > lastApplied }
@@ -578,6 +599,26 @@ class DefaultCanvasSyncRepository @Inject constructor(
         lastForegroundStoppedAt?.let { stoppedAt ->
             (System.currentTimeMillis() - stoppedAt).coerceAtLeast(0L)
         } ?: 0L
+
+    private suspend fun clearLegacyCanvasAndQueueReset(reason: String) {
+        Log.w(TAG, "Clearing legacy pixel-space canvas data reason=$reason")
+        revisionBuffer.clear()
+        syncOutboxStore.clear()
+        resetSendTracking()
+        canvasRuntime.submitAndAwait(
+            CanvasRuntimeEvent.RecoverySnapshot(
+                strokes = emptyList(),
+                serverRevision = lastAppliedRevisionCache
+            )
+        )
+        queueLocalOperation(
+            newClientOperation(
+                type = DrawingOperationType.CLEAR_CANVAS,
+                strokeId = null,
+                payload = SyncOperationPayload.ClearCanvas
+            )
+        )
+    }
 
     private suspend fun ensureSyncStorageInitializedLocked() {
         if (syncStorageInitialized) return
@@ -758,3 +799,16 @@ private fun CanvasSyncMessage.logLabel(): String = when (this) {
     is CanvasSyncMessage.Error -> "ERROR"
     CanvasSyncMessage.Closed -> "CLOSED"
 }
+
+private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainStrokes(): List<Stroke> =
+    strokes.map { stroke ->
+        Stroke(
+            id = stroke.id,
+            colorArgb = stroke.colorArgb,
+            width = stroke.width,
+            createdAt = stroke.createdAt,
+            points = stroke.points.map { point ->
+                StrokePoint(x = point.x, y = point.y)
+            }
+        )
+    }

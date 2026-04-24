@@ -4,6 +4,9 @@ import com.subhajit.mulberry.app.di.ApplicationScope
 import com.subhajit.mulberry.drawing.DrawingRepository
 import com.subhajit.mulberry.drawing.engine.StrokeBuilder
 import com.subhajit.mulberry.drawing.engine.StrokeHitTester
+import com.subhajit.mulberry.drawing.geometry.denormalizeStrokeWidth
+import com.subhajit.mulberry.drawing.geometry.denormalizeToSurface
+import com.subhajit.mulberry.drawing.geometry.normalizeStrokeWidth
 import com.subhajit.mulberry.drawing.model.BrushStyle
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.DrawingTool
@@ -60,6 +63,8 @@ class DefaultCanvasRuntime @Inject constructor(
     private var activeAppendHz = DEFAULT_APPEND_HZ
     private var lastAppendFlushAt = 0L
     private val pendingAppendPoints = mutableListOf<StrokePoint>()
+    private var canvasViewportWidthPx = 0
+    private var canvasViewportHeightPx = 0
 
     init {
         applicationScope.launch {
@@ -102,6 +107,8 @@ class DefaultCanvasRuntime @Inject constructor(
         activePairSessionId = null
         activeUserId = null
         pendingAppendPoints.clear()
+        canvasViewportWidthPx = 0
+        canvasViewportHeightPx = 0
         _renderState.update {
             it.copy(
                 localActiveStroke = null,
@@ -115,6 +122,8 @@ class DefaultCanvasRuntime @Inject constructor(
         activePairSessionId = null
         activeUserId = null
         pendingAppendPoints.clear()
+        canvasViewportWidthPx = 0
+        canvasViewportHeightPx = 0
         _renderState.update {
             CanvasRenderState(
                 toolState = it.toolState,
@@ -139,6 +148,10 @@ class DefaultCanvasRuntime @Inject constructor(
 
     private suspend fun handleEvent(event: CanvasRuntimeEvent) {
         when (event) {
+            is CanvasRuntimeEvent.CanvasViewportChanged -> {
+                canvasViewportWidthPx = event.widthPx
+                canvasViewportHeightPx = event.heightPx
+            }
             is CanvasRuntimeEvent.LocalPress -> handleLocalPress(event.point)
             is CanvasRuntimeEvent.LocalDrag -> handleLocalDrag(event.point)
             CanvasRuntimeEvent.LocalRelease -> handleLocalRelease()
@@ -164,7 +177,7 @@ class DefaultCanvasRuntime @Inject constructor(
             point = point,
             brushStyle = BrushStyle(
                 colorArgb = toolState.selectedColorArgb,
-                width = toolState.selectedWidth
+                width = normalizeCurrentWidth(toolState.selectedWidth)
             )
         )
         pendingAppendPoints.clear()
@@ -181,7 +194,11 @@ class DefaultCanvasRuntime @Inject constructor(
 
     private suspend fun handleLocalDrag(point: StrokePoint) {
         val active = _renderState.value.localActiveStroke ?: return
-        val next = strokeBuilder.appendPoint(active, point)
+        val next = strokeBuilder.appendPoint(
+            stroke = active,
+            point = point,
+            samePointThreshold = currentPointThreshold()
+        )
         if (next.points.size == active.points.size) return
         _renderState.update { it.copy(localActiveStroke = next) }
         pendingAppendPoints.add(point)
@@ -211,9 +228,13 @@ class DefaultCanvasRuntime @Inject constructor(
 
     private suspend fun handleEraseAt(point: StrokePoint) {
         if (_renderState.value.toolState.activeTool != DrawingTool.ERASE) return
+        val renderWidth = canvasViewportWidthPx.coerceAtLeast(1).toFloat()
+        val renderHeight = canvasViewportHeightPx.coerceAtLeast(1).toFloat()
         val stroke = strokeHitTester.findStrokeHit(
-            strokes = _renderState.value.committedStrokes,
-            point = point
+            strokes = _renderState.value.committedStrokes.map { committed ->
+                committed.denormalizeToSurface(renderWidth, renderHeight)
+            },
+            point = point.denormalizeToSurface(renderWidth, renderHeight)
         ) ?: return
         persistenceStore.persistErase(stroke.id)
         _renderState.update {
@@ -429,7 +450,17 @@ class DefaultCanvasRuntime @Inject constructor(
     private companion object {
         const val DEFAULT_APPEND_HZ = 20
         const val MIN_APPEND_HZ = 10
+        const val DEFAULT_POINT_THRESHOLD_PX = 0.5f
     }
+
+    private fun normalizeCurrentWidth(widthPx: Float): Float =
+        normalizeStrokeWidth(widthPx, canvasViewportWidthPx, canvasViewportHeightPx)
+
+    private fun currentPointThreshold(): Float = normalizeStrokeWidth(
+        width = DEFAULT_POINT_THRESHOLD_PX,
+        surfaceWidth = canvasViewportWidthPx,
+        surfaceHeight = canvasViewportHeightPx
+    )
 }
 
 private data class RuntimeEventEnvelope(

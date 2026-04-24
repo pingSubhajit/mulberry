@@ -5,6 +5,7 @@ import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.sync.ServerCanvasOperation
 
 sealed interface CanvasRuntimeEvent {
+    data class CanvasViewportChanged(val widthPx: Int, val heightPx: Int) : CanvasRuntimeEvent
     data class LocalPress(val point: StrokePoint) : CanvasRuntimeEvent
     data class LocalDrag(val point: StrokePoint) : CanvasRuntimeEvent
     data object LocalRelease : CanvasRuntimeEvent

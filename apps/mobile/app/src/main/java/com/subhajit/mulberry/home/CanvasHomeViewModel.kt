@@ -470,6 +470,7 @@ class CanvasHomeViewModel @Inject constructor(
     }
 
     fun onCanvasViewportChanged(widthPx: Int, heightPx: Int) {
+        canvasRuntime.submit(CanvasRuntimeEvent.CanvasViewportChanged(widthPx, heightPx))
         viewModelScope.launch {
             drawingRepository.setCanvasViewport(widthPx, heightPx)
         }

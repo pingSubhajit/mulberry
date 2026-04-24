@@ -12,6 +12,7 @@ import com.subhajit.mulberry.drawing.data.local.toDomain
 import com.subhajit.mulberry.drawing.data.local.toEntity
 import com.subhajit.mulberry.drawing.data.local.toPointEntities
 import com.subhajit.mulberry.drawing.engine.StrokeBuilder
+import com.subhajit.mulberry.drawing.geometry.normalizeStrokeWidth
 import com.subhajit.mulberry.drawing.model.BrushStyle
 import com.subhajit.mulberry.drawing.model.CanvasSnapshotState
 import com.subhajit.mulberry.drawing.model.CanvasState
@@ -76,7 +77,11 @@ class RoomDrawingRepository @Inject constructor(
             point = point,
             brushStyle = BrushStyle(
                 colorArgb = metadata.selectedColorArgb,
-                width = metadata.selectedWidth
+                width = normalizeStrokeWidth(
+                    width = metadata.selectedWidth,
+                    surfaceWidth = metadata.canvasWidthPx,
+                    surfaceHeight = metadata.canvasHeightPx
+                )
             )
         )
         activeStroke.value = stroke
@@ -85,7 +90,15 @@ class RoomDrawingRepository @Inject constructor(
 
     override suspend fun appendPoint(point: StrokePoint): Stroke? {
         val active = activeStroke.value ?: return null
-        val next = strokeBuilder.appendPoint(active, point)
+        val next = strokeBuilder.appendPoint(
+            stroke = active,
+            point = point,
+            samePointThreshold = normalizeStrokeWidth(
+                width = 0.5f,
+                surfaceWidth = currentMetadata().canvasWidthPx,
+                surfaceHeight = currentMetadata().canvasHeightPx
+            )
+        )
         activeStroke.value = next
         return next
     }
@@ -234,7 +247,6 @@ class RoomDrawingRepository @Inject constructor(
                     revision = nextRevision,
                     lastModifiedAt = now,
                     selectedColorArgb = stroke.colorArgb,
-                    selectedWidth = stroke.width,
                     selectedTool = DrawingTool.DRAW,
                     isSnapshotDirty = true
                 )

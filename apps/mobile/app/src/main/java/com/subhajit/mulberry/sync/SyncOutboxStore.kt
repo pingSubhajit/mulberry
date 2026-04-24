@@ -40,9 +40,6 @@ class SyncOutboxStore @Inject constructor(
     override suspend fun migrateLegacyPendingOperations() {
         val legacyOperations = syncMetadataRepository.metadata.first().pendingOperations
         if (legacyOperations.isEmpty()) return
-        legacyOperations.forEach { operation ->
-            dao.insert(SyncOutboxEntity.fromDomain(operation, allocateSequenceNumber()))
-        }
         syncMetadataRepository.setPendingOperations(emptyList())
     }
 

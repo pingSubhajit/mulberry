@@ -21,8 +21,16 @@ class StrokeBuilder @Inject constructor() {
     )
 
     fun appendPoint(stroke: Stroke, point: StrokePoint): Stroke {
+        return appendPoint(stroke, point, DEFAULT_SAME_POINT_THRESHOLD)
+    }
+
+    fun appendPoint(
+        stroke: Stroke,
+        point: StrokePoint,
+        samePointThreshold: Float
+    ): Stroke {
         val lastPoint = stroke.points.lastOrNull()
-        if (lastPoint != null && isEffectivelySamePoint(lastPoint, point)) {
+        if (lastPoint != null && isEffectivelySamePoint(lastPoint, point, samePointThreshold)) {
             return stroke
         }
         return stroke.copy(points = stroke.points + point)
@@ -32,6 +40,13 @@ class StrokeBuilder @Inject constructor() {
 
     private fun isEffectivelySamePoint(
         first: StrokePoint,
-        second: StrokePoint
-    ): Boolean = abs(first.x - second.x) < 0.5f && abs(first.y - second.y) < 0.5f
+        second: StrokePoint,
+        samePointThreshold: Float
+    ): Boolean =
+        abs(first.x - second.x) < samePointThreshold &&
+            abs(first.y - second.y) < samePointThreshold
+
+    private companion object {
+        const val DEFAULT_SAME_POINT_THRESHOLD = 0.5f
+    }
 }

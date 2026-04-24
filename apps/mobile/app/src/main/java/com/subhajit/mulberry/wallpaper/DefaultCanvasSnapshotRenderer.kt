@@ -13,9 +13,9 @@ import com.subhajit.mulberry.drawing.data.local.CanvasMetadataEntity
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.data.local.DrawingDao
 import com.subhajit.mulberry.drawing.data.local.toDomain
+import com.subhajit.mulberry.drawing.geometry.denormalizeToSurface
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.render.committedStrokeBitmapRenderer
-import com.subhajit.mulberry.drawing.render.transformed
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.FileOutputStream
 import javax.inject.Inject
@@ -49,8 +49,6 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
         drawStrokes(
             canvas = canvas,
             strokes = strokes,
-            sourceWidth = capturedMetadata.canvasWidthPx,
-            sourceHeight = capturedMetadata.canvasHeightPx,
             screenWidth = context.resources.displayMetrics.widthPixels,
             screenHeight = context.resources.displayMetrics.heightPixels
         )
@@ -106,16 +104,12 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
     private fun drawStrokes(
         canvas: Canvas,
         strokes: List<Stroke>,
-        sourceWidth: Int,
-        sourceHeight: Int,
         screenWidth: Int,
         screenHeight: Int
     ) {
         val placement = calculatePlacement(
             bitmapWidth = canvas.width,
             bitmapHeight = canvas.height,
-            sourceWidth = sourceWidth,
-            sourceHeight = sourceHeight,
             screenWidth = screenWidth,
             screenHeight = screenHeight
         )
@@ -123,8 +117,9 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
         appConfig.canvasStrokeRenderMode.committedStrokeBitmapRenderer().drawStrokes(
             canvas = canvas,
             strokes = strokes.map { stroke ->
-                stroke.transformed(
-                    scale = placement.scale,
+                stroke.denormalizeToSurface(
+                    width = placement.viewport.width,
+                    height = placement.viewport.height,
                     offsetX = placement.offsetX,
                     offsetY = placement.offsetY
                 )
@@ -135,15 +130,11 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
     internal fun calculatePlacement(
         bitmapWidth: Int,
         bitmapHeight: Int,
-        sourceWidth: Int,
-        sourceHeight: Int,
         screenWidth: Int,
         screenHeight: Int
     ): SnapshotPlacement = calculateSnapshotPlacement(
         bitmapWidth = bitmapWidth,
         bitmapHeight = bitmapHeight,
-        sourceWidth = sourceWidth,
-        sourceHeight = sourceHeight,
         screenWidth = screenWidth,
         screenHeight = screenHeight
     )
@@ -161,13 +152,17 @@ internal data class SnapshotViewport(
     val top: Float,
     val right: Float,
     val bottom: Float
-)
+) {
+    val width: Float
+        get() = right - left
+
+    val height: Float
+        get() = bottom - top
+}
 
 internal fun calculateSnapshotPlacement(
     bitmapWidth: Int,
     bitmapHeight: Int,
-    sourceWidth: Int,
-    sourceHeight: Int,
     screenWidth: Int,
     screenHeight: Int
 ): SnapshotPlacement {
@@ -185,20 +180,11 @@ internal fun calculateSnapshotPlacement(
 
     val viewportLeft = (safeBitmapWidth - viewportWidth) / 2f
     val viewportTop = (safeBitmapHeight - viewportHeight) / 2f
-    val safeSourceWidth = sourceWidth.takeIf { it > 0 } ?: viewportWidth
-    val safeSourceHeight = sourceHeight.takeIf { it > 0 } ?: viewportHeight
-    val scale = minOf(
-        viewportWidth.toFloat() / safeSourceWidth.toFloat(),
-        viewportHeight.toFloat() / safeSourceHeight.toFloat()
-    )
-
-    val contentWidth = safeSourceWidth * scale
-    val contentHeight = safeSourceHeight * scale
-    val offsetX = viewportLeft + ((viewportWidth - contentWidth) / 2f)
-    val offsetY = viewportTop + ((viewportHeight - contentHeight) / 2f)
+    val offsetX = viewportLeft
+    val offsetY = viewportTop
 
     return SnapshotPlacement(
-        scale = scale,
+        scale = minOf(viewportWidth, viewportHeight).toFloat(),
         offsetX = offsetX,
         offsetY = offsetY,
         viewport = SnapshotViewport(

@@ -3,6 +3,9 @@ package com.subhajit.mulberry.sync
 import android.util.Log
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
+import com.subhajit.mulberry.drawing.geometry.containsLegacyGeometry
+import com.subhajit.mulberry.drawing.geometry.hasLegacyGeometry
+import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.DrawingRepository
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
@@ -100,28 +103,32 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
             return@runCatching BackgroundCanvasSyncResult.AlreadyCurrent
         }
 
+        val snapshotStrokes = snapshot.snapshot.toDomainStrokes()
+        if (snapshotStrokes.containsLegacyGeometry()) {
+            clearLegacyCanvasAndQueueReset(reason = "background_snapshot_legacy_geometry")
+            wallpaperCoordinator.ensureSnapshotCurrent()
+            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+            return@runCatching BackgroundCanvasSyncResult.Synced
+        }
+
         drawingRepository.replaceWithRemoteSnapshot(
-            strokes = snapshot.snapshot.strokes.map { stroke ->
-                Stroke(
-                    id = stroke.id,
-                    colorArgb = stroke.colorArgb,
-                    width = stroke.width,
-                    createdAt = stroke.createdAt,
-                    points = stroke.points.map { point ->
-                        StrokePoint(x = point.x, y = point.y)
-                    }
-                )
-            },
+            strokes = snapshotStrokes,
             serverRevision = snapshot.snapshotRevision
         )
         syncMetadataRepository.setLastAppliedServerRevision(snapshot.snapshotRevision)
         if (snapshot.latestRevision > snapshot.snapshotRevision) {
-            apiService.getCanvasOperations(snapshot.snapshotRevision)
+            val tail = apiService.getCanvasOperations(snapshot.snapshotRevision)
                 .operations
                 .map { it.toDomainOperation() }
                 .filter { it.serverRevision > snapshot.snapshotRevision }
                 .sortedBy { it.serverRevision }
-                .forEach { remoteOperationApplier.apply(it) }
+            if (tail.any { operation -> operation.hasLegacyGeometry() }) {
+                clearLegacyCanvasAndQueueReset(reason = "background_tail_legacy_geometry")
+                wallpaperCoordinator.ensureSnapshotCurrent()
+                wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+                return@runCatching BackgroundCanvasSyncResult.Synced
+            }
+            tail.forEach { remoteOperationApplier.apply(it) }
         }
         wallpaperCoordinator.ensureSnapshotCurrent()
         wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
@@ -151,6 +158,19 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         syncOutboxStore.clear()
         syncMetadataRepository.resetForPairSession(pairSessionId)
         drawingRepository.resetAllDrawingState()
+    }
+
+    private suspend fun clearLegacyCanvasAndQueueReset(reason: String) {
+        Log.w(TAG, "Clearing legacy pixel-space background canvas data reason=$reason")
+        syncOutboxStore.clear()
+        drawingRepository.resetAllDrawingState()
+        syncOutboxStore.enqueue(
+            newClientOperation(
+                type = DrawingOperationType.CLEAR_CANVAS,
+                strokeId = null,
+                payload = SyncOperationPayload.ClearCanvas
+            )
+        )
     }
 
     private suspend fun flushPendingOutbox() {
@@ -184,3 +204,16 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         const val BACKGROUND_IN_FLIGHT_STALE_MS = 8_000L
     }
 }
+
+private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainStrokes(): List<Stroke> =
+    strokes.map { stroke ->
+        Stroke(
+            id = stroke.id,
+            colorArgb = stroke.colorArgb,
+            width = stroke.width,
+            createdAt = stroke.createdAt,
+            points = stroke.points.map { point ->
+                StrokePoint(x = point.x, y = point.y)
+            }
+        )
+    }

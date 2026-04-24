@@ -25,6 +25,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntSize
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.drawing.geometry.denormalizeToSurface
+import com.subhajit.mulberry.drawing.geometry.normalizeToSurface
 import com.subhajit.mulberry.drawing.model.CanvasState
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
@@ -110,7 +112,7 @@ fun DrawingCanvas(
         Modifier.pointerInput(activeTool) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
-                onDrawStart(down.position.toStrokePoint())
+                onDrawStart(down.position.toStrokePoint(canvasSize))
                 var pointer = down
                 while (true) {
                     val event = awaitPointerEvent()
@@ -120,7 +122,7 @@ fun DrawingCanvas(
                     pointer = dragChange
                     if (!dragChange.pressed) break
                     if (dragChange.positionChanged()) {
-                        onDrawPoint(dragChange.position.toStrokePoint())
+                        onDrawPoint(dragChange.position.toStrokePoint(canvasSize))
                         dragChange.consume()
                     }
                 }
@@ -130,7 +132,7 @@ fun DrawingCanvas(
     } else {
         Modifier.pointerInput(activeTool) {
             detectTapGestures { offset ->
-                onEraseTap(offset.toStrokePoint())
+                onEraseTap(offset.toStrokePoint(canvasSize))
             }
         }
     }
@@ -153,10 +155,16 @@ fun DrawingCanvas(
                 canvas.nativeCanvas.drawBitmap(committedBitmap, 0f, 0f, null)
             }
         } else {
-            canvasState.strokes.forEach { drawCommittedStroke(it, strokeRenderMode) }
+            canvasState.strokes.forEach { stroke ->
+                drawCommittedStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
+            }
         }
-        canvasState.remoteActiveStrokes.forEach { drawLiveStroke(it, strokeRenderMode) }
-        canvasState.activeStroke?.let { drawLiveStroke(it, strokeRenderMode) }
+        canvasState.remoteActiveStrokes.forEach { stroke ->
+            drawLiveStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
+        }
+        canvasState.activeStroke?.let { stroke ->
+            drawLiveStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
+        }
     }
 }
 
@@ -169,7 +177,10 @@ private fun buildCommittedStrokeCacheBitmap(
 
     val bitmap = Bitmap.createBitmap(canvasSize.width, canvasSize.height, Bitmap.Config.ARGB_8888)
     val canvas = AndroidCanvas(bitmap)
-    strokeRenderMode.committedStrokeBitmapRenderer().drawStrokes(canvas, strokes)
+    strokeRenderMode.committedStrokeBitmapRenderer().drawStrokes(
+        canvas,
+        strokes.map { stroke -> stroke.toRenderStroke(canvasSize) }
+    )
     return bitmap
 }
 
@@ -179,7 +190,10 @@ private fun appendStrokeToCommittedCache(
     strokeRenderMode: CanvasStrokeRenderMode
 ) {
     val canvas = AndroidCanvas(bitmap)
-    strokeRenderMode.committedStrokeBitmapRenderer().drawStroke(canvas, stroke)
+    strokeRenderMode.committedStrokeBitmapRenderer().drawStroke(
+        canvas,
+        stroke.toRenderStroke(IntSize(bitmap.width, bitmap.height))
+    )
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCommittedStroke(
@@ -196,7 +210,14 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLiveStroke(
     with(strokeRenderMode.liveStrokeVisualRenderer()) { drawStroke(stroke) }
 }
 
-private fun Offset.toStrokePoint(): StrokePoint = StrokePoint(x = x, y = y)
+private fun Offset.toStrokePoint(canvasSize: IntSize): StrokePoint =
+    StrokePoint(x = x, y = y).normalizeToSurface(canvasSize.width, canvasSize.height)
+
+private fun DrawingStroke.toRenderStroke(canvasSize: IntSize): DrawingStroke =
+    denormalizeToSurface(
+        width = canvasSize.width.coerceAtLeast(1).toFloat(),
+        height = canvasSize.height.coerceAtLeast(1).toFloat()
+    )
 
 private data class CommittedCanvasBitmapCache(
     val bitmap: Bitmap? = null,
