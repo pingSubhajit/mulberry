@@ -42,6 +42,8 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                 partnerDisplayName = preferences[PreferenceStorage.partnerDisplayName],
                 anniversaryDate = preferences[PreferenceStorage.anniversaryDate],
                 partnerProfileNextUpdateAt = preferences[PreferenceStorage.partnerProfileNextUpdateAt],
+                pairedAt = preferences[PreferenceStorage.pairedAt],
+                currentStreakDays = preferences[PreferenceStorage.currentStreakDays] ?: 0,
                 pairingStatus = preferences[PreferenceStorage.pairingStatus]
                     ?.let(::parsePairingStatus)
                     ?: PairingStatus.UNPAIRED,
@@ -106,6 +108,8 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                 PreferenceStorage.partnerProfileNextUpdateAt,
                 state.partnerProfileNextUpdateAt
             )
+            updateNullable(preferences, PreferenceStorage.pairedAt, state.pairedAt)
+            preferences[PreferenceStorage.currentStreakDays] = state.currentStreakDays
             preferences[PreferenceStorage.pairingStatus] = state.pairingStatus.name
             updateNullable(preferences, PreferenceStorage.pairSessionId, state.pairSessionId)
 
@@ -171,6 +175,8 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                 userDisplayName = "Subhajit",
                 partnerDisplayName = "Ankita",
                 anniversaryDate = "2026-01-01",
+                pairedAt = java.time.Instant.now().toString(),
+                currentStreakDays = 1,
                 pairingStatus = PairingStatus.PAIRED,
                 pairSessionId = "dev-pair-session"
             )

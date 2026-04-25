@@ -7,6 +7,9 @@ import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.network.CanvasOperationEnvelopeResponse
 import com.subhajit.mulberry.network.ClientCanvasOperationRequest
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
@@ -31,7 +34,8 @@ data class ClientOperationBody(
     val type: String,
     val strokeId: String?,
     val payload: JsonObject,
-    val clientCreatedAt: String
+    val clientCreatedAt: String,
+    val clientLocalDate: String? = null
 )
 
 data class HelloMessage(
@@ -104,8 +108,9 @@ fun CanvasSyncOperation.toWireJson(): String = gson.toJson(
             clientOperationId = clientOperationId,
             type = type.name,
             strokeId = strokeId,
-        payload = payload.toJsonObject(),
-            clientCreatedAt = clientCreatedAt
+            payload = payload.toJsonObject(),
+            clientCreatedAt = clientCreatedAt,
+            clientLocalDate = clientCreatedAt.toClientLocalDate()
         )
     )
 )
@@ -119,7 +124,8 @@ fun List<CanvasSyncOperation>.toBatchWireJson(batchId: String): String = gson.to
                 type = operation.type.name,
                 strokeId = operation.strokeId,
                 payload = operation.payload.toJsonObject(),
-                clientCreatedAt = operation.clientCreatedAt
+                clientCreatedAt = operation.clientCreatedAt,
+                clientLocalDate = operation.clientCreatedAt.toClientLocalDate()
             )
         },
         clientCreatedAt = nowIsoString()
@@ -132,7 +138,8 @@ fun CanvasSyncOperation.toClientRequest(): ClientCanvasOperationRequest =
         type = type.name,
         strokeId = strokeId,
         payload = payload.toJsonObject(),
-        clientCreatedAt = clientCreatedAt
+        clientCreatedAt = clientCreatedAt,
+        clientLocalDate = clientCreatedAt.toClientLocalDate()
     )
 
 fun helloJson(
@@ -232,3 +239,9 @@ private fun nowIsoString(): String = SimpleDateFormat(
 ).apply {
     timeZone = TimeZone.getTimeZone("UTC")
 }.format(Date())
+
+private fun String.toClientLocalDate(): String = runCatching {
+    Instant.parse(this).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+}.getOrElse {
+    LocalDate.now().toString()
+}

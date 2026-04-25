@@ -49,10 +49,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       ...options.pushOptions,
     },
   )
-  const service = new MulberryService(db, googleVerifier, pushDispatchService)
+  const storage = options.wallpaperStorage ?? createWallpaperStorage(config)
+  const service = new MulberryService(db, googleVerifier, pushDispatchService, storage)
   const wallpaperCatalogService = new WallpaperCatalogService(
     db,
-    options.wallpaperStorage ?? createWallpaperStorage(config),
+    storage,
     options.wallpaperImageProcessor ?? new SharpWallpaperImageProcessor(),
     config,
   )
@@ -60,7 +61,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const app = Fastify({ logger: false })
   await app.register(fastifyCors, {
     origin: true,
-    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["authorization", "content-type", "x-wallpaper-admin-password"],
   })
   await app.register(fastifyMultipart, {
@@ -147,6 +148,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return service.updateDisplayName(requireBearerToken(request), body.displayName ?? "")
   })
 
+  app.put("/me/profile-photo", async (request) => {
+    return service.updateProfilePhoto(requireBearerToken(request), await readRequiredImageUpload(request))
+  })
+
   app.put("/me/partner-profile", async (request) => {
     const body = request.body as {
       partnerDisplayName?: string
@@ -156,6 +161,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       partnerDisplayName: body.partnerDisplayName ?? "",
       anniversaryDate: body.anniversaryDate ?? "",
     })
+  })
+
+  app.put("/me/partner-profile-photo", async (request) => {
+    return service.updatePartnerProfilePhoto(requireBearerToken(request), await readRequiredImageUpload(request))
   })
 
   app.post("/invites", async (request) => {
@@ -325,4 +334,21 @@ function requireBearerToken(request: FastifyRequest): string {
 function readWallpaperAdminPassword(request: FastifyRequest): string | undefined {
   const header = request.headers["x-wallpaper-admin-password"]
   return Array.isArray(header) ? header[0] : header
+}
+
+async function readRequiredImageUpload(request: FastifyRequest): Promise<{
+  filename: string
+  contentType: string
+  data: Buffer
+}> {
+  for await (const part of request.parts()) {
+    if (part.type === "file" && part.fieldname === "image") {
+      return {
+        filename: part.filename,
+        contentType: part.mimetype,
+        data: await part.toBuffer(),
+      }
+    }
+  }
+  throw new HttpError(400, "image is required")
 }

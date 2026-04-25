@@ -46,6 +46,8 @@ data class SessionBootstrapState(
     val partnerDisplayName: String? = null,
     val anniversaryDate: String? = null,
     val partnerProfileNextUpdateAt: String? = null,
+    val pairedAt: String? = null,
+    val currentStreakDays: Int = 0,
     val pairingStatus: PairingStatus = PairingStatus.UNPAIRED,
     val pairSessionId: String? = null,
     val pendingInvite: PendingInviteSummary? = null

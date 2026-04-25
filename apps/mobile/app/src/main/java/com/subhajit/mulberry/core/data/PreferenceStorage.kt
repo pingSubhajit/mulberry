@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.core.data
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 
 const val APP_PREFERENCES_FILE = "app_preferences"
@@ -18,6 +19,8 @@ object PreferenceStorage {
     val partnerDisplayName = stringPreferencesKey("partner_display_name")
     val anniversaryDate = stringPreferencesKey("anniversary_date")
     val partnerProfileNextUpdateAt = stringPreferencesKey("partner_profile_next_update_at")
+    val pairedAt = stringPreferencesKey("paired_at")
+    val currentStreakDays = intPreferencesKey("current_streak_days")
     val pairingStatus = stringPreferencesKey("pairing_status")
     val pairSessionId = stringPreferencesKey("pair_session_id")
     val pendingInviteId = stringPreferencesKey("pending_invite_id")

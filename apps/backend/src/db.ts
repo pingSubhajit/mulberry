@@ -26,6 +26,8 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       anniversary_date DATE,
       onboarding_completed_at TIMESTAMPTZ,
       partner_profile_updated_at TIMESTAMPTZ,
+      profile_photo_path TEXT,
+      partner_profile_photo_path TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -34,6 +36,12 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
 
     ALTER TABLE user_profiles
       ADD COLUMN IF NOT EXISTS partner_profile_updated_at TIMESTAMPTZ;
+
+    ALTER TABLE user_profiles
+      ADD COLUMN IF NOT EXISTS profile_photo_path TEXT;
+
+    ALTER TABLE user_profiles
+      ADD COLUMN IF NOT EXISTS partner_profile_photo_path TEXT;
 
     UPDATE user_profiles
     SET onboarding_completed_at = updated_at
@@ -114,6 +122,13 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
 
     UPDATE canvas_snapshots
     SET latest_revision = GREATEST(latest_revision, revision);
+
+    CREATE TABLE IF NOT EXISTS pair_activity_days (
+      pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      activity_day DATE NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (pair_session_id, activity_day)
+    );
 
     CREATE TABLE IF NOT EXISTS wallpapers (
       id TEXT PRIMARY KEY,

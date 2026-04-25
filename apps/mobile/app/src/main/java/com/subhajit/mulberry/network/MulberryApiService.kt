@@ -3,10 +3,13 @@ package com.subhajit.mulberry.network
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.HTTP
+import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.PUT
 import retrofit2.http.Query
 import retrofit2.http.Path
+import okhttp3.MultipartBody
 
 interface MulberryApiService {
     @POST("/auth/google")
@@ -33,8 +36,16 @@ interface MulberryApiService {
     @PUT("/me/display-name")
     suspend fun updateDisplayName(@Body request: DisplayNameRequest): BootstrapResponse
 
+    @Multipart
+    @PUT("/me/profile-photo")
+    suspend fun updateProfilePhoto(@Part image: MultipartBody.Part): BootstrapResponse
+
     @PUT("/me/partner-profile")
     suspend fun updatePartnerProfile(@Body request: PartnerProfileRequest): BootstrapResponse
+
+    @Multipart
+    @PUT("/me/partner-profile-photo")
+    suspend fun updatePartnerProfilePhoto(@Part image: MultipartBody.Part): BootstrapResponse
 
     @POST("/invites")
     suspend fun createInvite(): CreateInviteResponse

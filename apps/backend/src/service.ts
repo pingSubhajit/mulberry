@@ -1,4 +1,5 @@
 import { randomBytes, randomInt, randomUUID } from "node:crypto"
+import sharp from "sharp"
 import type { Database } from "./db.js"
 import type {
   AcceptInviteResponse,
@@ -26,6 +27,7 @@ import type {
 } from "./domain.js"
 import type { GoogleTokenVerifier } from "./googleAuth.js"
 import type { PushDispatchService } from "./push.js"
+import type { WallpaperStorage } from "./wallpapers.js"
 
 export class HttpError extends Error {
   constructor(
@@ -55,14 +57,23 @@ interface MaterializedStroke {
   finished: boolean
 }
 
+interface UploadedProfilePhoto {
+  filename?: string
+  contentType?: string
+  data: Buffer
+}
+
 const PARTNER_PROFILE_UPDATE_COOLDOWN_MS = 72 * 60 * 60 * 1_000
 const PARTNER_DETAILS_REQUIRED_MESSAGE = "Partner details are required before creating an invite"
+const PROFILE_PHOTO_PREFIX = "profile-photos"
+const PROFILE_PHOTO_MAX_BYTES = 10 * 1024 * 1024
 
 export class MulberryService {
   constructor(
     private readonly db: Database,
     private readonly googleVerifier: GoogleTokenVerifier,
     private readonly pushDispatchService?: PushDispatchService,
+    private readonly profilePhotoStorage?: WallpaperStorage | null,
   ) {}
 
   async authenticateWithGoogle(idToken: string): Promise<AuthResponse> {
@@ -247,6 +258,56 @@ export class MulberryService {
     return this.buildBootstrap(context.user.id)
   }
 
+  async updateProfilePhoto(
+    accessToken: string,
+    upload: UploadedProfilePhoto,
+  ): Promise<BootstrapResponse> {
+    const context = await this.requireSessionContext(accessToken)
+    const processed = await this.storeProfilePhoto(context.user.id, upload)
+    const existing = await this.getProfile(context.user.id)
+    const pairSession = await this.getPairSession(context.user.id)
+    const oldPaths = [existing?.profile_photo_path].filter((path): path is string => Boolean(path))
+
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `
+        INSERT INTO user_profiles (
+          user_id,
+          display_name,
+          profile_photo_path,
+          updated_at
+        ) VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (user_id) DO UPDATE SET
+          profile_photo_path = EXCLUDED.profile_photo_path,
+          updated_at = NOW()
+        `,
+        [context.user.id, existing?.display_name ?? context.user.email, processed.path],
+      )
+
+      if (pairSession) {
+        const peerUserId = pairSession.user_one_id === context.user.id
+          ? pairSession.user_two_id
+          : pairSession.user_one_id
+        await tx.query(
+          `
+          INSERT INTO user_profiles (
+            user_id,
+            partner_profile_photo_path,
+            updated_at
+          ) VALUES ($1, $2, NOW())
+          ON CONFLICT (user_id) DO UPDATE SET
+            partner_profile_photo_path = EXCLUDED.partner_profile_photo_path,
+            updated_at = NOW()
+          `,
+          [peerUserId, processed.path],
+        )
+      }
+    })
+
+    await this.removeStoredProfilePhotos(oldPaths)
+    return this.buildBootstrap(context.user.id)
+  }
+
   async updatePartnerProfile(
     accessToken: string,
     profile: {
@@ -318,6 +379,87 @@ export class MulberryService {
       }
     })
 
+    return this.buildBootstrap(context.user.id)
+  }
+
+  async updatePartnerProfilePhoto(
+    accessToken: string,
+    upload: UploadedProfilePhoto,
+  ): Promise<BootstrapResponse> {
+    const context = await this.requireSessionContext(accessToken)
+    const existing = await this.getProfile(context.user.id)
+    const pairSession = await this.getPairSession(context.user.id)
+    const enforceCooldown = pairSession !== null
+    const nextUpdateAt = enforceCooldown ? this.partnerProfileNextUpdateAt(existing) : null
+    if (nextUpdateAt) {
+      throw new HttpError(409, `Partner details can be updated again at ${nextUpdateAt}`)
+    }
+
+    const processed = await this.storeProfilePhoto(context.user.id, upload)
+    const updatedAt = enforceCooldown ? new Date().toISOString() : null
+    const oldPaths: string[] = []
+    await this.db.transaction(async (tx) => {
+      if (pairSession) {
+        const peerUserId = pairSession.user_one_id === context.user.id
+          ? pairSession.user_two_id
+          : pairSession.user_one_id
+        const peerProfile = await this.getProfileFrom(tx, peerUserId)
+        if (peerProfile?.profile_photo_path) {
+          oldPaths.push(peerProfile.profile_photo_path)
+        }
+        await tx.query(
+          `
+          INSERT INTO user_profiles (
+            user_id,
+            profile_photo_path,
+            updated_at
+          ) VALUES ($1, $2, NOW())
+          ON CONFLICT (user_id) DO UPDATE SET
+            profile_photo_path = EXCLUDED.profile_photo_path,
+            updated_at = NOW()
+          `,
+          [peerUserId, processed.path],
+        )
+        await tx.query(
+          `
+          UPDATE user_profiles
+          SET
+            partner_profile_updated_at = $2,
+            partner_profile_photo_path = $3,
+            updated_at = NOW()
+          WHERE user_id = $1
+          `,
+          [context.user.id, updatedAt, processed.path],
+        )
+      } else {
+        if (existing?.partner_profile_photo_path) {
+          oldPaths.push(existing.partner_profile_photo_path)
+        }
+        await tx.query(
+          `
+          INSERT INTO user_profiles (
+            user_id,
+            display_name,
+            partner_profile_photo_path,
+            partner_profile_updated_at,
+            updated_at
+          ) VALUES ($1, $2, $3, $4, NOW())
+          ON CONFLICT (user_id) DO UPDATE SET
+            partner_profile_photo_path = EXCLUDED.partner_profile_photo_path,
+            partner_profile_updated_at = EXCLUDED.partner_profile_updated_at,
+            updated_at = NOW()
+          `,
+          [
+            context.user.id,
+            existing?.display_name ?? context.user.email,
+            processed.path,
+            updatedAt,
+          ],
+        )
+      }
+    })
+
+    await this.removeStoredProfilePhotos(oldPaths)
     return this.buildBootstrap(context.user.id)
   }
 
@@ -678,6 +820,9 @@ export class MulberryService {
           )
           const acceptedRecord = rows.rows[0]
           acceptedRecords.push(acceptedRecord)
+          if (acceptedRecord.type === "FINISH_STROKE") {
+            await this.recordPairActivityDay(tx, context.pairSession.id, operation.clientLocalDate)
+          }
           const materialized = await this.materializeDurableOperation(
             tx,
             context.pairSession.id,
@@ -819,6 +964,7 @@ export class MulberryService {
       SET
         partner_display_name = NULL,
         anniversary_date = NULL,
+        partner_profile_photo_path = NULL,
         partner_profile_updated_at = NULL,
         updated_at = NOW()
       WHERE user_id IN (${placeholders})
@@ -836,6 +982,7 @@ export class MulberryService {
     const recipientDisplayName = inviterProfile?.partner_display_name ?? recipientProfile?.display_name
     const partnerDisplayName = inviterProfile?.display_name ?? recipientProfile?.partner_display_name
     const anniversaryDate = inviterProfile?.anniversary_date ?? recipientProfile?.anniversary_date
+    const profilePhotoPath = inviterProfile?.partner_profile_photo_path ?? recipientProfile?.profile_photo_path
 
     await this.db.query(
       `
@@ -844,13 +991,15 @@ export class MulberryService {
         display_name,
         partner_display_name,
         anniversary_date,
+        profile_photo_path,
         onboarding_completed_at,
         updated_at
-      ) VALUES ($1, $2, $3, $4, CASE WHEN $5 THEN COALESCE($6::timestamptz, NOW()) ELSE NOW() END, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 THEN COALESCE($7::timestamptz, NOW()) ELSE NOW() END, NOW())
       ON CONFLICT (user_id) DO UPDATE SET
         display_name = EXCLUDED.display_name,
         partner_display_name = EXCLUDED.partner_display_name,
         anniversary_date = EXCLUDED.anniversary_date,
+        profile_photo_path = EXCLUDED.profile_photo_path,
         onboarding_completed_at = EXCLUDED.onboarding_completed_at,
         updated_at = NOW()
       `,
@@ -859,6 +1008,7 @@ export class MulberryService {
         recipientDisplayName ?? null,
         partnerDisplayName ?? null,
         anniversaryDate ?? null,
+        profilePhotoPath ?? null,
         recipientOnboardingCompleted,
         recipientProfile?.onboarding_completed_at ?? null,
       ],
@@ -873,6 +1023,8 @@ export class MulberryService {
         display_name = NULL,
         partner_display_name = NULL,
         anniversary_date = NULL,
+        profile_photo_path = NULL,
+        partner_profile_photo_path = NULL,
         onboarding_completed_at = NULL,
         partner_profile_updated_at = NULL,
         updated_at = NOW()
@@ -1008,18 +1160,30 @@ export class MulberryService {
       onboardingCompleted = Boolean(profile?.onboarding_completed_at)
     }
 
+    const inviterPhotoUrl = pendingInvite
+      ? this.profilePhotoUrl((await this.getProfile(pendingInvite.inviter_user_id))?.profile_photo_path) ??
+        (await this.getUserById(pendingInvite.inviter_user_id))?.google_picture_url ??
+        null
+      : null
+
     return {
       authStatus: "SIGNED_IN",
       onboardingCompleted,
       hasWallpaperConfigured: false,
       userId,
       userEmail: user?.email ?? null,
-      userPhotoUrl: user?.google_picture_url ?? null,
+      userPhotoUrl: this.profilePhotoUrl(profile?.profile_photo_path) ?? user?.google_picture_url ?? null,
       userDisplayName: profile?.display_name ?? null,
-      partnerPhotoUrl: partnerUser?.google_picture_url ?? null,
+      partnerPhotoUrl: pairSession
+        ? this.profilePhotoUrl((partnerUser ? await this.getProfile(partnerUser.id) : null)?.profile_photo_path) ??
+          partnerUser?.google_picture_url ??
+          null
+        : this.profilePhotoUrl(profile?.partner_profile_photo_path) ?? inviterPhotoUrl,
       partnerDisplayName: profile?.partner_display_name ?? null,
       anniversaryDate: profile?.anniversary_date ?? null,
       partnerProfileNextUpdateAt: pairSession ? this.partnerProfileNextUpdateAt(profile) : null,
+      pairedAt: pairSession ? new Date(pairSession.created_at).toISOString() : null,
+      currentStreakDays: pairSession ? await this.currentStreakDays(pairSession.id) : 0,
       pairingStatus: pairSession
         ? "PAIRED"
         : pendingInvite
@@ -1040,17 +1204,27 @@ export class MulberryService {
   }
 
   private async getProfile(userId: string): Promise<ProfileRecord | null> {
-    const rows = await this.db.query<{
+    return this.getProfileFrom(this.db, userId)
+  }
+
+  private async getProfileFrom(
+    db: Pick<Database, "query">,
+    userId: string,
+  ): Promise<ProfileRecord | null> {
+    const rows = await db.query<{
       user_id: string
       display_name: string | null
       partner_display_name: string | null
       anniversary_date: string | Date | null
       onboarding_completed_at: string | Date | null
       partner_profile_updated_at: string | Date | null
+      profile_photo_path: string | null
+      partner_profile_photo_path: string | null
     }>(
       `
       SELECT user_id, display_name, partner_display_name, anniversary_date,
-        onboarding_completed_at, partner_profile_updated_at
+        onboarding_completed_at, partner_profile_updated_at,
+        profile_photo_path, partner_profile_photo_path
       FROM user_profiles
       WHERE user_id = $1
       `,
@@ -1067,13 +1241,15 @@ export class MulberryService {
       anniversary_date: normalizeDateString(row.anniversary_date),
       onboarding_completed_at: normalizeTimestampString(row.onboarding_completed_at),
       partner_profile_updated_at: normalizeTimestampString(row.partner_profile_updated_at),
+      profile_photo_path: row.profile_photo_path,
+      partner_profile_photo_path: row.partner_profile_photo_path,
     }
   }
 
   private async getPairSession(userId: string): Promise<PairSessionRecord | null> {
     const rows = await this.db.query<PairSessionRecord>(
       `
-      SELECT id, user_one_id, user_two_id
+      SELECT id, user_one_id, user_two_id, created_at
       FROM pair_sessions
       WHERE user_one_id = $1 OR user_two_id = $1
       LIMIT 1
@@ -1081,6 +1257,93 @@ export class MulberryService {
       [userId],
     )
     return rows.rows[0] ?? null
+  }
+
+  private async storeProfilePhoto(
+    userId: string,
+    upload: UploadedProfilePhoto,
+  ): Promise<{ path: string }> {
+    if (!this.profilePhotoStorage) {
+      throw new HttpError(503, "Profile photo storage is not configured")
+    }
+    if (!upload.data || upload.data.length === 0) {
+      throw new HttpError(400, "image is required")
+    }
+    if (upload.data.length > PROFILE_PHOTO_MAX_BYTES) {
+      throw new HttpError(400, "Profile photo must be 10 MB or smaller")
+    }
+    if (!isSupportedProfilePhotoType(upload.contentType)) {
+      throw new HttpError(400, "Profile photo must be JPEG, PNG, or WebP")
+    }
+
+    let processed: Buffer
+    try {
+      processed = await sharp(upload.data, { failOn: "none" })
+        .rotate()
+        .resize(512, 512, { fit: "cover" })
+        .webp({ quality: 84 })
+        .toBuffer()
+    } catch {
+      throw new HttpError(400, "Profile photo could not be processed")
+    }
+
+    const path = `${PROFILE_PHOTO_PREFIX}/${userId}/${randomUUID()}.webp`
+    await this.profilePhotoStorage.upload(path, processed, "image/webp")
+    return { path }
+  }
+
+  private async removeStoredProfilePhotos(paths: string[]): Promise<void> {
+    if (!this.profilePhotoStorage || paths.length === 0) return
+    await this.profilePhotoStorage.remove([...new Set(paths)])
+  }
+
+  private profilePhotoUrl(path: string | null | undefined): string | null {
+    if (!path || !this.profilePhotoStorage) return null
+    return this.profilePhotoStorage.publicUrl(path)
+  }
+
+  private async recordPairActivityDay(
+    db: Pick<Database, "query">,
+    pairSessionId: string,
+    clientLocalDate: string | null | undefined,
+  ): Promise<void> {
+    const activityDay = isLocalDateString(clientLocalDate)
+      ? clientLocalDate
+      : new Date().toISOString().slice(0, 10)
+    await db.query(
+      `
+      INSERT INTO pair_activity_days (pair_session_id, activity_day)
+      VALUES ($1, $2::date)
+      ON CONFLICT (pair_session_id, activity_day) DO NOTHING
+      `,
+      [pairSessionId, activityDay],
+    )
+  }
+
+  private async currentStreakDays(pairSessionId: string): Promise<number> {
+    const rows = await this.db.query<{ activity_day: string | Date }>(
+      `
+      SELECT activity_day
+      FROM pair_activity_days
+      WHERE pair_session_id = $1
+      ORDER BY activity_day DESC
+      `,
+      [pairSessionId],
+    )
+    if (rows.rows.length === 0) return 0
+
+    const days = new Set(rows.rows.map((row) => normalizeDateString(row.activity_day)).filter(Boolean))
+    const today = dateOnly(new Date())
+    const yesterday = addDays(today, -1)
+    let cursor = days.has(today) ? today : days.has(yesterday) ? yesterday : null
+    if (!cursor) return 0
+
+    let streak = 0
+    while (cursor && days.has(cursor)) {
+      streak += 1
+      cursor = addDays(cursor, -1)
+    }
+    return streak
   }
 
   private async getLatestCanvasRevision(pairSessionId: string): Promise<number> {
@@ -1376,6 +1639,26 @@ function isUniqueViolation(error: unknown): boolean {
 function validDateOrNow(raw: string): Date {
   const parsed = new Date(raw)
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed
+}
+
+function isSupportedProfilePhotoType(contentType: string | undefined): boolean {
+  return contentType === "image/jpeg" ||
+    contentType === "image/png" ||
+    contentType === "image/webp"
+}
+
+function isLocalDateString(value: string | null | undefined): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+function dateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10)
+}
+
+function addDays(day: string, delta: number): string {
+  const date = new Date(`${day}T00:00:00.000Z`)
+  date.setUTCDate(date.getUTCDate() + delta)
+  return dateOnly(date)
 }
 
 function normalizeDateString(raw: string | Date | null): string | null {

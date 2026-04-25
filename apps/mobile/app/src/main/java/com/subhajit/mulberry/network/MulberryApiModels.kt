@@ -29,6 +29,8 @@ data class BootstrapResponse(
     val partnerDisplayName: String?,
     val anniversaryDate: String?,
     val partnerProfileNextUpdateAt: String?,
+    val pairedAt: String?,
+    val currentStreakDays: Int = 0,
     val pairingStatus: String,
     val pairSessionId: String?,
     val invite: InviteResponse?
@@ -96,7 +98,8 @@ data class ClientCanvasOperationRequest(
     val type: String,
     val strokeId: String?,
     val payload: JsonObject,
-    val clientCreatedAt: String
+    val clientCreatedAt: String,
+    val clientLocalDate: String? = null
 )
 
 data class CanvasSnapshotResponse(

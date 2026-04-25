@@ -46,6 +46,8 @@ export interface BootstrapResponse {
   partnerDisplayName: string | null
   anniversaryDate: string | null
   partnerProfileNextUpdateAt: string | null
+  pairedAt: string | null
+  currentStreakDays: number
   pairingStatus: PairingStatus
   pairSessionId: string | null
   invite: InviteSummary | null
@@ -96,6 +98,7 @@ export interface ClientCanvasOperation {
   strokeId?: string | null
   payload: unknown
   clientCreatedAt: string
+  clientLocalDate?: string | null
 }
 
 export interface ClientCanvasOperationBatch {
@@ -154,6 +157,8 @@ export interface ProfileRecord {
   anniversary_date: string | null
   onboarding_completed_at: string | null
   partner_profile_updated_at: string | null
+  profile_photo_path: string | null
+  partner_profile_photo_path: string | null
 }
 
 export interface SessionRecord {
@@ -176,6 +181,7 @@ export interface PairSessionRecord {
   id: string
   user_one_id: string
   user_two_id: string
+  created_at: Date | string
 }
 
 export interface CanvasOperationRecord {

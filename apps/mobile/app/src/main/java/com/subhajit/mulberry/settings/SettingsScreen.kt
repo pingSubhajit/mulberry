@@ -1,6 +1,8 @@
 package com.subhajit.mulberry.settings
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -77,6 +79,9 @@ import com.subhajit.mulberry.ui.theme.MulberryPrimaryLight
 import com.subhajit.mulberry.ui.theme.MulberrySurfaceVariant
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 private enum class SettingsPane {
     Home,
@@ -97,6 +102,12 @@ fun SettingsRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var pane by remember { mutableStateOf(SettingsPane.Home) }
+    val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) viewModel.onProfilePhotoSelected(uri)
+    }
+    val partnerPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) viewModel.onPartnerProfilePhotoSelected(uri)
+    }
 
     BackHandler {
         if (pane == SettingsPane.Home) {
@@ -126,8 +137,10 @@ fun SettingsRoute(
         onPaneSelected = { pane = it },
         onLogout = viewModel::onLogout,
         onDisplayNameSave = viewModel::onDisplayNameSave,
+        onProfilePhotoChangeRequested = { profilePhotoPicker.launch("image/*") },
         onDisconnectPartner = viewModel::onDisconnectPartner,
         onPartnerProfileSave = viewModel::onPartnerProfileSave,
+        onPartnerPhotoChangeRequested = { partnerPhotoPicker.launch("image/*") },
         onResetAppState = viewModel::onResetAppState,
         onSeedDemoSession = viewModel::onSeedDemoSession,
         onFeatureFlagChanged = viewModel::onFeatureFlagChanged,
@@ -152,8 +165,10 @@ private fun SettingsScreen(
     onPaneSelected: (SettingsPane) -> Unit,
     onLogout: () -> Unit,
     onDisplayNameSave: (String) -> Unit,
+    onProfilePhotoChangeRequested: () -> Unit,
     onDisconnectPartner: () -> Unit,
     onPartnerProfileSave: (String, String) -> Unit,
+    onPartnerPhotoChangeRequested: () -> Unit,
     onResetAppState: () -> Unit,
     onSeedDemoSession: () -> Unit,
     onFeatureFlagChanged: (FeatureFlag, Boolean) -> Unit,
@@ -195,12 +210,14 @@ private fun SettingsScreen(
                 SettingsPane.Profile -> ProfilePane(
                     uiState = uiState,
                     onLogout = onLogout,
-                    onDisplayNameSave = onDisplayNameSave
+                    onDisplayNameSave = onDisplayNameSave,
+                    onProfilePhotoChangeRequested = onProfilePhotoChangeRequested
                 )
                 SettingsPane.Partner -> PartnerPane(
                     uiState = uiState,
                     onDisconnectPartner = onDisconnectPartner,
-                    onPartnerProfileSave = onPartnerProfileSave
+                    onPartnerProfileSave = onPartnerProfileSave,
+                    onPartnerPhotoChangeRequested = onPartnerPhotoChangeRequested
                 )
                 SettingsPane.PrivacyLegal -> PrivacyLegalPane()
                 SettingsPane.About -> AboutPane(uiState, onVersionTapped)
@@ -320,7 +337,8 @@ private fun SettingsHomePane(
 private fun ProfilePane(
     uiState: SettingsUiState,
     onLogout: () -> Unit,
-    onDisplayNameSave: (String) -> Unit
+    onDisplayNameSave: (String) -> Unit,
+    onProfilePhotoChangeRequested: () -> Unit
 ) {
     var showLogoutConfirmation by remember { mutableStateOf(false) }
     var displayName by remember(uiState.bootstrapState.userDisplayName) {
@@ -372,6 +390,15 @@ private fun ProfilePane(
                 )
             )
             Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onProfilePhotoChangeRequested,
+                enabled = !uiState.isBusy,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(15.38.dp)
+            ) {
+                Text("Change profile photo", fontFamily = PoppinsFontFamily)
+            }
+            Spacer(modifier = Modifier.height(10.dp))
             Button(
                 onClick = { onDisplayNameSave(displayName.trim()) },
                 enabled = !uiState.isBusy &&
@@ -422,7 +449,8 @@ private fun ProfilePane(
 private fun PartnerPane(
     uiState: SettingsUiState,
     onDisconnectPartner: () -> Unit,
-    onPartnerProfileSave: (String, String) -> Unit
+    onPartnerProfileSave: (String, String) -> Unit,
+    onPartnerPhotoChangeRequested: () -> Unit
 ) {
     var showDisconnectConfirmation by remember { mutableStateOf(false) }
     var partnerName by remember(uiState.bootstrapState.partnerDisplayName) {
@@ -448,6 +476,8 @@ private fun PartnerPane(
             rows = listOf(
                 "Pairing status" to uiState.bootstrapState.pairingStatus.displayName,
                 "Relationship anniversary" to (uiState.bootstrapState.anniversaryDate ?: "Not set"),
+                "Paired for" to pairedDurationText(uiState.bootstrapState.pairedAt),
+                "Daily streak" to "${uiState.bootstrapState.currentStreakDays} days",
                 "Pair session" to (uiState.bootstrapState.pairSessionId ?: "Unavailable")
             )
         )
@@ -515,6 +545,15 @@ private fun PartnerPane(
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onPartnerPhotoChangeRequested,
+                enabled = !uiState.isBusy && cooldownText == null,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(15.38.dp)
+            ) {
+                Text("Change partner photo", fontFamily = PoppinsFontFamily)
+            }
+            Spacer(modifier = Modifier.height(10.dp))
             Button(
                 onClick = { onPartnerProfileSave(partnerName.trim(), anniversaryDate.trim()) },
                 enabled = !uiState.isBusy &&
@@ -1151,6 +1190,18 @@ private fun syncSummary(uiState: SettingsUiState): String =
     }
 
 private fun Boolean.yesNo(): String = if (this) "Yes" else "No"
+
+private fun pairedDurationText(pairedAt: String?): String {
+    if (pairedAt.isNullOrBlank()) return "Not paired"
+    return runCatching {
+        val start = Instant.parse(pairedAt).atZone(ZoneId.systemDefault()).toLocalDate()
+        val today = java.time.LocalDate.now()
+        val days = ChronoUnit.DAYS.between(start, today).coerceAtLeast(0) + 1
+        "$days days and counting"
+    }.getOrElse {
+        "Paired"
+    }
+}
 
 private const val ANNIVERSARY_DATE_PLACEHOLDER = "DD-MM-YYYY"
 

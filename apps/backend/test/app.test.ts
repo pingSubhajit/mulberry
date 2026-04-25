@@ -185,6 +185,46 @@ describe("Mulberry backend", () => {
     expect(recipientBootstrap.json().partnerDisplayName).toBe("Subhajit Kundu")
   })
 
+  it("returns paired metadata in bootstrap", async () => {
+    const { inviter } = await pairUsers()
+
+    const bootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(inviter.accessToken),
+    })
+
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().pairedAt).toBeTruthy()
+    expect(bootstrap.json().currentStreakDays).toBe(0)
+  })
+
+  it("uses custom profile photos before Google photo fallback", async () => {
+    const { inviter, recipient } = await pairUsers()
+    const upload = createImageUploadPayload()
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/me/profile-photo",
+      headers: {
+        ...bearer(inviter.accessToken),
+        "content-type": upload.contentType,
+      },
+      payload: upload.body,
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().userPhotoUrl).toMatch(/^https:\/\/storage\.example\.test\/profile-photos\//)
+
+    const recipientBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(recipientBootstrap.statusCode).toBe(200)
+    expect(recipientBootstrap.json().partnerPhotoUrl).toBe(response.json().userPhotoUrl)
+  })
+
   it("creates a six digit invite code", async () => {
     const auth = await signIn("subhajit@elaris.dev", "Subhajit")
     await completeProfile(auth.accessToken, "Subhajit", "Ankita", "2026-01-01")
@@ -625,6 +665,44 @@ describe("Mulberry backend", () => {
     expect(afterCooldown.json().anniversaryDate).toBe("2026-01-03")
   })
 
+  it("applies partner photo uploads through shared identity and cooldown", async () => {
+    const { inviter, recipient } = await pairUsers()
+
+    const firstUpload = createImageUploadPayload()
+    const first = await app.inject({
+      method: "PUT",
+      url: "/me/partner-profile-photo",
+      headers: {
+        ...bearer(inviter.accessToken),
+        "content-type": firstUpload.contentType,
+      },
+      payload: firstUpload.body,
+    })
+    expect(first.statusCode).toBe(200)
+    expect(first.json().partnerPhotoUrl).toMatch(/^https:\/\/storage\.example\.test\/profile-photos\//)
+    expect(first.json().partnerProfileNextUpdateAt).toBeTruthy()
+
+    const recipientBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(recipientBootstrap.statusCode).toBe(200)
+    expect(recipientBootstrap.json().userPhotoUrl).toBe(first.json().partnerPhotoUrl)
+
+    const blockedUpload = createImageUploadPayload()
+    const blocked = await app.inject({
+      method: "PUT",
+      url: "/me/partner-profile-photo",
+      headers: {
+        ...bearer(inviter.accessToken),
+        "content-type": blockedUpload.contentType,
+      },
+      payload: blockedUpload.body,
+    })
+    expect(blocked.statusCode).toBe(409)
+  })
+
   it("does not reuse an active invite when partner details have been cleared", async () => {
     const auth = await signIn("subhajit-active-invite@elaris.dev", "Subhajit")
     await completeProfile(auth.accessToken, "Subhajit", "Ankita", "2026-01-01")
@@ -733,6 +811,41 @@ describe("Mulberry backend", () => {
     expect(accept.json().bootstrapState.userDisplayName).toBe("Priya")
     expect(accept.json().bootstrapState.partnerDisplayName).toBe("Subhajit")
     expect(accept.json().bootstrapState.anniversaryDate).toBe("2026-02-14")
+  })
+
+  it("hydrates invitee profile photo from inviter partner photo metadata", async () => {
+    const inviter = await signIn("subhajit-photo-invite@elaris.dev", "Subhajit")
+    await completeProfile(inviter.accessToken, "Subhajit", "Priya", "2026-02-14")
+    const photo = createImageUploadPayload()
+    const upload = await app.inject({
+      method: "PUT",
+      url: "/me/partner-profile-photo",
+      headers: {
+        ...bearer(inviter.accessToken),
+        "content-type": photo.contentType,
+      },
+      payload: photo.body,
+    })
+    expect(upload.statusCode).toBe(200)
+
+    const createInvite = await app.inject({
+      method: "POST",
+      url: "/invites",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(createInvite.statusCode).toBe(200)
+
+    const recipient = await signIn("priya-photo-invite@elaris.dev", "Priya Google")
+    await completeProfile(recipient.accessToken, "Existing Name", "Someone", "2026-01-01")
+    const redeem = await app.inject({
+      method: "POST",
+      url: "/invites/redeem",
+      headers: bearer(recipient.accessToken),
+      payload: { code: createInvite.json().code },
+    })
+
+    expect(redeem.statusCode).toBe(200)
+    expect(redeem.json().bootstrapState.userPhotoUrl).toBe(upload.json().partnerPhotoUrl)
   })
 
   it("declining an invite clears invite-derived onboarding and returns to onboarding", async () => {
@@ -1267,6 +1380,63 @@ describe("Mulberry backend", () => {
     first.close()
   })
 
+  it("tracks pair streak days from finished strokes", async () => {
+    const { inviter } = await pairUsers()
+    const today = offsetDate(0)
+    const yesterday = offsetDate(-1)
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/canvas/ops/batch",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        batchId: "streak-batch",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          { ...finishStrokeOperation("streak-yesterday", "stroke-a"), clientLocalDate: yesterday },
+          { ...finishStrokeOperation("streak-today-1", "stroke-b"), clientLocalDate: today },
+          { ...finishStrokeOperation("streak-today-2", "stroke-c"), clientLocalDate: today },
+        ],
+      },
+    })
+    expect(response.statusCode).toBe(200)
+
+    const bootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().currentStreakDays).toBe(2)
+  })
+
+  it("resets current streak when the latest activity day is stale", async () => {
+    const { inviter } = await pairUsers()
+    const staleDay = offsetDate(-3)
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/canvas/ops/batch",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        batchId: "stale-streak-batch",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          { ...finishStrokeOperation("stale-streak", "stroke-old"), clientLocalDate: staleDay },
+        ],
+      },
+    })
+    expect(response.statusCode).toBe(200)
+
+    const bootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().currentStreakDays).toBe(0)
+  })
+
   it("marks permanently invalid push tokens revoked", async () => {
     const { inviter, recipient } = await pairUsers()
     await registerFcmToken(recipient.accessToken, "invalid-peer-token")
@@ -1562,6 +1732,33 @@ function createMultipartPayload(input: {
     body: Buffer.concat(chunks),
     contentType: `multipart/form-data; boundary=${boundary}`,
   }
+}
+
+function createImageUploadPayload() {
+  const boundary = `----mulberry-photo-${Date.now()}-${Math.random()}`
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+    "base64",
+  )
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\n`),
+    Buffer.from(
+      `Content-Disposition: form-data; name="image"; filename="avatar.png"\r\n` +
+        `Content-Type: image/png\r\n\r\n`,
+    ),
+    png,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ])
+  return {
+    body,
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  }
+}
+
+function offsetDate(deltaDays: number): string {
+  const date = new Date()
+  date.setUTCDate(date.getUTCDate() + deltaDays)
+  return date.toISOString().slice(0, 10)
 }
 
 class RecordingPushSender implements PushSender {

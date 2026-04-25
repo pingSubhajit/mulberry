@@ -1,5 +1,7 @@
 package com.subhajit.mulberry.settings
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.subhajit.mulberry.BuildConfig
@@ -25,6 +27,7 @@ import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,6 +35,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 
 data class SettingsUiState(
     val environmentLabel: String = "",
@@ -75,6 +81,7 @@ class SettingsViewModel @Inject constructor(
     private val wallpaperCoordinator: WallpaperCoordinator,
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     private val apiService: MulberryApiService,
+    @ApplicationContext private val appContext: Context,
     appConfig: AppConfig
 ) : ViewModel() {
     private val _effects = MutableSharedFlow<SettingsEffect>()
@@ -189,6 +196,14 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun onProfilePhotoSelected(uri: Uri) {
+        viewModelScope.launchWithBusy {
+            val bootstrap = apiService.updateProfilePhoto(uri.toImagePart()).toDomainBootstrap()
+            sessionRepository.cacheBootstrap(bootstrap)
+            _effects.emit(SettingsEffect.Message("Profile photo updated"))
+        }
+    }
+
     fun onPartnerProfileSave(partnerDisplayName: String, anniversaryDate: String) {
         viewModelScope.launchWithBusy {
             val bootstrap = apiService.updatePartnerProfile(
@@ -199,6 +214,14 @@ class SettingsViewModel @Inject constructor(
             ).toDomainBootstrap()
             sessionRepository.cacheBootstrap(bootstrap)
             _effects.emit(SettingsEffect.Message("Partner details updated"))
+        }
+    }
+
+    fun onPartnerProfilePhotoSelected(uri: Uri) {
+        viewModelScope.launchWithBusy {
+            val bootstrap = apiService.updatePartnerProfilePhoto(uri.toImagePart()).toDomainBootstrap()
+            sessionRepository.cacheBootstrap(bootstrap)
+            _effects.emit(SettingsEffect.Message("Partner photo updated"))
         }
     }
 
@@ -256,6 +279,14 @@ class SettingsViewModel @Inject constructor(
                 }
             busyState.value = false
         }
+    }
+
+    private fun Uri.toImagePart(): MultipartBody.Part {
+        val bytes = appContext.contentResolver.openInputStream(this)?.use { it.readBytes() }
+            ?: error("Unable to read selected image")
+        val contentType = appContext.contentResolver.getType(this) ?: "image/jpeg"
+        val requestBody = bytes.toRequestBody(contentType.toMediaType())
+        return MultipartBody.Part.createFormData("image", "profile-photo", requestBody)
     }
 
     private companion object {
