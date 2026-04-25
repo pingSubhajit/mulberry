@@ -4,6 +4,7 @@ import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.network.RedeemInviteRequest
 import com.subhajit.mulberry.network.toDomainBootstrap
+import com.subhajit.mulberry.sync.FcmTokenRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -12,7 +13,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 @Singleton
 class BackendInviteRepository @Inject constructor(
     private val apiService: MulberryApiService,
-    private val sessionBootstrapRepository: SessionBootstrapRepository
+    private val sessionBootstrapRepository: SessionBootstrapRepository,
+    private val fcmTokenRepository: FcmTokenRepository
 ) : InviteRepository {
     private val currentInviteState = MutableStateFlow<CreateInviteResult?>(null)
 
@@ -46,6 +48,7 @@ class BackendInviteRepository @Inject constructor(
     override suspend fun acceptInvite(inviteId: String): Result<Unit> = runCatching {
         val response = apiService.acceptInvite(inviteId)
         sessionBootstrapRepository.cacheBootstrap(response.bootstrapState.toDomainBootstrap())
+        fcmTokenRepository.syncTokenWithBackend()
         clearCurrentInvite()
     }
 

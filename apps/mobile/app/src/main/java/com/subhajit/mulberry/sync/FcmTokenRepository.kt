@@ -63,11 +63,6 @@ class FirebaseFcmTokenRepository @Inject constructor(
         }
 
         val session = sessionBootstrapRepository.getCurrentSession() ?: return@runCatching
-        val registeredToken = dataStore.data.first()[PreferenceStorage.fcmRegisteredToken]
-        val registeredUserId = dataStore.data.first()[PreferenceStorage.fcmRegisteredUserId]
-        if (registeredToken == normalized && registeredUserId == session.userId) {
-            return@runCatching
-        }
 
         apiService.registerFcmToken(
             RegisterFcmTokenRequest(
