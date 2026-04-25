@@ -99,14 +99,19 @@ interface PendingCanvasUpdate {
 
 export interface PushDispatchOptions {
   debounceMs?: number
-  ttlMs?: number
+  canvasUpdateTtlMs?: number
+  pairingConfirmationTtlMs?: number
 }
+
+const DEFAULT_CANVAS_UPDATE_TTL_MS = 24 * 60 * 60 * 1_000
+const DEFAULT_PAIRING_CONFIRMATION_TTL_MS = 60_000
 
 export class PushDispatchService {
   private readonly pendingByPairSession = new Map<string, PendingCanvasUpdate>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly debounceMs: number
-  private readonly ttlMs: number
+  private readonly canvasUpdateTtlMs: number
+  private readonly pairingConfirmationTtlMs: number
 
   constructor(
     private readonly db: Database,
@@ -114,7 +119,9 @@ export class PushDispatchService {
     options: PushDispatchOptions = {},
   ) {
     this.debounceMs = options.debounceMs ?? 2_000
-    this.ttlMs = options.ttlMs ?? 60_000
+    this.canvasUpdateTtlMs = options.canvasUpdateTtlMs ?? DEFAULT_CANVAS_UPDATE_TTL_MS
+    this.pairingConfirmationTtlMs =
+      options.pairingConfirmationTtlMs ?? DEFAULT_PAIRING_CONFIRMATION_TTL_MS
   }
 
   enqueueCanvasUpdated(
@@ -199,7 +206,7 @@ export class PushDispatchService {
         android: {
           priority: "high",
           collapseKey: `canvas-${pending.pairSessionId}`,
-          ttlMs: this.ttlMs,
+          ttlMs: this.canvasUpdateTtlMs,
         },
       })
     } catch (error) {
@@ -255,7 +262,7 @@ export class PushDispatchService {
         android: {
           priority: "high",
           collapseKey: `pairing-${pairSessionId}`,
-          ttlMs: this.ttlMs,
+          ttlMs: this.pairingConfirmationTtlMs,
         },
       })
     } catch (error) {

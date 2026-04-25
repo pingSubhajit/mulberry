@@ -438,6 +438,7 @@ describe("Mulberry backend", () => {
       android: {
         priority: "high",
         collapseKey: `pairing-${accept.json().pairSessionId}`,
+        ttlMs: 60_000,
       },
     })
   })
@@ -1034,6 +1035,7 @@ describe("Mulberry backend", () => {
     })
     expect(message.android.priority).toBe("high")
     expect(message.android.collapseKey).toBe(`canvas-${inviter.pairSessionId}`)
+    expect(message.android.ttlMs).toBe(24 * 60 * 60 * 1_000)
     first.close()
   })
 

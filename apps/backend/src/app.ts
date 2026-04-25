@@ -43,7 +43,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       serviceAccountPath: config.firebaseServiceAccountPath,
       serviceAccountJson: config.firebaseServiceAccountJson,
     }),
-    options.pushOptions,
+    {
+      canvasUpdateTtlMs: config.canvasUpdatePushTtlMs,
+      pairingConfirmationTtlMs: config.pairingConfirmationPushTtlMs,
+      ...options.pushOptions,
+    },
   )
   const service = new MulberryService(db, googleVerifier, pushDispatchService)
   const wallpaperCatalogService = new WallpaperCatalogService(
