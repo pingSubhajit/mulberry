@@ -11,7 +11,10 @@ import com.subhajit.mulberry.core.flags.FeatureFlags
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 import com.subhajit.mulberry.drawing.DrawingRepository
+import com.subhajit.mulberry.network.DisplayNameRequest
 import com.subhajit.mulberry.network.MulberryApiService
+import com.subhajit.mulberry.network.PartnerProfileRequest
+import com.subhajit.mulberry.network.toDomainBootstrap
 import com.subhajit.mulberry.sync.BackgroundCanvasSyncCoordinator
 import com.subhajit.mulberry.sync.CanvasSyncRepository
 import com.subhajit.mulberry.sync.FcmTokenRepository
@@ -176,6 +179,29 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun onDisplayNameSave(displayName: String) {
+        viewModelScope.launchWithBusy {
+            val bootstrap = apiService.updateDisplayName(
+                DisplayNameRequest(displayName = displayName)
+            ).toDomainBootstrap()
+            sessionRepository.cacheBootstrap(bootstrap)
+            _effects.emit(SettingsEffect.Message("Profile name updated"))
+        }
+    }
+
+    fun onPartnerProfileSave(partnerDisplayName: String, anniversaryDate: String) {
+        viewModelScope.launchWithBusy {
+            val bootstrap = apiService.updatePartnerProfile(
+                PartnerProfileRequest(
+                    partnerDisplayName = partnerDisplayName,
+                    anniversaryDate = anniversaryDate.toBackendAnniversaryDate()
+                )
+            ).toDomainBootstrap()
+            sessionRepository.cacheBootstrap(bootstrap)
+            _effects.emit(SettingsEffect.Message("Partner details updated"))
+        }
+    }
+
     fun onSeedDemoSession() {
         viewModelScope.launch {
             sessionRepository.seedDemoSession()
@@ -236,3 +262,6 @@ class SettingsViewModel @Inject constructor(
         const val DEVELOPER_UNLOCK_TAPS = 5
     }
 }
+
+private fun String.toBackendAnniversaryDate(): String =
+    "${substring(6, 10)}-${substring(3, 5)}-${substring(0, 2)}"

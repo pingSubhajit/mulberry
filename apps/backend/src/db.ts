@@ -24,8 +24,23 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       display_name TEXT,
       partner_display_name TEXT,
       anniversary_date DATE,
+      onboarding_completed_at TIMESTAMPTZ,
+      partner_profile_updated_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE user_profiles
+      ADD COLUMN IF NOT EXISTS onboarding_completed_at TIMESTAMPTZ;
+
+    ALTER TABLE user_profiles
+      ADD COLUMN IF NOT EXISTS partner_profile_updated_at TIMESTAMPTZ;
+
+    UPDATE user_profiles
+    SET onboarding_completed_at = updated_at
+    WHERE onboarding_completed_at IS NULL
+      AND display_name IS NOT NULL
+      AND partner_display_name IS NOT NULL
+      AND anniversary_date IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,

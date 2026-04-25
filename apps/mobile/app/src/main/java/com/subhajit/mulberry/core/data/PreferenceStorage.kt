@@ -17,6 +17,7 @@ object PreferenceStorage {
     val partnerPhotoUrl = stringPreferencesKey("partner_photo_url")
     val partnerDisplayName = stringPreferencesKey("partner_display_name")
     val anniversaryDate = stringPreferencesKey("anniversary_date")
+    val partnerProfileNextUpdateAt = stringPreferencesKey("partner_profile_next_update_at")
     val pairingStatus = stringPreferencesKey("pairing_status")
     val pairSessionId = stringPreferencesKey("pair_session_id")
     val pendingInviteId = stringPreferencesKey("pending_invite_id")

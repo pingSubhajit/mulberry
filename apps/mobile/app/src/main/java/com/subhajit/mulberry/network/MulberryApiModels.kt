@@ -28,6 +28,7 @@ data class BootstrapResponse(
     val partnerPhotoUrl: String?,
     val partnerDisplayName: String?,
     val anniversaryDate: String?,
+    val partnerProfileNextUpdateAt: String?,
     val pairingStatus: String,
     val pairSessionId: String?,
     val invite: InviteResponse?
@@ -43,6 +44,15 @@ data class InviteResponse(
 
 data class ProfileRequest(
     val displayName: String,
+    val partnerDisplayName: String,
+    val anniversaryDate: String
+)
+
+data class DisplayNameRequest(
+    val displayName: String
+)
+
+data class PartnerProfileRequest(
     val partnerDisplayName: String,
     val anniversaryDate: String
 )

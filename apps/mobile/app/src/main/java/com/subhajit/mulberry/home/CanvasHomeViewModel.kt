@@ -21,6 +21,9 @@ import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.drawing.model.ToolState
 import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
+import com.subhajit.mulberry.network.MulberryApiService
+import com.subhajit.mulberry.network.PartnerProfileRequest
+import com.subhajit.mulberry.network.toDomainBootstrap
 import com.subhajit.mulberry.pairing.CreateInviteResult
 import com.subhajit.mulberry.pairing.InviteRepository
 import com.subhajit.mulberry.settings.PairingDisconnectCoordinator
@@ -55,6 +58,7 @@ enum class HomePairingSheetMode {
     Hidden,
     ShareInvite,
     JoinCodeEntry,
+    PartnerDetails,
     PairingConfirmed
 }
 
@@ -81,6 +85,20 @@ data class PairingConfirmationUiState(
     val errorMessage: String? = null
 )
 
+data class PartnerDetailsFormUiState(
+    val partnerDisplayName: String = "",
+    val anniversaryDate: String = ANNIVERSARY_DATE_PLACEHOLDER,
+    val nextUpdateAt: String? = null,
+    val isSaving: Boolean = false,
+    val errorMessage: String? = null
+) {
+    val canSubmit: Boolean
+        get() = partnerDisplayName.isNotBlank() &&
+            anniversaryDate.isCompleteAnniversaryDate() &&
+            nextUpdateAt == null &&
+            !isSaving
+}
+
 data class CanvasHomeUiState(
     val environmentLabel: String = "",
     val bootstrapState: SessionBootstrapState = SessionBootstrapState(),
@@ -96,6 +114,7 @@ data class CanvasHomeUiState(
     val pairingSheetMode: HomePairingSheetMode = HomePairingSheetMode.Hidden,
     val inviteSheet: InviteSheetUiState = InviteSheetUiState(),
     val joinCode: JoinCodeUiState = JoinCodeUiState(),
+    val partnerDetailsForm: PartnerDetailsFormUiState = PartnerDetailsFormUiState(),
     val pairingConfirmation: PairingConfirmationUiState = PairingConfirmationUiState(),
     val selectedWallpaperPresetResId: Int? = null,
     val selectedRemoteWallpaperId: String? = null,
@@ -120,6 +139,7 @@ class CanvasHomeViewModel @Inject constructor(
     featureFlagProvider: FeatureFlagProvider,
     private val drawingRepository: DrawingRepository,
     private val inviteRepository: InviteRepository,
+    private val apiService: MulberryApiService,
     private val canvasRuntime: CanvasRuntime,
     private val backgroundImageRepository: BackgroundImageRepository,
     private val wallpaperCatalogRepository: WallpaperCatalogRepository,
@@ -132,6 +152,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val inviteLoadingState = MutableStateFlow(false)
     private val inviteErrorState = MutableStateFlow<String?>(null)
     private val joinCodeState = MutableStateFlow(JoinCodeUiState())
+    private val partnerDetailsFormState = MutableStateFlow(PartnerDetailsFormUiState())
     private val pairingConfirmationState = MutableStateFlow(PairingConfirmationUiState())
     private val recentRemoteWallpapersState = MutableStateFlow<List<RemoteWallpaper>>(emptyList())
     private val applyingRemoteWallpaperIdState = MutableStateFlow<String?>(null)
@@ -187,10 +208,12 @@ class CanvasHomeViewModel @Inject constructor(
     private val inviteControls = combine(
         inviteControlsBase,
         joinCodeState,
+        partnerDetailsFormState,
         pairingConfirmationState
-    ) { controls, joinCode, confirmation ->
+    ) { controls, joinCode, partnerDetailsForm, confirmation ->
         controls.copy(
             joinCode = joinCode,
+            partnerDetailsForm = partnerDetailsForm,
             confirmation = confirmation
         )
     }
@@ -230,6 +253,7 @@ class CanvasHomeViewModel @Inject constructor(
                 errorMessage = inviteControls.inviteError
             ),
             joinCode = inviteControls.joinCode,
+            partnerDetailsForm = inviteControls.partnerDetailsForm,
             pairingConfirmation = inviteControls.confirmation,
             selectedWallpaperPresetResId = baseState.backgroundState.selectedPresetResId,
             selectedRemoteWallpaperId = baseState.backgroundState.selectedRemoteWallpaperId,
@@ -317,20 +341,13 @@ class CanvasHomeViewModel @Inject constructor(
     }
 
     fun onInviteRequested() {
+        if (uiState.value.bootstrapState.requiresPartnerDetailsForInvite()) {
+            openPartnerDetailsForm()
+            return
+        }
         pairingSheetMode.value = HomePairingSheetMode.ShareInvite
         viewModelScope.launch {
-            inviteRepository.clearCurrentInvite()
-            inviteLoadingState.value = true
-            inviteErrorState.value = null
-            inviteRepository.createInvite()
-                .onSuccess {
-                    inviteLoadingState.value = false
-                    bootstrapRepository.refreshBootstrap()
-                }
-                .onFailure { error ->
-                    inviteLoadingState.value = false
-                    inviteErrorState.value = error.message ?: "Unable to create invite"
-                }
+            createInviteForSheet()
         }
     }
 
@@ -338,6 +355,7 @@ class CanvasHomeViewModel @Inject constructor(
         pairingSheetMode.value = HomePairingSheetMode.Hidden
         inviteErrorState.value = null
         joinCodeState.value = JoinCodeUiState()
+        partnerDetailsFormState.value = PartnerDetailsFormUiState()
         pairingConfirmationState.value = PairingConfirmationUiState()
         refreshBootstrapState()
     }
@@ -350,7 +368,53 @@ class CanvasHomeViewModel @Inject constructor(
         pairingSheetMode.value = HomePairingSheetMode.JoinCodeEntry
         joinCodeState.value = JoinCodeUiState()
         inviteErrorState.value = null
+        partnerDetailsFormState.value = PartnerDetailsFormUiState()
         pairingConfirmationState.value = PairingConfirmationUiState()
+    }
+
+    fun onPartnerDetailsRequested() {
+        openPartnerDetailsForm()
+    }
+
+    fun onPartnerNameChanged(value: String) {
+        partnerDetailsFormState.value = partnerDetailsFormState.value.copy(
+            partnerDisplayName = value,
+            errorMessage = null
+        )
+    }
+
+    fun onPartnerAnniversaryChanged(value: String) {
+        partnerDetailsFormState.value = partnerDetailsFormState.value.copy(
+            anniversaryDate = value.toMaskedAnniversaryDate(),
+            errorMessage = null
+        )
+    }
+
+    fun onPartnerDetailsSubmitted() {
+        val form = partnerDetailsFormState.value
+        if (!form.canSubmit) return
+
+        viewModelScope.launch {
+            partnerDetailsFormState.value = form.copy(isSaving = true, errorMessage = null)
+            runCatching {
+                apiService.updatePartnerProfile(
+                    PartnerProfileRequest(
+                        partnerDisplayName = form.partnerDisplayName.trim(),
+                        anniversaryDate = form.anniversaryDate.toBackendAnniversaryDate()
+                    )
+                )
+            }.onSuccess { response ->
+                sessionRepository.cacheBootstrap(response.toDomainBootstrap())
+                partnerDetailsFormState.value = PartnerDetailsFormUiState()
+                pairingSheetMode.value = HomePairingSheetMode.ShareInvite
+                createInviteForSheet()
+            }.onFailure { error ->
+                partnerDetailsFormState.value = form.copy(
+                    isSaving = false,
+                    errorMessage = error.message ?: "Unable to update partner details"
+                )
+            }
+        }
     }
 
     fun onPairingConfirmationRequested() {
@@ -431,6 +495,10 @@ class CanvasHomeViewModel @Inject constructor(
 
     fun onShareInviteClicked() {
         viewModelScope.launch {
+            if (uiState.value.bootstrapState.requiresPartnerDetailsForInvite()) {
+                openPartnerDetailsForm()
+                return@launch
+            }
             val invite = ensureShareableInvite().getOrElse { error ->
                 inviteErrorState.value = error.message ?: "Unable to create invite"
                 return@launch
@@ -450,6 +518,35 @@ class CanvasHomeViewModel @Inject constructor(
             }
             .onFailure {
                 inviteLoadingState.value = false
+            }
+    }
+
+    private fun openPartnerDetailsForm() {
+        val bootstrap = uiState.value.bootstrapState
+        partnerDetailsFormState.value = PartnerDetailsFormUiState(
+            partnerDisplayName = bootstrap.partnerDisplayName.orEmpty(),
+            anniversaryDate = bootstrap.anniversaryDate.toMaskedAnniversaryDate(),
+            nextUpdateAt = bootstrap.partnerProfileNextUpdateAt
+        )
+        inviteErrorState.value = null
+        pairingSheetMode.value = HomePairingSheetMode.PartnerDetails
+    }
+
+    private suspend fun createInviteForSheet() {
+        inviteRepository.clearCurrentInvite()
+        inviteLoadingState.value = true
+        inviteErrorState.value = null
+        inviteRepository.createInvite()
+            .onSuccess {
+                inviteLoadingState.value = false
+                bootstrapRepository.refreshBootstrap()
+            }
+            .onFailure { error ->
+                inviteLoadingState.value = false
+                inviteErrorState.value = error.message ?: "Unable to create invite"
+                if (uiState.value.bootstrapState.requiresPartnerDetailsForInvite()) {
+                    openPartnerDetailsForm()
+                }
             }
     }
 
@@ -592,6 +689,7 @@ class CanvasHomeViewModel @Inject constructor(
         val inviteError: String?,
         val nowMillis: Long,
         val joinCode: JoinCodeUiState = JoinCodeUiState(),
+        val partnerDetailsForm: PartnerDetailsFormUiState = PartnerDetailsFormUiState(),
         val confirmation: PairingConfirmationUiState = PairingConfirmationUiState()
     )
 
@@ -646,6 +744,37 @@ private fun CreateInviteResult.isExpiredAt(nowMillis: Long): Boolean {
 
 private fun CreateInviteResult.toShareMessage(): String =
     "Join me on Mulberry. Use invite code $code to pair with me and share a canvas on our lock screens. This code expires soon."
+
+private fun SessionBootstrapState.requiresPartnerDetailsForInvite(): Boolean =
+    partnerDisplayName.isNullOrBlank() || anniversaryDate.isNullOrBlank()
+
+private const val ANNIVERSARY_DATE_PLACEHOLDER = "DD-MM-YYYY"
+
+private fun String?.toMaskedAnniversaryDate(): String {
+    val raw = this.orEmpty()
+    val digits = if (raw.matches(Regex("""\d{4}-\d{2}-\d{2}"""))) {
+        raw.substring(8, 10) + raw.substring(5, 7) + raw.substring(0, 4)
+    } else {
+        raw.filter(Char::isDigit).take(8)
+    }
+    val slots = ANNIVERSARY_DATE_PLACEHOLDER.toCharArray()
+    var digitIndex = 0
+    for (index in slots.indices) {
+        if (slots[index] == 'Y' || slots[index] == 'M' || slots[index] == 'D') {
+            if (digitIndex < digits.length) {
+                slots[index] = digits[digitIndex]
+                digitIndex += 1
+            }
+        }
+    }
+    return slots.concatToString()
+}
+
+private fun String.isCompleteAnniversaryDate(): Boolean =
+    matches(Regex("""\d{2}-\d{2}-\d{4}"""))
+
+private fun String.toBackendAnniversaryDate(): String =
+    "${substring(6, 10)}-${substring(3, 5)}-${substring(0, 2)}"
 
 private val inviteDateFormats = listOf(
     SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US),

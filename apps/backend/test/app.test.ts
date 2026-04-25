@@ -156,6 +156,35 @@ describe("Mulberry backend", () => {
     expect(body.partnerDisplayName).toBe("Ankita")
   })
 
+  it("updates the signed-in user's profile name and propagates it to a paired partner", async () => {
+    const { inviter, recipient } = await pairUsers()
+
+    const invalid = await app.inject({
+      method: "PUT",
+      url: "/me/display-name",
+      headers: bearer(inviter.accessToken),
+      payload: { displayName: " " },
+    })
+    expect(invalid.statusCode).toBe(400)
+
+    const update = await app.inject({
+      method: "PUT",
+      url: "/me/display-name",
+      headers: bearer(inviter.accessToken),
+      payload: { displayName: "Subhajit Kundu" },
+    })
+    expect(update.statusCode).toBe(200)
+    expect(update.json().userDisplayName).toBe("Subhajit Kundu")
+
+    const recipientBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(recipientBootstrap.statusCode).toBe(200)
+    expect(recipientBootstrap.json().partnerDisplayName).toBe("Subhajit Kundu")
+  })
+
   it("creates a six digit invite code", async () => {
     const auth = await signIn("subhajit@elaris.dev", "Subhajit")
     await completeProfile(auth.accessToken, "Subhajit", "Ankita", "2026-01-01")
@@ -466,7 +495,7 @@ describe("Mulberry backend", () => {
     })
   })
 
-  it("disconnects a paired session while preserving user profiles", async () => {
+  it("disconnects a paired session while clearing active partner metadata", async () => {
     const { inviter, recipient } = await pairUsers()
 
     const disconnect = await app.inject({
@@ -477,8 +506,10 @@ describe("Mulberry backend", () => {
 
     expect(disconnect.statusCode).toBe(200)
     expect(disconnect.json().pairingStatus).toBe("UNPAIRED")
+    expect(disconnect.json().onboardingCompleted).toBe(true)
     expect(disconnect.json().userDisplayName).toBe("Subhajit")
-    expect(disconnect.json().partnerDisplayName).toBe("Ankita")
+    expect(disconnect.json().partnerDisplayName).toBeNull()
+    expect(disconnect.json().anniversaryDate).toBeNull()
 
     const recipientBootstrap = await app.inject({
       method: "GET",
@@ -487,8 +518,10 @@ describe("Mulberry backend", () => {
     })
     expect(recipientBootstrap.statusCode).toBe(200)
     expect(recipientBootstrap.json().pairingStatus).toBe("UNPAIRED")
+    expect(recipientBootstrap.json().onboardingCompleted).toBe(true)
     expect(recipientBootstrap.json().userDisplayName).toBe("Ankita")
-    expect(recipientBootstrap.json().partnerDisplayName).toBe("Subhajit")
+    expect(recipientBootstrap.json().partnerDisplayName).toBeNull()
+    expect(recipientBootstrap.json().anniversaryDate).toBeNull()
 
     const secondDisconnect = await app.inject({
       method: "POST",
@@ -496,6 +529,128 @@ describe("Mulberry backend", () => {
       headers: bearer(inviter.accessToken),
     })
     expect(secondDisconnect.statusCode).toBe(400)
+  })
+
+  it("requires fresh partner details before inviting after disconnect", async () => {
+    const { inviter } = await pairUsers()
+
+    const disconnect = await app.inject({
+      method: "POST",
+      url: "/pairing/disconnect",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(disconnect.statusCode).toBe(200)
+
+    const blockedInvite = await app.inject({
+      method: "POST",
+      url: "/invites",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(blockedInvite.statusCode).toBe(400)
+    expect(blockedInvite.json().message).toBe("Partner details are required before creating an invite")
+
+    const updatePartner = await updatePartnerProfile(inviter.accessToken, "Priya", "2026-02-14")
+    expect(updatePartner.statusCode).toBe(200)
+    expect(updatePartner.json().partnerDisplayName).toBe("Priya")
+    expect(updatePartner.json().anniversaryDate).toBe("2026-02-14")
+
+    const createInvite = await app.inject({
+      method: "POST",
+      url: "/invites",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(createInvite.statusCode).toBe(200)
+
+    const recipient = await signIn("priya@elaris.dev", "Priya Google")
+    const redeem = await app.inject({
+      method: "POST",
+      url: "/invites/redeem",
+      headers: bearer(recipient.accessToken),
+      payload: { code: createInvite.json().code },
+    })
+    expect(redeem.statusCode).toBe(200)
+    expect(redeem.json().bootstrapState.userDisplayName).toBe("Priya")
+    expect(redeem.json().bootstrapState.partnerDisplayName).toBe("Subhajit")
+    expect(redeem.json().bootstrapState.anniversaryDate).toBe("2026-02-14")
+  })
+
+  it("allows unpaired users to update partner details without cooldown", async () => {
+    const auth = await signIn("subhajit-unpaired-edit@elaris.dev", "Subhajit")
+    await completeProfile(auth.accessToken, "Subhajit", "Ankita", "2026-01-01")
+
+    const first = await updatePartnerProfile(auth.accessToken, "Ankita Nandi", "2026-01-02")
+    expect(first.statusCode).toBe(200)
+    expect(first.json().partnerProfileNextUpdateAt).toBeNull()
+
+    const second = await updatePartnerProfile(auth.accessToken, "Priya", "2026-02-14")
+    expect(second.statusCode).toBe(200)
+    expect(second.json().partnerDisplayName).toBe("Priya")
+    expect(second.json().anniversaryDate).toBe("2026-02-14")
+    expect(second.json().partnerProfileNextUpdateAt).toBeNull()
+  })
+
+  it("enforces partner detail update cooldown only while paired", async () => {
+    const { inviter, recipient } = await pairUsers()
+
+    const first = await updatePartnerProfile(inviter.accessToken, "Ankita Nandi", "2026-01-02")
+    expect(first.statusCode).toBe(200)
+    expect(first.json().partnerDisplayName).toBe("Ankita Nandi")
+    expect(first.json().partnerProfileNextUpdateAt).toBeTruthy()
+
+    const recipientBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(recipientBootstrap.statusCode).toBe(200)
+    expect(recipientBootstrap.json().userDisplayName).toBe("Ankita Nandi")
+    expect(recipientBootstrap.json().anniversaryDate).toBe("2026-01-02")
+
+    const blocked = await updatePartnerProfile(inviter.accessToken, "Ankita", "2026-01-03")
+    expect(blocked.statusCode).toBe(409)
+    expect(blocked.json().message).toMatch(/^Partner details can be updated again at /)
+
+    await db.query(
+      `
+      UPDATE user_profiles
+      SET partner_profile_updated_at = NOW() - INTERVAL '73 hours'
+      WHERE user_id = $1
+      `,
+      [inviter.userId],
+    )
+
+    const afterCooldown = await updatePartnerProfile(inviter.accessToken, "Ankita", "2026-01-03")
+    expect(afterCooldown.statusCode).toBe(200)
+    expect(afterCooldown.json().partnerDisplayName).toBe("Ankita")
+    expect(afterCooldown.json().anniversaryDate).toBe("2026-01-03")
+  })
+
+  it("does not reuse an active invite when partner details have been cleared", async () => {
+    const auth = await signIn("subhajit-active-invite@elaris.dev", "Subhajit")
+    await completeProfile(auth.accessToken, "Subhajit", "Ankita", "2026-01-01")
+    const createInvite = await app.inject({
+      method: "POST",
+      url: "/invites",
+      headers: bearer(auth.accessToken),
+    })
+    expect(createInvite.statusCode).toBe(200)
+
+    await db.query(
+      `
+      UPDATE user_profiles
+      SET partner_display_name = NULL, anniversary_date = NULL
+      WHERE user_id = $1
+      `,
+      [auth.userId],
+    )
+
+    const retry = await app.inject({
+      method: "POST",
+      url: "/invites",
+      headers: bearer(auth.accessToken),
+    })
+    expect(retry.statusCode).toBe(400)
+    expect(retry.json().message).toBe("Partner details are required before creating an invite")
   })
 
   it("hydrates invitee onboarding from inviter profile when code is redeemed during onboarding", async () => {
@@ -539,6 +694,45 @@ describe("Mulberry backend", () => {
 
     expect(retry.statusCode).toBe(200)
     expect(retry.json().bootstrapState.pairingStatus).toBe("INVITE_PENDING_ACCEPTANCE")
+  })
+
+  it("updates an already-onboarded invitee profile from inviter partner details", async () => {
+    const inviter = await signIn("subhajit-home-invite@elaris.dev", "Subhajit")
+    await completeProfile(inviter.accessToken, "Subhajit", "Old Partner", "2026-01-01")
+    const updatePartner = await updatePartnerProfile(inviter.accessToken, "Priya", "2026-02-14")
+    expect(updatePartner.statusCode).toBe(200)
+
+    const createInvite = await app.inject({
+      method: "POST",
+      url: "/invites",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(createInvite.statusCode).toBe(200)
+    const invite = createInvite.json()
+
+    const recipient = await signIn("priya-home@elaris.dev", "Priya Google")
+    await completeProfile(recipient.accessToken, "Existing Name", "Someone", "2026-01-01")
+    const redeem = await app.inject({
+      method: "POST",
+      url: "/invites/redeem",
+      headers: bearer(recipient.accessToken),
+      payload: { code: invite.code },
+    })
+
+    expect(redeem.statusCode).toBe(200)
+    expect(redeem.json().bootstrapState.userDisplayName).toBe("Priya")
+    expect(redeem.json().bootstrapState.partnerDisplayName).toBe("Subhajit")
+    expect(redeem.json().bootstrapState.anniversaryDate).toBe("2026-02-14")
+
+    const accept = await app.inject({
+      method: "POST",
+      url: `/invites/${invite.inviteId}/accept`,
+      headers: bearer(recipient.accessToken),
+    })
+    expect(accept.statusCode).toBe(200)
+    expect(accept.json().bootstrapState.userDisplayName).toBe("Priya")
+    expect(accept.json().bootstrapState.partnerDisplayName).toBe("Subhajit")
+    expect(accept.json().bootstrapState.anniversaryDate).toBe("2026-02-14")
   })
 
   it("declining an invite clears invite-derived onboarding and returns to onboarding", async () => {
@@ -1137,6 +1331,22 @@ describe("Mulberry backend", () => {
       },
     })
     expect(response.statusCode).toBe(200)
+  }
+
+  async function updatePartnerProfile(
+    accessToken: string,
+    partnerDisplayName: string,
+    anniversaryDate: string,
+  ) {
+    return app.inject({
+      method: "PUT",
+      url: "/me/partner-profile",
+      headers: bearer(accessToken),
+      payload: {
+        partnerDisplayName,
+        anniversaryDate,
+      },
+    })
   }
 
   async function pairUsers() {

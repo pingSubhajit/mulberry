@@ -71,6 +71,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
@@ -81,11 +82,16 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.zIndex
@@ -198,6 +204,10 @@ fun CanvasHomeRoute(
         onPairingSheetDismissed = viewModel::onPairingSheetDismissed,
         onShareInviteClicked = viewModel::onShareInviteClicked,
         onJoinCodeRequested = viewModel::onJoinCodeRequested,
+        onPartnerDetailsRequested = viewModel::onPartnerDetailsRequested,
+        onPartnerNameChanged = viewModel::onPartnerNameChanged,
+        onPartnerAnniversaryChanged = viewModel::onPartnerAnniversaryChanged,
+        onPartnerDetailsSubmitted = viewModel::onPartnerDetailsSubmitted,
         onPairingConfirmationRequested = viewModel::onPairingConfirmationRequested,
         onJoinCodeChanged = viewModel::onJoinCodeChanged,
         onJoinCodeSubmitted = viewModel::onJoinCodeSubmitted,
@@ -238,6 +248,10 @@ private fun CanvasHomeScreen(
     onPairingSheetDismissed: () -> Unit,
     onShareInviteClicked: () -> Unit,
     onJoinCodeRequested: () -> Unit,
+    onPartnerDetailsRequested: () -> Unit,
+    onPartnerNameChanged: (String) -> Unit,
+    onPartnerAnniversaryChanged: (String) -> Unit,
+    onPartnerDetailsSubmitted: () -> Unit,
     onPairingConfirmationRequested: () -> Unit,
     onJoinCodeChanged: (String) -> Unit,
     onJoinCodeSubmitted: () -> Unit,
@@ -305,13 +319,22 @@ private fun CanvasHomeScreen(
         HomePairingSheetMode.ShareInvite -> InviteCodeBottomSheet(
             inviteSheet = uiState.inviteSheet,
             onDismiss = onPairingSheetDismissed,
-            onShareInviteClicked = onShareInviteClicked
+            onShareInviteClicked = onShareInviteClicked,
+            onPartnerDetailsRequested = onPartnerDetailsRequested
         )
 
         HomePairingSheetMode.JoinCodeEntry -> JoinCodeBottomSheet(
             joinCode = uiState.joinCode,
             onCodeChanged = onJoinCodeChanged,
             onSubmit = onJoinCodeSubmitted,
+            onDismiss = onPairingSheetDismissed
+        )
+
+        HomePairingSheetMode.PartnerDetails -> PartnerDetailsBottomSheet(
+            form = uiState.partnerDetailsForm,
+            onPartnerNameChanged = onPartnerNameChanged,
+            onAnniversaryChanged = onPartnerAnniversaryChanged,
+            onSubmit = onPartnerDetailsSubmitted,
             onDismiss = onPairingSheetDismissed
         )
 
@@ -1114,7 +1137,8 @@ private fun LockNavIcon(color: Color) {
 private fun InviteCodeBottomSheet(
     inviteSheet: InviteSheetUiState,
     onDismiss: () -> Unit,
-    onShareInviteClicked: () -> Unit
+    onShareInviteClicked: () -> Unit,
+    onPartnerDetailsRequested: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -1219,9 +1243,225 @@ private fun InviteCodeBottomSheet(
                     fontWeight = FontWeight.Medium
                 )
             }
+            Spacer(modifier = Modifier.height(10.dp))
+            TextButton(onClick = onPartnerDetailsRequested) {
+                Text(
+                    text = "Change partner info",
+                    color = MulberryPrimary,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PartnerDetailsBottomSheet(
+    form: PartnerDetailsFormUiState,
+    onPartnerNameChanged: (String) -> Unit,
+    onAnniversaryChanged: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(sheetState) {
+        sheetState.expand()
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(
+                text = "Partner details",
+                color = MaterialTheme.colorScheme.onSurface,
+                fontFamily = PoppinsFontFamily,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            BareTextInput(
+                label = "Partner name",
+                placeholder = "Enter partner name",
+                value = form.partnerDisplayName,
+                onValueChange = onPartnerNameChanged,
+                keyboardType = KeyboardType.Text
+            )
+            BareTextInput(
+                label = "Relationship anniversary (DD-MM-YYYY)",
+                value = form.anniversaryDate,
+                onValueChange = onAnniversaryChanged,
+                keyboardType = KeyboardType.Number,
+                useDatePlaceholderStyle = true
+            )
+            form.errorMessage?.let { error ->
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 12.sp
+                )
+            }
+            form.nextUpdateAt?.let { nextUpdateAt ->
+                Text(
+                    text = "Editable again at $nextUpdateAt",
+                    color = MaterialTheme.mulberryAppColors.mutedText,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+            }
+            Button(
+                onClick = onSubmit,
+                enabled = form.canSubmit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                shape = RoundedCornerShape(15.38.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MulberryPrimary,
+                    disabledContainerColor = MulberryPrimary.copy(alpha = 0.45f)
+                )
+            ) {
+                Text(
+                    text = if (form.isSaving) "Saving..." else "Save and create invite",
+                    color = Color.White,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BareTextInput(
+    label: String,
+    placeholder: String = "",
+    value: String,
+    onValueChange: (String) -> Unit,
+    keyboardType: KeyboardType,
+    useDatePlaceholderStyle: Boolean = false
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontFamily = PoppinsFontFamily,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        val placeholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.34f)
+        val inputColor = MaterialTheme.colorScheme.onSurface
+        val inputModifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.mulberryAppColors.inputSurface)
+            .padding(horizontal = 14.dp, vertical = 14.dp)
+        val inputTextStyle = TextStyle(
+            color = inputColor,
+            fontFamily = PoppinsFontFamily,
+            fontSize = 16.sp
+        )
+        val inputKeyboardOptions = KeyboardOptions(
+            keyboardType = keyboardType,
+            imeAction = ImeAction.Next
+        )
+        if (useDatePlaceholderStyle) {
+            BasicTextField(
+                value = TextFieldValue(
+                    text = value,
+                    selection = TextRange(value.anniversaryDateCursorOffset())
+                ),
+                onValueChange = { onValueChange(it.text) },
+                singleLine = true,
+                textStyle = inputTextStyle,
+                keyboardOptions = inputKeyboardOptions,
+                visualTransformation = DatePlaceholderVisualTransformation(
+                    inputColor = inputColor,
+                    placeholderColor = placeholderColor
+                ),
+                cursorBrush = SolidColor(inputColor),
+                modifier = inputModifier
+            )
+        } else {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = inputTextStyle,
+                keyboardOptions = inputKeyboardOptions,
+                visualTransformation = VisualTransformation.None,
+                cursorBrush = SolidColor(inputColor),
+                modifier = inputModifier,
+                decorationBox = { innerTextField ->
+                    Box {
+                        if (value.isEmpty() && placeholder.isNotBlank()) {
+                            Text(
+                                text = placeholder,
+                                color = placeholderColor,
+                                fontFamily = PoppinsFontFamily,
+                                fontSize = 16.sp
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
+            )
+        }
+    }
+}
+
+private fun String.anniversaryDateCursorOffset(): Int {
+    val digitCount = count(Char::isDigit)
+    if (digitCount == 0) return 0
+    val editableIndexes = listOf(0, 1, 3, 4, 6, 7, 8, 9)
+    return (editableIndexes[(digitCount - 1).coerceAtMost(editableIndexes.lastIndex)] + 1)
+        .coerceAtMost(length)
+}
+
+private class DatePlaceholderVisualTransformation(
+    private val inputColor: Color,
+    private val placeholderColor: Color
+) : VisualTransformation {
+    override fun filter(text: androidx.compose.ui.text.AnnotatedString): TransformedText {
+        val transformed = buildAnnotatedString {
+            text.text.forEachIndexed { index, character ->
+                val color = if (
+                    character.isAnniversaryPlaceholderCharacter() ||
+                    character.isPendingAnniversaryHyphen(text.text, index)
+                ) {
+                    placeholderColor
+                } else {
+                    inputColor
+                }
+                withStyle(SpanStyle(color = color)) {
+                    append(character)
+                }
+            }
+        }
+        return TransformedText(transformed, OffsetMapping.Identity)
+    }
+}
+
+private fun Char.isAnniversaryPlaceholderCharacter(): Boolean =
+    this == 'D' || this == 'M' || this == 'Y'
+
+private fun Char.isPendingAnniversaryHyphen(text: String, index: Int): Boolean =
+    this == '-' && text.getOrNull(index + 1)?.isDigit() != true
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

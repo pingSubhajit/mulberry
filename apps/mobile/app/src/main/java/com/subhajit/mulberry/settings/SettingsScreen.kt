@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -28,6 +29,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -47,8 +50,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -113,7 +125,9 @@ fun SettingsRoute(
         },
         onPaneSelected = { pane = it },
         onLogout = viewModel::onLogout,
+        onDisplayNameSave = viewModel::onDisplayNameSave,
         onDisconnectPartner = viewModel::onDisconnectPartner,
+        onPartnerProfileSave = viewModel::onPartnerProfileSave,
         onResetAppState = viewModel::onResetAppState,
         onSeedDemoSession = viewModel::onSeedDemoSession,
         onFeatureFlagChanged = viewModel::onFeatureFlagChanged,
@@ -137,7 +151,9 @@ private fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onPaneSelected: (SettingsPane) -> Unit,
     onLogout: () -> Unit,
+    onDisplayNameSave: (String) -> Unit,
     onDisconnectPartner: () -> Unit,
+    onPartnerProfileSave: (String, String) -> Unit,
     onResetAppState: () -> Unit,
     onSeedDemoSession: () -> Unit,
     onFeatureFlagChanged: (FeatureFlag, Boolean) -> Unit,
@@ -176,8 +192,16 @@ private fun SettingsScreen(
 
             when (pane) {
                 SettingsPane.Home -> SettingsHomePane(uiState, onPaneSelected)
-                SettingsPane.Profile -> ProfilePane(uiState, onLogout)
-                SettingsPane.Partner -> PartnerPane(uiState, onDisconnectPartner)
+                SettingsPane.Profile -> ProfilePane(
+                    uiState = uiState,
+                    onLogout = onLogout,
+                    onDisplayNameSave = onDisplayNameSave
+                )
+                SettingsPane.Partner -> PartnerPane(
+                    uiState = uiState,
+                    onDisconnectPartner = onDisconnectPartner,
+                    onPartnerProfileSave = onPartnerProfileSave
+                )
                 SettingsPane.PrivacyLegal -> PrivacyLegalPane()
                 SettingsPane.About -> AboutPane(uiState, onVersionTapped)
                 SettingsPane.DeveloperOptions -> DeveloperOptionsPane(
@@ -295,9 +319,15 @@ private fun SettingsHomePane(
 @Composable
 private fun ProfilePane(
     uiState: SettingsUiState,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onDisplayNameSave: (String) -> Unit
 ) {
     var showLogoutConfirmation by remember { mutableStateOf(false) }
+    var displayName by remember(uiState.bootstrapState.userDisplayName) {
+        mutableStateOf(uiState.bootstrapState.userDisplayName.orEmpty())
+    }
+    val inputColor = MaterialTheme.colorScheme.onSurface
+    val placeholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.34f)
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         IdentityCard(
             photoUrl = uiState.bootstrapState.userPhotoUrl,
@@ -311,6 +341,54 @@ private fun ProfilePane(
                 "Auth state" to uiState.bootstrapState.authStatus.displayName
             )
         )
+        SoftCard {
+            Text(
+                text = "Profile name",
+                color = MaterialTheme.colorScheme.onSurface,
+                fontFamily = PoppinsFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 16.sp
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                value = displayName,
+                onValueChange = { displayName = it },
+                label = { Text("Your name", fontFamily = PoppinsFontFamily) },
+                placeholder = {
+                    Text(
+                        text = "Enter your name",
+                        color = placeholderColor,
+                        fontFamily = PoppinsFontFamily
+                    )
+                },
+                enabled = !uiState.isBusy,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    cursorColor = inputColor,
+                    focusedTextColor = inputColor,
+                    unfocusedTextColor = inputColor,
+                    disabledTextColor = inputColor.copy(alpha = 0.45f)
+                )
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = { onDisplayNameSave(displayName.trim()) },
+                enabled = !uiState.isBusy &&
+                    displayName.isNotBlank() &&
+                    displayName.trim() != uiState.bootstrapState.userDisplayName.orEmpty(),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(15.38.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MulberryPrimary)
+            ) {
+                Text(
+                    text = if (uiState.isBusy) "Saving..." else "Save profile name",
+                    color = Color.White,
+                    fontFamily = PoppinsFontFamily,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
         if (uiState.bootstrapState.authStatus != AuthStatus.SIGNED_OUT) {
             OutlinedButton(
                 onClick = { showLogoutConfirmation = true },
@@ -343,10 +421,21 @@ private fun ProfilePane(
 @Composable
 private fun PartnerPane(
     uiState: SettingsUiState,
-    onDisconnectPartner: () -> Unit
+    onDisconnectPartner: () -> Unit,
+    onPartnerProfileSave: (String, String) -> Unit
 ) {
     var showDisconnectConfirmation by remember { mutableStateOf(false) }
+    var partnerName by remember(uiState.bootstrapState.partnerDisplayName) {
+        mutableStateOf(uiState.bootstrapState.partnerDisplayName.orEmpty())
+    }
+    var anniversaryDate by remember(uiState.bootstrapState.anniversaryDate) {
+        mutableStateOf(uiState.bootstrapState.anniversaryDate.toMaskedAnniversaryDate())
+    }
     val isPaired = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED
+    val cooldownText = uiState.bootstrapState.partnerProfileNextUpdateAt
+        ?.let { "Editable again at $it" }
+    val anniversaryPlaceholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.34f)
+    val inputColor = MaterialTheme.colorScheme.onSurface
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         IdentityCard(
@@ -362,6 +451,88 @@ private fun PartnerPane(
                 "Pair session" to (uiState.bootstrapState.pairSessionId ?: "Unavailable")
             )
         )
+        SoftCard {
+            Text(
+                text = "Partner details",
+                color = MaterialTheme.colorScheme.onSurface,
+                fontFamily = PoppinsFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 16.sp
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                value = partnerName,
+                onValueChange = { partnerName = it },
+                label = { Text("Partner name", fontFamily = PoppinsFontFamily) },
+                placeholder = {
+                    Text(
+                        text = "Enter partner name",
+                        color = anniversaryPlaceholderColor,
+                        fontFamily = PoppinsFontFamily
+                    )
+                },
+                enabled = !uiState.isBusy && cooldownText == null,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    cursorColor = inputColor,
+                    focusedTextColor = inputColor,
+                    unfocusedTextColor = inputColor,
+                    disabledTextColor = inputColor.copy(alpha = 0.45f)
+                )
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedTextField(
+                value = TextFieldValue(
+                    text = anniversaryDate,
+                    selection = TextRange(anniversaryDate.anniversaryDateCursorOffset())
+                ),
+                onValueChange = { anniversaryDate = it.text.toMaskedAnniversaryDate() },
+                label = { Text("Anniversary (DD-MM-YYYY)", fontFamily = PoppinsFontFamily) },
+                enabled = !uiState.isBusy && cooldownText == null,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                visualTransformation = DatePlaceholderVisualTransformation(
+                    inputColor = inputColor,
+                    placeholderColor = anniversaryPlaceholderColor
+                ),
+                colors = OutlinedTextFieldDefaults.colors(
+                    cursorColor = inputColor,
+                    focusedTextColor = inputColor,
+                    unfocusedTextColor = inputColor,
+                    disabledTextColor = inputColor.copy(alpha = 0.45f)
+                )
+            )
+            cooldownText?.let {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = it,
+                    color = MaterialTheme.mulberryAppColors.mutedText,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = { onPartnerProfileSave(partnerName.trim(), anniversaryDate.trim()) },
+                enabled = !uiState.isBusy &&
+                    cooldownText == null &&
+                    partnerName.isNotBlank() &&
+                    anniversaryDate.isCompleteAnniversaryDate(),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(15.38.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MulberryPrimary)
+            ) {
+                Text(
+                    text = if (uiState.isBusy) "Saving..." else "Save partner details",
+                    color = Color.White,
+                    fontFamily = PoppinsFontFamily,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
         if (isPaired) {
             OutlinedButton(
                 onClick = { showDisconnectConfirmation = true },
@@ -980,3 +1151,66 @@ private fun syncSummary(uiState: SettingsUiState): String =
     }
 
 private fun Boolean.yesNo(): String = if (this) "Yes" else "No"
+
+private const val ANNIVERSARY_DATE_PLACEHOLDER = "DD-MM-YYYY"
+
+private fun String?.toMaskedAnniversaryDate(): String {
+    val raw = this.orEmpty()
+    val digits = if (raw.matches(Regex("""\d{4}-\d{2}-\d{2}"""))) {
+        raw.substring(8, 10) + raw.substring(5, 7) + raw.substring(0, 4)
+    } else {
+        raw.filter(Char::isDigit).take(8)
+    }
+    val slots = ANNIVERSARY_DATE_PLACEHOLDER.toCharArray()
+    var digitIndex = 0
+    for (index in slots.indices) {
+        if (slots[index] == 'Y' || slots[index] == 'M' || slots[index] == 'D') {
+            if (digitIndex < digits.length) {
+                slots[index] = digits[digitIndex]
+                digitIndex += 1
+            }
+        }
+    }
+    return slots.concatToString()
+}
+
+private fun String.isCompleteAnniversaryDate(): Boolean =
+    matches(Regex("""\d{2}-\d{2}-\d{4}"""))
+
+private fun String.anniversaryDateCursorOffset(): Int {
+    val digitCount = count(Char::isDigit)
+    if (digitCount == 0) return 0
+    val editableIndexes = listOf(0, 1, 3, 4, 6, 7, 8, 9)
+    return (editableIndexes[(digitCount - 1).coerceAtMost(editableIndexes.lastIndex)] + 1)
+        .coerceAtMost(length)
+}
+
+private class DatePlaceholderVisualTransformation(
+    private val inputColor: Color,
+    private val placeholderColor: Color
+) : VisualTransformation {
+    override fun filter(text: androidx.compose.ui.text.AnnotatedString): TransformedText {
+        val transformed = buildAnnotatedString {
+            text.text.forEachIndexed { index, character ->
+                val color = if (
+                    character.isAnniversaryPlaceholderCharacter() ||
+                    character.isPendingAnniversaryHyphen(text.text, index)
+                ) {
+                    placeholderColor
+                } else {
+                    inputColor
+                }
+                withStyle(SpanStyle(color = color)) {
+                    append(character)
+                }
+            }
+        }
+        return TransformedText(transformed, OffsetMapping.Identity)
+    }
+}
+
+private fun Char.isAnniversaryPlaceholderCharacter(): Boolean =
+    this == 'D' || this == 'M' || this == 'Y'
+
+private fun Char.isPendingAnniversaryHyphen(text: String, index: Int): Boolean =
+    this == '-' && text.getOrNull(index + 1)?.isDigit() != true

@@ -55,6 +55,9 @@ interface MaterializedStroke {
   finished: boolean
 }
 
+const PARTNER_PROFILE_UPDATE_COOLDOWN_MS = 72 * 60 * 60 * 1_000
+const PARTNER_DETAILS_REQUIRED_MESSAGE = "Partner details are required before creating an invite"
+
 export class MulberryService {
   constructor(
     private readonly db: Database,
@@ -170,12 +173,14 @@ export class MulberryService {
         display_name,
         partner_display_name,
         anniversary_date,
+        onboarding_completed_at,
         updated_at
-      ) VALUES ($1, $2, $3, $4, NOW())
+      ) VALUES ($1, $2, $3, $4, NOW(), NOW())
       ON CONFLICT (user_id) DO UPDATE SET
         display_name = EXCLUDED.display_name,
         partner_display_name = EXCLUDED.partner_display_name,
         anniversary_date = EXCLUDED.anniversary_date,
+        onboarding_completed_at = COALESCE(user_profiles.onboarding_completed_at, NOW()),
         updated_at = NOW()
       `,
       [
@@ -189,6 +194,133 @@ export class MulberryService {
     return this.buildBootstrap(context.user.id)
   }
 
+  async updateDisplayName(accessToken: string, displayNameInput: string): Promise<BootstrapResponse> {
+    const context = await this.requireSessionContext(accessToken)
+    const displayName = displayNameInput.trim()
+    if (!displayName) {
+      throw new HttpError(400, "Profile name is required")
+    }
+
+    const existing = await this.getProfile(context.user.id)
+    const pairSession = await this.getPairSession(context.user.id)
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `
+        INSERT INTO user_profiles (
+          user_id,
+          display_name,
+          onboarding_completed_at,
+          updated_at
+        ) VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (user_id) DO UPDATE SET
+          display_name = EXCLUDED.display_name,
+          onboarding_completed_at = COALESCE(user_profiles.onboarding_completed_at, EXCLUDED.onboarding_completed_at),
+          updated_at = NOW()
+        `,
+        [
+          context.user.id,
+          displayName,
+          existing?.onboarding_completed_at ?? null,
+        ],
+      )
+
+      if (pairSession) {
+        const peerUserId = pairSession.user_one_id === context.user.id
+          ? pairSession.user_two_id
+          : pairSession.user_one_id
+        await tx.query(
+          `
+          INSERT INTO user_profiles (
+            user_id,
+            partner_display_name,
+            updated_at
+          ) VALUES ($1, $2, NOW())
+          ON CONFLICT (user_id) DO UPDATE SET
+            partner_display_name = EXCLUDED.partner_display_name,
+            updated_at = NOW()
+          `,
+          [peerUserId, displayName],
+        )
+      }
+    })
+
+    return this.buildBootstrap(context.user.id)
+  }
+
+  async updatePartnerProfile(
+    accessToken: string,
+    profile: {
+      partnerDisplayName: string
+      anniversaryDate: string
+    },
+  ): Promise<BootstrapResponse> {
+    const context = await this.requireSessionContext(accessToken)
+    const partnerDisplayName = profile.partnerDisplayName.trim()
+    const anniversaryDate = profile.anniversaryDate.trim()
+    if (!partnerDisplayName || !anniversaryDate) {
+      throw new HttpError(400, "Partner name and relationship anniversary are required")
+    }
+
+    const existing = await this.getProfile(context.user.id)
+    const pairSession = await this.getPairSession(context.user.id)
+    const enforceCooldown = pairSession !== null
+    const nextUpdateAt = enforceCooldown ? this.partnerProfileNextUpdateAt(existing) : null
+    if (nextUpdateAt) {
+      throw new HttpError(409, `Partner details can be updated again at ${nextUpdateAt}`)
+    }
+
+    const updatedAt = enforceCooldown ? new Date().toISOString() : null
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `
+        INSERT INTO user_profiles (
+          user_id,
+          display_name,
+          partner_display_name,
+          anniversary_date,
+          partner_profile_updated_at,
+          updated_at
+        ) VALUES ($1, $2, $3, $4, $5, NOW())
+        ON CONFLICT (user_id) DO UPDATE SET
+          partner_display_name = EXCLUDED.partner_display_name,
+          anniversary_date = EXCLUDED.anniversary_date,
+          partner_profile_updated_at = EXCLUDED.partner_profile_updated_at,
+          updated_at = NOW()
+        `,
+        [
+          context.user.id,
+          existing?.display_name ?? context.user.email,
+          partnerDisplayName,
+          anniversaryDate,
+          updatedAt,
+        ],
+      )
+
+      if (pairSession) {
+        const peerUserId = pairSession.user_one_id === context.user.id
+          ? pairSession.user_two_id
+          : pairSession.user_one_id
+        await tx.query(
+          `
+          INSERT INTO user_profiles (
+            user_id,
+            display_name,
+            anniversary_date,
+            updated_at
+          ) VALUES ($1, $2, $3, NOW())
+          ON CONFLICT (user_id) DO UPDATE SET
+            display_name = EXCLUDED.display_name,
+            anniversary_date = EXCLUDED.anniversary_date,
+            updated_at = NOW()
+          `,
+          [peerUserId, partnerDisplayName, anniversaryDate],
+        )
+      }
+    })
+
+    return this.buildBootstrap(context.user.id)
+  }
+
   async createInvite(accessToken: string): Promise<CreateInviteResponse> {
     const context = await this.requireSessionContext(accessToken)
     const bootstrap = await this.buildBootstrap(context.user.id)
@@ -198,6 +330,8 @@ export class MulberryService {
     if (bootstrap.pairingStatus === "PAIRED") {
       throw new HttpError(400, "Already paired")
     }
+    const inviterProfile = await this.getProfile(context.user.id)
+    this.requireActivePartnerDetails(inviterProfile)
 
     const existing = await this.findActiveInviteForInviter(context.user.id)
     if (existing) {
@@ -260,12 +394,9 @@ export class MulberryService {
     }
 
     const inviterProfile = await this.getProfile(invite.inviter_user_id)
+    this.requireActivePartnerDetails(inviterProfile)
     const recipientProfileBeforeRedeem = await this.getProfile(context.user.id)
-    const recipientOnboardingCompleted = Boolean(
-      recipientProfileBeforeRedeem?.display_name &&
-        recipientProfileBeforeRedeem.partner_display_name &&
-        recipientProfileBeforeRedeem.anniversary_date,
-    )
+    const recipientOnboardingCompleted = Boolean(recipientProfileBeforeRedeem?.onboarding_completed_at)
     await this.hydrateRecipientProfileFromInvite(
       context.user.id,
       recipientProfileBeforeRedeem,
@@ -350,7 +481,10 @@ export class MulberryService {
       throw new HttpError(400, "User is not paired")
     }
 
-    await this.db.query(`DELETE FROM pair_sessions WHERE id = $1`, [pairSession.id])
+    await this.db.transaction(async (tx) => {
+      await tx.query(`DELETE FROM pair_sessions WHERE id = $1`, [pairSession.id])
+      await this.clearPartnerMetadataForUsers(tx, [pairSession.user_one_id, pairSession.user_two_id])
+    })
     return this.buildBootstrap(context.user.id)
   }
 
@@ -649,15 +783,57 @@ export class MulberryService {
     )
   }
 
+  private requireActivePartnerDetails(profile: ProfileRecord | null): void {
+    if (!profile?.partner_display_name?.trim() || !profile.anniversary_date?.trim()) {
+      throw new HttpError(400, PARTNER_DETAILS_REQUIRED_MESSAGE)
+    }
+  }
+
+  private partnerProfileNextUpdateAt(profile: ProfileRecord | null): string | null {
+    if (!profile?.partner_display_name?.trim() || !profile.anniversary_date?.trim()) {
+      return null
+    }
+    if (!profile.partner_profile_updated_at) {
+      return null
+    }
+    const updatedAt = new Date(profile.partner_profile_updated_at).getTime()
+    if (!Number.isFinite(updatedAt)) {
+      return null
+    }
+    const nextUpdateAt = updatedAt + PARTNER_PROFILE_UPDATE_COOLDOWN_MS
+    if (Date.now() >= nextUpdateAt) {
+      return null
+    }
+    return new Date(nextUpdateAt).toISOString()
+  }
+
+  private async clearPartnerMetadataForUsers(
+    db: Pick<Database, "query">,
+    userIds: string[],
+  ): Promise<void> {
+    if (userIds.length === 0) return
+    const placeholders = userIds.map((_, index) => `$${index + 1}`).join(", ")
+    await db.query(
+      `
+      UPDATE user_profiles
+      SET
+        partner_display_name = NULL,
+        anniversary_date = NULL,
+        partner_profile_updated_at = NULL,
+        updated_at = NOW()
+      WHERE user_id IN (${placeholders})
+      `,
+      userIds,
+    )
+  }
+
   private async hydrateRecipientProfileFromInvite(
     recipientUserId: string,
     recipientProfile: ProfileRecord | null,
     inviterProfile: ProfileRecord | null,
     recipientOnboardingCompleted: boolean,
   ): Promise<void> {
-    const recipientDisplayName = recipientOnboardingCompleted
-      ? recipientProfile?.display_name
-      : inviterProfile?.partner_display_name ?? recipientProfile?.display_name
+    const recipientDisplayName = inviterProfile?.partner_display_name ?? recipientProfile?.display_name
     const partnerDisplayName = inviterProfile?.display_name ?? recipientProfile?.partner_display_name
     const anniversaryDate = inviterProfile?.anniversary_date ?? recipientProfile?.anniversary_date
 
@@ -668,12 +844,14 @@ export class MulberryService {
         display_name,
         partner_display_name,
         anniversary_date,
+        onboarding_completed_at,
         updated_at
-      ) VALUES ($1, $2, $3, $4, NOW())
+      ) VALUES ($1, $2, $3, $4, CASE WHEN $5 THEN COALESCE($6::timestamptz, NOW()) ELSE NOW() END, NOW())
       ON CONFLICT (user_id) DO UPDATE SET
         display_name = EXCLUDED.display_name,
         partner_display_name = EXCLUDED.partner_display_name,
         anniversary_date = EXCLUDED.anniversary_date,
+        onboarding_completed_at = EXCLUDED.onboarding_completed_at,
         updated_at = NOW()
       `,
       [
@@ -681,6 +859,8 @@ export class MulberryService {
         recipientDisplayName ?? null,
         partnerDisplayName ?? null,
         anniversaryDate ?? null,
+        recipientOnboardingCompleted,
+        recipientProfile?.onboarding_completed_at ?? null,
       ],
     )
   }
@@ -693,6 +873,8 @@ export class MulberryService {
         display_name = NULL,
         partner_display_name = NULL,
         anniversary_date = NULL,
+        onboarding_completed_at = NULL,
+        partner_profile_updated_at = NULL,
         updated_at = NOW()
       WHERE user_id = $1
       `,
@@ -814,11 +996,7 @@ export class MulberryService {
         )
       : null
     const pendingInvite = await this.getPendingInvite(userId)
-    let onboardingCompleted = Boolean(
-      profile?.display_name &&
-        profile.partner_display_name &&
-        profile.anniversary_date,
-    )
+    let onboardingCompleted = Boolean(profile?.onboarding_completed_at)
     if (pendingInvite && !onboardingCompleted) {
       await this.hydrateRecipientProfileFromInvite(
         userId,
@@ -827,11 +1005,7 @@ export class MulberryService {
         false,
       )
       profile = await this.getProfile(userId)
-      onboardingCompleted = Boolean(
-        profile?.display_name &&
-          profile.partner_display_name &&
-          profile.anniversary_date,
-      )
+      onboardingCompleted = Boolean(profile?.onboarding_completed_at)
     }
 
     return {
@@ -845,6 +1019,7 @@ export class MulberryService {
       partnerPhotoUrl: partnerUser?.google_picture_url ?? null,
       partnerDisplayName: profile?.partner_display_name ?? null,
       anniversaryDate: profile?.anniversary_date ?? null,
+      partnerProfileNextUpdateAt: pairSession ? this.partnerProfileNextUpdateAt(profile) : null,
       pairingStatus: pairSession
         ? "PAIRED"
         : pendingInvite
@@ -870,9 +1045,12 @@ export class MulberryService {
       display_name: string | null
       partner_display_name: string | null
       anniversary_date: string | Date | null
+      onboarding_completed_at: string | Date | null
+      partner_profile_updated_at: string | Date | null
     }>(
       `
-      SELECT user_id, display_name, partner_display_name, anniversary_date
+      SELECT user_id, display_name, partner_display_name, anniversary_date,
+        onboarding_completed_at, partner_profile_updated_at
       FROM user_profiles
       WHERE user_id = $1
       `,
@@ -887,6 +1065,8 @@ export class MulberryService {
       display_name: row.display_name,
       partner_display_name: row.partner_display_name,
       anniversary_date: normalizeDateString(row.anniversary_date),
+      onboarding_completed_at: normalizeTimestampString(row.onboarding_completed_at),
+      partner_profile_updated_at: normalizeTimestampString(row.partner_profile_updated_at),
     }
   }
 
@@ -1211,6 +1391,13 @@ function normalizeDateString(raw: string | Date | null): string | null {
     return parsed.toISOString().slice(0, 10)
   }
   return raw.slice(0, 10)
+}
+
+function normalizeTimestampString(raw: string | Date | null): string | null {
+  if (!raw) return null
+  if (raw instanceof Date) return raw.toISOString()
+  const parsed = new Date(raw)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
 }
 
 function normalizeCanvasSnapshot(raw: unknown): { strokes: MaterializedStroke[] } {

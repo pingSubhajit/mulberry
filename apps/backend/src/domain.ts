@@ -45,6 +45,7 @@ export interface BootstrapResponse {
   partnerPhotoUrl: string | null
   partnerDisplayName: string | null
   anniversaryDate: string | null
+  partnerProfileNextUpdateAt: string | null
   pairingStatus: PairingStatus
   pairSessionId: string | null
   invite: InviteSummary | null
@@ -151,6 +152,8 @@ export interface ProfileRecord {
   display_name: string | null
   partner_display_name: string | null
   anniversary_date: string | null
+  onboarding_completed_at: string | null
+  partner_profile_updated_at: string | null
 }
 
 export interface SessionRecord {

@@ -41,6 +41,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                 partnerPhotoUrl = preferences[PreferenceStorage.partnerPhotoUrl],
                 partnerDisplayName = preferences[PreferenceStorage.partnerDisplayName],
                 anniversaryDate = preferences[PreferenceStorage.anniversaryDate],
+                partnerProfileNextUpdateAt = preferences[PreferenceStorage.partnerProfileNextUpdateAt],
                 pairingStatus = preferences[PreferenceStorage.pairingStatus]
                     ?.let(::parsePairingStatus)
                     ?: PairingStatus.UNPAIRED,
@@ -100,6 +101,11 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             updateNullable(preferences, PreferenceStorage.partnerPhotoUrl, state.partnerPhotoUrl)
             updateNullable(preferences, PreferenceStorage.partnerDisplayName, state.partnerDisplayName)
             updateNullable(preferences, PreferenceStorage.anniversaryDate, state.anniversaryDate)
+            updateNullable(
+                preferences,
+                PreferenceStorage.partnerProfileNextUpdateAt,
+                state.partnerProfileNextUpdateAt
+            )
             preferences[PreferenceStorage.pairingStatus] = state.pairingStatus.name
             updateNullable(preferences, PreferenceStorage.pairSessionId, state.pairSessionId)
 
@@ -184,6 +190,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences.remove(PreferenceStorage.partnerPhotoUrl)
             preferences.remove(PreferenceStorage.partnerDisplayName)
             preferences.remove(PreferenceStorage.anniversaryDate)
+            preferences.remove(PreferenceStorage.partnerProfileNextUpdateAt)
             preferences.remove(PreferenceStorage.pairingStatus)
             preferences.remove(PreferenceStorage.pairSessionId)
             preferences.remove(PreferenceStorage.pendingInviteId)

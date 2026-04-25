@@ -30,6 +30,12 @@ interface MulberryApiService {
     @PUT("/me/profile")
     suspend fun updateProfile(@Body request: ProfileRequest): BootstrapResponse
 
+    @PUT("/me/display-name")
+    suspend fun updateDisplayName(@Body request: DisplayNameRequest): BootstrapResponse
+
+    @PUT("/me/partner-profile")
+    suspend fun updatePartnerProfile(@Body request: PartnerProfileRequest): BootstrapResponse
+
     @POST("/invites")
     suspend fun createInvite(): CreateInviteResponse
 

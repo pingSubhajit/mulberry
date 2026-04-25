@@ -17,6 +17,7 @@ fun BootstrapResponse.toDomainBootstrap(): SessionBootstrapState = SessionBootst
     partnerPhotoUrl = partnerPhotoUrl,
     partnerDisplayName = partnerDisplayName,
     anniversaryDate = anniversaryDate,
+    partnerProfileNextUpdateAt = partnerProfileNextUpdateAt,
     pairingStatus = PairingStatus.valueOf(pairingStatus),
     pairSessionId = pairSessionId,
     pendingInvite = invite?.let {

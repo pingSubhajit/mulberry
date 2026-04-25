@@ -142,6 +142,22 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     })
   })
 
+  app.put("/me/display-name", async (request) => {
+    const body = request.body as { displayName?: string }
+    return service.updateDisplayName(requireBearerToken(request), body.displayName ?? "")
+  })
+
+  app.put("/me/partner-profile", async (request) => {
+    const body = request.body as {
+      partnerDisplayName?: string
+      anniversaryDate?: string
+    }
+    return service.updatePartnerProfile(requireBearerToken(request), {
+      partnerDisplayName: body.partnerDisplayName ?? "",
+      anniversaryDate: body.anniversaryDate ?? "",
+    })
+  })
+
   app.post("/invites", async (request) => {
     return service.createInvite(requireBearerToken(request))
   })
