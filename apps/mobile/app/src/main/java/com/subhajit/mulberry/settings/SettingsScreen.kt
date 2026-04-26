@@ -3,10 +3,15 @@ package com.subhajit.mulberry.settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -16,12 +21,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -31,8 +39,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -49,8 +55,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -61,6 +73,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -68,10 +81,11 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.flags.FeatureFlag
 import com.subhajit.mulberry.core.ui.PrivacyPolicySheetContent
+import com.subhajit.mulberry.core.ui.TermsOfUseSheetContent
 import com.subhajit.mulberry.core.ui.TestTags
-import com.subhajit.mulberry.data.bootstrap.AuthStatus
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.sync.SyncState
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
@@ -80,8 +94,11 @@ import com.subhajit.mulberry.ui.theme.MulberrySurfaceVariant
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 private enum class SettingsPane {
     Home,
@@ -135,7 +152,6 @@ fun SettingsRoute(
             if (pane == SettingsPane.Home) onNavigateBack() else pane = SettingsPane.Home
         },
         onPaneSelected = { pane = it },
-        onLogout = viewModel::onLogout,
         onDisplayNameSave = viewModel::onDisplayNameSave,
         onProfilePhotoChangeRequested = { profilePhotoPicker.launch("image/*") },
         onDisconnectPartner = viewModel::onDisconnectPartner,
@@ -163,7 +179,6 @@ private fun SettingsScreen(
     snackbarHostState: SnackbarHostState,
     onNavigateBack: () -> Unit,
     onPaneSelected: (SettingsPane) -> Unit,
-    onLogout: () -> Unit,
     onDisplayNameSave: (String) -> Unit,
     onProfilePhotoChangeRequested: () -> Unit,
     onDisconnectPartner: () -> Unit,
@@ -187,53 +202,579 @@ private fun SettingsScreen(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp)
-                .padding(top = 20.dp, bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
-            SettingsHeader(
-                title = pane.title(),
-                subtitle = pane.subtitle(),
-                showBack = pane != SettingsPane.Home,
-                onBack = onNavigateBack
+        if (pane == SettingsPane.Home) {
+            SettingsRootPage(
+                uiState = uiState,
+                onClose = onNavigateBack,
+                onPaneSelected = onPaneSelected,
+                modifier = Modifier.padding(padding)
             )
+        } else if (pane == SettingsPane.Profile) {
+            ProfilePane(
+                uiState = uiState,
+                onBack = onNavigateBack,
+                onDisplayNameSave = onDisplayNameSave,
+                onProfilePhotoChangeRequested = onProfilePhotoChangeRequested,
+                modifier = Modifier.padding(padding)
+            )
+        } else if (pane == SettingsPane.Partner) {
+            PartnerPane(
+                uiState = uiState,
+                onBack = onNavigateBack,
+                onDisconnectPartner = onDisconnectPartner,
+                onPartnerProfileSave = onPartnerProfileSave,
+                onPartnerPhotoChangeRequested = onPartnerPhotoChangeRequested,
+                modifier = Modifier.padding(padding)
+            )
+        } else if (pane == SettingsPane.PrivacyLegal) {
+            PrivacyLegalPane(
+                onBack = onNavigateBack,
+                modifier = Modifier.padding(padding)
+            )
+        } else if (pane == SettingsPane.About) {
+            AboutPane(
+                uiState = uiState,
+                onBack = onNavigateBack,
+                onVersionTapped = onVersionTapped,
+                modifier = Modifier.padding(padding)
+            )
+        } else if (pane == SettingsPane.DeveloperOptions) {
+            DeveloperOptionsPane(
+                uiState = uiState,
+                onBack = onNavigateBack,
+                onDeveloperOptionsEnabledChanged = onDeveloperOptionsEnabledChanged,
+                onForceSyncNow = onForceSyncNow,
+                onRegenerateWallpaperSnapshot = onRegenerateWallpaperSnapshot,
+                onClearFeatureOverrides = onClearFeatureOverrides,
+                onSeedDemoSession = onSeedDemoSession,
+                onFeatureFlagChanged = onFeatureFlagChanged,
+                onResetAppState = onResetAppState,
+                onSendDebugPairingNotification = onSendDebugPairingNotification,
+                modifier = Modifier.padding(padding)
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 20.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                SettingsHeader(
+                    title = pane.title(),
+                    subtitle = pane.subtitle(),
+                    showBack = true,
+                    onBack = onNavigateBack
+                )
 
-            when (pane) {
-                SettingsPane.Home -> SettingsHomePane(uiState, onPaneSelected)
-                SettingsPane.Profile -> ProfilePane(
-                    uiState = uiState,
-                    onLogout = onLogout,
-                    onDisplayNameSave = onDisplayNameSave,
-                    onProfilePhotoChangeRequested = onProfilePhotoChangeRequested
-                )
-                SettingsPane.Partner -> PartnerPane(
-                    uiState = uiState,
-                    onDisconnectPartner = onDisconnectPartner,
-                    onPartnerProfileSave = onPartnerProfileSave,
-                    onPartnerPhotoChangeRequested = onPartnerPhotoChangeRequested
-                )
-                SettingsPane.PrivacyLegal -> PrivacyLegalPane()
-                SettingsPane.About -> AboutPane(uiState, onVersionTapped)
-                SettingsPane.DeveloperOptions -> DeveloperOptionsPane(
-                    uiState = uiState,
-                    onDeveloperOptionsEnabledChanged = onDeveloperOptionsEnabledChanged,
-                    onForceSyncNow = onForceSyncNow,
-                    onRegenerateWallpaperSnapshot = onRegenerateWallpaperSnapshot,
-                    onClearFeatureOverrides = onClearFeatureOverrides,
-                    onSeedDemoSession = onSeedDemoSession,
-                    onFeatureFlagChanged = onFeatureFlagChanged,
-                    onResetAppState = onResetAppState,
-                    onSendDebugPairingNotification = onSendDebugPairingNotification
+                when (pane) {
+                    SettingsPane.Profile,
+                    SettingsPane.Partner,
+                    SettingsPane.PrivacyLegal,
+                    SettingsPane.About,
+                    SettingsPane.DeveloperOptions -> Unit
+                    SettingsPane.Home -> Unit
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsRootPage(
+    uiState: SettingsUiState,
+    onClose: () -> Unit,
+    onPaneSelected: (SettingsPane) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isPaired = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED
+    val partnerName = uiState.bootstrapState.partnerDisplayName
+    val userName = uiState.bootstrapState.userDisplayName ?: "Mulberry user"
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 20.dp)
+            .padding(top = 0.dp, bottom = 18.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            RootCloseButton(onClick = onClose)
+        }
+
+        RelationshipHero(
+            userPhotoUrl = uiState.bootstrapState.userPhotoUrl,
+            userName = userName,
+            partnerPhotoUrl = uiState.bootstrapState.partnerPhotoUrl,
+            partnerName = partnerName,
+            paired = isPaired
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(
+            text = userName,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.Bold,
+            fontSize = 26.sp,
+            lineHeight = 31.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+        SettingsRootSubtitle(
+            paired = isPaired,
+            partnerName = partnerName,
+            anniversaryDate = uiState.bootstrapState.anniversaryDate
+        )
+
+        Spacer(modifier = Modifier.height(if (isPaired) 70.dp else 46.dp))
+        SettingsRootMenu(
+            uiState = uiState,
+            onPaneSelected = onPaneSelected
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = "Mulberry v${uiState.appVersionName}",
+            color = MaterialTheme.mulberryAppColors.mutedText,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun RelationshipHero(
+    userPhotoUrl: String?,
+    userName: String,
+    partnerPhotoUrl: String?,
+    partnerName: String?,
+    paired: Boolean
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(138.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (paired) {
+            FigmaHeroDecorations(modifier = Modifier.offset(x = 6.dp, y = 2.dp))
+        } else {
+            HeroArrow(
+                modifier = Modifier
+                    .offset(x = 26.dp, y = (-54).dp)
+                    .size(width = 47.dp, height = 13.dp)
+            )
+        }
+        RootAvatar(
+            photoUrl = userPhotoUrl,
+            displayName = userName,
+            size = 100.dp,
+            borderWidth = 5.dp,
+            modifier = Modifier.offset(x = (-60).dp)
+        )
+        if (paired) {
+            RootAvatar(
+                photoUrl = partnerPhotoUrl,
+                displayName = partnerName ?: "?",
+                size = 82.dp,
+                borderWidth = 0.dp,
+                modifier = Modifier.offset(x = 58.dp, y = (-1).dp)
+            )
+        } else {
+            PartnerPlaceholderAvatar(
+                modifier = Modifier.offset(x = 58.dp, y = (-1).dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsRootSubtitle(
+    paired: Boolean,
+    partnerName: String?,
+    anniversaryDate: String?
+) {
+    if (paired && !partnerName.isNullOrBlank()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 2.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "with: ",
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
+                fontFamily = PoppinsFontFamily,
+                fontSize = 14.sp,
+                lineHeight = 20.sp
+            )
+            Text(
+                text = partnerName,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.86f),
+                fontFamily = PoppinsFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                lineHeight = 20.sp
+            )
+            anniversaryDate.toFriendlyAnniversaryDate()?.let { date ->
+                Text(
+                    text = ", since $date",
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
                 )
             }
         }
+    } else {
+        Text(
+            text = "waiting for partner to join",
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
+            fontFamily = PoppinsFontFamily,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 2.dp)
+        )
+    }
+}
+
+@Composable
+private fun SettingsRootMenu(
+    uiState: SettingsUiState,
+    onPaneSelected: (SettingsPane) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        SettingsRootRow(
+            icon = SettingsRootIcon.Profile,
+            title = "Profile info",
+            onClick = { onPaneSelected(SettingsPane.Profile) }
+        )
+        SettingsRootRow(
+            icon = SettingsRootIcon.Partner,
+            title = "Partner settings",
+            onClick = { onPaneSelected(SettingsPane.Partner) }
+        )
+        SettingsRootRow(
+            icon = if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
+                SettingsRootIcon.SyncConnected
+            } else {
+                SettingsRootIcon.SyncUnpaired
+            },
+            title = "Sync status",
+            status = if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) "Connected" else "Unpaired",
+            statusColor = if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
+                Color(0xFF00A53C)
+            } else {
+                Color(0xFFE00012)
+            },
+            enabled = uiState.developerOptionsEnabled,
+            showChevron = uiState.developerOptionsEnabled,
+            onClick = { onPaneSelected(SettingsPane.DeveloperOptions) }
+        )
+        SettingsRootRow(
+            icon = SettingsRootIcon.Privacy,
+            title = "Privacy and legal",
+            onClick = { onPaneSelected(SettingsPane.PrivacyLegal) }
+        )
+        SettingsRootRow(
+            icon = SettingsRootIcon.About,
+            title = "About",
+            onClick = { onPaneSelected(SettingsPane.About) }
+        )
+        if (uiState.developerOptionsEnabled) {
+            SettingsRootRow(
+                icon = SettingsRootIcon.About,
+                title = "Developer Options",
+                onClick = { onPaneSelected(SettingsPane.DeveloperOptions) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsRootRow(
+    icon: SettingsRootIcon,
+    title: String,
+    status: String? = null,
+    statusColor: Color = MaterialTheme.colorScheme.onSurface,
+    enabled: Boolean = true,
+    showChevron: Boolean = true,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RootLineIcon(
+            icon = icon,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(22.dp))
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 16.sp,
+            lineHeight = 22.sp,
+            modifier = Modifier.weight(1f)
+        )
+        if (status != null) {
+            Text(
+                text = status,
+                color = statusColor,
+                fontFamily = PoppinsFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                modifier = Modifier.padding(end = if (showChevron) 18.dp else 0.dp)
+            )
+        }
+        if (showChevron) {
+            RootChevron()
+        }
+    }
+}
+
+@Composable
+private fun RootCloseButton(onClick: () -> Unit) {
+    val strokeColor = MaterialTheme.colorScheme.onBackground
+    Canvas(
+        modifier = Modifier
+            .size(31.dp)
+            .clickable(onClick = onClick)
+            .padding(7.dp)
+    ) {
+        val stroke = Stroke(width = 3.8f, cap = StrokeCap.Round)
+        drawLine(
+            color = strokeColor,
+            start = androidx.compose.ui.geometry.Offset(3f, 3f),
+            end = androidx.compose.ui.geometry.Offset(size.width - 3f, size.height - 3f),
+            strokeWidth = stroke.width,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = strokeColor,
+            start = androidx.compose.ui.geometry.Offset(size.width - 3f, 3f),
+            end = androidx.compose.ui.geometry.Offset(3f, size.height - 3f),
+            strokeWidth = stroke.width,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+@Composable
+private fun RootAvatar(
+    photoUrl: String?,
+    displayName: String?,
+    size: androidx.compose.ui.unit.Dp,
+    borderWidth: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
+) {
+    val initial = displayName?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(MulberryPrimaryLight)
+            .then(
+                if (borderWidth > 0.dp) {
+                    Modifier.border(borderWidth, MulberryPrimary, CircleShape)
+                } else {
+                    Modifier
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(borderWidth)
+                .clip(CircleShape)
+                .background(MulberryPrimary),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!photoUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = photoUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Text(
+                    text = initial,
+                    color = Color.White,
+                    fontFamily = PoppinsFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = (size.value * 0.40f).sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PartnerPlaceholderAvatar(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(82.dp)
+            .clip(CircleShape)
+            .background(MulberryPrimaryLight.copy(alpha = 0.55f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "?",
+            color = MulberryPrimary,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 58.sp
+        )
+    }
+}
+
+@Composable
+private fun FigmaHeroDecorations(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.size(width = 66.dp, height = 138.dp)
+    ) {
+        HeroArrow(
+            modifier = Modifier
+                .offset(x = 18.dp, y = 15.dp)
+                .size(width = 47.dp, height = 13.dp)
+        )
+        HeroHeart(
+            size = 23.dp,
+            rotation = 12.8531f,
+            modifier = Modifier.offset(x = 5.11639.dp, y = 0.dp)
+        )
+        HeroHeart(
+            size = 23.dp,
+            rotation = -13.7174f,
+            modifier = Modifier.offset(x = 31.601.dp, y = 25.0552.dp)
+        )
+        HeroHeart(
+            size = 21.dp,
+            rotation = 26.2702f,
+            modifier = Modifier.offset(x = 41.2947.dp, y = 80.dp)
+        )
+        HeroHeart(
+            size = 23.dp,
+            rotation = -19.2486f,
+            modifier = Modifier.offset(x = 4.85172.dp, y = 101.434.dp)
+        )
+        HeroHeart(
+            size = 38.dp,
+            rotation = 9.03514f,
+            modifier = Modifier.offset(x = 27.2195.dp, y = 94.252.dp)
+        )
+    }
+}
+
+@Composable
+private fun HeroHeart(size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
+    Image(
+        painter = painterResource(R.drawable.settings_hero_heart),
+        contentDescription = null,
+        modifier = modifier.size(size)
+    )
+}
+
+@Composable
+private fun HeroHeart(
+    size: androidx.compose.ui.unit.Dp,
+    rotation: Float,
+    modifier: Modifier = Modifier
+) {
+    HeroHeart(
+        size = size,
+        modifier = modifier.rotate(rotation)
+    )
+}
+
+@Composable
+private fun HeroArrow(modifier: Modifier = Modifier) {
+    val strokeColor = MaterialTheme.colorScheme.onBackground
+    Image(
+        painter = painterResource(R.drawable.settings_hero_arrow),
+        contentDescription = null,
+        colorFilter = ColorFilter.tint(strokeColor),
+        modifier = modifier
+    )
+}
+
+private enum class SettingsRootIcon {
+    Profile,
+    Partner,
+    SyncConnected,
+    SyncUnpaired,
+    Privacy,
+    About
+}
+
+@DrawableRes
+private fun SettingsRootIcon.drawableRes(): Int = when (this) {
+    SettingsRootIcon.Profile -> R.drawable.settings_icon_profile
+    SettingsRootIcon.Partner -> R.drawable.settings_icon_partner
+    SettingsRootIcon.SyncConnected -> R.drawable.settings_icon_sync_connected
+    SettingsRootIcon.SyncUnpaired -> R.drawable.settings_icon_sync_unpaired
+    SettingsRootIcon.Privacy -> R.drawable.settings_icon_privacy
+    SettingsRootIcon.About -> R.drawable.settings_icon_about
+}
+
+@Composable
+private fun RootLineIcon(
+    icon: SettingsRootIcon,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Image(
+        painter = painterResource(icon.drawableRes()),
+        contentDescription = null,
+        colorFilter = ColorFilter.tint(color),
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun RootChevron() {
+    val chevronColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.68f)
+    Canvas(modifier = Modifier.size(width = 8.dp, height = 12.dp)) {
+        drawLine(
+            color = chevronColor,
+            start = androidx.compose.ui.geometry.Offset(2f, 2f),
+            end = androidx.compose.ui.geometry.Offset(size.width - 2f, size.height / 2f),
+            strokeWidth = 3.0f,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = chevronColor,
+            start = androidx.compose.ui.geometry.Offset(size.width - 2f, size.height / 2f),
+            end = androidx.compose.ui.geometry.Offset(2f, size.height - 2f),
+            strokeWidth = 3.0f,
+            cap = StrokeCap.Round
+        )
     }
 }
 
@@ -277,170 +818,54 @@ private fun SettingsHeader(
 }
 
 @Composable
-private fun SettingsHomePane(
-    uiState: SettingsUiState,
-    onPaneSelected: (SettingsPane) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        SettingsNavCard(
-            title = "Profile",
-            body = uiState.bootstrapState.userDisplayName ?: "Signed in profile",
-            leading = {
-                SettingsAvatar(
-                    photoUrl = uiState.bootstrapState.userPhotoUrl,
-                    displayName = uiState.bootstrapState.userDisplayName,
-                    size = 46.dp
-                )
-            },
-            onClick = { onPaneSelected(SettingsPane.Profile) }
-        )
-        SettingsNavCard(
-            title = "Partner",
-            body = uiState.bootstrapState.partnerDisplayName
-                ?: if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
-                    "Partner details"
-                } else {
-                    "Not paired yet"
-                },
-            leading = {
-                SettingsAvatar(
-                    photoUrl = uiState.bootstrapState.partnerPhotoUrl,
-                    displayName = uiState.bootstrapState.partnerDisplayName ?: "?",
-                    size = 46.dp,
-                    muted = uiState.bootstrapState.pairingStatus != PairingStatus.PAIRED
-                )
-            },
-            onClick = { onPaneSelected(SettingsPane.Partner) }
-        )
-        SyncStatusCard(uiState)
-        SettingsNavCard(
-            title = "Privacy & Legal",
-            body = "Privacy policy and data use",
-            onClick = { onPaneSelected(SettingsPane.PrivacyLegal) }
-        )
-        SettingsNavCard(
-            title = "About",
-            body = "Mulberry ${uiState.appVersionName}",
-            onClick = { onPaneSelected(SettingsPane.About) }
-        )
-        if (uiState.developerOptionsEnabled) {
-            SettingsNavCard(
-                title = "Developer Options",
-                body = "Diagnostics, sync tools, and reset",
-                onClick = { onPaneSelected(SettingsPane.DeveloperOptions) }
-            )
-        }
-    }
-}
-
-@Composable
 private fun ProfilePane(
     uiState: SettingsUiState,
-    onLogout: () -> Unit,
+    onBack: () -> Unit,
     onDisplayNameSave: (String) -> Unit,
-    onProfilePhotoChangeRequested: () -> Unit
+    onProfilePhotoChangeRequested: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    var showLogoutConfirmation by remember { mutableStateOf(false) }
     var displayName by remember(uiState.bootstrapState.userDisplayName) {
         mutableStateOf(uiState.bootstrapState.userDisplayName.orEmpty())
     }
-    val inputColor = MaterialTheme.colorScheme.onSurface
-    val placeholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.34f)
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        IdentityCard(
-            photoUrl = uiState.bootstrapState.userPhotoUrl,
-            title = uiState.bootstrapState.userDisplayName ?: "Mulberry user",
-            body = uiState.bootstrapState.userEmail ?: "Google account",
-            muted = false
-        )
-        InfoCard(
-            rows = listOf(
-                "User ID" to (uiState.bootstrapState.userId ?: "Unavailable"),
-                "Auth state" to uiState.bootstrapState.authStatus.displayName
-            )
-        )
-        SoftCard {
-            Text(
-                text = "Profile name",
-                color = MaterialTheme.colorScheme.onSurface,
-                fontFamily = PoppinsFontFamily,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
-                value = displayName,
-                onValueChange = { displayName = it },
-                label = { Text("Your name", fontFamily = PoppinsFontFamily) },
-                placeholder = {
-                    Text(
-                        text = "Enter your name",
-                        color = placeholderColor,
-                        fontFamily = PoppinsFontFamily
-                    )
-                },
-                enabled = !uiState.isBusy,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    cursorColor = inputColor,
-                    focusedTextColor = inputColor,
-                    unfocusedTextColor = inputColor,
-                    disabledTextColor = inputColor.copy(alpha = 0.45f)
-                )
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onProfilePhotoChangeRequested,
-                enabled = !uiState.isBusy,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(15.38.dp)
-            ) {
-                Text("Change profile photo", fontFamily = PoppinsFontFamily)
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Button(
-                onClick = { onDisplayNameSave(displayName.trim()) },
+    SettingsDetailScaffold(
+        title = "Profile info",
+        onBack = onBack,
+        bottomBar = {
+            SettingsSaveButton(
+                text = if (uiState.isBusy) "Saving" else "Save",
                 enabled = !uiState.isBusy &&
                     displayName.isNotBlank() &&
                     displayName.trim() != uiState.bootstrapState.userDisplayName.orEmpty(),
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(15.38.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MulberryPrimary)
-            ) {
-                Text(
-                    text = if (uiState.isBusy) "Saving..." else "Save profile name",
-                    color = Color.White,
-                    fontFamily = PoppinsFontFamily,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-        if (uiState.bootstrapState.authStatus != AuthStatus.SIGNED_OUT) {
-            OutlinedButton(
-                onClick = { showLogoutConfirmation = true },
-                enabled = !uiState.isBusy,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(54.dp)
-                    .testTag(TestTags.SETTINGS_LOGOUT_BUTTON),
-                shape = RoundedCornerShape(15.38.dp)
-            ) {
-                Text("Sign out", fontFamily = PoppinsFontFamily)
-            }
-        }
-    }
-
-    if (showLogoutConfirmation) {
-        ConfirmationDialog(
-            title = "Sign out?",
-            body = "You can sign back in with Google any time.",
-            confirmText = "Sign out",
-            onDismiss = { showLogoutConfirmation = false },
-            onConfirm = {
-                showLogoutConfirmation = false
-                onLogout()
-            }
+                onClick = { onDisplayNameSave(displayName.trim()) }
+            )
+        },
+        modifier = modifier
+    ) {
+        Spacer(modifier = Modifier.height(72.dp))
+        EditableProfileAvatar(
+            photoUrl = uiState.bootstrapState.userPhotoUrl,
+            displayName = uiState.bootstrapState.userDisplayName,
+            size = 100.dp,
+            borderWidth = 5.dp,
+            onEdit = onProfilePhotoChangeRequested,
+            enabled = !uiState.isBusy
+        )
+        Spacer(modifier = Modifier.height(76.dp))
+        SettingsDetailField(
+            label = "What is your name?",
+            value = displayName,
+            placeholder = "Enter your name",
+            onValueChange = { displayName = it },
+            enabled = !uiState.isBusy
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        SettingsDetailField(
+            label = "What is your email address?",
+            value = uiState.bootstrapState.userEmail.orEmpty(),
+            placeholder = "Google account",
+            onValueChange = {},
+            enabled = false
         )
     }
 }
@@ -448,9 +873,11 @@ private fun ProfilePane(
 @Composable
 private fun PartnerPane(
     uiState: SettingsUiState,
+    onBack: () -> Unit,
     onDisconnectPartner: () -> Unit,
     onPartnerProfileSave: (String, String) -> Unit,
-    onPartnerPhotoChangeRequested: () -> Unit
+    onPartnerPhotoChangeRequested: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var showDisconnectConfirmation by remember { mutableStateOf(false) }
     var partnerName by remember(uiState.bootstrapState.partnerDisplayName) {
@@ -460,128 +887,98 @@ private fun PartnerPane(
         mutableStateOf(uiState.bootstrapState.anniversaryDate.toMaskedAnniversaryDate())
     }
     val isPaired = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED
-    val cooldownText = uiState.bootstrapState.partnerProfileNextUpdateAt
-        ?.let { "Editable again at $it" }
-    val anniversaryPlaceholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.34f)
-    val inputColor = MaterialTheme.colorScheme.onSurface
+    val cooldownText = if (isPaired) {
+        partnerCooldownChipText(uiState.bootstrapState.partnerProfileNextUpdateAt)
+    } else {
+        null
+    }
+    val canEditPartner = !uiState.isBusy && cooldownText == null
 
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        IdentityCard(
-            photoUrl = uiState.bootstrapState.partnerPhotoUrl,
-            title = uiState.bootstrapState.partnerDisplayName ?: "No partner connected",
-            body = if (isPaired) "Connected partner" else "Invite your partner from Home",
-            muted = !isPaired
-        )
-        InfoCard(
-            rows = listOf(
-                "Pairing status" to uiState.bootstrapState.pairingStatus.displayName,
-                "Relationship anniversary" to (uiState.bootstrapState.anniversaryDate ?: "Not set"),
-                "Paired for" to pairedDurationText(uiState.bootstrapState.pairedAt),
-                "Daily streak" to "${uiState.bootstrapState.currentStreakDays} days",
-                "Pair session" to (uiState.bootstrapState.pairSessionId ?: "Unavailable")
-            )
-        )
-        SoftCard {
-            Text(
-                text = "Partner details",
-                color = MaterialTheme.colorScheme.onSurface,
-                fontFamily = PoppinsFontFamily,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
-                value = partnerName,
-                onValueChange = { partnerName = it },
-                label = { Text("Partner name", fontFamily = PoppinsFontFamily) },
-                placeholder = {
+    SettingsDetailScaffold(
+        title = "Partner settings",
+        onBack = onBack,
+        bottomBar = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (isPaired) {
                     Text(
-                        text = "Enter partner name",
-                        color = anniversaryPlaceholderColor,
-                        fontFamily = PoppinsFontFamily
+                        text = "Unpair partner?",
+                        color = Color(0xFFE00012),
+                        fontFamily = PoppinsFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        lineHeight = 21.sp,
+                        modifier = Modifier
+                            .clickable(enabled = !uiState.isBusy) { showDisconnectConfirmation = true }
+                            .padding(bottom = 24.dp)
                     )
-                },
-                enabled = !uiState.isBusy && cooldownText == null,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    cursorColor = inputColor,
-                    focusedTextColor = inputColor,
-                    unfocusedTextColor = inputColor,
-                    disabledTextColor = inputColor.copy(alpha = 0.45f)
+                }
+                SettingsSaveButton(
+                    text = if (uiState.isBusy) "Saving" else "Save",
+                    enabled = canEditPartner &&
+                        partnerName.isNotBlank() &&
+                        anniversaryDate.isCompleteAnniversaryDate() &&
+                        (
+                            partnerName.trim() != uiState.bootstrapState.partnerDisplayName.orEmpty() ||
+                                anniversaryDate != uiState.bootstrapState.anniversaryDate.toMaskedAnniversaryDate()
+                            ),
+                    onClick = { onPartnerProfileSave(partnerName.trim(), anniversaryDate.trim()) }
                 )
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            OutlinedTextField(
-                value = TextFieldValue(
-                    text = anniversaryDate,
-                    selection = TextRange(anniversaryDate.anniversaryDateCursorOffset())
-                ),
-                onValueChange = { anniversaryDate = it.text.toMaskedAnniversaryDate() },
-                label = { Text("Anniversary (DD-MM-YYYY)", fontFamily = PoppinsFontFamily) },
-                enabled = !uiState.isBusy && cooldownText == null,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                visualTransformation = DatePlaceholderVisualTransformation(
-                    inputColor = inputColor,
-                    placeholderColor = anniversaryPlaceholderColor
-                ),
-                colors = OutlinedTextFieldDefaults.colors(
-                    cursorColor = inputColor,
-                    focusedTextColor = inputColor,
-                    unfocusedTextColor = inputColor,
-                    disabledTextColor = inputColor.copy(alpha = 0.45f)
-                )
+            }
+        },
+        modifier = modifier
+    ) {
+        Spacer(modifier = Modifier.height(54.dp))
+        Box(contentAlignment = Alignment.Center) {
+            EditableProfileAvatar(
+                photoUrl = uiState.bootstrapState.partnerPhotoUrl,
+                displayName = uiState.bootstrapState.partnerDisplayName,
+                size = 90.dp,
+                borderWidth = 0.dp,
+                muted = !isPaired,
+                onEdit = onPartnerPhotoChangeRequested,
+                enabled = canEditPartner,
+                editButtonSize = 36.dp,
+                editButtonOffsetX = 6.dp,
+                editButtonOffsetY = 4.dp,
+                editIconSize = 20.dp
             )
             cooldownText?.let {
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
+                PartnerCooldownChip(
                     text = it,
-                    color = MaterialTheme.mulberryAppColors.mutedText,
-                    fontFamily = PoppinsFontFamily,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onPartnerPhotoChangeRequested,
-                enabled = !uiState.isBusy && cooldownText == null,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(15.38.dp)
-            ) {
-                Text("Change partner photo", fontFamily = PoppinsFontFamily)
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Button(
-                onClick = { onPartnerProfileSave(partnerName.trim(), anniversaryDate.trim()) },
-                enabled = !uiState.isBusy &&
-                    cooldownText == null &&
-                    partnerName.isNotBlank() &&
-                    anniversaryDate.isCompleteAnniversaryDate(),
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(15.38.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MulberryPrimary)
-            ) {
-                Text(
-                    text = if (uiState.isBusy) "Saving..." else "Save partner details",
-                    color = Color.White,
-                    fontFamily = PoppinsFontFamily,
-                    fontWeight = FontWeight.Medium
+                    modifier = Modifier.offset(x = 66.dp, y = 24.dp)
                 )
             }
         }
-        if (isPaired) {
-            OutlinedButton(
-                onClick = { showDisconnectConfirmation = true },
-                enabled = !uiState.isBusy,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                shape = RoundedCornerShape(15.38.dp)
-            ) {
-                Text("Disconnect partner", color = MulberryPrimary, fontFamily = PoppinsFontFamily)
-            }
-        }
+        Spacer(modifier = Modifier.height(62.dp))
+        SettingsDetailField(
+            label = "What is your partner's name?",
+            value = partnerName,
+            placeholder = "Enter partner name",
+            onValueChange = { partnerName = it },
+            enabled = canEditPartner
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        SettingsDetailField(
+            label = "Relationship anniversary",
+            value = anniversaryDate,
+            placeholder = ANNIVERSARY_DATE_PLACEHOLDER,
+            onValueChange = { anniversaryDate = it.toMaskedAnniversaryDate() },
+            enabled = canEditPartner,
+            datePlaceholder = true
+        )
+        Spacer(modifier = Modifier.height(56.dp))
+        PartnerMetricRow(
+            icon = SettingsRootIcon.Partner,
+            title = "Paired for",
+            value = pairedDurationText(uiState.bootstrapState.pairedAt),
+            valueColor = MulberryPrimary
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        PartnerMetricRow(
+            icon = null,
+            title = "Daily streak",
+            value = "${uiState.bootstrapState.currentStreakDays} days"
+        )
     }
 
     if (showDisconnectConfirmation) {
@@ -598,83 +995,588 @@ private fun PartnerPane(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PrivacyLegalPane() {
-    var showPolicy by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        SettingsNavCard(
-            title = "Privacy Policy",
-            body = "How Mulberry handles account, canvas, sync, and wallpaper data.",
-            onClick = { showPolicy = true }
+private fun SettingsDetailScaffold(
+    title: String,
+    onBack: () -> Unit,
+    bottomBar: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 20.dp)
+            .padding(top = 0.dp, bottom = 18.dp)
+    ) {
+        SettingsDetailHeader(title = title, onBack = onBack)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            content = content
         )
-        SoftCard {
-            Text(
-                text = "Terms of Service",
-                color = MaterialTheme.colorScheme.onSurface,
-                fontFamily = PoppinsFontFamily,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Coming before public release.",
-                color = MaterialTheme.mulberryAppColors.mutedText,
-                fontFamily = PoppinsFontFamily,
-                fontSize = 13.sp,
-                lineHeight = 20.sp
-            )
-        }
+        bottomBar()
     }
+}
 
-    if (showPolicy) {
-        ModalBottomSheet(
-            onDismissRequest = { showPolicy = false },
-            sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-        ) {
-            PrivacyPolicySheetContent(onDismiss = { showPolicy = false })
+@Composable
+private fun SettingsDetailHeader(title: String, onBack: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(36.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        SettingsBackButton(
+            onClick = onBack,
+            modifier = Modifier.align(Alignment.CenterStart)
+        )
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.76f),
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 22.sp,
+            lineHeight = 28.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun SettingsBackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val iconColor = MaterialTheme.mulberryAppColors.iconMuted
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(24.dp)) {
+            val strokeWidth = 2.dp.toPx()
+            drawLine(
+                color = iconColor,
+                start = center.copy(x = size.width * 0.22f),
+                end = center.copy(x = size.width * 0.78f),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Square
+            )
+            drawLine(
+                color = iconColor,
+                start = center.copy(x = size.width * 0.22f),
+                end = center.copy(x = size.width * 0.44f, y = size.height * 0.28f),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Square
+            )
+            drawLine(
+                color = iconColor,
+                start = center.copy(x = size.width * 0.22f),
+                end = center.copy(x = size.width * 0.44f, y = size.height * 0.72f),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Square
+            )
         }
     }
 }
 
 @Composable
-private fun AboutPane(
-    uiState: SettingsUiState,
-    onVersionTapped: () -> Unit
+private fun EditableProfileAvatar(
+    photoUrl: String?,
+    displayName: String?,
+    size: androidx.compose.ui.unit.Dp,
+    borderWidth: androidx.compose.ui.unit.Dp,
+    onEdit: () -> Unit,
+    enabled: Boolean,
+    muted: Boolean = false,
+    editButtonSize: androidx.compose.ui.unit.Dp = 54.dp,
+    editButtonOffsetX: androidx.compose.ui.unit.Dp = 12.dp,
+    editButtonOffsetY: androidx.compose.ui.unit.Dp = 4.dp,
+    editIconSize: androidx.compose.ui.unit.Dp = 26.dp
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        SoftCard {
-            Text(
-                text = "Mulberry",
-                color = MulberryPrimary,
-                fontFamily = PoppinsFontFamily,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 24.sp
+    Box(contentAlignment = Alignment.BottomEnd) {
+        SettingsAvatar(
+            photoUrl = photoUrl,
+            displayName = displayName,
+            size = size,
+            muted = muted,
+            borderWidth = borderWidth,
+            borderColor = MulberryPrimary
+        )
+        EditPhotoButton(
+            onClick = onEdit,
+            enabled = enabled,
+            size = editButtonSize,
+            iconSize = editIconSize,
+            modifier = Modifier.offset(x = editButtonOffsetX, y = editButtonOffsetY)
+        )
+    }
+}
+
+@Composable
+private fun EditPhotoButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    size: androidx.compose.ui.unit.Dp,
+    iconSize: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.background)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(R.drawable.settings_icon_edit_pencil),
+            contentDescription = null,
+            colorFilter = ColorFilter.tint(
+                MaterialTheme.colorScheme.onBackground.copy(alpha = if (enabled) 1f else 0.38f)
+            ),
+            modifier = Modifier.size(iconSize)
+        )
+    }
+}
+
+@Composable
+private fun SettingsDetailField(
+    label: String,
+    value: String,
+    placeholder: String,
+    onValueChange: (String) -> Unit,
+    enabled: Boolean,
+    datePlaceholder: Boolean = false
+) {
+    val inputColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.55f)
+    val placeholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.34f)
+    val textStyle = androidx.compose.ui.text.TextStyle(
+        color = inputColor,
+        fontFamily = PoppinsFontFamily,
+        fontWeight = FontWeight.Normal,
+        fontSize = 20.sp,
+        lineHeight = 28.sp
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(66.dp)
+            .clip(RoundedCornerShape(15.38.dp))
+            .background(MaterialTheme.mulberryAppColors.inputSurface)
+            .padding(horizontal = 13.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            lineHeight = 16.sp
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        if (datePlaceholder) {
+            BasicTextField(
+                value = TextFieldValue(
+                    text = value,
+                    selection = TextRange(value.anniversaryDateCursorOffset())
+                ),
+                onValueChange = { onValueChange(it.text) },
+                enabled = enabled,
+                singleLine = true,
+                textStyle = textStyle,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                visualTransformation = DatePlaceholderVisualTransformation(
+                    inputColor = inputColor,
+                    placeholderColor = placeholderColor
+                ),
+                cursorBrush = SolidColor(inputColor),
+                modifier = Modifier.fillMaxWidth()
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "A shared canvas for the lock screen.",
-                color = MaterialTheme.mulberryAppColors.mutedText,
-                fontFamily = PoppinsFontFamily,
-                fontSize = 14.sp,
-                lineHeight = 22.sp
+        } else {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                enabled = enabled,
+                singleLine = true,
+                textStyle = textStyle,
+                cursorBrush = SolidColor(inputColor),
+                modifier = Modifier.fillMaxWidth(),
+                decorationBox = { innerTextField ->
+                    Box {
+                        if (value.isBlank()) {
+                            Text(
+                                text = placeholder,
+                                color = placeholderColor,
+                                fontFamily = PoppinsFontFamily,
+                                fontSize = 20.sp,
+                                lineHeight = 28.sp
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
             )
         }
-        SettingsValueRow(
-            label = "Version",
-            value = "${uiState.appVersionName} (${uiState.appVersionCode})",
+    }
+}
+
+@Composable
+private fun PartnerCooldownChip(text: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.BottomStart
+    ) {
+        Canvas(
+            modifier = Modifier
+                .size(width = 18.dp, height = 12.dp)
+                .offset(x = 8.dp, y = 6.dp)
+        ) {
+            val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(size.width * 0.10f, 0f)
+                cubicTo(size.width * 0.24f, size.height * 0.38f, size.width * 0.16f, size.height * 0.78f, 0f, size.height)
+                cubicTo(size.width * 0.48f, size.height * 0.88f, size.width * 0.82f, size.height * 0.58f, size.width, 0f)
+                close()
+            }
+            drawPath(path, MulberryPrimary)
+        }
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(MulberryPrimary)
+                .padding(horizontal = 10.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = text,
+                color = Color.White,
+                fontFamily = PoppinsFontFamily,
+                fontWeight = FontWeight.Medium,
+                fontSize = 10.sp,
+                lineHeight = 13.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun PartnerMetricRow(
+    icon: SettingsRootIcon?,
+    title: String,
+    value: String,
+    valueColor: Color = MaterialTheme.colorScheme.onBackground
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(36.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (icon != null) {
+            RootLineIcon(
+                icon = icon,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.size(24.dp)
+            )
+        } else {
+            Image(
+                painter = painterResource(R.drawable.settings_icon_daily_streak),
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground),
+                modifier = Modifier.size(24.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(22.dp))
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 16.sp,
+            lineHeight = 22.sp,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = value,
+            color = valueColor,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+            lineHeight = 20.sp
+        )
+    }
+}
+
+@Composable
+private fun SettingsSaveButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(58.dp),
+        shape = RoundedCornerShape(15.38.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MulberryPrimary,
+            disabledContainerColor = MulberryPrimary.copy(alpha = 0.45f)
+        )
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 20.sp,
+            lineHeight = 28.sp
+        )
+    }
+}
+
+private fun partnerCooldownChipText(nextUpdateAt: String?): String? {
+    if (nextUpdateAt.isNullOrBlank()) return null
+    return runCatching {
+        val minutes = ChronoUnit.MINUTES.between(Instant.now(), Instant.parse(nextUpdateAt))
+        if (minutes <= 0) {
+            null
+        } else {
+            val hours = ((minutes + 59) / 60).coerceAtLeast(1)
+            "in $hours hours"
+        }
+    }.getOrNull()
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PrivacyLegalPane(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var activeSheet by remember { mutableStateOf<LegalSheet?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    SettingsDetailScaffold(
+        title = "Privacy and legal",
+        onBack = onBack,
+        bottomBar = {},
+        modifier = modifier
+    ) {
+        Spacer(modifier = Modifier.height(54.dp))
+        PrivacyLegalCard(
+            title = "Privacy policy",
+            body = "How Mulberry facilitates handling and the security of your data",
+            onClick = { activeSheet = LegalSheet.PrivacyPolicy }
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        PrivacyLegalCard(
+            title = "Terms of use",
+            body = "Terms and conditions you accept as you continue to use the service",
+            onClick = { activeSheet = LegalSheet.TermsOfUse }
+        )
+        Spacer(modifier = Modifier.height(36.dp))
+        PrivacyPromiseRow()
+    }
+
+    if (activeSheet != null) {
+        ModalBottomSheet(
+            onDismissRequest = { activeSheet = null },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            when (activeSheet) {
+                LegalSheet.PrivacyPolicy -> PrivacyPolicySheetContent(onDismiss = { activeSheet = null })
+                LegalSheet.TermsOfUse -> TermsOfUseSheetContent(onDismiss = { activeSheet = null })
+                null -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrivacyLegalCard(
+    title: String,
+    body: String,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(15.38.dp))
+            .background(MulberryPrimaryLight.copy(alpha = 0.34f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 22.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 19.sp,
+            lineHeight = 25.sp
+        )
+        Text(
+            text = body,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.Normal,
+            fontSize = 14.sp,
+            lineHeight = 21.sp
+        )
+    }
+}
+
+@Composable
+private fun PrivacyPromiseRow() {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+    ) {
+        PrivacyPromiseItem(
+            iconRes = R.drawable.settings_legal_lock,
+            label = "No data\nsharing"
+        )
+        PrivacyPromiseItem(
+            iconRes = R.drawable.settings_legal_megaphone,
+            label = "No\nadvertising"
+        )
+        PrivacyPromiseItem(
+            iconRes = R.drawable.settings_legal_search,
+            label = "No\ntracking"
+        )
+    }
+}
+
+@Composable
+private fun PrivacyPromiseItem(
+    @DrawableRes iconRes: Int,
+    label: String
+) {
+    Column(
+        modifier = Modifier.width(96.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier = Modifier.size(36.dp)
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+private enum class LegalSheet {
+    PrivacyPolicy,
+    TermsOfUse
+}
+
+@Composable
+private fun AboutPane(
+    uiState: SettingsUiState,
+    onBack: () -> Unit,
+    onVersionTapped: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    SettingsDetailScaffold(
+        title = "About",
+        onBack = onBack,
+        bottomBar = {},
+        modifier = modifier
+    ) {
+        Spacer(modifier = Modifier.height(42.dp))
+        Image(
+            painter = painterResource(R.drawable.about_page_banner),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(724f / 410f)
+                .clip(RoundedCornerShape(15.38.dp))
+        )
+        Spacer(modifier = Modifier.height(36.dp))
+        AboutInfoRow(
+            label = "App version",
+            value = uiState.appVersionName.ifBlank { "Unknown" },
             onClick = onVersionTapped
         )
-        InfoCard(
-            rows = listOf(
-                "Environment" to uiState.environmentLabel,
-                "Build type" to uiState.buildType,
-                "Flavor" to uiState.flavor.ifBlank { "default" }
-            )
+        AboutInfoRow(
+            label = "Build number",
+            value = uiState.appVersionCode.toString()
+        )
+        AboutInfoRow(
+            label = "Released on",
+            value = "26/04/2026"
+        )
+        AboutInfoRow(
+            label = "App flavour",
+            value = uiState.flavor.ifBlank { uiState.buildType.ifBlank { "default" } }
+        )
+    }
+}
+
+@Composable
+private fun AboutInfoRow(
+    label: String,
+    value: String,
+    onClick: (() -> Unit)? = null
+) {
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .then(
+            if (onClick != null) {
+                Modifier.clickable(onClick = onClick)
+            } else {
+                Modifier
+            }
+        )
+        .padding(vertical = 14.dp)
+
+    Row(
+        modifier = rowModifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 17.sp,
+            lineHeight = 24.sp,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = value,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.62f),
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 15.sp,
+            lineHeight = 22.sp,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .padding(start = 18.dp)
+                .weight(1f)
         )
     }
 }
@@ -682,6 +1584,7 @@ private fun AboutPane(
 @Composable
 private fun DeveloperOptionsPane(
     uiState: SettingsUiState,
+    onBack: () -> Unit,
     onDeveloperOptionsEnabledChanged: (Boolean) -> Unit,
     onForceSyncNow: () -> Unit,
     onRegenerateWallpaperSnapshot: () -> Unit,
@@ -689,53 +1592,74 @@ private fun DeveloperOptionsPane(
     onSeedDemoSession: () -> Unit,
     onFeatureFlagChanged: (FeatureFlag, Boolean) -> Unit,
     onResetAppState: () -> Unit,
-    onSendDebugPairingNotification: () -> Unit
+    onSendDebugPairingNotification: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var showResetConfirmation by remember { mutableStateOf(false) }
 
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        SoftCard {
-            ToggleRow(
-                title = "Use developer options",
-                body = "Turn this off to hide developer tools from Settings.",
-                checked = uiState.developerOptionsEnabled,
-                onCheckedChange = onDeveloperOptionsEnabledChanged
+    SettingsDetailScaffold(
+        title = "Developer options",
+        onBack = onBack,
+        bottomBar = {},
+        modifier = modifier
+    ) {
+        Spacer(modifier = Modifier.height(32.dp))
+        DeveloperOptionsHeroCard(
+            enabled = uiState.developerOptionsEnabled,
+            onEnabledChanged = onDeveloperOptionsEnabledChanged
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        DeveloperSectionCard(
+            title = "App diagnostics",
+            body = "Current environment and account identifiers for support, QA, and release verification."
+        ) {
+            DeveloperValueList(
+                rows = listOf(
+                    "Environment" to uiState.environmentLabel,
+                    "API Base URL" to uiState.apiBaseUrl,
+                    "User ID" to (uiState.bootstrapState.userId ?: "Unavailable"),
+                    "Pair session" to (uiState.bootstrapState.pairSessionId ?: "Unavailable"),
+                    "App build" to "${uiState.appVersionName} (${uiState.appVersionCode}) ${uiState.buildType}"
+                )
+            )
+        }
+        Spacer(modifier = Modifier.height(20.dp))
+        DeveloperSectionCard(
+            title = "Sync tools",
+            body = "Realtime state, delivery health, and manual recovery actions for the current device."
+        ) {
+            DeveloperValueList(
+                rows = listOf(
+                    "WebSocket" to uiState.syncState.displayName(),
+                    "Server revision" to uiState.syncMetadata.lastAppliedServerRevision.toString(),
+                    "Pending outbound" to uiState.pendingOperationCount.toString(),
+                    "FCM registered" to uiState.fcmRegistered.yesNo(),
+                    "Last error" to (uiState.syncMetadata.lastError ?: "None")
+                )
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+            SettingsPrimaryButton("Force sync now", uiState.isBusy, onForceSyncNow)
+            Spacer(modifier = Modifier.height(10.dp))
+            SettingsSecondaryButton(
+                "Regenerate wallpaper snapshot",
+                uiState.isBusy,
+                onRegenerateWallpaperSnapshot
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            SettingsSecondaryButton(
+                text = "Mock partner joined notification",
+                isBusy = uiState.isBusy,
+                onClick = onSendDebugPairingNotification,
+                enabled = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED
             )
         }
 
-        SectionTitle("Diagnostics")
-        InfoCard(
-            rows = listOf(
-                "Environment" to uiState.environmentLabel,
-                "API Base URL" to uiState.apiBaseUrl,
-                "User ID" to (uiState.bootstrapState.userId ?: "Unavailable"),
-                "Pair session" to (uiState.bootstrapState.pairSessionId ?: "Unavailable"),
-                "App build" to "${uiState.appVersionName} (${uiState.appVersionCode}) ${uiState.buildType}"
-            )
-        )
-
-        SectionTitle("Sync")
-        InfoCard(
-            rows = listOf(
-                "WebSocket" to uiState.syncState.displayName(),
-                "Server revision" to uiState.syncMetadata.lastAppliedServerRevision.toString(),
-                "Pending outbound" to uiState.pendingOperationCount.toString(),
-                "FCM registered" to uiState.fcmRegistered.yesNo(),
-                "Last error" to (uiState.syncMetadata.lastError ?: "None")
-            )
-        )
-        SettingsPrimaryButton("Force sync now", uiState.isBusy, onForceSyncNow)
-        SettingsSecondaryButton("Regenerate wallpaper snapshot", uiState.isBusy, onRegenerateWallpaperSnapshot)
-        SettingsSecondaryButton(
-            text = "Mock partner joined notification",
-            isBusy = uiState.isBusy,
-            onClick = onSendDebugPairingNotification,
-            enabled = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED
-        )
-
         if (uiState.enableDebugMenu) {
-            SectionTitle("Debug Flags")
-            SoftCard {
+            Spacer(modifier = Modifier.height(20.dp))
+            DeveloperSectionCard(
+                title = "Feature overrides",
+                body = "Temporary local switches for staging flows and internal walkthroughs."
+            ) {
                 ToggleRow(
                     title = "Placeholder pairing controls",
                     body = "Show legacy pairing controls.",
@@ -744,7 +1668,7 @@ private fun DeveloperOptionsPane(
                         onFeatureFlagChanged(FeatureFlag.PLACEHOLDER_PAIRING_CONTROLS, it)
                     }
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                DeveloperSectionDivider()
                 ToggleRow(
                     title = "Wallpaper setup CTA",
                     body = "Show the wallpaper setup call to action.",
@@ -753,7 +1677,7 @@ private fun DeveloperOptionsPane(
                         onFeatureFlagChanged(FeatureFlag.WALLPAPER_SETUP_CTA, it)
                     }
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                DeveloperSectionDivider()
                 ToggleRow(
                     title = "Developer bootstrap actions",
                     body = "Show bootstrap shortcuts.",
@@ -762,17 +1686,29 @@ private fun DeveloperOptionsPane(
                         onFeatureFlagChanged(FeatureFlag.DEVELOPER_BOOTSTRAP_ACTIONS, it)
                     }
                 )
+                Spacer(modifier = Modifier.height(18.dp))
+                SettingsSecondaryButton(
+                    "Reset feature flag overrides",
+                    uiState.isBusy,
+                    onClearFeatureOverrides
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                SettingsSecondaryButton("Seed demo session", uiState.isBusy, onSeedDemoSession)
             }
-            SettingsSecondaryButton("Reset feature flag overrides", uiState.isBusy, onClearFeatureOverrides)
-            SettingsSecondaryButton("Seed demo session", uiState.isBusy, onSeedDemoSession)
         }
 
-        SectionTitle("Reset")
-        SettingsDestructiveButton(
-            text = "Reset app state",
-            enabled = !uiState.isBusy,
-            onClick = { showResetConfirmation = true }
-        )
+        Spacer(modifier = Modifier.height(20.dp))
+        DeveloperSectionCard(
+            title = "Reset app state",
+            body = "Clears local auth, sync state, drawing data, background assets, and wallpaper snapshots on this device."
+        ) {
+            SettingsDestructiveButton(
+                text = "Reset app state",
+                enabled = !uiState.isBusy,
+                onClick = { showResetConfirmation = true }
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
     }
 
     if (showResetConfirmation) {
@@ -790,33 +1726,96 @@ private fun DeveloperOptionsPane(
 }
 
 @Composable
-private fun SyncStatusCard(uiState: SettingsUiState) {
+private fun DeveloperOptionsHeroCard(
+    enabled: Boolean,
+    onEnabledChanged: (Boolean) -> Unit
+) {
     SoftCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                StatusPill(text = "Support tools")
                 Text(
-                    text = "Sync",
+                    text = "Developer options",
                     color = MaterialTheme.colorScheme.onSurface,
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 16.sp
+                    fontSize = 20.sp,
+                    lineHeight = 26.sp
                 )
-                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = syncSummary(uiState),
+                    text = "Keep advanced diagnostics tucked away unless you need to inspect sync, debug feature gates, or recover local state.",
                     color = MaterialTheme.mulberryAppColors.mutedText,
                     fontFamily = PoppinsFontFamily,
                     fontSize = 13.sp,
-                    lineHeight = 19.sp
+                    lineHeight = 20.sp
                 )
             }
-            StatusPill(uiState.syncState.displayName())
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChanged,
+                modifier = Modifier.padding(start = 16.dp)
+            )
         }
     }
+}
+
+@Composable
+private fun DeveloperSectionCard(
+    title: String,
+    body: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    SoftCard {
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 18.sp,
+            lineHeight = 24.sp
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = body,
+            color = MaterialTheme.mulberryAppColors.mutedText,
+            fontFamily = PoppinsFontFamily,
+            fontSize = 13.sp,
+            lineHeight = 20.sp
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+        content()
+    }
+}
+
+@Composable
+private fun DeveloperValueList(rows: List<Pair<String, String>>) {
+    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+        rows.forEachIndexed { index, row ->
+            SettingsValueRow(label = row.first, value = row.second)
+            if (index != rows.lastIndex) {
+                DeveloperSectionDivider()
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeveloperSectionDivider() {
+    Spacer(modifier = Modifier.height(14.dp))
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(MulberryPrimary.copy(alpha = 0.08f))
+    )
+    Spacer(modifier = Modifier.height(14.dp))
 }
 
 @Composable
@@ -999,15 +1998,24 @@ private fun SettingsAvatar(
     photoUrl: String?,
     displayName: String?,
     size: androidx.compose.ui.unit.Dp,
-    muted: Boolean = false
+    muted: Boolean = false,
+    borderWidth: androidx.compose.ui.unit.Dp = 4.dp,
+    borderColor: Color? = null
 ) {
     val initial = displayName?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+    val resolvedBorderColor = borderColor ?: MaterialTheme.mulberryAppColors.softBorder
     Box(
         modifier = Modifier
             .size(size)
             .clip(CircleShape)
             .background(if (muted) MulberrySurfaceVariant else MulberryPrimary)
-            .border(4.dp, MaterialTheme.mulberryAppColors.softBorder, CircleShape),
+            .then(
+                if (borderWidth > 0.dp) {
+                    Modifier.border(borderWidth, resolvedBorderColor, CircleShape)
+                } else {
+                    Modifier
+                }
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (!photoUrl.isNullOrBlank()) {
@@ -1202,6 +2210,27 @@ private fun pairedDurationText(pairedAt: String?): String {
         "Paired"
     }
 }
+
+private fun String?.toFriendlyAnniversaryDate(): String? {
+    if (isNullOrBlank()) return null
+    return runCatching {
+        val date = LocalDate.parse(this)
+        val month = date.format(DateTimeFormatter.ofPattern("MMMM", Locale.US))
+        "${date.dayOfMonth}${date.dayOfMonth.ordinalSuffix()} $month, ${date.year % 100}"
+    }.getOrNull()
+}
+
+private fun Int.ordinalSuffix(): String =
+    if (this in 11..13) {
+        "th"
+    } else {
+        when (this % 10) {
+            1 -> "st"
+            2 -> "nd"
+            3 -> "rd"
+            else -> "th"
+        }
+    }
 
 private const val ANNIVERSARY_DATE_PLACEHOLDER = "DD-MM-YYYY"
 

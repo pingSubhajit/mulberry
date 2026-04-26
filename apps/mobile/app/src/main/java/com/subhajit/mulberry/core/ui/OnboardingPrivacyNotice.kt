@@ -89,10 +89,35 @@ fun OnboardingPrivacyNotice(modifier: Modifier = Modifier) {
 
 @Composable
 fun PrivacyPolicySheetContent(onDismiss: () -> Unit) {
+    LegalDocumentSheetContent(
+        title = stringResource(R.string.privacy_policy_sheet_title),
+        updated = stringResource(R.string.privacy_policy_sheet_updated),
+        rawResourceId = R.raw.privacy_policy,
+        onDismiss = onDismiss
+    )
+}
+
+@Composable
+fun TermsOfUseSheetContent(onDismiss: () -> Unit) {
+    LegalDocumentSheetContent(
+        title = "Terms of Use",
+        updated = "Last updated: April 23, 2026",
+        rawResourceId = R.raw.terms_of_use,
+        onDismiss = onDismiss
+    )
+}
+
+@Composable
+private fun LegalDocumentSheetContent(
+    title: String,
+    updated: String,
+    rawResourceId: Int,
+    onDismiss: () -> Unit
+) {
     val context = LocalContext.current
     val appColors = MaterialTheme.mulberryAppColors
-    val policyText = remember {
-        context.resources.openRawResource(R.raw.privacy_policy)
+    val documentText = remember(rawResourceId) {
+        context.resources.openRawResource(rawResourceId)
             .bufferedReader()
             .use { it.readText() }
             .trim()
@@ -108,7 +133,7 @@ fun PrivacyPolicySheetContent(onDismiss: () -> Unit) {
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = stringResource(R.string.privacy_policy_sheet_title),
+                text = title,
                 color = MaterialTheme.colorScheme.onSurface,
                 style = TextStyle(
                     fontFamily = PoppinsFontFamily,
@@ -118,7 +143,7 @@ fun PrivacyPolicySheetContent(onDismiss: () -> Unit) {
                 )
             )
             Text(
-                text = stringResource(R.string.privacy_policy_sheet_updated),
+                text = updated,
                 color = appColors.mutedText,
                 style = TextStyle(
                     fontFamily = PoppinsFontFamily,
@@ -130,7 +155,7 @@ fun PrivacyPolicySheetContent(onDismiss: () -> Unit) {
         }
 
         Text(
-            text = policyText,
+            text = documentText,
             color = appColors.mutedText,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,

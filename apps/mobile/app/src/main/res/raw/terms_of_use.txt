@@ -1,0 +1,142 @@
+Mulberry Terms of Use
+
+Effective date: April 23, 2026
+Last updated: April 23, 2026
+Operator: Subhajit Kundu
+Address: ITI Crossing, Kalyani, West Bengal, India, 741235
+Contact: subha60kundu@gmail.com
+
+These Terms of Use explain the rules for using Mulberry, a private Android app for two people to share a drawing canvas that can appear on each other's lock screen.
+
+Overview
+
+These terms are written for Mulberry's current India-only, two-person Android app launch and should be read with the Privacy Policy.
+
+1. Acceptance of these terms
+
+By installing, accessing, signing in to, pairing through, or using Mulberry, you agree to these Terms of Use and to the Mulberry Privacy Policy. If you do not agree, do not use Mulberry.
+
+If you use Mulberry on behalf of another person or organization, you confirm that you have authority to accept these terms for them. Mulberry is primarily intended for personal use by individual users.
+
+2. Eligibility and India-only launch
+
+Mulberry is intended for users in India and is not intended for users under 18 years old. By using Mulberry, you confirm that you are at least 18 years old and that you are legally able to agree to these terms.
+
+If Mulberry becomes available outside India, these terms may be updated before that expansion.
+
+3. The Mulberry service
+
+Mulberry provides a paired-device experience where two users can share a private drawing canvas. Shared drawings may sync between paired users and may appear locally through the Android live wallpaper experience.
+
+Mulberry is not a public social network, publishing platform, marketplace, payment service, emergency communication tool, or backup service. Background sync, push delivery, wallpapers, and device behavior may depend on Android, Google services, network availability, and device settings.
+
+4. Accounts, sign-in, and security
+
+Mulberry uses Google Sign-In and Mulberry-created session tokens to authenticate users. You are responsible for keeping your Google account, device, passcode, and Mulberry session secure.
+
+- Do not share your account or authentication tokens with anyone.
+- Do not try to access another person's account, device, pair session, invite, or canvas without permission.
+- Tell Mulberry promptly if you believe your account, invite code, or pair session has been misused.
+
+5. Pairing, invite codes, and shared canvas content
+
+Mulberry invite codes are used to connect exactly two users into a private pair session. You should share invite codes only with the person you intend to pair with. Anyone with a valid invite code may be able to start the pairing flow.
+
+The shared canvas is visible to both paired users. Either paired user may draw, erase, delete strokes, clear the canvas, or otherwise change the shared canvas where the app allows those actions.
+
+Mulberry cannot control what your paired partner does after viewing shared content, including screenshots, screen recordings, photos of a device, or sharing outside Mulberry. Do not put anything on the shared canvas that you do not want your paired partner to see or save.
+
+6. Your content and Mulberry's operating license
+
+You keep ownership of drawings, messages, names, dates, images, and other content that you provide to Mulberry, subject to any rights held by others.
+
+You give Mulberry a limited, worldwide, non-exclusive, royalty-free license to host, store, process, transmit, display, reproduce, modify for technical formatting, and otherwise use your content only as needed to operate, secure, sync, support, and improve Mulberry.
+
+You confirm that you have the rights needed to provide any content you add to Mulberry and that your content does not violate these terms or applicable law.
+
+7. Acceptable use
+
+You agree to use Mulberry respectfully, lawfully, and only for its intended paired personal communication purpose.
+
+- Do not harass, threaten, exploit, impersonate, or harm another person.
+- Do not upload, draw, send, or display illegal, non-consensual, abusive, hateful, sexually exploitative, or infringing content.
+- Do not use Mulberry to stalk, monitor, pressure, or control another person.
+- Do not reverse engineer, scrape, interfere with, overload, bypass, or attack Mulberry systems.
+- Do not use automation, fake accounts, stolen credentials, or unauthorized tokens.
+- Do not remove, obscure, or misuse Mulberry branding, notices, or security features.
+
+8. Device storage, wallpapers, and local data
+
+Mulberry may store account state, pairing state, canvas state, tokens, cached files, wallpaper backgrounds, and app preferences locally on your device. Your device-local wallpaper background is intended to remain on your device unless you share it outside Mulberry or add it to shared content yourself.
+
+You are responsible for your device settings, lock screen visibility, screenshots, backups outside Mulberry, and any manual sharing or exporting you perform.
+
+9. Third-party services and app store terms
+
+Mulberry depends on third-party services, including Google Sign-In, Android platform services, Firebase Cloud Messaging, Firebase Crashlytics, Google Analytics, Sentry, Better Stack Logs, PostHog, Supabase, Railway, and Google Play distribution. Those services may have their own terms and policies.
+
+Your use of Google Play, Android, Google accounts, or other third-party services is governed by the applicable third-party terms. Mulberry is not responsible for third-party service outages, account decisions, platform restrictions, or policy changes.
+
+10. Fees and paid features
+
+Mulberry does not currently describe paid features, subscriptions, or in-app purchases in these terms. If paid features are introduced, applicable prices, billing terms, renewal rules, cancellation rules, and refund rules will be presented before purchase or in updated terms.
+
+11. Mulberry intellectual property
+
+Mulberry, including the app, website, backend services, logos, wordmarks, visual design, software, source code, documentation, and related materials, is owned by Subhajit Kundu or licensed to Mulberry.
+
+These terms do not give you ownership of Mulberry or permission to copy, modify, distribute, sell, sublicense, or create derivative works from Mulberry except as allowed by law or by written permission.
+
+If you send feedback, ideas, bug reports, or suggestions, Mulberry may use them without restriction or compensation to you.
+
+12. Privacy
+
+The Mulberry Privacy Policy explains how information is collected, used, stored, shared, and protected. By using Mulberry, you also acknowledge the Privacy Policy.
+
+13. Service changes, availability, and updates
+
+Mulberry may change, suspend, discontinue, limit, or update parts of the service at any time. Features may be experimental, may not work on all devices, and may depend on app version, backend availability, network access, and platform permissions.
+
+You are responsible for installing updates needed for security, compatibility, bug fixes, and continued access. Older app versions may stop working.
+
+14. Suspension and termination
+
+You may stop using Mulberry at any time. You may also use available account deletion flows or contact Mulberry to request account deletion.
+
+Mulberry may suspend, limit, or terminate access if you violate these terms, create legal or security risk, misuse the service, infringe rights, threaten safety, or if continued operation is no longer commercially, technically, or legally practical.
+
+After termination or deletion, some provisions will continue where reasonably necessary, including intellectual property, privacy, disclaimers, liability limits, dispute terms, and provisions needed to enforce these terms.
+
+15. Disclaimers
+
+Mulberry is provided on an as-is and as-available basis. To the maximum extent permitted by law, Mulberry disclaims all warranties, whether express, implied, statutory, or otherwise, including warranties of merchantability, fitness for a particular purpose, title, non-infringement, availability, security, reliability, and error-free operation.
+
+Mulberry does not guarantee that drawings, sync events, push signals, wallpaper updates, notifications, accounts, or local storage will always be accurate, uninterrupted, timely, secure, or recoverable.
+
+16. Limitation of liability
+
+To the maximum extent permitted by law, Mulberry and its operator will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for loss of data, content, profits, goodwill, device functionality, or emotional distress arising from or related to your use of Mulberry.
+
+To the maximum extent permitted by law, Mulberry's total liability for claims arising from or related to the service or these terms will be limited to the greater of the amount you paid to Mulberry for the service in the three months before the claim or INR 1,000.
+
+Nothing in these terms limits liability where the law does not allow that limitation.
+
+17. Your responsibility for claims
+
+To the extent permitted by law, you agree to defend, indemnify, and hold harmless Mulberry and its operator from claims, losses, liabilities, damages, costs, and expenses arising from your content, your misuse of Mulberry, your violation of these terms, your violation of law, or your violation of another person's rights.
+
+18. Governing law and disputes
+
+These terms are governed by the laws of India, without regard to conflict-of-law rules. Subject to applicable law, courts in West Bengal, India will have jurisdiction over disputes arising from or related to these terms or Mulberry.
+
+Before filing a formal claim, you agree to contact Mulberry and try to resolve the dispute informally. This does not prevent either party from seeking urgent legal relief where necessary.
+
+19. Changes to these terms
+
+Mulberry may update these terms from time to time. If changes are material, Mulberry will provide notice by email at least 30 days before the material changes take effect, unless a shorter period is required for legal, security, or operational reasons.
+
+The Last updated date at the top of this page shows when these terms were last changed. Continued use after updated terms take effect means you accept the updated terms.
+
+20. Contact
+
+For questions about these terms, account deletion, support, complaints, or legal notices, contact Subhajit Kundu at subha60kundu@gmail.com or by mail at ITI Crossing, Kalyani, West Bengal, India, 741235.
