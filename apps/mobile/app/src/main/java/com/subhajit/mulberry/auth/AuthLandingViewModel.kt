@@ -70,6 +70,10 @@ class AuthLandingViewModel @Inject constructor(
         return when {
             this is GetCredentialCancellationException -> null
             message.isNullOrBlank() -> "Unable to sign in with Google. Please try again."
+            message.contains("Google Play services is missing or out of date", ignoreCase = true) ->
+                "Google Play services is missing or out of date on this device. Update it and try again."
+            message.contains("no provider dependencies found", ignoreCase = true) ->
+                "Google Play services is missing or out of date on this device. Update it and try again."
             message.contains("Google server client id is not configured", ignoreCase = true) ->
                 "Google sign-in is not configured for this build."
             message.contains("Unable to parse Google credential", ignoreCase = true) ->

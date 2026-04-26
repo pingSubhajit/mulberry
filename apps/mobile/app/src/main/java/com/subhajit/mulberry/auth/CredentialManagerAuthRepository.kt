@@ -8,8 +8,10 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.GetCredentialResponse
 import androidx.credentials.exceptions.ClearCredentialException
+import androidx.credentials.exceptions.ClearCredentialProviderConfigurationException
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
 import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
@@ -294,8 +296,26 @@ class CredentialManagerAuthRepository @Inject constructor(
             throw exception
         }
 
+        if (exception is GetCredentialProviderConfigurationException) {
+            val causeChain = exception.causeChainSummary()
+            Log.w(
+                TAG,
+                "Sign in with Google button flow failed due to missing or incompatible provider " +
+                    "attempt=$attemptLabel message=${exception.message} causeChain=$causeChain",
+                exception
+            )
+            throw IllegalStateException(
+                "Google Play services is missing or out of date on this device.",
+                exception
+            )
+        }
+
         val causeChain = exception.causeChainSummary()
-        val recoverySummary = clearCredentialStateSummary("button flow failure recovery")
+        val recoverySummary = if (isAccountReauthFailure(exception)) {
+            clearCredentialStateSummary("button flow failure recovery")
+        } else {
+            "skipped"
+        }
         Log.w(
             TAG,
             "Sign in with Google button flow failed " +
@@ -399,6 +419,14 @@ class CredentialManagerAuthRepository @Inject constructor(
             CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest())
             "cleared"
         }.getOrElse { error ->
+            if (error is ClearCredentialProviderConfigurationException) {
+                Log.i(
+                    TAG,
+                    "Credential Manager clearCredentialState not supported on this device during $reason " +
+                        "message=${error.message}"
+                )
+                return@getOrElse "not-supported"
+            }
             if (error is ClearCredentialException) {
                 Log.w(
                     TAG,

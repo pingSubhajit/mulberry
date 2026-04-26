@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Rect
 import android.service.wallpaper.WallpaperService
+import android.util.Log
 import android.view.SurfaceHolder
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
@@ -28,23 +29,44 @@ class MulberryWallpaperService : WallpaperService() {
     private inner class MulberryWallpaperEngine : Engine() {
         private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         private val drawMutex = Mutex()
+        private var isEngineVisible: Boolean = false
+        private var isSurfaceAvailable: Boolean = false
+        private var pendingRedraw: Boolean = false
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
             setTouchEventsEnabled(false)
+            isSurfaceAvailable = surfaceHolder.surface?.isValid == true
             engineScope.launch {
                 WallpaperRenderBus.updates().collect {
-                    drawFrame()
+                    requestDraw("render_bus")
                 }
             }
-            drawFrame()
+            requestDraw("engine_create")
         }
 
         override fun onVisibilityChanged(visible: Boolean) {
             super.onVisibilityChanged(visible)
+            isEngineVisible = visible
             if (visible) {
-                drawFrame()
+                requestDraw("visibility_changed")
             }
+        }
+
+        override fun onSurfaceCreated(holder: SurfaceHolder) {
+            super.onSurfaceCreated(holder)
+            isSurfaceAvailable = true
+            requestDraw("surface_created")
+        }
+
+        override fun onSurfaceDestroyed(holder: SurfaceHolder) {
+            isSurfaceAvailable = false
+            super.onSurfaceDestroyed(holder)
+        }
+
+        override fun onSurfaceRedrawNeeded(holder: SurfaceHolder) {
+            super.onSurfaceRedrawNeeded(holder)
+            requestDraw("surface_redraw_needed")
         }
 
         override fun onSurfaceChanged(
@@ -54,7 +76,8 @@ class MulberryWallpaperService : WallpaperService() {
             height: Int
         ) {
             super.onSurfaceChanged(holder, format, width, height)
-            drawFrame()
+            isSurfaceAvailable = holder.surface?.isValid == true
+            requestDraw("surface_changed")
         }
 
         override fun onDestroy() {
@@ -62,18 +85,45 @@ class MulberryWallpaperService : WallpaperService() {
             super.onDestroy()
         }
 
+        private fun requestDraw(reason: String) {
+            if (!isEngineVisible || !isSurfaceAvailable || surfaceHolder.surface?.isValid != true) {
+                pendingRedraw = true
+                Log.d(
+                    TAG,
+                    "Skipping draw reason=$reason visible=$isEngineVisible surface=$isSurfaceAvailable"
+                )
+                return
+            }
+            pendingRedraw = false
+            drawFrame()
+        }
+
         private fun drawFrame() {
             engineScope.launch {
                 drawMutex.withLock {
-                    wallpaperCoordinator.ensureSnapshotCurrent()
-                    val renderState = wallpaperRenderStateLoader.loadCurrentState()
-                    drawToSurface(renderState)
+                    if (!isEngineVisible || !isSurfaceAvailable || surfaceHolder.surface?.isValid != true) {
+                        pendingRedraw = true
+                        return@withLock
+                    }
+                    runCatching {
+                        wallpaperCoordinator.ensureSnapshotCurrent()
+                        val renderState = wallpaperRenderStateLoader.loadCurrentState()
+                        drawToSurface(renderState)
+                    }.onFailure { error ->
+                        Log.w(TAG, "Wallpaper draw failed", error)
+                        pendingRedraw = true
+                    }
                 }
             }
         }
 
         private suspend fun drawToSurface(renderState: WallpaperRenderState) {
-            val canvas = surfaceHolder.lockCanvas() ?: return
+            val canvas = runCatching { surfaceHolder.lockCanvas() }
+                .onFailure { error ->
+                    Log.w(TAG, "Unable to lock wallpaper canvas", error)
+                }
+                .getOrNull()
+                ?: return
             try {
                 canvas.drawColor(renderState.fallbackColorArgb)
                 drawBitmapIfValid(
@@ -95,7 +145,13 @@ class MulberryWallpaperService : WallpaperService() {
                     }
                 )
             } finally {
-                surfaceHolder.unlockCanvasAndPost(canvas)
+                try {
+                    surfaceHolder.unlockCanvasAndPost(canvas)
+                } catch (error: IllegalArgumentException) {
+                    Log.w(TAG, "Unable to unlock wallpaper canvas", error)
+                } catch (error: Throwable) {
+                    Log.w(TAG, "Unexpected error unlocking wallpaper canvas", error)
+                }
             }
         }
 
@@ -167,6 +223,8 @@ private enum class BitmapScaleMode {
     CENTER_CROP_TO_CANVAS,
     CENTERED_SCREEN_VIEWPORT
 }
+
+private const val TAG = "MulberryWallpaper"
 
 internal fun centerCropSourceRect(
     bitmapWidth: Int,

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -16,6 +17,10 @@ class BackgroundCanvasSyncWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val coordinator: BackgroundCanvasSyncCoordinator
 ) : CoroutineWorker(context, params) {
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        return BackgroundCanvasSyncForegroundNotification.createForegroundInfo(applicationContext)
+    }
+
     override suspend fun doWork(): Result {
         val pairSessionId = inputData.getString(KEY_PAIR_SESSION_ID)
         val latestRevision = inputData.getLong(KEY_LATEST_REVISION, 0L).takeIf { it > 0L }
