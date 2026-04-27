@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.subhajit.mulberry.BuildConfig
 import com.subhajit.mulberry.auth.AuthRepository
 import com.subhajit.mulberry.core.config.AppConfig
@@ -155,6 +156,25 @@ class SettingsViewModel @Inject constructor(
                 _effects.emit(SettingsEffect.Message("Developer options disabled"))
             }
         }
+    }
+
+    fun onSendCrashlyticsTestEvent() {
+        val crashlytics = FirebaseCrashlytics.getInstance()
+        crashlytics.setCrashlyticsCollectionEnabled(true)
+        crashlytics.log("Crashlytics test: non-fatal event from developer options")
+        crashlytics.recordException(
+            RuntimeException("Crashlytics test non-fatal (${BuildConfig.FLAVOR}/${BuildConfig.BUILD_TYPE})")
+        )
+        viewModelScope.launch {
+            _effects.emit(SettingsEffect.Message("Sent Crashlytics test event (non-fatal). Check Firebase console in a few minutes."))
+        }
+    }
+
+    fun onCrashlyticsTestCrash() {
+        val crashlytics = FirebaseCrashlytics.getInstance()
+        crashlytics.setCrashlyticsCollectionEnabled(true)
+        crashlytics.log("Crashlytics test: fatal crash from developer options")
+        throw RuntimeException("Crashlytics test crash")
     }
 
     fun onResetAppState() {

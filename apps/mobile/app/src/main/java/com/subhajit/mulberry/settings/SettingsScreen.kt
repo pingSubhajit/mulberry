@@ -168,7 +168,9 @@ fun SettingsRoute(
         },
         onForceSyncNow = viewModel::onForceSyncNow,
         onRegenerateWallpaperSnapshot = viewModel::onRegenerateWallpaperSnapshot,
-        onSendDebugPairingNotification = viewModel::onSendDebugPairingNotification
+        onSendDebugPairingNotification = viewModel::onSendDebugPairingNotification,
+        onSendCrashlyticsTestEvent = viewModel::onSendCrashlyticsTestEvent,
+        onCrashlyticsTestCrash = viewModel::onCrashlyticsTestCrash
     )
 }
 
@@ -192,7 +194,9 @@ private fun SettingsScreen(
     onDeveloperOptionsEnabledChanged: (Boolean) -> Unit,
     onForceSyncNow: () -> Unit,
     onRegenerateWallpaperSnapshot: () -> Unit,
-    onSendDebugPairingNotification: () -> Unit
+    onSendDebugPairingNotification: () -> Unit,
+    onSendCrashlyticsTestEvent: () -> Unit,
+    onCrashlyticsTestCrash: () -> Unit
 ) {
     Scaffold(
         modifier = Modifier
@@ -250,6 +254,8 @@ private fun SettingsScreen(
                 onFeatureFlagChanged = onFeatureFlagChanged,
                 onResetAppState = onResetAppState,
                 onSendDebugPairingNotification = onSendDebugPairingNotification,
+                onSendCrashlyticsTestEvent = onSendCrashlyticsTestEvent,
+                onCrashlyticsTestCrash = onCrashlyticsTestCrash,
                 modifier = Modifier.padding(padding)
             )
         } else {
@@ -1593,9 +1599,12 @@ private fun DeveloperOptionsPane(
     onFeatureFlagChanged: (FeatureFlag, Boolean) -> Unit,
     onResetAppState: () -> Unit,
     onSendDebugPairingNotification: () -> Unit,
+    onSendCrashlyticsTestEvent: () -> Unit,
+    onCrashlyticsTestCrash: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showResetConfirmation by remember { mutableStateOf(false) }
+    var showCrashlyticsCrashConfirmation by remember { mutableStateOf(false) }
 
     SettingsDetailScaffold(
         title = "Developer options",
@@ -1622,6 +1631,21 @@ private fun DeveloperOptionsPane(
                     "App build" to "${uiState.appVersionName} (${uiState.appVersionCode}) ${uiState.buildType}"
                 )
             )
+            if (uiState.developerOptionsEnabled && uiState.buildType != "release") {
+                Spacer(modifier = Modifier.height(18.dp))
+                SettingsSecondaryButton(
+                    text = "Send Crashlytics test event",
+                    isBusy = uiState.isBusy,
+                    onClick = onSendCrashlyticsTestEvent,
+                    enabled = !uiState.isBusy
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                SettingsDestructiveButton(
+                    text = "Crash app (Crashlytics test)",
+                    enabled = !uiState.isBusy,
+                    onClick = { showCrashlyticsCrashConfirmation = true }
+                )
+            }
         }
         Spacer(modifier = Modifier.height(20.dp))
         DeveloperSectionCard(
@@ -1720,6 +1744,19 @@ private fun DeveloperOptionsPane(
             onConfirm = {
                 showResetConfirmation = false
                 onResetAppState()
+            }
+        )
+    }
+
+    if (showCrashlyticsCrashConfirmation) {
+        ConfirmationDialog(
+            title = "Crash the app?",
+            body = "This intentionally crashes the app to verify Crashlytics reporting. Only do this on a test build/device.",
+            confirmText = "Crash",
+            onDismiss = { showCrashlyticsCrashConfirmation = false },
+            onConfirm = {
+                showCrashlyticsCrashConfirmation = false
+                onCrashlyticsTestCrash()
             }
         )
     }
