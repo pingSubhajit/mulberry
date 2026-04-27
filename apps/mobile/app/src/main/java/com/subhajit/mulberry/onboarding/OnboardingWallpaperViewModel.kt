@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 data class OnboardingWallpaperUiState(
@@ -155,6 +156,8 @@ class OnboardingWallpaperViewModel @Inject constructor(
 
     fun refreshWallpaperStatus() {
         viewModelScope.launch {
+            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+            delay(500)
             wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
         }
     }

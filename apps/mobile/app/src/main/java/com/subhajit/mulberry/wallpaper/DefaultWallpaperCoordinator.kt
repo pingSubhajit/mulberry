@@ -1,6 +1,8 @@
 package com.subhajit.mulberry.wallpaper
 
 import android.app.WallpaperManager
+import android.app.WallpaperInfo
+import android.content.ComponentName
 import android.content.Context
 import com.subhajit.mulberry.app.di.ApplicationScope
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
@@ -8,6 +10,7 @@ import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.lang.reflect.Method
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -31,8 +34,14 @@ class DefaultWallpaperCoordinator @Inject constructor(
     @ApplicationScope private val applicationScope: CoroutineScope
 ) : WallpaperCoordinator {
 
-    private val selectedState = MutableStateFlow(false)
+    private val selectedOnHomeState = MutableStateFlow(false)
+    private val selectedOnLockState = MutableStateFlow(false)
     private val renderMutex = Mutex()
+    private val wallpaperInfoByWhichMethod: Method? by lazy(LazyThreadSafetyMode.NONE) {
+        runCatching {
+            WallpaperManager::class.java.getMethod("getWallpaperInfo", Int::class.javaPrimitiveType)
+        }.getOrNull()
+    }
 
     init {
         applicationScope.launch {
@@ -80,12 +89,14 @@ class DefaultWallpaperCoordinator @Inject constructor(
     }
 
     override fun wallpaperStatus(): Flow<WallpaperStatusState> = combine(
-        selectedState,
+        selectedOnHomeState,
+        selectedOnLockState,
         backgroundImageRepository.backgroundState,
         canvasMetadataDao.observeMetadata().mapDefault()
-    ) { isSelected, backgroundState, metadata ->
+    ) { isSelectedOnHome, isSelectedOnLock, backgroundState, metadata ->
         wallpaperStatusCalculator.calculate(
-            isWallpaperSelected = isSelected,
+            isWallpaperSelectedOnHome = isSelectedOnHome,
+            isWallpaperSelectedOnLock = isSelectedOnLock,
             backgroundState = backgroundState,
             metadata = metadata,
             hasSnapshotFile = metadata.hasSnapshotFile(),
@@ -94,12 +105,40 @@ class DefaultWallpaperCoordinator @Inject constructor(
     }.distinctUntilChanged()
 
     private suspend fun refreshWallpaperSelection(): Boolean {
-        val isSelected = WallpaperManager.getInstance(context)
-            .wallpaperInfo
-            ?.serviceName == MulberryWallpaperService::class.java.name
-        selectedState.value = isSelected
+        val manager = WallpaperManager.getInstance(context)
+        val expectedComponent = ComponentName(context, MulberryWallpaperService::class.java)
+
+        fun isMulberry(info: WallpaperInfo?): Boolean = info?.component == expectedComponent
+
+        val isSelectedOnHome = isMulberry(
+            manager.getWallpaperInfoCompat(WallpaperManager.FLAG_SYSTEM) ?: manager.wallpaperInfo
+        )
+        val lockInfo = manager.getWallpaperInfoCompat(WallpaperManager.FLAG_LOCK)
+        val lockId = manager.getWallpaperIdSafely(WallpaperManager.FLAG_LOCK)
+        val systemId = manager.getWallpaperIdSafely(WallpaperManager.FLAG_SYSTEM)
+        val isSelectedOnLock = isMulberry(lockInfo) || (
+            lockInfo == null &&
+                isSelectedOnHome &&
+                lockId != null &&
+                systemId != null &&
+                lockId == systemId
+            )
+        val isSelected = isSelectedOnHome || isSelectedOnLock
+
+        selectedOnHomeState.value = isSelectedOnHome
+        selectedOnLockState.value = isSelectedOnLock
         sessionBootstrapRepository.setWallpaperConfigured(isSelected)
         return isSelected
+    }
+
+    private fun WallpaperManager.getWallpaperInfoCompat(which: Int): WallpaperInfo? {
+        val method = wallpaperInfoByWhichMethod ?: return null
+        return runCatching { method.invoke(this, which) as? WallpaperInfo }.getOrNull()
+    }
+
+    private fun WallpaperManager.getWallpaperIdSafely(which: Int): Int? {
+        val id = runCatching { getWallpaperId(which) }.getOrNull() ?: return null
+        return if (id > 0) id else null
     }
 
     private fun Flow<CanvasMetadataEntity?>.mapDefault(): Flow<CanvasMetadataEntity> = map {

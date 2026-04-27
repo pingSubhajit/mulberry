@@ -24,12 +24,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
 
@@ -117,6 +119,8 @@ private fun LockScreenStatusContent(
                 title = "Wallpaper",
                 lines = listOf(
                     "Selected: ${uiState.wallpaperStatus.isWallpaperSelected.yesNo()}",
+                    "Home screen: ${uiState.wallpaperStatus.isWallpaperSelectedOnHome.yesNo()}",
+                    "Lock screen: ${uiState.wallpaperStatus.isWallpaperSelectedOnLock.yesNo()}",
                     "Snapshot ready: ${uiState.wallpaperStatus.hasSnapshot.yesNo()}",
                     "Snapshot current: ${uiState.wallpaperStatus.isSnapshotCurrent.yesNo()}"
                 )
@@ -139,13 +143,24 @@ private fun LockScreenStatusContent(
                 )
             )
 
-            Button(
-                onClick = onOpenWallpaperPicker,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag(TestTags.LOCKSCREEN_OPEN_WALLPAPER_BUTTON)
-            ) {
-                Text("Open Wallpaper Setup")
+            val isSelectedOnHome = uiState.wallpaperStatus.isWallpaperSelectedOnHome
+            val isSelectedOnLock = uiState.wallpaperStatus.isWallpaperSelectedOnLock
+            val isSelectedOnBoth = isSelectedOnHome && isSelectedOnLock
+
+            if (!isSelectedOnBoth) {
+                Button(
+                    onClick = onOpenWallpaperPicker,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(TestTags.LOCKSCREEN_OPEN_WALLPAPER_BUTTON)
+                ) {
+                    val setupLabelResId = if (!isSelectedOnHome && !isSelectedOnLock) {
+                        R.string.onboarding_wallpaper_setup_button
+                    } else {
+                        R.string.wallpaper_setup_set_both_lock_home
+                    }
+                    Text(stringResource(setupLabelResId))
+                }
             }
 
             OutlinedButton(

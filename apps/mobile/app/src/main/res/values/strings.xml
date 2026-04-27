@@ -26,13 +26,18 @@
     <string name="onboarding_wallpaper_description">Let’s set up a device background for you that only you will see. The canvas will appear on top of it</string>
     <string name="onboarding_wallpaper_help">Help</string>
     <string name="onboarding_wallpaper_help_title">Setting up Mulberry</string>
-    <string name="onboarding_wallpaper_help_body">Android will open the wallpaper setup screen. Select Mulberry, then choose Lock screen or Both if Android asks where to apply it.</string>
+    <string name="onboarding_wallpaper_help_body">Android will open the wallpaper setup screen. Select Mulberry, then choose Lock screen if Android asks where to apply it.</string>
     <string name="onboarding_wallpaper_help_step_one">Pick a background now, or keep the default Mulberry background.</string>
     <string name="onboarding_wallpaper_help_step_two">Tap Set up lock screen and select Mulberry in Android’s wallpaper screen.</string>
     <string name="onboarding_wallpaper_help_step_three">After setup, return here and tap All done to finish onboarding.</string>
     <string name="onboarding_wallpaper_help_confirm">Got it</string>
     <string name="onboarding_wallpaper_preview_date">Monday, January 16</string>
     <string name="onboarding_wallpaper_setup_button">Set up lock screen</string>
+    <string name="wallpaper_setup_set_both_lock_home">Set up both lock &amp; home screen</string>
+    <string name="wallpaper_setup_status_none">Not set up yet</string>
+    <string name="wallpaper_setup_status_home">Set on home screen</string>
+    <string name="wallpaper_setup_status_lock">Set on lock screen</string>
+    <string name="wallpaper_setup_status_both">Set on lock &amp; home screen</string>
     <string name="onboarding_wallpaper_upload">Upload from gallery</string>
     <string name="wallpaper_more_action">View more wallpapers</string>
     <string name="wallpaper_catalog_back">Go back</string>
@@ -77,7 +82,6 @@
     <string name="home_tab_lockscreen">Lock screen</string>
     <string name="home_open_canvas">Open canvas</string>
     <string name="home_open_lockscreen">Open lock screen</string>
-    <string name="home_lockscreen_setup_button">Set as lock screen</string>
     <string name="home_canvas_paired_body">Local strokes: %1$d</string>
     <string name="home_paired_canvas_guidance_title">Draw them something cute</string>
     <string name="home_paired_canvas_guidance_body">Whatever you draw will appear at the lockscreen of their phone</string>

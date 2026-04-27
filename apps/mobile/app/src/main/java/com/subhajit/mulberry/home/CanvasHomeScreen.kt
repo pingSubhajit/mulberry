@@ -846,13 +846,52 @@ private fun LockScreenHomePane(
                 fallbackBackgroundRes = selectedPreviewResId
             )
 
-            if (!uiState.wallpaperStatus.isWallpaperSelected) {
-                WallpaperPrimaryButton(
-                    text = stringResource(R.string.home_lockscreen_setup_button),
-                    onClick = onSetUpLockScreen,
-                    enabled = !uiState.isWallpaperBusy,
-                    modifier = Modifier.testTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON)
-                )
+            val isSelectedOnHome = uiState.wallpaperStatus.isWallpaperSelectedOnHome
+            val isSelectedOnLock = uiState.wallpaperStatus.isWallpaperSelectedOnLock
+            val isSelectedOnBoth = isSelectedOnHome && isSelectedOnLock
+
+            if (!isSelectedOnBoth) {
+                val setupCtaResId =
+                    if (!isSelectedOnLock) {
+                        R.string.onboarding_wallpaper_setup_button
+                    } else {
+                        R.string.wallpaper_setup_set_both_lock_home
+                    }
+
+                val statusResId = when {
+                    isSelectedOnHome -> R.string.wallpaper_setup_status_home
+                    isSelectedOnLock -> R.string.wallpaper_setup_status_lock
+                    else -> R.string.wallpaper_setup_status_none
+                }
+                val statusColor = if (isSelectedOnHome || isSelectedOnLock) {
+                    com.subhajit.mulberry.ui.theme.MulberrySuccess
+                } else {
+                    com.subhajit.mulberry.ui.theme.MulberryError
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    WallpaperPrimaryButton(
+                        text = stringResource(setupCtaResId),
+                        onClick = onSetUpLockScreen,
+                        enabled = !uiState.isWallpaperBusy,
+                        modifier = Modifier.testTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON)
+                    )
+
+                    Text(
+                        text = stringResource(statusResId),
+                        color = statusColor,
+                        fontFamily = PoppinsFontFamily,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             uiState.wallpaperErrorMessage?.let { message ->

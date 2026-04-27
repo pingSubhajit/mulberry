@@ -4,13 +4,15 @@ import com.subhajit.mulberry.drawing.data.local.CanvasMetadataEntity
 
 class WallpaperStatusCalculator {
     fun calculate(
-        isWallpaperSelected: Boolean,
+        isWallpaperSelectedOnHome: Boolean,
+        isWallpaperSelectedOnLock: Boolean,
         backgroundState: BackgroundImageState,
         metadata: CanvasMetadataEntity,
         hasSnapshotFile: Boolean,
         hasBackgroundAsset: Boolean
     ): WallpaperStatusState = WallpaperStatusState(
-        isWallpaperSelected = isWallpaperSelected,
+        isWallpaperSelectedOnHome = isWallpaperSelectedOnHome,
+        isWallpaperSelectedOnLock = isWallpaperSelectedOnLock,
         hasSnapshot = hasSnapshotFile,
         isSnapshotCurrent = hasSnapshotFile &&
             !metadata.isSnapshotDirty &&

@@ -331,6 +331,8 @@ class CanvasHomeViewModel @Inject constructor(
     fun refreshWallpaperStatus() {
         viewModelScope.launch {
             wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+            delay(500)
+            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
         }
     }
 

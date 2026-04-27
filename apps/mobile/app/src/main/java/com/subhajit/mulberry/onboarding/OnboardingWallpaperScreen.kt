@@ -75,6 +75,7 @@ import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.ui.theme.MulberryError
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
+import com.subhajit.mulberry.ui.theme.MulberrySuccess
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
@@ -207,13 +208,53 @@ private fun OnboardingWallpaperScreen(
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             )
 
-            if (!uiState.wallpaperStatus.isWallpaperSelected) {
-                PrimaryOnboardingButton(
-                    text = stringResource(R.string.onboarding_wallpaper_setup_button),
-                    onClick = onSetUpLockScreen,
-                    enabled = !uiState.isBusy,
-                    modifier = Modifier.testTag(TestTags.ONBOARDING_WALLPAPER_SETUP_BUTTON)
-                )
+            val isSelectedOnHome = uiState.wallpaperStatus.isWallpaperSelectedOnHome
+            val isSelectedOnLock = uiState.wallpaperStatus.isWallpaperSelectedOnLock
+            val isSelectedOnBoth = isSelectedOnHome && isSelectedOnLock
+
+            if (!isSelectedOnBoth) {
+                val setupCtaResId =
+                    if (!isSelectedOnLock) {
+                        R.string.onboarding_wallpaper_setup_button
+                    } else {
+                        R.string.wallpaper_setup_set_both_lock_home
+                    }
+
+                val statusResId = when {
+                    isSelectedOnHome -> R.string.wallpaper_setup_status_home
+                    isSelectedOnLock -> R.string.wallpaper_setup_status_lock
+                    else -> R.string.wallpaper_setup_status_none
+                }
+                val statusColor = if (isSelectedOnHome || isSelectedOnLock) {
+                    MulberrySuccess
+                } else {
+                    MulberryError
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    PrimaryOnboardingButton(
+                        text = stringResource(setupCtaResId),
+                        onClick = onSetUpLockScreen,
+                        enabled = !uiState.isBusy,
+                        modifier = Modifier.testTag(TestTags.ONBOARDING_WALLPAPER_SETUP_BUTTON)
+                    )
+
+                    Text(
+                        text = stringResource(statusResId),
+                        color = statusColor,
+                        style = TextStyle(
+                            fontFamily = PoppinsFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp
+                        ),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             WallpaperBackgroundSelectionSection(
