@@ -4,8 +4,7 @@
     "target": {
       "namespace": "android_app",
       "package_name": "com.subhajit.mulberry",
-      "sha256_cert_fingerprints": ["REPLACE_WITH_PLAY_APP_SIGNING_SHA256"]
+      "sha256_cert_fingerprints": ["F1:AF:05:9D:7C:73:3B:52:E7:46:C7:43:62:02:42:E1:FF:BD:E3:85:64:0D:C3:65:F5:76:5A:C4:B8:28:78:AB"]
     }
   }
 ]
-
