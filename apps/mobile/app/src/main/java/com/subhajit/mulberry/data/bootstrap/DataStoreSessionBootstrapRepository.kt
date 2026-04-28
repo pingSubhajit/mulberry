@@ -153,7 +153,8 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
 
     override suspend fun setWallpaperConfigured(configured: Boolean) {
         dataStore.edit { preferences ->
-            preferences[PreferenceStorage.wallpaperConfigured] = configured
+            val alreadyConfigured = preferences[PreferenceStorage.wallpaperConfigured] ?: false
+            preferences[PreferenceStorage.wallpaperConfigured] = alreadyConfigured || configured
         }
     }
 

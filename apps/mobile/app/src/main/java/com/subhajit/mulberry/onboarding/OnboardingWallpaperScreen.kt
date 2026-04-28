@@ -138,7 +138,8 @@ fun OnboardingWallpaperRoute(
         },
         onPresetSelected = viewModel::onPresetSelected,
         onRemoteWallpaperSelected = viewModel::onRemoteWallpaperSelected,
-        onAllDone = viewModel::onAllDoneClicked
+        onAllDone = viewModel::onAllDoneClicked,
+        onSkipWithoutSetup = viewModel::onSkipWithoutSetupClicked
     )
 }
 
@@ -153,7 +154,8 @@ private fun OnboardingWallpaperScreen(
     onUploadFromGallery: () -> Unit,
     onPresetSelected: (Int) -> Unit,
     onRemoteWallpaperSelected: (com.subhajit.mulberry.wallpaper.RemoteWallpaper) -> Unit,
-    onAllDone: () -> Unit
+    onAllDone: () -> Unit,
+    onSkipWithoutSetup: () -> Unit
 ) {
     val scrollState = rememberScrollState()
     val helpSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -273,7 +275,9 @@ private fun OnboardingWallpaperScreen(
                 isWallpaperSelected = uiState.wallpaperStatus.isWallpaperSelected,
                 errorMessage = uiState.errorMessage,
                 canComplete = uiState.canComplete && !uiState.isBusy,
-                onAllDone = onAllDone
+                showSkipWithoutSetup = !uiState.canComplete && !uiState.isBusy,
+                onAllDone = onAllDone,
+                onSkipWithoutSetup = onSkipWithoutSetup
             )
         }
 
@@ -302,7 +306,9 @@ private fun WallpaperCompletionSection(
     isWallpaperSelected: Boolean,
     errorMessage: String?,
     canComplete: Boolean,
-    onAllDone: () -> Unit
+    showSkipWithoutSetup: Boolean,
+    onAllDone: () -> Unit,
+    onSkipWithoutSetup: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (isWallpaperSelected) {
@@ -332,6 +338,29 @@ private fun WallpaperCompletionSection(
                 ),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        if (showSkipWithoutSetup) {
+            Text(
+                text = stringResource(R.string.onboarding_wallpaper_skip_without_setup),
+                color = MulberryPrimary,
+                style = TextStyle(
+                    fontFamily = PoppinsFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                ),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onSkipWithoutSetup
+                    )
+                    .padding(vertical = 4.dp)
+                    .testTag(TestTags.ONBOARDING_WALLPAPER_SKIP_WITHOUT_SETUP)
             )
         }
 

@@ -48,6 +48,7 @@
     <string name="wallpaper_catalog_retry">Retry</string>
     <string name="onboarding_wallpaper_ready">Mulberry is set as your wallpaper.</string>
     <string name="onboarding_wallpaper_done">All done</string>
+    <string name="onboarding_wallpaper_skip_without_setup">Skip without setup</string>
     <string name="invite_code_title">Let’s get you set up</string>
     <string name="invite_code_help">Help</string>
     <string name="invite_code_continue">Let’s get going</string>

@@ -14,6 +14,7 @@ object TestTags {
     const val ONBOARDING_WALLPAPER_UPLOAD_BUTTON = "onboarding_wallpaper_upload_button"
     const val ONBOARDING_WALLPAPER_BACKGROUND_SECTION = "onboarding_wallpaper_background_section"
     const val ONBOARDING_WALLPAPER_DONE_BUTTON = "onboarding_wallpaper_done_button"
+    const val ONBOARDING_WALLPAPER_SKIP_WITHOUT_SETUP = "onboarding_wallpaper_skip_without_setup"
     const val PAIRING_HUB_SCREEN = "pairing_hub_screen"
     const val PAIRING_CREATE_CODE_BUTTON = "pairing_create_code_button"
     const val PAIRING_ENTER_CODE_BUTTON = "pairing_enter_code_button"

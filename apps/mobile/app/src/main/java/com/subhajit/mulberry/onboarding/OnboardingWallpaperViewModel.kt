@@ -170,6 +170,14 @@ class OnboardingWallpaperViewModel @Inject constructor(
         }
     }
 
+    fun onSkipWithoutSetupClicked() {
+        viewModelScope.launch {
+            if (uiState.value.isBusy) return@launch
+            sessionRepository.setWallpaperConfigured(true)
+            _effects.emit(OnboardingWallpaperEffect.NavigateHome)
+        }
+    }
+
     private suspend fun runBackgroundUpdate(block: suspend () -> Unit) {
         errorState.value = null
         runCatching {
