@@ -57,9 +57,13 @@ export default async function InvitePage({
   return (
     <main className="h-[100svh] overflow-hidden text-white">
       <section className="grid h-full grid-cols-1 lg:grid-cols-12">
-        <div className="relative h-full overflow-y-auto px-5 pb-16 pt-10 sm:px-8 sm:pt-14 lg:col-span-5 lg:px-16 lg:py-16">
-          <div className="relative">
-            <Link href="/" aria-label="Mulberry home" className="inline-flex min-h-11 items-center">
+        <div className="relative h-full overflow-y-auto px-5 py-10 sm:px-8 sm:py-14 lg:col-span-5 lg:px-16 lg:py-16">
+          <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center text-center lg:mx-0 lg:items-start lg:justify-start lg:text-left">
+            <Link
+              href="/"
+              aria-label="Mulberry home"
+              className="inline-flex min-h-11 items-center justify-center lg:justify-start"
+            >
               <Image
                   src="/brand/wordmark-white.svg"
                   alt="Mulberry"
@@ -74,27 +78,28 @@ export default async function InvitePage({
                 src={coupleHugImage}
                 alt=""
                 priority
-                className="mt-16 h-96 w-min"
+                className="mt-8 h-auto w-full max-w-md select-none object-contain sm:mt-10"
+                sizes="(min-width: 1024px) 24rem, (min-width: 640px) 22rem, 18rem"
             />
 
             <h1 className="text-3xl font-semibold leading-[1.05] tracking-[-0.06em] sm:text-4xl">
               You&apos;ve been invited to Mulberry
             </h1>
-            <p className="mt-4 max-w-md text-sm leading-7 text-white/80 sm:text-base">
+            <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-white/80 sm:text-base lg:mx-0">
               Mulberry is a minimal Android app for couples to share small drawings on each
               other&apos;s lock screen.
             </p>
           </div>
 
-          <div className="mt-10">
+          <div className="mt-10 w-full">
             {code ? (
                 <>
-                  <div className="mt-3 flex flex-col items-center gap-4 sm:flex-row">
-                    <div className="flex w-full max-w-full items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto">
+                  <div className="mt-3 flex items-center justify-center gap-4 lg:justify-start">
+                    <div className="flex items-center justify-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto lg:w-auto lg:justify-start">
                       {code.split("").map((digit, index) => (
                         <div
                           key={`${digit}-${index}`}
-                          className="inline-flex aspect-square h-14 shrink-0 items-center justify-center rounded-2xl bg-neutral-900 text-4xl font-semibold leading-none text-white sm:h-16"
+                          className="inline-flex aspect-square h-12 shrink-0 items-center justify-center rounded-2xl bg-neutral-900 text-4xl font-semibold leading-none text-white sm:h-14 md:h-16"
                         >
                           <span className="font-mono">{digit}</span>
                         </div>
@@ -102,16 +107,16 @@ export default async function InvitePage({
                     </div>
                     <InviteCodeCopyButton
                       code={code}
-                      className="h-14 w-14 rounded-2xl bg-neutral-800 text-white hover:bg-neutral-700 sm:h-16 sm:w-16"
+                      className="h-12 w-12 rounded-2xl bg-neutral-800 text-white hover:bg-neutral-700 sm:h-14 sm:w-14 md:h-16 md:w-16"
                     />
                   </div>
 
-                  <p className="mx-auto mt-5 max-w-xl text-sm leading-6 text-white/75">
+                  <p className="mx-auto mt-5 max-w-xl text-sm leading-6 text-white/75 lg:mx-0 text-center lg:text-left">
                     On Android, install Mulberry from Google Play. After install, opening the app will
                     continue setup automatically.
                   </p>
 
-                  <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:justify-centersm:flex-row">
+                  <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:items-start lg:justify-start">
                     <Button
                         asChild
                         size="lg"
@@ -144,7 +149,7 @@ export default async function InvitePage({
                     Ask your partner to share the invite link again, or copy the 6-digit code they sent
                     you.
                   </p>
-                  <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+                  <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:items-start lg:justify-start">
                     <Button
                         asChild
                         size="lg"
@@ -165,7 +170,7 @@ export default async function InvitePage({
         </div>
 
         <div className="relative hidden h-full overflow-hidden bg-brand lg:col-span-7 lg:flex lg:items-center lg:justify-center">
-          <div className="w-full max-w-lg px-10 py-16">
+          <div className="w-full max-w-lg px-8 py-12 xl:max-w-xl xl:px-12 xl:py-16 2xl:max-w-2xl">
             <div className="mx-auto flex max-h-[calc(100svh-8rem)] flex-col gap-10 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {notes.map((note) => (
                 <article key={note.title} className="text-white">
