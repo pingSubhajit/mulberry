@@ -158,6 +158,7 @@ fun SettingsRoute(
         onPartnerProfileSave = viewModel::onPartnerProfileSave,
         onPartnerPhotoChangeRequested = { partnerPhotoPicker.launch("image/*") },
         onResetAppState = viewModel::onResetAppState,
+        onLogout = viewModel::onLogout,
         onSeedDemoSession = viewModel::onSeedDemoSession,
         onFeatureFlagChanged = viewModel::onFeatureFlagChanged,
         onClearFeatureOverrides = viewModel::onClearFeatureOverrides,
@@ -187,6 +188,7 @@ private fun SettingsScreen(
     onPartnerProfileSave: (String, String) -> Unit,
     onPartnerPhotoChangeRequested: () -> Unit,
     onResetAppState: () -> Unit,
+    onLogout: () -> Unit,
     onSeedDemoSession: () -> Unit,
     onFeatureFlagChanged: (FeatureFlag, Boolean) -> Unit,
     onClearFeatureOverrides: () -> Unit,
@@ -206,16 +208,17 @@ private fun SettingsScreen(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
-        if (pane == SettingsPane.Home) {
-            SettingsRootPage(
-                uiState = uiState,
-                onClose = onNavigateBack,
-                onPaneSelected = onPaneSelected,
-                modifier = Modifier.padding(padding)
-            )
-        } else if (pane == SettingsPane.Profile) {
-            ProfilePane(
-                uiState = uiState,
+	        if (pane == SettingsPane.Home) {
+	            SettingsRootPage(
+	                uiState = uiState,
+	                onClose = onNavigateBack,
+	                onPaneSelected = onPaneSelected,
+	                onLogout = onLogout,
+	                modifier = Modifier.padding(padding)
+	            )
+	        } else if (pane == SettingsPane.Profile) {
+	            ProfilePane(
+	                uiState = uiState,
                 onBack = onNavigateBack,
                 onDisplayNameSave = onDisplayNameSave,
                 onProfilePhotoChangeRequested = onProfilePhotoChangeRequested,
@@ -295,11 +298,13 @@ private fun SettingsRootPage(
     uiState: SettingsUiState,
     onClose: () -> Unit,
     onPaneSelected: (SettingsPane) -> Unit,
+    onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isPaired = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED
     val partnerName = uiState.bootstrapState.partnerDisplayName
     val userName = uiState.bootstrapState.userDisplayName ?: "Mulberry user"
+    var showLogoutConfirmation by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -345,7 +350,8 @@ private fun SettingsRootPage(
         Spacer(modifier = Modifier.height(if (isPaired) 70.dp else 46.dp))
         SettingsRootMenu(
             uiState = uiState,
-            onPaneSelected = onPaneSelected
+            onPaneSelected = onPaneSelected,
+            onLogoutRequested = { showLogoutConfirmation = true }
         )
 
         Spacer(modifier = Modifier.weight(1f))
@@ -357,6 +363,19 @@ private fun SettingsRootPage(
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
+        )
+    }
+
+    if (showLogoutConfirmation) {
+        ConfirmationDialog(
+            title = "Log out?",
+            body = "This will sign you out on this device. You can sign back in anytime.",
+            confirmText = "Log out",
+            onDismiss = { showLogoutConfirmation = false },
+            onConfirm = {
+                showLogoutConfirmation = false
+                onLogout()
+            }
         )
     }
 }
@@ -464,7 +483,8 @@ private fun SettingsRootSubtitle(
 @Composable
 private fun SettingsRootMenu(
     uiState: SettingsUiState,
-    onPaneSelected: (SettingsPane) -> Unit
+    onPaneSelected: (SettingsPane) -> Unit,
+    onLogoutRequested: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
         SettingsRootRow(
@@ -511,6 +531,14 @@ private fun SettingsRootMenu(
                 onClick = { onPaneSelected(SettingsPane.DeveloperOptions) }
             )
         }
+        SettingsRootRow(
+            icon = SettingsRootIcon.Logout,
+            title = "Log out",
+            enabled = !uiState.isBusy,
+            showChevron = false,
+            modifier = Modifier.testTag(TestTags.SETTINGS_LOGOUT_BUTTON),
+            onClick = onLogoutRequested
+        )
     }
 }
 
@@ -522,10 +550,11 @@ private fun SettingsRootRow(
     statusColor: Color = MaterialTheme.colorScheme.onSurface,
     enabled: Boolean = true,
     showChevron: Boolean = true,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(36.dp)
             .clickable(enabled = enabled, onClick = onClick),
@@ -736,7 +765,8 @@ private enum class SettingsRootIcon {
     SyncConnected,
     SyncUnpaired,
     Privacy,
-    About
+    About,
+    Logout
 }
 
 @DrawableRes
@@ -747,6 +777,7 @@ private fun SettingsRootIcon.drawableRes(): Int = when (this) {
     SettingsRootIcon.SyncUnpaired -> R.drawable.settings_icon_sync_unpaired
     SettingsRootIcon.Privacy -> R.drawable.settings_icon_privacy
     SettingsRootIcon.About -> R.drawable.settings_icon_about
+    SettingsRootIcon.Logout -> R.drawable.settings_icon_logout
 }
 
 @Composable
