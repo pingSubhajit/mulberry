@@ -7,7 +7,6 @@ import com.android.installreferrer.api.InstallReferrerStateListener
 import com.android.installreferrer.api.ReferrerDetails
 import com.subhajit.mulberry.app.di.ApplicationScope
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -15,6 +14,8 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 @Singleton
@@ -23,22 +24,23 @@ class InstallReferrerInboundInviteIngester @Inject constructor(
     @ApplicationScope private val applicationScope: CoroutineScope,
     private val inboundInviteRepository: InboundInviteRepository
 ) {
-    private val isRunning = AtomicBoolean(false)
+    private val mutex = Mutex()
 
-    fun ingestIfNeeded() {
-        if (!isRunning.compareAndSet(false, true)) return
+    fun ingestIfNeededAsync() {
         applicationScope.launch {
-            try {
-                if (inboundInviteRepository.wasInstallReferrerChecked()) return@launch
-                val referrer = runCatching { fetchInstallReferrerString() }.getOrNull()
-                inboundInviteRepository.markInstallReferrerChecked()
-                val code = extractInviteCodeFromReferrer(referrer)
-                if (code != null) {
-                    inboundInviteRepository.setPendingInvite(code, InboundInviteSource.InstallReferrer)
-                    InboundInviteActionController.notifyInviteReceived()
-                }
-            } finally {
-                isRunning.set(false)
+            ingestIfNeeded()
+        }
+    }
+
+    suspend fun ingestIfNeeded() {
+        mutex.withLock {
+            if (inboundInviteRepository.wasInstallReferrerChecked()) return
+            val referrer = runCatching { fetchInstallReferrerString() }.getOrNull()
+            inboundInviteRepository.markInstallReferrerChecked()
+            val code = extractInviteCodeFromReferrer(referrer)
+            if (code != null) {
+                inboundInviteRepository.setPendingInvite(code, InboundInviteSource.InstallReferrer)
+                InboundInviteActionController.notifyInviteReceived()
             }
         }
     }
@@ -88,4 +90,3 @@ private suspend fun InstallReferrerClient.startConnectionAwait(): ReferrerDetail
             }
         )
     }
-

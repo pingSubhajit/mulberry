@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             fcmTokenRepository.syncTokenWithBackend()
         }
-        installReferrerInboundInviteIngester.ingestIfNeeded()
+        installReferrerInboundInviteIngester.ingestIfNeededAsync()
     }
 
     override fun onStop() {

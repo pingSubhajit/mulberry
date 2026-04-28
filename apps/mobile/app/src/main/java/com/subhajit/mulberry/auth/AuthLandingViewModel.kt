@@ -10,11 +10,18 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.subhajit.mulberry.pairing.InviteRepository
+import com.subhajit.mulberry.pairing.inbound.InboundInviteRepository
+import com.subhajit.mulberry.pairing.inbound.InstallReferrerInboundInviteIngester
 
 @HiltViewModel
 class AuthLandingViewModel @Inject constructor(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val inboundInviteRepository: InboundInviteRepository,
+    private val installReferrerInboundInviteIngester: InstallReferrerInboundInviteIngester,
+    private val inviteRepository: InviteRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AuthLandingUiState())
     val uiState = _uiState.asStateFlow()
@@ -34,6 +41,7 @@ class AuthLandingViewModel @Inject constructor(
                 .onSuccess { didSignIn ->
                     if (didSignIn) {
                         _uiState.value = _uiState.value.copy(isLoading = false)
+                        redeemInboundInviteIfPresent()
                         _effects.emit(AuthLandingEffect.NavigateToBootstrap)
                     } else {
                         _uiState.value = _uiState.value.copy(isLoading = false)
@@ -54,6 +62,7 @@ class AuthLandingViewModel @Inject constructor(
             authRepository.signInWithGoogle(activity)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(isLoading = false)
+                    redeemInboundInviteIfPresent()
                     _effects.emit(AuthLandingEffect.NavigateToBootstrap)
                 }
                 .onFailure { error ->
@@ -80,5 +89,39 @@ class AuthLandingViewModel @Inject constructor(
                 "Google sign-in returned an invalid credential. Please try again."
             else -> "Unable to sign in with Google. Please try again."
         }
+    }
+
+    private suspend fun redeemInboundInviteIfPresent() {
+        // Ensure install-referrer ingestion has happened before we check for a pending inbound code.
+        installReferrerInboundInviteIngester.ingestIfNeeded()
+        val inbound = inboundInviteRepository.pendingInvite.first() ?: return
+        val now = System.currentTimeMillis()
+        if (now - inbound.receivedAtMs > INBOUND_INVITE_TTL_MS) {
+            inboundInviteRepository.clearPendingInvite()
+            return
+        }
+        if (inbound.dismissedAtMs != null) return
+
+        inviteRepository.redeemInvite(inbound.code)
+            .onSuccess {
+                inboundInviteRepository.clearPendingInvite()
+            }
+            .onFailure { error ->
+                // Keep the pending invite code so the user can manually continue via "Enter code".
+                _uiState.value = _uiState.value.copy(errorMessage = error.toInviteUserMessage())
+            }
+    }
+
+    private fun Throwable.toInviteUserMessage(): String? = when (message?.trim()) {
+        "You cannot redeem your own invite" -> "That’s your invite code. Share it with your partner."
+        "Invite code has expired" -> "That invite code has expired. Ask your partner to generate a new one."
+        "Invite code is no longer valid" -> "That invite code is no longer valid. Ask your partner to generate a new one."
+        "Invite code not found" -> "That invite code wasn’t found. Double-check the code and try again."
+        "Already paired" -> "You’re already paired. Disconnect first to join a new invite."
+        else -> message?.takeIf { it.isNotBlank() }
+    }
+
+    private companion object {
+        const val INBOUND_INVITE_TTL_MS = 24 * 60 * 60 * 1000L
     }
 }
