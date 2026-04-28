@@ -16,6 +16,11 @@ import com.subhajit.mulberry.app.AppForegroundState
 import com.subhajit.mulberry.app.MulberryApp
 import com.subhajit.mulberry.app.bootstrap.AppStartupGate
 import com.subhajit.mulberry.app.shortcut.AppShortcutActionController
+import com.subhajit.mulberry.pairing.inbound.InboundInviteActionController
+import com.subhajit.mulberry.pairing.inbound.InboundInviteRepository
+import com.subhajit.mulberry.pairing.inbound.InboundInviteSource
+import com.subhajit.mulberry.pairing.inbound.InstallReferrerInboundInviteIngester
+import com.subhajit.mulberry.pairing.inbound.normalizeInviteCode
 import com.subhajit.mulberry.sync.CanvasSyncRepository
 import com.subhajit.mulberry.sync.FcmTokenRepository
 import com.subhajit.mulberry.ui.theme.MulberryTheme
@@ -28,6 +33,8 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var canvasSyncRepository: CanvasSyncRepository
     @Inject lateinit var fcmTokenRepository: FcmTokenRepository
+    @Inject lateinit var inboundInviteRepository: InboundInviteRepository
+    @Inject lateinit var installReferrerInboundInviteIngester: InstallReferrerInboundInviteIngester
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
@@ -35,6 +42,7 @@ class MainActivity : ComponentActivity() {
             AppStartupGate.keepSplashVisible.value
         }
         AppShortcutActionController.dispatch(intent)
+        handleInviteLink(intent)
         super.onCreate(savedInstanceState)
         AppStartupGate.armTimeout(lifecycleScope)
         requestNotificationPermissionIfNeeded()
@@ -50,6 +58,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         AppShortcutActionController.dispatch(intent)
+        handleInviteLink(intent)
     }
 
     override fun onStart() {
@@ -59,6 +68,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             fcmTokenRepository.syncTokenWithBackend()
         }
+        installReferrerInboundInviteIngester.ingestIfNeeded()
     }
 
     override fun onStop() {
@@ -86,5 +96,13 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val NOTIFICATION_PERMISSION_REQUEST_CODE = 3001
+    }
+
+    private fun handleInviteLink(intent: Intent?) {
+        val code = normalizeInviteCode(intent?.data?.getQueryParameter("code")) ?: return
+        InboundInviteActionController.notifyInviteReceived()
+        lifecycleScope.launch {
+            inboundInviteRepository.setPendingInvite(code, InboundInviteSource.AppLink)
+        }
     }
 }

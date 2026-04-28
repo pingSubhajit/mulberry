@@ -22,6 +22,7 @@ import com.subhajit.mulberry.onboarding.OnboardingWallpaperRoute
 import com.subhajit.mulberry.pairing.InviteAcceptanceRoute
 import com.subhajit.mulberry.pairing.InviteCodeEntryRoute
 import com.subhajit.mulberry.pairing.PairingHubRoute
+import com.subhajit.mulberry.pairing.inbound.InboundInviteActionController
 import com.subhajit.mulberry.settings.SettingsRoute
 import com.subhajit.mulberry.wallpaper.WallpaperCatalogRoute
 
@@ -30,6 +31,7 @@ fun MulberryNavHost(
     navController: NavHostController = rememberNavController()
 ) {
     val shortcutAction by AppShortcutActionController.pendingAction.collectAsStateWithLifecycle()
+    val hasPendingInboundInvite by InboundInviteActionController.pendingAction.collectAsStateWithLifecycle()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
 
@@ -52,6 +54,33 @@ fun MulberryNavHost(
             AppRoute.PairingHub.route,
             AppRoute.InviteCodeEntry.route,
             AppRoute.InviteAcceptance.route -> AppShortcutActionController.markHandled(action)
+        }
+    }
+
+    LaunchedEffect(hasPendingInboundInvite, currentRoute) {
+        if (!hasPendingInboundInvite) return@LaunchedEffect
+        when (currentRoute) {
+            AppRoute.CanvasSurface.route,
+            AppRoute.LockScreenPlaceholder.route,
+            AppRoute.Settings.route -> navController.navigate(AppRoute.CanvasHome.route) {
+                launchSingleTop = true
+                popUpTo(AppRoute.CanvasHome.route) {
+                    inclusive = false
+                }
+            }
+
+            AppRoute.Bootstrap.route,
+            AppRoute.AuthLanding.route,
+            AppRoute.OnboardingName.route,
+            AppRoute.OnboardingDetails.route,
+            AppRoute.OnboardingWallpaper.route,
+            AppRoute.PairingHub.route,
+            AppRoute.InviteCodeEntry.route,
+            AppRoute.InviteAcceptance.route,
+            AppRoute.CanvasHome.route,
+            AppRoute.WallpaperCatalog.route -> InboundInviteActionController.markHandled()
+
+            else -> InboundInviteActionController.markHandled()
         }
     }
 

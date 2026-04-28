@@ -36,6 +36,8 @@ import com.subhajit.mulberry.onboarding.OnboardingDraftRepository
 import com.subhajit.mulberry.onboarding.ProfileRepository
 import com.subhajit.mulberry.pairing.BackendInviteRepository
 import com.subhajit.mulberry.pairing.InviteRepository
+import com.subhajit.mulberry.pairing.inbound.DataStoreInboundInviteRepository
+import com.subhajit.mulberry.pairing.inbound.InboundInviteRepository
 import com.subhajit.mulberry.settings.BackendPairingSettingsRepository
 import com.subhajit.mulberry.settings.DataStoreDeveloperOptionsRepository
 import com.subhajit.mulberry.settings.DeveloperOptionsRepository
@@ -167,6 +169,12 @@ abstract class AppBindingsModule {
     abstract fun bindInviteRepository(
         implementation: BackendInviteRepository
     ): InviteRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindInboundInviteRepository(
+        implementation: DataStoreInboundInviteRepository
+    ): InboundInviteRepository
 
     @Binds
     @Singleton

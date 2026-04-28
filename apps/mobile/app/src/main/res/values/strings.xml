@@ -100,8 +100,14 @@
     <string name="home_invite_sheet_body">Share this code with your partner and ask them to enter it after they have signed up for Mulberry</string>
     <string name="home_invite_share_chooser_title">Share invite code</string>
     <string name="home_join_sheet_title">Enter invite code</string>
+    <string name="home_join_sheet_cta">Join</string>
     <string name="home_pairing_confirmed_title">You and %1$s are paired on Mulberry</string>
     <string name="home_pairing_disconnect_progress">Disconnecting...</string>
+    <string name="home_inbound_invite_paired_title">Already paired</string>
+    <string name="home_inbound_invite_paired_body_no_partner">You’re already paired on Mulberry. To join a new invite, disconnect first.</string>
+    <string name="home_inbound_invite_paired_body_with_partner">You’re already paired with %1$s. To join a new invite, disconnect first.</string>
+    <string name="home_inbound_invite_disconnect_switch">Disconnect &amp; switch</string>
+    <string name="home_inbound_invite_keep_pairing">Keep current pairing</string>
     <string name="shortcut_clear_doodles_short_label">Clear doodles</string>
     <string name="shortcut_clear_doodles_long_label">Clear doodles</string>
     <string name="shortcut_change_wallpaper_short_label">Change Wallpaper</string>

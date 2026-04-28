@@ -212,6 +212,8 @@ fun CanvasHomeRoute(
         onJoinCodeChanged = viewModel::onJoinCodeChanged,
         onJoinCodeSubmitted = viewModel::onJoinCodeSubmitted,
         onDisconnectFromConfirmation = viewModel::onDisconnectFromConfirmation,
+        onKeepCurrentPairing = viewModel::onKeepCurrentPairingClicked,
+        onDisconnectAndSwitchFromInboundInvite = viewModel::onDisconnectAndSwitchFromInboundInvite,
         onSetUpLockScreen = viewModel::onSetUpLockScreenClicked,
         onViewMoreWallpapers = onNavigateToWallpaperCatalog,
         onUploadWallpaperBackground = {
@@ -256,6 +258,8 @@ private fun CanvasHomeScreen(
     onJoinCodeChanged: (String) -> Unit,
     onJoinCodeSubmitted: () -> Unit,
     onDisconnectFromConfirmation: () -> Unit,
+    onKeepCurrentPairing: () -> Unit,
+    onDisconnectAndSwitchFromInboundInvite: () -> Unit,
     onSetUpLockScreen: () -> Unit,
     onViewMoreWallpapers: () -> Unit,
     onUploadWallpaperBackground: () -> Unit,
@@ -344,6 +348,14 @@ private fun CanvasHomeScreen(
             confirmation = uiState.pairingConfirmation,
             onDismiss = onPairingSheetDismissed,
             onDisconnect = onDisconnectFromConfirmation
+        )
+
+        HomePairingSheetMode.InboundInvitePaired -> InboundInvitePairedBottomSheet(
+            partnerName = uiState.bootstrapState.partnerDisplayName,
+            confirmation = uiState.pairingConfirmation,
+            onKeepPairing = onKeepCurrentPairing,
+            onDisconnectAndSwitch = onDisconnectAndSwitchFromInboundInvite,
+            onDismiss = onKeepCurrentPairing
         )
     }
     if (uiState.showClearConfirmation) {
@@ -1588,7 +1600,7 @@ private fun JoinCodeBottomSheet(
                     text = if (joinCode.isSubmitting) {
                         stringResource(R.string.invite_acceptance_connecting)
                     } else {
-                        stringResource(R.string.invite_code_continue)
+                        stringResource(R.string.home_join_sheet_cta)
                     },
                     color = Color.White,
                     fontFamily = PoppinsFontFamily,
@@ -1732,6 +1744,126 @@ private fun PairingConfirmedBottomSheet(
                     .matchParentSize()
                     .zIndex(2f)
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InboundInvitePairedBottomSheet(
+    partnerName: String?,
+    confirmation: PairingConfirmationUiState,
+    onKeepPairing: () -> Unit,
+    onDisconnectAndSwitch: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(sheetState) {
+        sheetState.expand()
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = { HomeSheetDragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = stringResource(R.string.home_inbound_invite_paired_title),
+                color = MaterialTheme.colorScheme.onSurface,
+                fontFamily = PoppinsFontFamily,
+                fontSize = 20.sp,
+                lineHeight = 28.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = if (partnerName.isNullOrBlank()) {
+                    stringResource(R.string.home_inbound_invite_paired_body_no_partner)
+                } else {
+                    stringResource(R.string.home_inbound_invite_paired_body_with_partner, partnerName)
+                },
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.80f),
+                fontFamily = PoppinsFontFamily,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                textAlign = TextAlign.Center
+            )
+
+            confirmation.errorMessage?.let { error ->
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Button(
+                onClick = onDisconnectAndSwitch,
+                enabled = !confirmation.isDisconnecting,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                shape = RoundedCornerShape(15.38.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MulberryPrimary,
+                    disabledContainerColor = MulberryPrimary.copy(alpha = 0.45f),
+                    disabledContentColor = Color.White.copy(alpha = 0.80f)
+                )
+            ) {
+                Text(
+                    text = if (confirmation.isDisconnecting) {
+                        stringResource(R.string.home_pairing_disconnect_progress)
+                    } else {
+                        stringResource(R.string.home_inbound_invite_disconnect_switch)
+                    },
+                    color = Color.White,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Button(
+                onClick = onKeepPairing,
+                enabled = !confirmation.isDisconnecting,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                shape = RoundedCornerShape(15.38.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            ) {
+                Text(
+                    text = stringResource(R.string.home_inbound_invite_keep_pairing),
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
     }
 }

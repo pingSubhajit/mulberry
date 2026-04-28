@@ -2,6 +2,7 @@ package com.subhajit.mulberry.core.data
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 
 const val APP_PREFERENCES_FILE = "app_preferences"
@@ -28,6 +29,11 @@ object PreferenceStorage {
     val pendingInviterDisplayName = stringPreferencesKey("pending_inviter_display_name")
     val pendingRecipientDisplayName = stringPreferencesKey("pending_recipient_display_name")
     val pendingInviteStatus = stringPreferencesKey("pending_invite_status")
+    val pendingInboundInviteCode = stringPreferencesKey("pending_inbound_invite_code")
+    val pendingInboundInviteReceivedAtMs = longPreferencesKey("pending_inbound_invite_received_at_ms")
+    val pendingInboundInviteSource = stringPreferencesKey("pending_inbound_invite_source")
+    val pendingInboundInviteDismissedAtMs = longPreferencesKey("pending_inbound_invite_dismissed_at_ms")
+    val installReferrerChecked = booleanPreferencesKey("install_referrer_checked")
     val wallpaperConfigured = booleanPreferencesKey("wallpaper_configured")
     val backgroundImagePath = stringPreferencesKey("background_image_path")
     val backgroundImageUpdatedAt = stringPreferencesKey("background_image_updated_at")

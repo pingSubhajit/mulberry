@@ -187,6 +187,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.messaging)
+    implementation(libs.play.installreferrer)
     implementation(libs.coil.compose)
     implementation(libs.androidx.ink.strokes)
     implementation(libs.androidx.ink.brush)

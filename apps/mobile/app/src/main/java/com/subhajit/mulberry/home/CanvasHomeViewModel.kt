@@ -26,6 +26,8 @@ import com.subhajit.mulberry.network.PartnerProfileRequest
 import com.subhajit.mulberry.network.toDomainBootstrap
 import com.subhajit.mulberry.pairing.CreateInviteResult
 import com.subhajit.mulberry.pairing.InviteRepository
+import com.subhajit.mulberry.pairing.inbound.InboundInviteRepository
+import com.subhajit.mulberry.pairing.inbound.PendingInboundInvite
 import com.subhajit.mulberry.settings.PairingDisconnectCoordinator
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageState
@@ -59,7 +61,8 @@ enum class HomePairingSheetMode {
     ShareInvite,
     JoinCodeEntry,
     PartnerDetails,
-    PairingConfirmed
+    PairingConfirmed,
+    InboundInvitePaired
 }
 
 data class InviteSheetUiState(
@@ -139,6 +142,7 @@ class CanvasHomeViewModel @Inject constructor(
     featureFlagProvider: FeatureFlagProvider,
     private val drawingRepository: DrawingRepository,
     private val inviteRepository: InviteRepository,
+    private val inboundInviteRepository: InboundInviteRepository,
     private val apiService: MulberryApiService,
     private val canvasRuntime: CanvasRuntime,
     private val backgroundImageRepository: BackgroundImageRepository,
@@ -154,6 +158,8 @@ class CanvasHomeViewModel @Inject constructor(
     private val joinCodeState = MutableStateFlow(JoinCodeUiState())
     private val partnerDetailsFormState = MutableStateFlow(PartnerDetailsFormUiState())
     private val pairingConfirmationState = MutableStateFlow(PairingConfirmationUiState())
+    private val autoPromptedInboundInviteCode = MutableStateFlow<String?>(null)
+    private val latestInboundInvite = MutableStateFlow<PendingInboundInvite?>(null)
     private val recentRemoteWallpapersState = MutableStateFlow<List<RemoteWallpaper>>(emptyList())
     private val applyingRemoteWallpaperIdState = MutableStateFlow<String?>(null)
     private val wallpaperBusyState = MutableStateFlow(false)
@@ -320,6 +326,43 @@ class CanvasHomeViewModel @Inject constructor(
                 delay(2_000)
             }
         }
+
+        viewModelScope.launch {
+            combine(sessionRepository.state, inboundInviteRepository.pendingInvite) { bootstrap, inbound ->
+                bootstrap to inbound
+            }.collect { (bootstrap, inbound) ->
+                latestInboundInvite.value = inbound
+                val pending = inbound ?: return@collect
+                val now = System.currentTimeMillis()
+                if (now - pending.receivedAtMs > INBOUND_INVITE_TTL_MS) {
+                    inboundInviteRepository.clearPendingInvite()
+                    autoPromptedInboundInviteCode.value = null
+                    return@collect
+                }
+                if (pending.dismissedAtMs != null) return@collect
+
+                when (bootstrap.pairingStatus) {
+                    PairingStatus.UNPAIRED -> {
+                        if (pairingSheetMode.value != HomePairingSheetMode.Hidden) return@collect
+                        if (autoPromptedInboundInviteCode.value == pending.code) return@collect
+                        pairingSheetMode.value = HomePairingSheetMode.JoinCodeEntry
+                        joinCodeState.value = JoinCodeUiState(code = pending.code)
+                        inviteErrorState.value = null
+                        autoPromptedInboundInviteCode.value = pending.code
+                    }
+
+                    PairingStatus.PAIRED -> {
+                        if (pairingSheetMode.value != HomePairingSheetMode.Hidden) return@collect
+                        if (autoPromptedInboundInviteCode.value == pending.code) return@collect
+                        pairingSheetMode.value = HomePairingSheetMode.InboundInvitePaired
+                        pairingConfirmationState.value = PairingConfirmationUiState()
+                        autoPromptedInboundInviteCode.value = pending.code
+                    }
+
+                    PairingStatus.INVITE_PENDING_ACCEPTANCE -> Unit
+                }
+            }
+        }
     }
 
     fun onWallpaperConfiguredChanged(configured: Boolean) {
@@ -354,6 +397,13 @@ class CanvasHomeViewModel @Inject constructor(
     }
 
     fun onPairingSheetDismissed() {
+        val inboundCode = autoPromptedInboundInviteCode.value
+        if (inboundCode != null && pairingSheetMode.value == HomePairingSheetMode.JoinCodeEntry) {
+            viewModelScope.launch {
+                latestInboundInvite.value?.takeIf { it.code == inboundCode } ?: return@launch
+                inboundInviteRepository.dismissPendingInvite()
+            }
+        }
         pairingSheetMode.value = HomePairingSheetMode.Hidden
         inviteErrorState.value = null
         joinCodeState.value = JoinCodeUiState()
@@ -368,7 +418,12 @@ class CanvasHomeViewModel @Inject constructor(
 
     fun onJoinCodeRequested() {
         pairingSheetMode.value = HomePairingSheetMode.JoinCodeEntry
-        joinCodeState.value = JoinCodeUiState()
+        val inboundCode = latestInboundInvite.value?.code
+        joinCodeState.value = if (inboundCode != null) {
+            JoinCodeUiState(code = inboundCode)
+        } else {
+            JoinCodeUiState()
+        }
         inviteErrorState.value = null
         partnerDetailsFormState.value = PartnerDetailsFormUiState()
         pairingConfirmationState.value = PairingConfirmationUiState()
@@ -451,12 +506,15 @@ class CanvasHomeViewModel @Inject constructor(
             val redeemedInvite = inviteRepository.redeemInvite(code).getOrElse { error ->
                 joinCodeState.value = joinCodeState.value.copy(
                     isSubmitting = false,
-                    errorMessage = error.message ?: "Unable to redeem invite code"
+                    errorMessage = friendlyInviteError(error) ?: "Unable to redeem invite code"
                 )
                 return@launch
             }
             inviteRepository.acceptInvite(redeemedInvite.inviteId)
                 .onSuccess {
+                    if (latestInboundInvite.value?.code == code) {
+                        inboundInviteRepository.clearPendingInvite()
+                    }
                     joinCodeState.value = JoinCodeUiState()
                     pairingConfirmationState.value = PairingConfirmationUiState()
                     bootstrapRepository.refreshBootstrap()
@@ -465,7 +523,40 @@ class CanvasHomeViewModel @Inject constructor(
                 .onFailure { error ->
                     joinCodeState.value = joinCodeState.value.copy(
                         isSubmitting = false,
-                        errorMessage = error.message ?: "Unable to accept invite"
+                        errorMessage = friendlyInviteError(error) ?: "Unable to accept invite"
+                    )
+                }
+        }
+    }
+
+    fun onKeepCurrentPairingClicked() {
+        viewModelScope.launch {
+            inboundInviteRepository.clearPendingInvite()
+            pairingSheetMode.value = HomePairingSheetMode.Hidden
+            autoPromptedInboundInviteCode.value = null
+        }
+    }
+
+    fun onDisconnectAndSwitchFromInboundInvite() {
+        if (pairingConfirmationState.value.isDisconnecting) return
+        val pendingCode = latestInboundInvite.value?.code ?: return
+        viewModelScope.launch {
+            pairingConfirmationState.value = pairingConfirmationState.value.copy(
+                isDisconnecting = true,
+                errorMessage = null
+            )
+            pairingDisconnectCoordinator.disconnectPartner()
+                .onSuccess {
+                    bootstrapRepository.refreshBootstrap()
+                    pairingConfirmationState.value = PairingConfirmationUiState()
+                    pairingSheetMode.value = HomePairingSheetMode.JoinCodeEntry
+                    joinCodeState.value = JoinCodeUiState(code = pendingCode)
+                    inviteErrorState.value = null
+                }
+                .onFailure { error ->
+                    pairingConfirmationState.value = PairingConfirmationUiState(
+                        isDisconnecting = false,
+                        errorMessage = error.message ?: "Unable to disconnect partner"
                     )
                 }
         }
@@ -745,10 +836,20 @@ private fun CreateInviteResult.isExpiredAt(nowMillis: Long): Boolean {
 }
 
 private fun CreateInviteResult.toShareMessage(): String =
-    "Join me on Mulberry. Use invite code $code to pair with me and share a canvas on our lock screens. This code expires soon."
+    "Join me on Mulberry: https://mulberry.my/invite?code=$code\n\n" +
+        "If the link doesn’t work, enter invite code $code in Mulberry. This code expires soon."
 
 private fun SessionBootstrapState.requiresPartnerDetailsForInvite(): Boolean =
     partnerDisplayName.isNullOrBlank() || anniversaryDate.isNullOrBlank()
+
+private fun friendlyInviteError(error: Throwable): String? = when (error.message) {
+    "You cannot redeem your own invite" -> "That’s your invite code. Share it with your partner."
+    "Invite code has expired" -> "That invite code has expired. Ask your partner to generate a new one."
+    "Invite code is no longer valid" -> "That invite code is no longer valid. Ask your partner to generate a new one."
+    "Invite code not found" -> "That invite code wasn’t found. Double-check the code and try again."
+    "Already paired" -> "You’re already paired. Disconnect first to join a new invite."
+    else -> error.message
+}
 
 private const val ANNIVERSARY_DATE_PLACEHOLDER = "DD-MM-YYYY"
 
@@ -784,6 +885,8 @@ private val inviteDateFormats = listOf(
     SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US),
     SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
 ).onEach { it.timeZone = TimeZone.getTimeZone("UTC") }
+
+private const val INBOUND_INVITE_TTL_MS = 24 * 60 * 60 * 1000L
 
 private fun String.parseInviteInstantMillis(): Long? =
     inviteDateFormats.firstNotNullOfOrNull { format ->
