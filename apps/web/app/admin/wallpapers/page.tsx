@@ -2,12 +2,13 @@
 
 import { LoaderCircle, Trash2 } from "lucide-react"
 import Link from "next/link"
-import { FormEvent, useEffect, useMemo, useState, useTransition } from "react"
+import { FormEvent, useEffect, useMemo, useRef, useState, useTransition } from "react"
 
 import { Button } from "@/components/ui/button"
 import { API_BASE_URL } from "@/lib/constants"
 
 const ADMIN_PASSWORD_STORAGE_KEY = "mulberry.wallpaperAdminPassword"
+const ACCEPTED_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
 
 type WallpaperItem = {
   id: string
@@ -35,9 +36,12 @@ export default function WallpaperAdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
+  const [isDraggingImage, setIsDraggingImage] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const dragDepthRef = useRef(0)
   const isUnlocked = adminPassword.trim().length > 0
 
   const adminHeaders = useMemo(
@@ -120,6 +124,48 @@ export default function WallpaperAdminPage() {
     setError(null)
     setStatus(null)
     setSelectedFileName(null)
+    setIsDraggingImage(false)
+    dragDepthRef.current = 0
+  }
+
+  const setFileInputValue = (file: File | null) => {
+    const input = fileInputRef.current
+    if (!input) return
+
+    if (typeof DataTransfer === "undefined") return
+    const dataTransfer = new DataTransfer()
+    if (file) dataTransfer.items.add(file)
+    input.files = dataTransfer.files
+  }
+
+  const applySelectedFile = (file: File | null) => {
+    setError(null)
+    setStatus(null)
+    setFileInputValue(file)
+    setSelectedFileName(file?.name ?? null)
+  }
+
+  const onDropImage = (event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setIsDraggingImage(false)
+    dragDepthRef.current = 0
+
+    const file = event.dataTransfer.files?.[0]
+    if (!file) return
+
+    const hasMimeType = Boolean(file.type)
+    const isAcceptedMimeType = hasMimeType ? ACCEPTED_IMAGE_MIME_TYPES.has(file.type) : true
+    const extension = file.name.split(".").pop()?.toLowerCase()
+    const isAcceptedExtension = extension ? ["jpg", "jpeg", "png", "webp"].includes(extension) : true
+
+    if (!isAcceptedMimeType || !isAcceptedExtension) {
+      applySelectedFile(null)
+      setError("Unsupported file type. Use jpeg, jpg, png, or webp.")
+      return
+    }
+
+    applySelectedFile(file)
   }
 
   const onUpload = (event: FormEvent<HTMLFormElement>) => {
@@ -143,7 +189,7 @@ export default function WallpaperAdminPage() {
           throw new Error(body?.message ?? "Wallpaper upload failed")
         }
         form.reset()
-        setSelectedFileName(null)
+        applySelectedFile(null)
         setStatus("Wallpaper uploaded.")
         loadAdminCatalog()
       } catch (err) {
@@ -263,14 +309,41 @@ export default function WallpaperAdminPage() {
 
         <form onSubmit={onUpload} className="mt-9 w-full space-y-4">
           <fieldset disabled={isUploading} className="space-y-4">
-            <label className="group block cursor-pointer rounded-[2rem] border-2 border-dashed border-soft-border bg-soft-surface px-6 py-10 text-center transition hover:border-brand hover:bg-soft-surface-hover focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10 disabled:pointer-events-none disabled:opacity-70">
+            <label
+              className={[
+                "group block cursor-pointer rounded-[2rem] border-2 border-dashed bg-soft-surface px-6 py-10 text-center transition focus-within:ring-4 focus-within:ring-brand/10 disabled:pointer-events-none disabled:opacity-70",
+                isDraggingImage
+                  ? "border-brand bg-soft-surface-hover"
+                  : "border-soft-border hover:border-brand hover:bg-soft-surface-hover focus-within:border-brand",
+              ].join(" ")}
+              onDragEnter={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                dragDepthRef.current += 1
+                setIsDraggingImage(true)
+              }}
+              onDragOver={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                event.dataTransfer.dropEffect = "copy"
+                setIsDraggingImage(true)
+              }}
+              onDragLeave={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+                if (dragDepthRef.current === 0) setIsDraggingImage(false)
+              }}
+              onDrop={onDropImage}
+            >
               <input
+                ref={fileInputRef}
                 name="image"
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
                 required
                 className="sr-only"
-                onChange={(event) => setSelectedFileName(event.target.files?.[0]?.name ?? null)}
+                onChange={(event) => applySelectedFile(event.target.files?.[0] ?? null)}
               />
               <span className="block text-lg font-semibold tracking-[-0.04em]">
                 {selectedFileName ?? "Upload image"}

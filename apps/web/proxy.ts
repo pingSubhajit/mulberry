@@ -23,7 +23,7 @@ function playStoreUrlForInvite(code: string): string {
   )}`
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   if (request.nextUrl.pathname !== "/invite") {
     return NextResponse.next()
   }
