@@ -35,8 +35,17 @@ class InstallReferrerInboundInviteIngester @Inject constructor(
     suspend fun ingestIfNeeded() {
         mutex.withLock {
             if (inboundInviteRepository.wasInstallReferrerChecked()) return
-            val referrer = runCatching { fetchInstallReferrerString() }.getOrNull()
-            inboundInviteRepository.markInstallReferrerChecked()
+            val referrerResult = runCatching { fetchInstallReferrerString() }
+            val failure = referrerResult.exceptionOrNull()
+            if (failure is InstallReferrerUnavailableException && failure.isPermanent) {
+                inboundInviteRepository.markInstallReferrerChecked()
+            }
+
+            val referrer = referrerResult.getOrNull()
+            if (referrer != null) {
+                // Mark as checked when we successfully fetched (even if empty).
+                inboundInviteRepository.markInstallReferrerChecked()
+            }
             val code = extractInviteCodeFromReferrer(referrer)
             if (code != null) {
                 inboundInviteRepository.setPendingInvite(code, InboundInviteSource.InstallReferrer)
@@ -54,7 +63,7 @@ class InstallReferrerInboundInviteIngester @Inject constructor(
     private suspend fun fetchInstallReferrerString(): String? {
         val client = InstallReferrerClient.newBuilder(context).build()
         return try {
-            val details = client.startConnectionAwait()
+            val details = client.startConnectionAwaitOrThrow()
             details.installReferrer
         } finally {
             runCatching { client.endConnection() }
@@ -62,15 +71,28 @@ class InstallReferrerInboundInviteIngester @Inject constructor(
     }
 }
 
-private suspend fun InstallReferrerClient.startConnectionAwait(): ReferrerDetails =
+private class InstallReferrerUnavailableException(
+    val responseCode: Int,
+    val isPermanent: Boolean,
+    message: String
+) : IllegalStateException(message)
+
+private suspend fun InstallReferrerClient.startConnectionAwaitOrThrow(): ReferrerDetails =
     suspendCancellableCoroutine { continuation ->
         startConnection(
             object : InstallReferrerStateListener {
                 override fun onInstallReferrerSetupFinished(responseCode: Int) {
                     if (!continuation.isActive) return
                     if (responseCode != InstallReferrerClient.InstallReferrerResponse.OK) {
+                        val isPermanent =
+                            responseCode == InstallReferrerClient.InstallReferrerResponse.FEATURE_NOT_SUPPORTED ||
+                                responseCode == InstallReferrerClient.InstallReferrerResponse.DEVELOPER_ERROR
                         continuation.resumeWithException(
-                            IllegalStateException("Install referrer unavailable responseCode=$responseCode")
+                            InstallReferrerUnavailableException(
+                                responseCode = responseCode,
+                                isPermanent = isPermanent,
+                                message = "Install referrer unavailable responseCode=$responseCode"
+                            )
                         )
                         return
                     }

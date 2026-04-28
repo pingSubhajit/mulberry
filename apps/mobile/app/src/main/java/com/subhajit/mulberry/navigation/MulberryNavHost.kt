@@ -2,11 +2,13 @@ package com.subhajit.mulberry.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import com.subhajit.mulberry.app.shortcut.AppShortcutActionController
@@ -23,6 +25,8 @@ import com.subhajit.mulberry.pairing.InviteAcceptanceRoute
 import com.subhajit.mulberry.pairing.InviteCodeEntryRoute
 import com.subhajit.mulberry.pairing.PairingHubRoute
 import com.subhajit.mulberry.pairing.inbound.InboundInviteActionController
+import com.subhajit.mulberry.pairing.inbound.InboundInviteDeepLinkCoordinatorViewModel
+import com.subhajit.mulberry.pairing.inbound.InboundInviteDeepLinkEffect
 import com.subhajit.mulberry.settings.SettingsRoute
 import com.subhajit.mulberry.wallpaper.WallpaperCatalogRoute
 
@@ -34,6 +38,8 @@ fun MulberryNavHost(
     val hasPendingInboundInvite by InboundInviteActionController.pendingAction.collectAsStateWithLifecycle()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
+    val inboundInviteCoordinator: InboundInviteDeepLinkCoordinatorViewModel = hiltViewModel()
+    val latestRoute = rememberUpdatedState(currentRoute)
 
     LaunchedEffect(shortcutAction, currentRoute) {
         val action = shortcutAction ?: return@LaunchedEffect
@@ -54,6 +60,23 @@ fun MulberryNavHost(
             AppRoute.PairingHub.route,
             AppRoute.InviteCodeEntry.route,
             AppRoute.InviteAcceptance.route -> AppShortcutActionController.markHandled(action)
+        }
+    }
+
+    LaunchedEffect(inboundInviteCoordinator) {
+        inboundInviteCoordinator.effects.collect { effect ->
+            if (effect is InboundInviteDeepLinkEffect.NavigateToBootstrap) {
+                val route = latestRoute.value
+                if (route == AppRoute.Bootstrap.route) return@collect
+                val fallback = when (route) {
+                    AppRoute.OnboardingName.route -> AppRoute.OnboardingName
+                    AppRoute.OnboardingDetails.route -> AppRoute.OnboardingDetails
+                    AppRoute.OnboardingWallpaper.route -> AppRoute.OnboardingWallpaper
+                    AppRoute.CanvasHome.route -> AppRoute.CanvasHome
+                    else -> AppRoute.CanvasHome
+                }
+                navController.navigateToBootstrapClearingOnboarding(fallbackPopRoute = fallback)
+            }
         }
     }
 
