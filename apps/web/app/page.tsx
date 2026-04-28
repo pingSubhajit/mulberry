@@ -52,11 +52,11 @@ export default function LandingPage() {
               </Link>
             </Button>
 
-            <p className="mt-2 text-sm">
+            <p className="mt-2 text-sm text-white">
               <span className="opacity-80">Check the source on </span>
               <a
                 target="_blank"
-                className="text-white opacity-80 transition hover:opacity-100 underline italic"
+                className="opacity-80 transition hover:opacity-100 underline italic"
                 href={GITHUB_URL}
               >
                 Github
