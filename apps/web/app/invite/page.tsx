@@ -6,6 +6,8 @@ import { GOOGLE_PLAY_DOWNLOAD_URL } from "@/lib/constants"
 
 import InviteCodeCopyButton from "./InviteCodeCopyButton"
 
+export const dynamic = "force-dynamic"
+
 function normalizeInviteCode(raw?: string): string | null {
   if (!raw) return null
   const digits = raw.replaceAll(/\D/g, "").slice(0, 6)
