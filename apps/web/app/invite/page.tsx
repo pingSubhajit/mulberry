@@ -22,12 +22,15 @@ function playStoreUrlForInvite(code: string): string {
   return `${GOOGLE_PLAY_DOWNLOAD_URL}&referrer=${encodeURIComponent(referrer)}`
 }
 
-export default function InvitePage({
+export default async function InvitePage({
   searchParams
 }: {
-  searchParams: { code?: string }
+  searchParams: Promise<{ code?: string | string[] }>
 }) {
-  const code = normalizeInviteCode(searchParams.code)
+  // Next.js may pass `searchParams` as an async prop (Promise) in newer App Router versions.
+  const resolved = await searchParams
+  const raw = Array.isArray(resolved.code) ? resolved.code[0] : resolved.code
+  const code = normalizeInviteCode(raw)
 
   return (
     <main className="min-h-screen overflow-hidden text-foreground bg-brand">
