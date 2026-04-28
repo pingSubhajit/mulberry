@@ -94,12 +94,12 @@ export default async function InvitePage({
           <div className="mt-10 w-full">
             {code ? (
                 <>
-                  <div className="mt-3 flex items-center justify-center gap-4 lg:justify-start">
-                    <div className="flex items-center justify-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto lg:w-auto lg:justify-start">
+                  <div className="mt-3 flex w-full items-center justify-center gap-[clamp(0.5rem,2.2vw,1rem)] lg:justify-start">
+                    <div className="flex items-center justify-center gap-[clamp(0.25rem,1.6vw,0.5rem)] lg:justify-start">
                       {code.split("").map((digit, index) => (
                         <div
                           key={`${digit}-${index}`}
-                          className="inline-flex aspect-square h-12 shrink-0 items-center justify-center rounded-2xl bg-neutral-900 text-4xl font-semibold leading-none text-white sm:h-14 md:h-16"
+                          className="inline-flex aspect-square h-[clamp(2.125rem,9.5vw,4rem)] shrink-0 items-center justify-center rounded-2xl bg-neutral-900 text-[clamp(1.4rem,6.6vw,2.25rem)] font-semibold leading-none text-white"
                         >
                           <span className="font-mono">{digit}</span>
                         </div>
@@ -107,7 +107,7 @@ export default async function InvitePage({
                     </div>
                     <InviteCodeCopyButton
                       code={code}
-                      className="h-12 w-12 rounded-2xl bg-neutral-800 text-white hover:bg-neutral-700 sm:h-14 sm:w-14 md:h-16 md:w-16"
+                      className="h-[clamp(2.125rem,9.5vw,4rem)] w-[clamp(2.125rem,9.5vw,4rem)] rounded-2xl bg-neutral-800 text-white hover:bg-neutral-700"
                     />
                   </div>
 

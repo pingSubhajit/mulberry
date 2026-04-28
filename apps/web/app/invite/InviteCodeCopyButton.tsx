@@ -43,7 +43,11 @@ export default function InviteCodeCopyButton({
             : "scale-70 opacity-0 blur-[2px]"
         )}
       >
-        <CheckIcon size={20} strokeWidth={2} aria-hidden="true" />
+        <CheckIcon
+          strokeWidth={2}
+          aria-hidden="true"
+          className="h-[clamp(1rem,4.5vw,1.25rem)] w-[clamp(1rem,4.5vw,1.25rem)]"
+        />
       </div>
       <div
         className={cn(
@@ -51,7 +55,11 @@ export default function InviteCodeCopyButton({
           copied ? "scale-0 opacity-0 blur-[2px]" : "scale-100 opacity-100 blur-none"
         )}
       >
-        <CopyIcon size={20} strokeWidth={2} aria-hidden="true" />
+        <CopyIcon
+          strokeWidth={2}
+          aria-hidden="true"
+          className="h-[clamp(1rem,4.5vw,1.25rem)] w-[clamp(1rem,4.5vw,1.25rem)]"
+        />
       </div>
     </button>
   )
