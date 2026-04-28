@@ -283,10 +283,18 @@ export default function WallpaperAdminPage() {
           mulberry
         </Link>
         <div className="flex items-center gap-6 text-sm font-medium text-muted-foreground">
-          <button type="button" onClick={() => loadAdminCatalog()} className="transition hover:text-foreground">
+          <button
+            type="button"
+            onClick={() => loadAdminCatalog()}
+            className="inline-flex transition-all duration-200 ease-out hover:text-foreground active:scale-[0.97]"
+          >
             Refresh
           </button>
-          <button type="button" onClick={lockAdmin} className="transition hover:text-foreground">
+          <button
+            type="button"
+            onClick={lockAdmin}
+            className="inline-flex transition-all duration-200 ease-out hover:text-foreground active:scale-[0.97]"
+          >
             Lock
           </button>
           <Link href="/" className="transition hover:text-foreground">
@@ -421,7 +429,7 @@ export default function WallpaperAdminPage() {
                     }
                     onClick={() => deleteWallpaper(item.id)}
                     disabled={Boolean(deletingId) || isUploading}
-                    className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-elevated text-elevated-foreground shadow-sm transition hover:text-brand disabled:opacity-40"
+                    className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-elevated text-elevated-foreground shadow-sm transition-all duration-200 ease-out hover:text-brand active:scale-[0.97] disabled:opacity-40"
                   >
                     {deletingId === item.id ? (
                       <LoaderCircle className="h-4 w-4 animate-spin" />
