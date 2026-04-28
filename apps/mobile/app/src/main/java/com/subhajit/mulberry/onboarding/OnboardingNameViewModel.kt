@@ -10,10 +10,12 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.subhajit.mulberry.pairing.inbound.InboundInviteRepository
 
 @HiltViewModel
 class OnboardingNameViewModel @Inject constructor(
-    private val draftRepository: OnboardingDraftRepository
+    private val draftRepository: OnboardingDraftRepository,
+    private val inboundInviteRepository: InboundInviteRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(UserProfileDraft())
     val uiState = _uiState.asStateFlow()
@@ -24,6 +26,12 @@ class OnboardingNameViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             _uiState.value = draftRepository.draft.first()
+        }
+        viewModelScope.launch {
+            val inbound = inboundInviteRepository.pendingInvite.first()
+            if (inbound != null) {
+                _effects.emit(OnboardingNameEffect.NavigateToCodeEntry)
+            }
         }
     }
 
