@@ -1,8 +1,6 @@
 package com.subhajit.mulberry.sync
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -15,10 +13,9 @@ import com.subhajit.mulberry.EnableWallpaperSyncActivity
 import com.subhajit.mulberry.MainActivity
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.app.shortcut.AppShortcutAction
+import com.subhajit.mulberry.notifications.MulberryNotificationChannels
 
 object PartnerDoodleNotificationPresenter {
-    private const val CHANNEL_ID = "partner_doodles"
-    private const val CHANNEL_NAME = "Partner doodles"
     private const val NOTIFICATION_ID = 2401
 
     fun show(context: Context, payload: CanvasNudgePushPayload) {
@@ -30,10 +27,13 @@ object PartnerDoodleNotificationPresenter {
             if (permission != PackageManager.PERMISSION_GRANTED) return
         }
 
-        ensureChannel(context)
+        MulberryNotificationChannels.registerAll(context)
 
         val actorName = payload.actorDisplayName.takeIf { it.isNotBlank() } ?: "Your partner"
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(
+            context,
+            MulberryNotificationChannels.CHANNEL_ID_PARTNER_DOODLES
+        )
             .setSmallIcon(R.drawable.brand_iconmark_white)
             .setContentTitle("New doodle from $actorName")
             .setContentText("Tap to see it in Mulberry.")
@@ -80,21 +80,4 @@ object PartnerDoodleNotificationPresenter {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
-
-    private fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val notificationManager = context.getSystemService(NotificationManager::class.java)
-        val existing = notificationManager.getNotificationChannel(CHANNEL_ID)
-        if (existing != null) return
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "New doodles from your partner"
-            }
-        )
-    }
 }
-

@@ -1,7 +1,5 @@
 package com.subhajit.mulberry.sync
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -11,14 +9,13 @@ import androidx.core.app.NotificationCompat
 import androidx.work.ForegroundInfo
 import com.subhajit.mulberry.MainActivity
 import com.subhajit.mulberry.R
+import com.subhajit.mulberry.notifications.MulberryNotificationChannels
 
 object BackgroundCanvasSyncForegroundNotification {
-    private const val CHANNEL_ID = "canvas_sync"
-    private const val CHANNEL_NAME = "Canvas sync"
     private const val NOTIFICATION_ID = 2201
 
     fun createForegroundInfo(context: Context): ForegroundInfo {
-        ensureChannel(context)
+        MulberryNotificationChannels.registerAll(context)
         val notification = createNotification(context)
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ForegroundInfo(
@@ -31,7 +28,10 @@ object BackgroundCanvasSyncForegroundNotification {
         }
     }
 
-    private fun createNotification(context: Context) = NotificationCompat.Builder(context, CHANNEL_ID)
+    private fun createNotification(context: Context) = NotificationCompat.Builder(
+        context,
+        MulberryNotificationChannels.CHANNEL_ID_CANVAS_SYNC
+    )
         .setSmallIcon(R.drawable.brand_iconmark_white)
         .setContentTitle("Syncing lock-screen canvas…")
         .setContentText("Updating your Mulberry live wallpaper.")
@@ -53,21 +53,4 @@ object BackgroundCanvasSyncForegroundNotification {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
-
-    private fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val notificationManager = context.getSystemService(NotificationManager::class.java)
-        val existing = notificationManager.getNotificationChannel(CHANNEL_ID)
-        if (existing != null) return
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Mulberry background canvas sync"
-            }
-        )
-    }
 }
-

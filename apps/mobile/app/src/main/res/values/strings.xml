@@ -113,4 +113,23 @@
     <string name="shortcut_change_wallpaper_short_label">Change Wallpaper</string>
     <string name="shortcut_change_wallpaper_long_label">Change Wallpaper</string>
     <string name="shortcut_disabled_message">Shortcut unavailable</string>
+
+    <string name="notification_group_partner">Partner</string>
+    <string name="notification_group_reminders">Reminders</string>
+    <string name="notification_group_sync">Sync</string>
+
+    <string name="notification_channel_pairing_updates_name">Pairing</string>
+    <string name="notification_channel_pairing_updates_description">When you connect or disconnect with your partner.</string>
+
+    <string name="notification_channel_partner_doodles_name">New doodles</string>
+    <string name="notification_channel_partner_doodles_description">When your partner adds a doodle that isn’t on your lock screen yet.</string>
+
+    <string name="notification_channel_draw_reminders_name">Draw reminders</string>
+    <string name="notification_channel_draw_reminders_description">Gentle reminders to draw something for your partner.</string>
+
+    <string name="notification_channel_wallpaper_sync_name">Wallpaper sync</string>
+    <string name="notification_channel_wallpaper_sync_description">Reminders to turn on Wallpaper sync for your lock screen.</string>
+
+    <string name="notification_channel_canvas_sync_name">Wallpaper syncing</string>
+    <string name="notification_channel_canvas_sync_description">Persistent notification while Mulberry syncs your lock-screen wallpaper.</string>
 </resources>
