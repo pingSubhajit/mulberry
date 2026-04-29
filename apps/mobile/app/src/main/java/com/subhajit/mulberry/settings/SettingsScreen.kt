@@ -153,6 +153,7 @@ fun SettingsRoute(
             if (pane == SettingsPane.Home) onNavigateBack() else pane = SettingsPane.Home
         },
         onPaneSelected = { pane = it },
+        onWallpaperSyncEnabledChanged = viewModel::onWallpaperSyncEnabledChanged,
         onDisplayNameSave = viewModel::onDisplayNameSave,
         onProfilePhotoChangeRequested = { profilePhotoPicker.launch("image/*") },
         onDisconnectPartner = viewModel::onDisconnectPartner,
@@ -183,6 +184,7 @@ private fun SettingsScreen(
     snackbarHostState: SnackbarHostState,
     onNavigateBack: () -> Unit,
     onPaneSelected: (SettingsPane) -> Unit,
+    onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
     onDisplayNameSave: (String) -> Unit,
     onProfilePhotoChangeRequested: () -> Unit,
     onDisconnectPartner: () -> Unit,
@@ -214,6 +216,7 @@ private fun SettingsScreen(
 	                uiState = uiState,
 	                onClose = onNavigateBack,
 	                onPaneSelected = onPaneSelected,
+	                onWallpaperSyncEnabledChanged = onWallpaperSyncEnabledChanged,
 	                onLogout = onLogout,
 	                modifier = Modifier.padding(padding)
 	            )
@@ -299,6 +302,7 @@ private fun SettingsRootPage(
     uiState: SettingsUiState,
     onClose: () -> Unit,
     onPaneSelected: (SettingsPane) -> Unit,
+    onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -352,6 +356,7 @@ private fun SettingsRootPage(
         SettingsRootMenu(
             uiState = uiState,
             onPaneSelected = onPaneSelected,
+            onWallpaperSyncEnabledChanged = onWallpaperSyncEnabledChanged,
             onLogoutRequested = { showLogoutConfirmation = true }
         )
 
@@ -485,6 +490,7 @@ private fun SettingsRootSubtitle(
 private fun SettingsRootMenu(
     uiState: SettingsUiState,
     onPaneSelected: (SettingsPane) -> Unit,
+    onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
     onLogoutRequested: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -514,6 +520,13 @@ private fun SettingsRootMenu(
             enabled = uiState.developerOptionsEnabled,
             showChevron = uiState.developerOptionsEnabled,
             onClick = { onPaneSelected(SettingsPane.DeveloperOptions) }
+        )
+        SettingsRootToggleRow(
+            icon = SettingsRootIcon.Lock,
+            title = "Wallpaper sync",
+            checked = uiState.wallpaperSyncEnabled,
+            enabled = !uiState.isBusy,
+            onCheckedChange = onWallpaperSyncEnabledChanged
         )
         SettingsRootRow(
             icon = SettingsRootIcon.Privacy,
@@ -590,6 +603,44 @@ private fun SettingsRootRow(
         if (showChevron) {
             RootChevron()
         }
+    }
+}
+
+@Composable
+private fun SettingsRootToggleRow(
+    icon: SettingsRootIcon,
+    title: String,
+    checked: Boolean,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(36.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RootLineIcon(
+            icon = icon,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(22.dp))
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 16.sp,
+            lineHeight = 22.sp,
+            modifier = Modifier.weight(1f)
+        )
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = onCheckedChange
+        )
     }
 }
 
@@ -765,6 +816,7 @@ private enum class SettingsRootIcon {
     Partner,
     SyncConnected,
     SyncUnpaired,
+    Lock,
     Privacy,
     About,
     Logout
@@ -776,6 +828,7 @@ private fun SettingsRootIcon.drawableRes(): Int = when (this) {
     SettingsRootIcon.Partner -> R.drawable.settings_icon_partner
     SettingsRootIcon.SyncConnected -> R.drawable.settings_icon_sync_connected
     SettingsRootIcon.SyncUnpaired -> R.drawable.settings_icon_sync_unpaired
+    SettingsRootIcon.Lock -> R.drawable.settings_icon_lock
     SettingsRootIcon.Privacy -> R.drawable.settings_icon_privacy
     SettingsRootIcon.About -> R.drawable.settings_icon_about
     SettingsRootIcon.Logout -> R.drawable.settings_icon_logout

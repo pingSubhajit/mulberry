@@ -16,6 +16,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.collectLatest
 
 @AndroidEntryPoint
 class MulberryWallpaperService : WallpaperService() {
@@ -23,6 +24,7 @@ class MulberryWallpaperService : WallpaperService() {
     @Inject lateinit var wallpaperCoordinator: WallpaperCoordinator
     @Inject lateinit var wallpaperRenderStateLoader: WallpaperRenderStateLoader
     @Inject lateinit var backgroundImageRepository: BackgroundImageRepository
+    @Inject lateinit var wallpaperSyncSettingsRepository: WallpaperSyncSettingsRepository
 
     override fun onCreateEngine(): Engine = MulberryWallpaperEngine()
 
@@ -32,6 +34,7 @@ class MulberryWallpaperService : WallpaperService() {
         private var isEngineVisible: Boolean = false
         private var isSurfaceAvailable: Boolean = false
         private var pendingRedraw: Boolean = false
+        private var wallpaperSyncEnabled: Boolean = true
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
@@ -40,6 +43,12 @@ class MulberryWallpaperService : WallpaperService() {
             engineScope.launch {
                 WallpaperRenderBus.updates().collect {
                     requestDraw("render_bus")
+                }
+            }
+            engineScope.launch {
+                wallpaperSyncSettingsRepository.enabled.collectLatest { enabled ->
+                    wallpaperSyncEnabled = enabled
+                    requestDraw("wallpaper_sync_changed")
                 }
             }
             requestDraw("engine_create")
@@ -106,8 +115,12 @@ class MulberryWallpaperService : WallpaperService() {
                         return@withLock
                     }
                     runCatching {
-                        wallpaperCoordinator.ensureSnapshotCurrent()
-                        val renderState = wallpaperRenderStateLoader.loadCurrentState()
+                        if (wallpaperSyncEnabled) {
+                            wallpaperCoordinator.ensureSnapshotCurrent()
+                        }
+                        val renderState = wallpaperRenderStateLoader.loadCurrentState(
+                            wallpaperSyncEnabled = wallpaperSyncEnabled
+                        )
                         drawToSurface(renderState)
                     }.onFailure { error ->
                         Log.w(TAG, "Wallpaper draw failed", error)

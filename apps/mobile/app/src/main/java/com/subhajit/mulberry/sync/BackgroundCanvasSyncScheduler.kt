@@ -11,9 +11,14 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import androidx.core.content.ContextCompat
+import com.subhajit.mulberry.app.di.ApplicationScope
+import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 interface BackgroundCanvasSyncScheduler {
     fun enqueueCanvasUpdated(pairSessionId: String?, latestRevision: Long?)
@@ -21,31 +26,40 @@ interface BackgroundCanvasSyncScheduler {
 
 @Singleton
 class WorkManagerBackgroundCanvasSyncScheduler @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val wallpaperSyncSettingsRepository: WallpaperSyncSettingsRepository,
+    @ApplicationScope private val applicationScope: CoroutineScope
 ) : BackgroundCanvasSyncScheduler {
     override fun enqueueCanvasUpdated(pairSessionId: String?, latestRevision: Long?) {
-        val workName = "canvas-background-sync-${pairSessionId ?: "default"}"
-        Log.i(
-            TAG,
-            "Enqueue background canvas sync workName=$workName latestRevision=$latestRevision"
-        )
-        val requestBuilder = OneTimeWorkRequestBuilder<BackgroundCanvasSyncWorker>()
-            .setInputData(
-                workDataOf(
-                    BackgroundCanvasSyncWorker.KEY_PAIR_SESSION_ID to pairSessionId,
-                    BackgroundCanvasSyncWorker.KEY_LATEST_REVISION to (latestRevision ?: 0L)
-                )
-            )
-        if (canUseExpeditedWork()) {
-            requestBuilder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-        }
-        val request = requestBuilder.build()
+        applicationScope.launch {
+            if (!wallpaperSyncSettingsRepository.enabled.first()) {
+                Log.i(TAG, "Skipping background canvas sync enqueue; wallpaper sync disabled")
+                return@launch
+            }
 
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            workName,
-            ExistingWorkPolicy.REPLACE,
-            request
-        )
+            val workName = "canvas-background-sync-${pairSessionId ?: "default"}"
+            Log.i(
+                TAG,
+                "Enqueue background canvas sync workName=$workName latestRevision=$latestRevision"
+            )
+            val requestBuilder = OneTimeWorkRequestBuilder<BackgroundCanvasSyncWorker>()
+                .setInputData(
+                    workDataOf(
+                        BackgroundCanvasSyncWorker.KEY_PAIR_SESSION_ID to pairSessionId,
+                        BackgroundCanvasSyncWorker.KEY_LATEST_REVISION to (latestRevision ?: 0L)
+                    )
+                )
+            if (canUseExpeditedWork()) {
+                requestBuilder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            }
+            val request = requestBuilder.build()
+
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                workName,
+                ExistingWorkPolicy.REPLACE,
+                request
+            )
+        }
     }
 
     private fun canUseExpeditedWork(): Boolean {

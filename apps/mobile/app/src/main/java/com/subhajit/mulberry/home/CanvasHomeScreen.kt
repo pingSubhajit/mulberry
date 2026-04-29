@@ -316,6 +316,10 @@ private fun CanvasHomeScreen(
                 onPairingConfirmationRequested()
                 onShortcutActionHandled(action)
             }
+
+            AppShortcutAction.ShowSettings -> {
+                onShortcutActionHandled(action)
+            }
         }
     }
 

@@ -11,6 +11,7 @@ import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.network.CanvasOperationBatchRequest
 import com.subhajit.mulberry.network.MulberryApiService
+import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import java.time.Instant
 import java.util.UUID
@@ -39,12 +40,16 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
     private val apiService: MulberryApiService,
     private val drawingRepository: DrawingRepository,
     private val remoteOperationApplier: RemoteOperationApplier,
+    private val wallpaperSyncSettingsRepository: WallpaperSyncSettingsRepository,
     private val wallpaperCoordinator: WallpaperCoordinator
 ) : BackgroundCanvasSyncCoordinator {
     override suspend fun syncToLatestSnapshot(
         pairSessionId: String?,
         latestRevisionHint: Long?
     ): Result<BackgroundCanvasSyncResult> = runCatching {
+        if (!wallpaperSyncSettingsRepository.enabled.first()) {
+            return@runCatching skip("wallpaper sync disabled")
+        }
         val session = sessionBootstrapRepository.getCurrentSession()
             ?: return@runCatching skip("signed out")
         val bootstrap = sessionBootstrapRepository.state.first()

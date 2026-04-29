@@ -27,6 +27,7 @@ import com.subhajit.mulberry.sync.SyncState
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
+import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -54,6 +55,7 @@ data class SettingsUiState(
     val syncState: SyncState = SyncState.Disconnected,
     val syncMetadata: SyncMetadata = SyncMetadata(),
     val fcmRegistered: Boolean = false,
+    val wallpaperSyncEnabled: Boolean = true,
     val isBusy: Boolean = false
 ) {
     val pendingOperationCount: Int
@@ -71,6 +73,7 @@ class SettingsViewModel @Inject constructor(
     repository: SessionBootstrapRepository,
     featureFlagProvider: FeatureFlagProvider,
     private val developerOptionsRepository: DeveloperOptionsRepository,
+    private val wallpaperSyncSettingsRepository: WallpaperSyncSettingsRepository,
     private val authRepository: AuthRepository,
     private val drawingRepository: DrawingRepository,
     private val canvasSyncRepository: CanvasSyncRepository,
@@ -91,29 +94,38 @@ class SettingsViewModel @Inject constructor(
     private val busyState = kotlinx.coroutines.flow.MutableStateFlow(false)
     private val versionTapCount = kotlinx.coroutines.flow.MutableStateFlow(0)
 
+    private val baseUiState = combine(
+        repository.state,
+        featureFlagProvider.flags,
+        developerOptionsRepository.enabled,
+        syncMetadataRepository.metadata,
+        fcmTokenRepository.isRegistered
+    ) { state, flags, developerOptionsEnabled, metadata, fcmRegistered ->
+        SettingsUiState(
+            environmentLabel = appConfig.environment.displayName,
+            apiBaseUrl = appConfig.apiBaseUrl,
+            appVersionName = BuildConfig.VERSION_NAME,
+            appVersionCode = BuildConfig.VERSION_CODE,
+            buildType = BuildConfig.BUILD_TYPE,
+            flavor = BuildConfig.FLAVOR,
+            enableDebugMenu = appConfig.enableDebugMenu,
+            developerOptionsEnabled = developerOptionsEnabled,
+            featureFlags = flags,
+            bootstrapState = state,
+            syncMetadata = metadata,
+            fcmRegistered = fcmRegistered
+        )
+    }
+
+    private val baseUiStateWithWallpaperSync = combine(
+        baseUiState,
+        wallpaperSyncSettingsRepository.enabled
+    ) { base, wallpaperSyncEnabled ->
+        base.copy(wallpaperSyncEnabled = wallpaperSyncEnabled)
+    }
+
     val uiState = combine(
-        combine(
-            repository.state,
-            featureFlagProvider.flags,
-            developerOptionsRepository.enabled,
-            syncMetadataRepository.metadata,
-            fcmTokenRepository.isRegistered
-        ) { state, flags, developerOptionsEnabled, metadata, fcmRegistered ->
-            SettingsUiState(
-                environmentLabel = appConfig.environment.displayName,
-                apiBaseUrl = appConfig.apiBaseUrl,
-                appVersionName = BuildConfig.VERSION_NAME,
-                appVersionCode = BuildConfig.VERSION_CODE,
-                buildType = BuildConfig.BUILD_TYPE,
-                flavor = BuildConfig.FLAVOR,
-                enableDebugMenu = appConfig.enableDebugMenu,
-                developerOptionsEnabled = developerOptionsEnabled,
-                featureFlags = flags,
-                bootstrapState = state,
-                syncMetadata = metadata,
-                fcmRegistered = fcmRegistered
-            )
-        },
+        baseUiStateWithWallpaperSync,
         canvasSyncRepository.syncState,
         busyState
     ) { base, syncState, isBusy ->
@@ -155,6 +167,16 @@ class SettingsViewModel @Inject constructor(
             if (!enabled) {
                 _effects.emit(SettingsEffect.Message("Developer options disabled"))
             }
+        }
+    }
+
+    fun onWallpaperSyncEnabledChanged(enabled: Boolean) {
+        viewModelScope.launchWithBusy {
+            wallpaperSyncSettingsRepository.setEnabled(enabled)
+            if (enabled) {
+                wallpaperCoordinator.ensureSnapshotCurrent()
+            }
+            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
         }
     }
 

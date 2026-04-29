@@ -11,13 +11,13 @@ class WallpaperRenderStateLoader @Inject constructor(
     private val canvasMetadataDao: CanvasMetadataDao,
     private val backgroundImageRepository: BackgroundImageRepository
 ) {
-    suspend fun loadCurrentState(): WallpaperRenderState {
+    suspend fun loadCurrentState(wallpaperSyncEnabled: Boolean): WallpaperRenderState {
         val metadata = canvasMetadataDao.getMetadata() ?: CanvasMetadataEntity.default()
         val backgroundState = backgroundImageRepository.getCurrentBackgroundState()
 
         return WallpaperRenderState(
             snapshotPath = metadata.cachedImagePath
-                ?.takeIf { File(it).exists() },
+                ?.takeIf { wallpaperSyncEnabled && File(it).exists() },
             backgroundImagePath = backgroundState.assetPath
                 ?.takeIf { File(it).exists() }
         )

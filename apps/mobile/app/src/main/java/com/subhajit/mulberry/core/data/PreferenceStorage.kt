@@ -40,6 +40,9 @@ object PreferenceStorage {
     val backgroundImagePresetResId = stringPreferencesKey("background_image_preset_res_id")
     val backgroundImageRemoteWallpaperId =
         stringPreferencesKey("background_image_remote_wallpaper_id")
+    val wallpaperSyncEnabled = booleanPreferencesKey("wallpaper_sync_enabled")
+    val wallpaperSyncPausedReminderCount = intPreferencesKey("wallpaper_sync_paused_reminder_count")
+    val wallpaperSyncPausedSinceMs = longPreferencesKey("wallpaper_sync_paused_since_ms")
     val onboardingDraftDisplayName = stringPreferencesKey("onboarding_draft_display_name")
     val onboardingDraftPartnerDisplayName =
         stringPreferencesKey("onboarding_draft_partner_display_name")

@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -31,12 +32,14 @@ class DefaultWallpaperCoordinator @Inject constructor(
     private val backgroundImageRepository: BackgroundImageRepository,
     private val wallpaperStatusCalculator: WallpaperStatusCalculator,
     private val sessionBootstrapRepository: SessionBootstrapRepository,
+    private val wallpaperSyncSettingsRepository: WallpaperSyncSettingsRepository,
     @ApplicationScope private val applicationScope: CoroutineScope
 ) : WallpaperCoordinator {
 
     private val selectedOnHomeState = MutableStateFlow(false)
     private val selectedOnLockState = MutableStateFlow(false)
     private val renderMutex = Mutex()
+    private var wallpaperSyncEnabled: Boolean = true
     private val wallpaperInfoByWhichMethod: Method? by lazy(LazyThreadSafetyMode.NONE) {
         runCatching {
             WallpaperManager::class.java.getMethod("getWallpaperInfo", Int::class.javaPrimitiveType)
@@ -49,10 +52,16 @@ class DefaultWallpaperCoordinator @Inject constructor(
         }
 
         applicationScope.launch {
+            wallpaperSyncSettingsRepository.enabled.collect { enabled ->
+                wallpaperSyncEnabled = enabled
+            }
+        }
+
+        applicationScope.launch {
             canvasMetadataDao.observeMetadata()
                 .distinctUntilChangedByRelevantFields()
                 .collect { metadata ->
-                    if (metadata.isSnapshotDirty || !metadata.hasSnapshotFile()) {
+                    if (wallpaperSyncEnabled && (metadata.isSnapshotDirty || !metadata.hasSnapshotFile())) {
                         ensureSnapshotCurrent()
                     }
                     notifyWallpaperUpdatedIfSelected()
@@ -69,6 +78,7 @@ class DefaultWallpaperCoordinator @Inject constructor(
     }
 
     override suspend fun ensureSnapshotCurrent() {
+        if (!wallpaperSyncSettingsRepository.enabled.first()) return
         renderMutex.withLock {
             val metadata = canvasMetadataDao.getMetadata() ?: CanvasMetadataEntity.default()
             if (!metadata.isSnapshotDirty && metadata.hasSnapshotFile()) return

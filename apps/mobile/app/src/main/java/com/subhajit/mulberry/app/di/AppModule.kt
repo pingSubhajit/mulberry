@@ -58,6 +58,8 @@ import com.subhajit.mulberry.sync.RemoteOperationApplier
 import com.subhajit.mulberry.sync.SyncMetadataRepository
 import com.subhajit.mulberry.sync.SyncOutboxStore
 import com.subhajit.mulberry.sync.SyncOutboxDao
+import com.subhajit.mulberry.sync.WallpaperSyncPausedReminderScheduler
+import com.subhajit.mulberry.sync.WorkManagerWallpaperSyncPausedReminderScheduler
 import com.subhajit.mulberry.sync.WorkManagerBackgroundCanvasSyncScheduler
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.BackendWallpaperCatalogRepository
@@ -65,9 +67,11 @@ import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.DataStoreBackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.DefaultCanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.DefaultWallpaperCoordinator
+import com.subhajit.mulberry.wallpaper.DataStoreWallpaperSyncSettingsRepository
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import com.subhajit.mulberry.wallpaper.WallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.WallpaperStatusCalculator
+import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -139,6 +143,12 @@ abstract class AppBindingsModule {
     abstract fun bindWallpaperCoordinator(
         implementation: DefaultWallpaperCoordinator
     ): WallpaperCoordinator
+
+    @Binds
+    @Singleton
+    abstract fun bindWallpaperSyncSettingsRepository(
+        implementation: DataStoreWallpaperSyncSettingsRepository
+    ): WallpaperSyncSettingsRepository
 
     @Binds
     @Singleton
@@ -223,6 +233,12 @@ abstract class AppBindingsModule {
     abstract fun bindBackgroundCanvasSyncScheduler(
         implementation: WorkManagerBackgroundCanvasSyncScheduler
     ): BackgroundCanvasSyncScheduler
+
+    @Binds
+    @Singleton
+    abstract fun bindWallpaperSyncPausedReminderScheduler(
+        implementation: WorkManagerWallpaperSyncPausedReminderScheduler
+    ): WallpaperSyncPausedReminderScheduler
 
     @Binds
     @Singleton
