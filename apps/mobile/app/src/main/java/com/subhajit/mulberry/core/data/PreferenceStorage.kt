@@ -57,6 +57,10 @@ object PreferenceStorage {
     val fcmRegisteredToken = stringPreferencesKey("fcm_registered_token")
     val fcmRegisteredUserId = stringPreferencesKey("fcm_registered_user_id")
     val developerOptionsEnabled = booleanPreferencesKey("developer_options_enabled")
+    val reviewMilestone3Reached = booleanPreferencesKey("review_milestone_3_reached")
+    val reviewAttemptCount = intPreferencesKey("review_attempt_count")
+    val reviewLastAttemptAtMs = longPreferencesKey("review_last_attempt_at_ms")
+    val reviewNextEligibleAtMs = longPreferencesKey("review_next_eligible_at_ms")
 
     val placeholderPairingControlsOverride =
         booleanPreferencesKey("flag_placeholder_pairing_controls_override")

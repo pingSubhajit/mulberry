@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.settings
 
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -38,6 +39,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -89,6 +91,7 @@ import com.subhajit.mulberry.core.ui.TermsOfUseSheetContent
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
+import com.subhajit.mulberry.review.InAppReviewLauncher
 import com.subhajit.mulberry.sync.SyncState
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.MulberryPrimaryLight
@@ -119,6 +122,8 @@ fun SettingsRoute(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val activity = context as? ComponentActivity
     val snackbarHostState = remember { SnackbarHostState() }
     var pane by remember { mutableStateOf(SettingsPane.Home) }
     val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -136,11 +141,33 @@ fun SettingsRoute(
         }
     }
 
-    LaunchedEffect(viewModel) {
+    LaunchedEffect(viewModel, activity) {
         viewModel.effects.collect { effect ->
             when (effect) {
                 SettingsEffect.RestartFromBootstrap -> onResetAppState()
                 SettingsEffect.NavigateHome -> onNavigateHome()
+                SettingsEffect.LaunchInAppReviewManual -> {
+                    if (activity != null) {
+                        snackbarHostState.showSnackbar("Requesting Play review prompt…")
+                        val attempt = InAppReviewLauncher.launchWithDiagnostics(activity)
+                        val installer = attempt.diagnostics.installerPackageName
+                        if (installer != "com.android.vending") {
+                            snackbarHostState.showSnackbar(
+                                "Not installed from Play Store (installer=${installer ?: "unknown"}); review UI may not appear."
+                            )
+                        } else if (attempt.result.isFailure) {
+                            snackbarHostState.showSnackbar(
+                                attempt.result.exceptionOrNull()?.message ?: "Unable to start review flow"
+                            )
+                        } else {
+                            snackbarHostState.showSnackbar(
+                                "Review flow requested (Play may choose not to show UI)."
+                            )
+                        }
+                    } else {
+                        snackbarHostState.showSnackbar("Unable to request review flow (no Activity).")
+                    }
+                }
                 is SettingsEffect.Message -> snackbarHostState.showSnackbar(effect.text)
             }
         }
@@ -177,7 +204,8 @@ fun SettingsRoute(
         onMockNewDoodleNotification = viewModel::onMockNewDoodleNotification,
         onMockDrawReminderNotification = viewModel::onMockDrawReminderNotification,
         onSendCrashlyticsTestEvent = viewModel::onSendCrashlyticsTestEvent,
-        onCrashlyticsTestCrash = viewModel::onCrashlyticsTestCrash
+        onCrashlyticsTestCrash = viewModel::onCrashlyticsTestCrash,
+        onTriggerInAppReview = viewModel::onTriggerInAppReviewClicked
     )
 }
 
@@ -208,7 +236,8 @@ private fun SettingsScreen(
     onMockNewDoodleNotification: () -> Unit,
     onMockDrawReminderNotification: () -> Unit,
     onSendCrashlyticsTestEvent: () -> Unit,
-    onCrashlyticsTestCrash: () -> Unit
+    onCrashlyticsTestCrash: () -> Unit,
+    onTriggerInAppReview: () -> Unit
 ) {
     Scaffold(
         modifier = Modifier
@@ -273,6 +302,7 @@ private fun SettingsScreen(
                 onMockDrawReminderNotification = onMockDrawReminderNotification,
                 onSendCrashlyticsTestEvent = onSendCrashlyticsTestEvent,
                 onCrashlyticsTestCrash = onCrashlyticsTestCrash,
+                onTriggerInAppReview = onTriggerInAppReview,
                 modifier = Modifier.padding(padding)
             )
         } else {
@@ -1718,6 +1748,7 @@ private fun DeveloperOptionsPane(
     onMockDrawReminderNotification: () -> Unit,
     onSendCrashlyticsTestEvent: () -> Unit,
     onCrashlyticsTestCrash: () -> Unit,
+    onTriggerInAppReview: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showResetConfirmation by remember { mutableStateOf(false) }
@@ -1761,6 +1792,13 @@ private fun DeveloperOptionsPane(
                     text = "Crash app (Crashlytics test)",
                     enabled = !uiState.isBusy,
                     onClick = { showCrashlyticsCrashConfirmation = true }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                SettingsSecondaryButton(
+                    text = "Trigger in-app review (debug)",
+                    isBusy = uiState.isBusy,
+                    onClick = onTriggerInAppReview,
+                    enabled = !uiState.isBusy
                 )
             }
         }

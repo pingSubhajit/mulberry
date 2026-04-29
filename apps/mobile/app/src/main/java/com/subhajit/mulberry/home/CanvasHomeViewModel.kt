@@ -133,6 +133,7 @@ data class CanvasHomeUiState(
 sealed interface CanvasHomeEffect {
     data class ShareInvite(val message: String) : CanvasHomeEffect
     data object OpenWallpaperSetup : CanvasHomeEffect
+    data class LaunchInAppReview(val source: String) : CanvasHomeEffect
 }
 
 @HiltViewModel
@@ -149,7 +150,8 @@ class CanvasHomeViewModel @Inject constructor(
     private val wallpaperCatalogRepository: WallpaperCatalogRepository,
     private val wallpaperCoordinator: WallpaperCoordinator,
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
-    appConfig: AppConfig
+    private val reviewPromptCoordinator: com.subhajit.mulberry.review.ReviewPromptCoordinator,
+    private val appConfig: AppConfig
 ) : ViewModel() {
     private val showClearConfirmation = MutableStateFlow(false)
     private val pairingSheetMode = MutableStateFlow(HomePairingSheetMode.Hidden)
@@ -382,6 +384,24 @@ class CanvasHomeViewModel @Inject constructor(
     fun refreshBootstrapState() {
         viewModelScope.launch {
             bootstrapRepository.refreshBootstrap()
+        }
+    }
+
+    fun onHomeResumed() {
+        viewModelScope.launch {
+            if (appConfig.environment != com.subhajit.mulberry.core.config.AppEnvironment.PROD) return@launch
+            delay(2_500)
+            if (pairingSheetMode.value != HomePairingSheetMode.Hidden) return@launch
+
+            val streakDays = uiState.value.bootstrapState.currentStreakDays
+            val shouldLaunch = reviewPromptCoordinator.reserveIfEligible(
+                nowMs = System.currentTimeMillis(),
+                currentStreakDays = streakDays,
+                isManual = false
+            )
+            if (shouldLaunch) {
+                _effects.emit(CanvasHomeEffect.LaunchInAppReview(source = "streak_3_auto"))
+            }
         }
     }
 

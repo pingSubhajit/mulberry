@@ -71,6 +71,7 @@ data class SettingsUiState(
 sealed interface SettingsEffect {
     data object RestartFromBootstrap : SettingsEffect
     data object NavigateHome : SettingsEffect
+    data object LaunchInAppReviewManual : SettingsEffect
     data class Message(val text: String) : SettingsEffect
 }
 
@@ -175,6 +176,12 @@ class SettingsViewModel @Inject constructor(
             if (!enabled) {
                 _effects.emit(SettingsEffect.Message("Developer options disabled"))
             }
+        }
+    }
+
+    fun onTriggerInAppReviewClicked() {
+        viewModelScope.launch {
+            _effects.emit(SettingsEffect.LaunchInAppReviewManual)
         }
     }
 

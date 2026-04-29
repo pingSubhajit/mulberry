@@ -2,6 +2,7 @@ package com.subhajit.mulberry.home
 
 import android.content.Intent
 import android.graphics.Typeface as AndroidTypeface
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -113,6 +114,7 @@ import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
+import com.subhajit.mulberry.review.InAppReviewLauncher
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.MulberrySecondaryFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
@@ -149,6 +151,7 @@ fun CanvasHomeRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
+    val activity = context as? ComponentActivity
     val backgroundPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -179,6 +182,12 @@ fun CanvasHomeRoute(
 
                 CanvasHomeEffect.OpenWallpaperSetup ->
                     WallpaperIntentFactory.openWallpaperPicker(context)
+
+                is CanvasHomeEffect.LaunchInAppReview -> {
+                    if (activity != null) {
+                        InAppReviewLauncher.launchWithDiagnostics(activity)
+                    }
+                }
             }
         }
     }
@@ -188,6 +197,7 @@ fun CanvasHomeRoute(
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshBootstrapState()
                 viewModel.refreshWallpaperStatus()
+                viewModel.onHomeResumed()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

@@ -42,6 +42,8 @@ import com.subhajit.mulberry.settings.BackendPairingSettingsRepository
 import com.subhajit.mulberry.settings.DataStoreDeveloperOptionsRepository
 import com.subhajit.mulberry.settings.DeveloperOptionsRepository
 import com.subhajit.mulberry.settings.PairingSettingsRepository
+import com.subhajit.mulberry.review.DataStoreReviewPromptStateStore
+import com.subhajit.mulberry.review.ReviewPromptStateStore
 import com.subhajit.mulberry.sync.CanvasSyncClient
 import com.subhajit.mulberry.sync.CanvasSyncRepository
 import com.subhajit.mulberry.sync.CanvasSyncOutboxStore
@@ -251,6 +253,12 @@ abstract class AppBindingsModule {
     abstract fun bindPairingSettingsRepository(
         implementation: BackendPairingSettingsRepository
     ): PairingSettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindReviewPromptStateStore(
+        implementation: DataStoreReviewPromptStateStore
+    ): ReviewPromptStateStore
 }
 
 @Module
