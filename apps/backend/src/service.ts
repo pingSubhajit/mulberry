@@ -574,6 +574,7 @@ export class MulberryService {
       `,
       [pairId, invite.inviter_user_id, context.user.id],
     )
+    this.pushDispatchService?.initializePairDrawReminders(pairId)
     await this.db.query(
       `
       UPDATE invites
@@ -760,7 +761,7 @@ export class MulberryService {
       }
     })
 
-    const { accepted, latestRevision, snapshotRevision, shouldPushCanvasUpdate, shouldEnqueueCanvasNudge } = await this.db.transaction(
+    const { accepted, latestRevision, snapshotRevision, shouldPushCanvasUpdate, shouldEnqueueCanvasNudge, shouldRecordUserDrew } = await this.db.transaction(
       async (tx) => {
         const snapshotRow = await this.getOrCreateCanvasSnapshot(context.pairSession.id, tx, true)
         let latestRevision = Number(snapshotRow.latest_revision)
@@ -770,6 +771,7 @@ export class MulberryService {
         let snapshotChanged = false
         let shouldPushCanvasUpdate = false
         let shouldEnqueueCanvasNudge = false
+        let shouldRecordUserDrew = false
 
         for (const operation of operations) {
           const duplicate = await tx.query<CanvasOperationRecord>(
@@ -824,6 +826,7 @@ export class MulberryService {
           if (acceptedRecord.type === "FINISH_STROKE") {
             await this.recordPairActivityDay(tx, context.pairSession.id, operation.clientLocalDate)
             shouldEnqueueCanvasNudge = true
+            shouldRecordUserDrew = true
           }
           const materialized = await this.materializeDurableOperation(
             tx,
@@ -862,6 +865,7 @@ export class MulberryService {
           snapshotRevision,
           shouldPushCanvasUpdate,
           shouldEnqueueCanvasNudge,
+          shouldRecordUserDrew,
         }
       },
     )
@@ -881,6 +885,10 @@ export class MulberryService {
         context.user.id,
         latestRevision,
       )
+    }
+
+    if (shouldRecordUserDrew) {
+      this.pushDispatchService?.recordUserDrew(context.pairSession.id, context.user.id)
     }
 
     return accepted

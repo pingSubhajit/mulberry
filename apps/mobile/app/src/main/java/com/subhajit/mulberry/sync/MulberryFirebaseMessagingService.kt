@@ -17,6 +17,7 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
     @Inject lateinit var fcmTokenRepository: FcmTokenRepository
     @Inject lateinit var backgroundCanvasSyncScheduler: BackgroundCanvasSyncScheduler
     @Inject lateinit var canvasNudgeNotificationHandler: CanvasNudgeNotificationHandler
+    @Inject lateinit var drawReminderNotificationHandler: DrawReminderNotificationHandler
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -53,6 +54,22 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
             )
             serviceScope.launch {
                 canvasNudgeNotificationHandler.handleNudge(this@MulberryFirebaseMessagingService, nudgePayload)
+            }
+            return
+        }
+
+        val drawReminderPayload = DrawReminderPushPayloadParser.parse(message.data)
+        if (drawReminderPayload != null) {
+            Log.i(
+                TAG,
+                "Received draw reminder push pairSessionId=${drawReminderPayload.pairSessionId} " +
+                    "reminderCount=${drawReminderPayload.reminderCount}"
+            )
+            serviceScope.launch {
+                drawReminderNotificationHandler.handleReminder(
+                    this@MulberryFirebaseMessagingService,
+                    drawReminderPayload
+                )
             }
             return
         }

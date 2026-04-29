@@ -11,7 +11,8 @@ class WallpaperStatusCalculatorTest {
     @Test
     fun currentSnapshotIsRecognizedWhenFileAndRevisionMatch() {
         val status = calculator.calculate(
-            isWallpaperSelected = true,
+            isWallpaperSelectedOnHome = true,
+            isWallpaperSelectedOnLock = false,
             backgroundState = BackgroundImageState(assetPath = "/tmp/background.png"),
             metadata = CanvasMetadataEntity.default().copy(
                 revision = 4L,
@@ -33,7 +34,8 @@ class WallpaperStatusCalculatorTest {
     @Test
     fun missingSnapshotRequiresRecovery() {
         val status = calculator.calculate(
-            isWallpaperSelected = false,
+            isWallpaperSelectedOnHome = false,
+            isWallpaperSelectedOnLock = false,
             backgroundState = BackgroundImageState(),
             metadata = CanvasMetadataEntity.default().copy(
                 revision = 3L,

@@ -26,10 +26,18 @@ export interface PairingConfirmedPushPayload {
   actorDisplayName: string
 }
 
+export interface DrawReminderPushPayload {
+  type: "DRAW_REMINDER"
+  pairSessionId: string
+  partnerDisplayName: string
+  reminderCount: string
+}
+
 export type MulberryPushPayload =
   | CanvasUpdatedPushPayload
   | CanvasNudgePushPayload
   | PairingConfirmedPushPayload
+  | DrawReminderPushPayload
 
 export interface MulberryPushMessage {
   tokens: string[]
@@ -115,6 +123,10 @@ export interface PushDispatchOptions {
   canvasNudgeDelayMs?: number
   canvasNudgePollIntervalMs?: number
   canvasNudgeTtlMs?: number
+  drawReminderBaseDelayMs?: number
+  drawReminderPollIntervalMs?: number
+  drawReminderTtlMs?: number
+  drawReminderMaxBackoffDays?: number
 }
 
 const DEFAULT_CANVAS_UPDATE_TTL_MS = 24 * 60 * 60 * 1_000
@@ -122,6 +134,10 @@ const DEFAULT_PAIRING_CONFIRMATION_TTL_MS = 60_000
 const DEFAULT_CANVAS_NUDGE_DELAY_MS = 5 * 60 * 1_000
 const DEFAULT_CANVAS_NUDGE_POLL_INTERVAL_MS = 30_000
 const DEFAULT_CANVAS_NUDGE_TTL_MS = 24 * 60 * 60 * 1_000
+const DEFAULT_DRAW_REMINDER_BASE_DELAY_MS = 24 * 60 * 60 * 1_000
+const DEFAULT_DRAW_REMINDER_POLL_INTERVAL_MS = 30_000
+const DEFAULT_DRAW_REMINDER_TTL_MS = 24 * 60 * 60 * 1_000
+const DEFAULT_DRAW_REMINDER_MAX_BACKOFF_DAYS = 7
 
 export class PushDispatchService {
   private readonly pendingByPairSession = new Map<string, PendingCanvasUpdate>()
@@ -132,8 +148,14 @@ export class PushDispatchService {
   private readonly canvasNudgeDelayMs: number
   private readonly canvasNudgePollIntervalMs: number
   private readonly canvasNudgeTtlMs: number
+  private readonly drawReminderBaseDelayMs: number
+  private readonly drawReminderPollIntervalMs: number
+  private readonly drawReminderTtlMs: number
+  private readonly drawReminderMaxBackoffDays: number
   private nudgePoller: ReturnType<typeof setInterval> | null = null
   private nudgeFlushInProgress = false
+  private drawReminderPoller: ReturnType<typeof setInterval> | null = null
+  private drawReminderFlushInProgress = false
 
   constructor(
     private readonly db: Database,
@@ -148,10 +170,23 @@ export class PushDispatchService {
     this.canvasNudgePollIntervalMs =
       options.canvasNudgePollIntervalMs ?? DEFAULT_CANVAS_NUDGE_POLL_INTERVAL_MS
     this.canvasNudgeTtlMs = options.canvasNudgeTtlMs ?? DEFAULT_CANVAS_NUDGE_TTL_MS
+    this.drawReminderBaseDelayMs =
+      options.drawReminderBaseDelayMs ?? DEFAULT_DRAW_REMINDER_BASE_DELAY_MS
+    this.drawReminderPollIntervalMs =
+      options.drawReminderPollIntervalMs ?? DEFAULT_DRAW_REMINDER_POLL_INTERVAL_MS
+    this.drawReminderTtlMs = options.drawReminderTtlMs ?? DEFAULT_DRAW_REMINDER_TTL_MS
+    this.drawReminderMaxBackoffDays = Math.max(
+      1,
+      Math.floor(options.drawReminderMaxBackoffDays ?? DEFAULT_DRAW_REMINDER_MAX_BACKOFF_DAYS),
+    )
 
     this.nudgePoller = setInterval(() => {
       void this.flushDueNudges()
     }, this.canvasNudgePollIntervalMs)
+
+    this.drawReminderPoller = setInterval(() => {
+      void this.flushDueDrawReminders()
+    }, this.drawReminderPollIntervalMs)
   }
 
   enqueueCanvasUpdated(
@@ -211,6 +246,33 @@ export class PushDispatchService {
         updated_at = NOW()
       `,
       [pairSessionId, actorUserId, latestRevision, dueAt],
+    )
+  }
+
+  initializePairDrawReminders(pairSessionId: string): void {
+    void this.initializePairDrawRemindersInternal(pairSessionId)
+  }
+
+  recordUserDrew(pairSessionId: string, userId: string): void {
+    const dueAt = new Date(Date.now() + this.drawReminderBaseDelayMs).toISOString()
+    void this.db.query(
+      `
+      INSERT INTO draw_reminders (
+        pair_session_id,
+        user_id,
+        last_draw_at,
+        reminder_count,
+        due_at
+      )
+      VALUES ($1, $2, NOW(), 0, $3)
+      ON CONFLICT (pair_session_id, user_id)
+      DO UPDATE SET
+        last_draw_at = NOW(),
+        reminder_count = 0,
+        due_at = EXCLUDED.due_at,
+        updated_at = NOW()
+      `,
+      [pairSessionId, userId, dueAt],
     )
   }
 
@@ -343,6 +405,10 @@ export class PushDispatchService {
       clearInterval(this.nudgePoller)
       this.nudgePoller = null
     }
+    if (this.drawReminderPoller) {
+      clearInterval(this.drawReminderPoller)
+      this.drawReminderPoller = null
+    }
   }
 
   private async activePeerTokens(pairSessionId: string, actorUserId: string): Promise<string[]> {
@@ -360,6 +426,19 @@ export class PushDispatchService {
         AND dt.revoked_at IS NULL
       `,
       [pairSessionId, actorUserId],
+    )
+    return rows.rows.map((row) => row.token)
+  }
+
+  private async activeUserTokens(userId: string): Promise<string[]> {
+    const rows = await this.db.query<{ token: string }>(
+      `
+      SELECT token
+      FROM device_tokens
+      WHERE user_id = $1
+        AND revoked_at IS NULL
+      `,
+      [userId],
     )
     return rows.rows.map((row) => row.token)
   }
@@ -382,20 +461,34 @@ export class PushDispatchService {
     this.nudgeFlushInProgress = true
     try {
       const due = await this.db.transaction(async (tx) => {
-        const rows = await tx.query<{
+        let rows: { rows: Array<{
           pair_session_id: string
           actor_user_id: string
           latest_revision: string | number
-        }>(
-          `
-          SELECT pair_session_id, actor_user_id, latest_revision
-          FROM canvas_nudges
-          WHERE due_at <= NOW()
-          ORDER BY due_at ASC
-          LIMIT 20
-          FOR UPDATE SKIP LOCKED
-          `,
-        )
+        }> }
+        try {
+          rows = await tx.query(
+            `
+            SELECT pair_session_id, actor_user_id, latest_revision
+            FROM canvas_nudges
+            WHERE due_at <= NOW()
+            ORDER BY due_at ASC
+            LIMIT 20
+            FOR UPDATE SKIP LOCKED
+            `,
+          )
+        } catch {
+          rows = await tx.query(
+            `
+            SELECT pair_session_id, actor_user_id, latest_revision
+            FROM canvas_nudges
+            WHERE due_at <= NOW()
+            ORDER BY due_at ASC
+            LIMIT 20
+            FOR UPDATE
+            `,
+          )
+        }
         if (rows.rows.length === 0) return []
         await tx.query(
           `
@@ -483,6 +576,197 @@ export class PushDispatchService {
       [userId],
     )
     return rows.rows[0]?.display_name?.trim() || "Your partner"
+  }
+
+  private async initializePairDrawRemindersInternal(pairSessionId: string): Promise<void> {
+    const rows = await this.db.query<{
+      user_one_id: string
+      user_two_id: string
+      created_at: string | Date
+    }>(
+      `
+      SELECT user_one_id, user_two_id, created_at
+      FROM pair_sessions
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [pairSessionId],
+    )
+    const pair = rows.rows[0]
+    if (!pair) return
+
+    const createdAt = new Date(pair.created_at)
+    const baseline = Number.isNaN(createdAt.getTime()) ? new Date() : createdAt
+    const lastDrawAt = baseline.toISOString()
+    const dueAt = new Date(baseline.getTime() + this.drawReminderBaseDelayMs).toISOString()
+
+    await this.db.query(
+      `
+      INSERT INTO draw_reminders (
+        pair_session_id,
+        user_id,
+        last_draw_at,
+        reminder_count,
+        due_at
+      )
+      VALUES ($1, $2, $3, 0, $4),
+        ($1, $5, $3, 0, $4)
+      ON CONFLICT (pair_session_id, user_id)
+      DO UPDATE SET
+        last_draw_at = EXCLUDED.last_draw_at,
+        reminder_count = EXCLUDED.reminder_count,
+        due_at = EXCLUDED.due_at,
+        updated_at = NOW()
+      `,
+      [pairSessionId, pair.user_one_id, lastDrawAt, dueAt, pair.user_two_id],
+    )
+  }
+
+  private async flushDueDrawReminders(): Promise<void> {
+    if (this.drawReminderFlushInProgress) return
+    this.drawReminderFlushInProgress = true
+    try {
+      const due = await this.db.transaction(async (tx) => {
+        let rows: { rows: Array<{
+          pair_session_id: string
+          user_id: string
+          reminder_count: number
+        }> }
+        try {
+          rows = await tx.query(
+            `
+            SELECT pair_session_id, user_id, reminder_count
+            FROM draw_reminders
+            WHERE due_at <= NOW()
+            ORDER BY due_at ASC
+            LIMIT 20
+            FOR UPDATE SKIP LOCKED
+            `,
+          )
+        } catch {
+          rows = await tx.query(
+            `
+            SELECT pair_session_id, user_id, reminder_count
+            FROM draw_reminders
+            WHERE due_at <= NOW()
+            ORDER BY due_at ASC
+            LIMIT 20
+            FOR UPDATE
+            `,
+          )
+        }
+        if (rows.rows.length === 0) return []
+
+        const leaseDueAt = new Date(Date.now() + 15 * 60 * 1_000).toISOString()
+        for (const row of rows.rows) {
+          await tx.query(
+            `
+            UPDATE draw_reminders
+            SET due_at = $3, updated_at = NOW()
+            WHERE pair_session_id = $1 AND user_id = $2
+            `,
+            [row.pair_session_id, row.user_id, leaseDueAt],
+          )
+        }
+        return rows.rows
+      })
+
+      for (const item of due) {
+        const pairSessionId = item.pair_session_id
+        const userId = item.user_id
+        const reminderCount = Number(item.reminder_count) || 0
+
+        const tokens = await this.activeUserTokens(userId)
+        if (tokens.length === 0) {
+          console.info("[push] no active tokens for draw reminder", {
+            pairSessionId,
+            userId,
+          })
+          await this.rescheduleDrawReminder(pairSessionId, userId, reminderCount)
+          continue
+        }
+
+        const partnerDisplayName = await this.lookupPartnerDisplayName(userId)
+        console.info("[push] sending draw reminder", {
+          pairSessionId,
+          userId,
+          reminderCount,
+          tokenCount: tokens.length,
+        })
+
+        let result: PushSendResult
+        try {
+          result = await this.sender.send({
+            tokens,
+            data: {
+              type: "DRAW_REMINDER",
+              pairSessionId,
+              partnerDisplayName,
+              reminderCount: String(reminderCount),
+            },
+            android: {
+              priority: "high",
+              collapseKey: `draw-reminder-${pairSessionId}-${userId}`,
+              ttlMs: this.drawReminderTtlMs,
+            },
+          })
+        } catch (error) {
+          console.error("[push] draw reminder send failed", {
+            pairSessionId,
+            userId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          await this.rescheduleDrawReminder(pairSessionId, userId, reminderCount)
+          continue
+        }
+
+        console.info("[push] draw reminder sent", {
+          pairSessionId,
+          userId,
+          invalidTokenCount: result.invalidTokens.length,
+        })
+
+        if (result.invalidTokens.length > 0) {
+          await this.revokeTokens(result.invalidTokens)
+        }
+
+        await this.rescheduleDrawReminder(pairSessionId, userId, reminderCount)
+      }
+    } finally {
+      this.drawReminderFlushInProgress = false
+    }
+  }
+
+  private async rescheduleDrawReminder(
+    pairSessionId: string,
+    userId: string,
+    reminderCount: number,
+  ): Promise<void> {
+    const nextDays = Math.min(this.drawReminderMaxBackoffDays, 1 + Math.max(0, reminderCount + 1))
+    const dueAt = new Date(Date.now() + nextDays * 24 * 60 * 60 * 1_000).toISOString()
+    await this.db.query(
+      `
+      UPDATE draw_reminders
+      SET reminder_count = reminder_count + 1,
+        due_at = $3,
+        updated_at = NOW()
+      WHERE pair_session_id = $1 AND user_id = $2
+      `,
+      [pairSessionId, userId, dueAt],
+    )
+  }
+
+  private async lookupPartnerDisplayName(userId: string): Promise<string> {
+    const rows = await this.db.query<{ partner_display_name: string | null }>(
+      `
+      SELECT partner_display_name
+      FROM user_profiles
+      WHERE user_id = $1
+      LIMIT 1
+      `,
+      [userId],
+    )
+    return rows.rows[0]?.partner_display_name?.trim() || "Your partner"
   }
 }
 

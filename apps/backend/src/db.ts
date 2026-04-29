@@ -135,6 +135,20 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
     CREATE INDEX IF NOT EXISTS canvas_nudges_due_at_idx
       ON canvas_nudges(due_at);
 
+    CREATE TABLE IF NOT EXISTS draw_reminders (
+      pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      last_draw_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      reminder_count INTEGER NOT NULL DEFAULT 0,
+      due_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (pair_session_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS draw_reminders_due_at_idx
+      ON draw_reminders(due_at);
+
     CREATE TABLE IF NOT EXISTS pair_activity_days (
       pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,
       activity_day DATE NOT NULL,

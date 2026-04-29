@@ -44,4 +44,32 @@ class BackgroundCanvasSyncPayloadParserTest {
         assertEquals("pair-1", payload?.pairSessionId)
         assertNull(payload?.latestRevision)
     }
+
+    @Test
+    fun parsesDrawReminderPayload() {
+        val payload = DrawReminderPushPayloadParser.parse(
+            mapOf(
+                "type" to "DRAW_REMINDER",
+                "pairSessionId" to "pair-1",
+                "partnerDisplayName" to "Ankita",
+                "reminderCount" to "2"
+            )
+        )
+
+        assertEquals("pair-1", payload?.pairSessionId)
+        assertEquals("Ankita", payload?.partnerDisplayName)
+        assertEquals(2, payload?.reminderCount)
+    }
+
+    @Test
+    fun ignoresUnsupportedDrawReminderPayloads() {
+        val payload = DrawReminderPushPayloadParser.parse(
+            mapOf(
+                "type" to "OTHER",
+                "pairSessionId" to "pair-1"
+            )
+        )
+
+        assertNull(payload)
+    }
 }

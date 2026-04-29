@@ -174,6 +174,7 @@ fun SettingsRoute(
         onRegenerateWallpaperSnapshot = viewModel::onRegenerateWallpaperSnapshot,
         onSendDebugPairingNotification = viewModel::onSendDebugPairingNotification,
         onMockNewDoodleNotification = viewModel::onMockNewDoodleNotification,
+        onMockDrawReminderNotification = viewModel::onMockDrawReminderNotification,
         onSendCrashlyticsTestEvent = viewModel::onSendCrashlyticsTestEvent,
         onCrashlyticsTestCrash = viewModel::onCrashlyticsTestCrash
     )
@@ -203,6 +204,7 @@ private fun SettingsScreen(
     onRegenerateWallpaperSnapshot: () -> Unit,
     onSendDebugPairingNotification: () -> Unit,
     onMockNewDoodleNotification: () -> Unit,
+    onMockDrawReminderNotification: () -> Unit,
     onSendCrashlyticsTestEvent: () -> Unit,
     onCrashlyticsTestCrash: () -> Unit
 ) {
@@ -265,6 +267,7 @@ private fun SettingsScreen(
                 onResetAppState = onResetAppState,
                 onSendDebugPairingNotification = onSendDebugPairingNotification,
                 onMockNewDoodleNotification = onMockNewDoodleNotification,
+                onMockDrawReminderNotification = onMockDrawReminderNotification,
                 onSendCrashlyticsTestEvent = onSendCrashlyticsTestEvent,
                 onCrashlyticsTestCrash = onCrashlyticsTestCrash,
                 modifier = Modifier.padding(padding)
@@ -1708,6 +1711,7 @@ private fun DeveloperOptionsPane(
     onResetAppState: () -> Unit,
     onSendDebugPairingNotification: () -> Unit,
     onMockNewDoodleNotification: () -> Unit,
+    onMockDrawReminderNotification: () -> Unit,
     onSendCrashlyticsTestEvent: () -> Unit,
     onCrashlyticsTestCrash: () -> Unit,
     modifier: Modifier = Modifier
@@ -1790,6 +1794,13 @@ private fun DeveloperOptionsPane(
                 text = "Mock new doodle notification",
                 isBusy = uiState.isBusy,
                 onClick = onMockNewDoodleNotification,
+                enabled = !uiState.isBusy
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            SettingsSecondaryButton(
+                text = "Mock 24h draw reminder",
+                isBusy = uiState.isBusy,
+                onClick = onMockDrawReminderNotification,
                 enabled = !uiState.isBusy
             )
         }

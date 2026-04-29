@@ -10,6 +10,10 @@ export interface AppConfig {
   canvasNudgeDelayMs?: number
   canvasNudgePollIntervalMs?: number
   canvasNudgePushTtlMs?: number
+  drawReminderBaseDelayMs?: number
+  drawReminderPollIntervalMs?: number
+  drawReminderPushTtlMs?: number
+  drawReminderMaxBackoffDays?: number
   supabaseUrl?: string
   supabaseServiceRoleKey?: string
   supabaseWallpaperBucket?: string
@@ -41,6 +45,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     canvasNudgeDelayMs: optionalPositiveNumber(env.CANVAS_NUDGE_DELAY_MS),
     canvasNudgePollIntervalMs: optionalPositiveNumber(env.CANVAS_NUDGE_POLL_INTERVAL_MS),
     canvasNudgePushTtlMs: optionalPositiveNumber(env.CANVAS_NUDGE_PUSH_TTL_MS),
+    drawReminderBaseDelayMs: optionalPositiveNumber(env.DRAW_REMINDER_BASE_DELAY_MS),
+    drawReminderPollIntervalMs: optionalPositiveNumber(env.DRAW_REMINDER_POLL_INTERVAL_MS),
+    drawReminderPushTtlMs: optionalPositiveNumber(env.DRAW_REMINDER_PUSH_TTL_MS),
+    drawReminderMaxBackoffDays: optionalPositiveNumber(env.DRAW_REMINDER_MAX_BACKOFF_DAYS),
     supabaseUrl: env.SUPABASE_URL,
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
     supabaseWallpaperBucket: env.SUPABASE_WALLPAPER_BUCKET,

@@ -22,6 +22,9 @@ import com.subhajit.mulberry.sync.BackgroundCanvasSyncCoordinator
 import com.subhajit.mulberry.sync.CanvasNudgeNotificationHandler
 import com.subhajit.mulberry.sync.CanvasNudgePushPayload
 import com.subhajit.mulberry.sync.CanvasSyncRepository
+import com.subhajit.mulberry.sync.DrawReminderNotificationHandler
+import com.subhajit.mulberry.sync.DrawReminderNotificationPresenter
+import com.subhajit.mulberry.sync.DrawReminderPushPayload
 import com.subhajit.mulberry.sync.FcmTokenRepository
 import com.subhajit.mulberry.sync.SyncMetadata
 import com.subhajit.mulberry.sync.SyncMetadataRepository
@@ -78,6 +81,7 @@ class SettingsViewModel @Inject constructor(
     private val developerOptionsRepository: DeveloperOptionsRepository,
     private val wallpaperSyncSettingsRepository: WallpaperSyncSettingsRepository,
     private val canvasNudgeNotificationHandler: CanvasNudgeNotificationHandler,
+    private val drawReminderNotificationHandler: DrawReminderNotificationHandler,
     private val authRepository: AuthRepository,
     private val drawingRepository: DrawingRepository,
     private val canvasSyncRepository: CanvasSyncRepository,
@@ -328,6 +332,20 @@ class SettingsViewModel @Inject constructor(
             runCatching { canvasNudgeNotificationHandler.debugEvaluateAndLog(payload) }
             PartnerDoodleNotificationPresenter.show(appContext, payload)
             _effects.emit(SettingsEffect.Message("New doodle notification triggered (local)"))
+        }
+    }
+
+    fun onMockDrawReminderNotification() {
+        val partnerName = uiState.value.bootstrapState.partnerDisplayName ?: "Your partner"
+        val payload = DrawReminderPushPayload(
+            pairSessionId = uiState.value.bootstrapState.pairSessionId,
+            partnerDisplayName = partnerName,
+            reminderCount = 0
+        )
+        viewModelScope.launchWithBusy {
+            runCatching { drawReminderNotificationHandler.debugEvaluateAndLog(payload) }
+            DrawReminderNotificationPresenter.show(appContext, payload)
+            _effects.emit(SettingsEffect.Message("Draw reminder notification triggered (local)"))
         }
     }
 

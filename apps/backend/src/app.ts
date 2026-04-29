@@ -49,6 +49,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       canvasNudgeDelayMs: config.canvasNudgeDelayMs,
       canvasNudgePollIntervalMs: config.canvasNudgePollIntervalMs,
       canvasNudgeTtlMs: config.canvasNudgePushTtlMs,
+      drawReminderBaseDelayMs: config.drawReminderBaseDelayMs,
+      drawReminderPollIntervalMs: config.drawReminderPollIntervalMs,
+      drawReminderTtlMs: config.drawReminderPushTtlMs,
+      drawReminderMaxBackoffDays: config.drawReminderMaxBackoffDays,
       ...options.pushOptions,
     },
   )

@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createApp } from "../src/app.js"
 import { runMigrations, type Database } from "../src/db.js"
-import type { MulberryPushMessage, PushSender } from "../src/push.js"
+import { PushDispatchService, type MulberryPushMessage, type PushSender } from "../src/push.js"
 import type {
   ProcessedWallpaperImage,
   WallpaperImageProcessor,
@@ -533,6 +533,192 @@ describe("Mulberry backend", () => {
         actorDisplayName: "Subhajit",
       },
     })
+  })
+
+  it("initializes per-user draw reminders when pairing is created", async () => {
+    const { inviter, recipient } = await pairUsers()
+
+    const reminders = await db.query<{ user_id: string }>(
+      `
+      SELECT user_id
+      FROM draw_reminders
+      WHERE pair_session_id = $1
+      ORDER BY user_id ASC
+      `,
+      [inviter.pairSessionId],
+    )
+
+    expect(reminders.rows.map((row) => row.user_id).sort()).toEqual(
+      [inviter.userId, recipient.userId].sort(),
+    )
+  })
+
+  it("resets the user's draw reminder schedule when they finish a stroke", async () => {
+    const { inviter } = await pairUsers()
+
+    const before = await db.query<{ due_at: string | Date; reminder_count: number }>(
+      `
+      SELECT due_at, reminder_count
+      FROM draw_reminders
+      WHERE pair_session_id = $1 AND user_id = $2
+      LIMIT 1
+      `,
+      [inviter.pairSessionId, inviter.userId],
+    )
+    expect(before.rows[0]).toBeTruthy()
+    expect(before.rows[0].reminder_count).toBe(0)
+    const beforeDue = new Date(before.rows[0].due_at).getTime()
+
+    const socket = await app.injectWS("/canvas/sync")
+    socket.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: inviter.accessToken,
+        pairSessionId: inviter.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    await nextWsJson(socket)
+    socket.send(
+      JSON.stringify({
+        type: "CLIENT_OP_BATCH",
+        batchId: "draw-reminder-batch",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          addStrokeOperation("draw-reminder-op-1", "draw-reminder-stroke-1", 1, 2),
+          {
+            clientOperationId: "draw-reminder-op-2",
+            type: "FINISH_STROKE",
+            strokeId: "draw-reminder-stroke-1",
+            payload: {},
+            clientCreatedAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    )
+    await nextWsJson(socket)
+    socket.close()
+
+    const after = await db.query<{ due_at: string | Date; reminder_count: number }>(
+      `
+      SELECT due_at, reminder_count
+      FROM draw_reminders
+      WHERE pair_session_id = $1 AND user_id = $2
+      LIMIT 1
+      `,
+      [inviter.pairSessionId, inviter.userId],
+    )
+    expect(after.rows[0]).toBeTruthy()
+    expect(after.rows[0].reminder_count).toBe(0)
+    const afterDue = new Date(after.rows[0].due_at).getTime()
+    expect(afterDue).toBeGreaterThan(beforeDue)
+  })
+
+  it("dispatches draw reminder pushes to the idle user and reschedules with backoff", async () => {
+    const memoryDb = newDb({
+      autoCreateForeignKeyIndices: true,
+    })
+    const adapter = memoryDb.adapters.createPg()
+    const pool = new adapter.Pool()
+    await runMigrations(pool)
+    const localDb: Database = {
+      query: pool.query.bind(pool),
+      transaction: async (fn) => {
+        await pool.query("BEGIN")
+        try {
+          const result = await fn({ query: pool.query.bind(pool) })
+          await pool.query("COMMIT")
+          return result
+        } catch (error) {
+          await pool.query("ROLLBACK")
+          throw error
+        }
+      },
+      end: async () => {
+        await pool.end()
+      },
+    }
+
+    const sender = new RecordingPushSender()
+    const dispatch = new PushDispatchService(localDb, sender, {
+      debounceMs: 0,
+      canvasNudgePollIntervalMs: 1_000_000,
+      drawReminderPollIntervalMs: 10,
+      drawReminderTtlMs: 60_000,
+      drawReminderMaxBackoffDays: 7,
+    })
+
+    const pairSessionId = "pair-1"
+    const userOneId = "user-1"
+    const userTwoId = "user-2"
+
+    await localDb.query(
+      `
+      INSERT INTO users (id, google_subject, email)
+      VALUES ($1, $2, $3), ($4, $5, $6)
+      `,
+      [userOneId, "sub-1", "one@example.test", userTwoId, "sub-2", "two@example.test"],
+    )
+    await localDb.query(
+      `
+      INSERT INTO user_profiles (user_id, display_name, partner_display_name)
+      VALUES ($1, $2, $3), ($4, $5, $6)
+      `,
+      [userOneId, "One", "Two", userTwoId, "Two", "One"],
+    )
+    await localDb.query(
+      `
+      INSERT INTO pair_sessions (id, user_one_id, user_two_id)
+      VALUES ($1, $2, $3)
+      `,
+      [pairSessionId, userOneId, userTwoId],
+    )
+    await localDb.query(
+      `
+      INSERT INTO device_tokens (id, user_id, token, platform, app_environment)
+      VALUES ($1, $2, $3, 'ANDROID', 'dev')
+      `,
+      ["token-1", userOneId, "user-one-token"],
+    )
+
+    await localDb.query(
+      `
+      INSERT INTO draw_reminders (pair_session_id, user_id, last_draw_at, reminder_count, due_at)
+      VALUES ($1, $2, NOW(), 0, NOW())
+      `,
+      [pairSessionId, userOneId],
+    )
+
+    await eventually(() => sender.sentMessages.some((msg) => msg.data.type === "DRAW_REMINDER"))
+    const message = sender.sentMessages.find((msg) => msg.data.type === "DRAW_REMINDER")
+    expect(message).toBeTruthy()
+    expect(message).toMatchObject({
+      tokens: ["user-one-token"],
+      data: {
+        type: "DRAW_REMINDER",
+        pairSessionId,
+        partnerDisplayName: "Two",
+        reminderCount: "0",
+      },
+      android: {
+        priority: "high",
+        collapseKey: `draw-reminder-${pairSessionId}-${userOneId}`,
+      },
+    })
+
+    const reminderRow = await localDb.query<{ reminder_count: number; due_at: string | Date }>(
+      `
+      SELECT reminder_count, due_at
+      FROM draw_reminders
+      WHERE pair_session_id = $1 AND user_id = $2
+      LIMIT 1
+      `,
+      [pairSessionId, userOneId],
+    )
+    expect(reminderRow.rows[0]?.reminder_count).toBe(1)
+
+    dispatch.dispose()
+    await localDb.end()
   })
 
   it("disconnects a paired session while clearing active partner metadata", async () => {

@@ -18,6 +18,12 @@ data class PairingConfirmedPushPayload(
     val actorDisplayName: String
 )
 
+data class DrawReminderPushPayload(
+    val pairSessionId: String?,
+    val partnerDisplayName: String,
+    val reminderCount: Int
+)
+
 object BackgroundCanvasSyncPayloadParser {
     private const val TYPE_CANVAS_UPDATED = "CANVAS_UPDATED"
 
@@ -57,6 +63,19 @@ object PairingConfirmedPushPayloadParser {
             pairSessionId = data["pairSessionId"]?.takeIf { it.isNotBlank() },
             actorUserId = data["actorUserId"]?.takeIf { it.isNotBlank() },
             actorDisplayName = data["actorDisplayName"]?.takeIf { it.isNotBlank() } ?: "Your partner"
+        )
+    }
+}
+
+object DrawReminderPushPayloadParser {
+    private const val TYPE_DRAW_REMINDER = "DRAW_REMINDER"
+
+    fun parse(data: Map<String, String>): DrawReminderPushPayload? {
+        if (data["type"] != TYPE_DRAW_REMINDER) return null
+        return DrawReminderPushPayload(
+            pairSessionId = data["pairSessionId"]?.takeIf { it.isNotBlank() },
+            partnerDisplayName = data["partnerDisplayName"]?.takeIf { it.isNotBlank() } ?: "Your partner",
+            reminderCount = data["reminderCount"]?.toIntOrNull() ?: 0
         )
     }
 }

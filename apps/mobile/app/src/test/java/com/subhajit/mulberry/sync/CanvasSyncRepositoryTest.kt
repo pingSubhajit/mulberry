@@ -21,8 +21,10 @@ import com.subhajit.mulberry.network.CanvasSnapshotResponse
 import com.subhajit.mulberry.network.CreateInviteResponse
 import com.subhajit.mulberry.network.DebugActionResponse
 import com.subhajit.mulberry.network.DeviceTokenResponse
+import com.subhajit.mulberry.network.DisplayNameRequest
 import com.subhajit.mulberry.network.GoogleAuthRequest
 import com.subhajit.mulberry.network.MulberryApiService
+import com.subhajit.mulberry.network.PartnerProfileRequest
 import com.subhajit.mulberry.network.ProfileRequest
 import com.subhajit.mulberry.network.RefreshRequest
 import com.subhajit.mulberry.network.RedeemInviteRequest
@@ -38,6 +40,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import okhttp3.MultipartBody
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -573,6 +576,18 @@ private class FakeMulberryApiService : MulberryApiService {
     override suspend fun getBootstrap(): BootstrapResponse = error("unused")
 
     override suspend fun updateProfile(request: ProfileRequest): BootstrapResponse = error("unused")
+
+    override suspend fun updateDisplayName(request: DisplayNameRequest): BootstrapResponse =
+        error("unused")
+
+    override suspend fun updateProfilePhoto(image: MultipartBody.Part): BootstrapResponse =
+        error("unused")
+
+    override suspend fun updatePartnerProfile(request: PartnerProfileRequest): BootstrapResponse =
+        error("unused")
+
+    override suspend fun updatePartnerProfilePhoto(image: MultipartBody.Part): BootstrapResponse =
+        error("unused")
 
     override suspend fun createInvite(): CreateInviteResponse = error("unused")
 
