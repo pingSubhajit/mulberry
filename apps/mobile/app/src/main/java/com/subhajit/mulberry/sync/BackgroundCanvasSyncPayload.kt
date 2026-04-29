@@ -18,6 +18,12 @@ data class PairingConfirmedPushPayload(
     val actorDisplayName: String
 )
 
+data class PairingDisconnectedPushPayload(
+    val pairSessionId: String?,
+    val actorUserId: String?,
+    val actorDisplayName: String
+)
+
 data class DrawReminderPushPayload(
     val pairSessionId: String?,
     val partnerDisplayName: String,
@@ -60,6 +66,19 @@ object PairingConfirmedPushPayloadParser {
     fun parse(data: Map<String, String>): PairingConfirmedPushPayload? {
         if (data["type"] != TYPE_PAIRING_CONFIRMED) return null
         return PairingConfirmedPushPayload(
+            pairSessionId = data["pairSessionId"]?.takeIf { it.isNotBlank() },
+            actorUserId = data["actorUserId"]?.takeIf { it.isNotBlank() },
+            actorDisplayName = data["actorDisplayName"]?.takeIf { it.isNotBlank() } ?: "Your partner"
+        )
+    }
+}
+
+object PairingDisconnectedPushPayloadParser {
+    private const val TYPE_PAIRING_DISCONNECTED = "PAIRING_DISCONNECTED"
+
+    fun parse(data: Map<String, String>): PairingDisconnectedPushPayload? {
+        if (data["type"] != TYPE_PAIRING_DISCONNECTED) return null
+        return PairingDisconnectedPushPayload(
             pairSessionId = data["pairSessionId"]?.takeIf { it.isNotBlank() },
             actorUserId = data["actorUserId"]?.takeIf { it.isNotBlank() },
             actorDisplayName = data["actorDisplayName"]?.takeIf { it.isNotBlank() } ?: "Your partner"

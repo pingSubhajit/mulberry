@@ -624,10 +624,23 @@ export class MulberryService {
       throw new HttpError(400, "User is not paired")
     }
 
+    const recipientUserId = pairSession.user_one_id === context.user.id
+      ? pairSession.user_two_id
+      : pairSession.user_one_id
+    const profile = await this.getProfile(context.user.id)
+    const actorDisplayName = profile?.display_name ?? "Your partner"
+
     await this.db.transaction(async (tx) => {
       await tx.query(`DELETE FROM pair_sessions WHERE id = $1`, [pairSession.id])
       await this.clearPartnerMetadataForUsers(tx, [pairSession.user_one_id, pairSession.user_two_id])
     })
+
+    this.pushDispatchService?.enqueuePairingDisconnected(
+      pairSession.id,
+      recipientUserId,
+      context.user.id,
+      actorDisplayName,
+    )
     return this.buildBootstrap(context.user.id)
   }
 
@@ -641,6 +654,26 @@ export class MulberryService {
     const profile = await this.getProfile(context.user.id)
     this.pushDispatchService?.enqueuePairingConfirmed(
       pairSession.id,
+      context.user.id,
+      profile?.display_name ?? "Your partner",
+    )
+    return { ok: true }
+  }
+
+  async sendDebugPairingDisconnected(accessToken: string): Promise<{ ok: true }> {
+    const context = await this.requireSessionContext(accessToken)
+    const pairSession = await this.getPairSession(context.user.id)
+    if (!pairSession) {
+      throw new HttpError(400, "User is not paired")
+    }
+
+    const recipientUserId = pairSession.user_one_id === context.user.id
+      ? pairSession.user_two_id
+      : pairSession.user_one_id
+    const profile = await this.getProfile(context.user.id)
+    this.pushDispatchService?.enqueuePairingDisconnected(
+      pairSession.id,
+      recipientUserId,
       context.user.id,
       profile?.display_name ?? "Your partner",
     )

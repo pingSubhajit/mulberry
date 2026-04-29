@@ -143,6 +143,7 @@ fun CanvasHomeRoute(
     onNavigateToLockScreen: () -> Unit,
     onNavigateToWallpaperCatalog: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToPairingHub: () -> Unit,
     viewModel: CanvasHomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -201,6 +202,7 @@ fun CanvasHomeRoute(
         wallpaperPresets = viewModel.wallpaperPresets,
         onNavigateToLockScreen = onNavigateToLockScreen,
         onNavigateToSettings = onNavigateToSettings,
+        onNavigateToPairingHub = onNavigateToPairingHub,
         onInviteRequested = viewModel::onInviteRequested,
         onPairingSheetDismissed = viewModel::onPairingSheetDismissed,
         onShareInviteClicked = viewModel::onShareInviteClicked,
@@ -247,6 +249,7 @@ private fun CanvasHomeScreen(
     wallpaperPresets: List<WallpaperPreset>,
     onNavigateToLockScreen: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToPairingHub: () -> Unit,
     onInviteRequested: () -> Unit,
     onPairingSheetDismissed: () -> Unit,
     onShareInviteClicked: () -> Unit,
@@ -314,6 +317,13 @@ private fun CanvasHomeScreen(
 
             AppShortcutAction.ShowPairingConfirmation -> {
                 onPairingConfirmationRequested()
+                onShortcutActionHandled(action)
+            }
+
+            AppShortcutAction.ShowPairingHub -> {
+                if (uiState.bootstrapState.pairingStatus == PairingStatus.UNPAIRED) {
+                    onNavigateToPairingHub()
+                }
                 onShortcutActionHandled(action)
             }
 

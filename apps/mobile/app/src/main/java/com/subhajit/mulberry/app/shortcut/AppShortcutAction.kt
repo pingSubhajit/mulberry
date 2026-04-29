@@ -9,6 +9,7 @@ enum class AppShortcutAction(val intentAction: String) {
     ClearDoodles("com.subhajit.mulberry.action.CLEAR_DOODLES"),
     ChangeWallpaper("com.subhajit.mulberry.action.CHANGE_WALLPAPER"),
     ShowPairingConfirmation("com.subhajit.mulberry.action.SHOW_PAIRING_CONFIRMATION"),
+    ShowPairingHub("com.subhajit.mulberry.action.SHOW_PAIRING_HUB"),
     ShowSettings("com.subhajit.mulberry.action.SHOW_SETTINGS")
 }
 

@@ -238,6 +238,11 @@ fun MulberryNavHost(
                 },
                 onNavigateToSettings = {
                     navController.navigate(AppRoute.Settings.route)
+                },
+                onNavigateToPairingHub = {
+                    navController.navigate(AppRoute.PairingHub.route) {
+                        launchSingleTop = true
+                    }
                 }
             )
         }

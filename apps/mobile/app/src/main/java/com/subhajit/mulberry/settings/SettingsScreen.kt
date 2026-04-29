@@ -173,6 +173,7 @@ fun SettingsRoute(
         onForceSyncNow = viewModel::onForceSyncNow,
         onRegenerateWallpaperSnapshot = viewModel::onRegenerateWallpaperSnapshot,
         onSendDebugPairingNotification = viewModel::onSendDebugPairingNotification,
+        onSendDebugUnpairNotification = viewModel::onSendDebugUnpairNotification,
         onMockNewDoodleNotification = viewModel::onMockNewDoodleNotification,
         onMockDrawReminderNotification = viewModel::onMockDrawReminderNotification,
         onSendCrashlyticsTestEvent = viewModel::onSendCrashlyticsTestEvent,
@@ -203,6 +204,7 @@ private fun SettingsScreen(
     onForceSyncNow: () -> Unit,
     onRegenerateWallpaperSnapshot: () -> Unit,
     onSendDebugPairingNotification: () -> Unit,
+    onSendDebugUnpairNotification: () -> Unit,
     onMockNewDoodleNotification: () -> Unit,
     onMockDrawReminderNotification: () -> Unit,
     onSendCrashlyticsTestEvent: () -> Unit,
@@ -266,6 +268,7 @@ private fun SettingsScreen(
                 onFeatureFlagChanged = onFeatureFlagChanged,
                 onResetAppState = onResetAppState,
                 onSendDebugPairingNotification = onSendDebugPairingNotification,
+                onSendDebugUnpairNotification = onSendDebugUnpairNotification,
                 onMockNewDoodleNotification = onMockNewDoodleNotification,
                 onMockDrawReminderNotification = onMockDrawReminderNotification,
                 onSendCrashlyticsTestEvent = onSendCrashlyticsTestEvent,
@@ -1710,6 +1713,7 @@ private fun DeveloperOptionsPane(
     onFeatureFlagChanged: (FeatureFlag, Boolean) -> Unit,
     onResetAppState: () -> Unit,
     onSendDebugPairingNotification: () -> Unit,
+    onSendDebugUnpairNotification: () -> Unit,
     onMockNewDoodleNotification: () -> Unit,
     onMockDrawReminderNotification: () -> Unit,
     onSendCrashlyticsTestEvent: () -> Unit,
@@ -1787,6 +1791,13 @@ private fun DeveloperOptionsPane(
                 text = "Mock partner joined notification",
                 isBusy = uiState.isBusy,
                 onClick = onSendDebugPairingNotification,
+                enabled = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            SettingsSecondaryButton(
+                text = "Mock partner unpaired notification",
+                isBusy = uiState.isBusy,
+                onClick = onSendDebugUnpairNotification,
                 enabled = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED
             )
             Spacer(modifier = Modifier.height(10.dp))

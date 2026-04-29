@@ -535,6 +535,57 @@ describe("Mulberry backend", () => {
     })
   })
 
+  it("pushes a pairing disconnected to the peer when a user disconnects", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-token")
+
+    const disconnect = await app.inject({
+      method: "POST",
+      url: "/pairing/disconnect",
+      headers: bearer(inviter.accessToken),
+    })
+
+    expect(disconnect.statusCode).toBe(200)
+    await eventually(() => pushSender.sentMessages.length === 1)
+    expect(pushSender.sentMessages[0]).toMatchObject({
+      tokens: ["recipient-token"],
+      data: {
+        type: "PAIRING_DISCONNECTED",
+        pairSessionId: inviter.pairSessionId,
+        actorUserId: inviter.userId,
+        actorDisplayName: "Subhajit",
+      },
+      android: {
+        priority: "high",
+        collapseKey: `pairing-${inviter.pairSessionId}`,
+        ttlMs: 60_000,
+      },
+    })
+  })
+
+  it("sends a debug pairing disconnected push to the paired peer", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-token")
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/debug/pairing-disconnected-push",
+      headers: bearer(inviter.accessToken),
+    })
+
+    expect(response.statusCode).toBe(200)
+    await eventually(() => pushSender.sentMessages.length === 1)
+    expect(pushSender.sentMessages[0]).toMatchObject({
+      tokens: ["recipient-token"],
+      data: {
+        type: "PAIRING_DISCONNECTED",
+        pairSessionId: inviter.pairSessionId,
+        actorUserId: inviter.userId,
+        actorDisplayName: "Subhajit",
+      },
+    })
+  })
+
   it("initializes per-user draw reminders when pairing is created", async () => {
     const { inviter, recipient } = await pairUsers()
 

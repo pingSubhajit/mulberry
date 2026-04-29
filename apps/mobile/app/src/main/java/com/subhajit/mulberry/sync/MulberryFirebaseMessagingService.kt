@@ -45,6 +45,19 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
             return
         }
 
+        val disconnectedPayload = PairingDisconnectedPushPayloadParser.parse(message.data)
+        if (disconnectedPayload != null) {
+            Log.i(
+                TAG,
+                "Received pairing disconnected push pairSessionId=${disconnectedPayload.pairSessionId} " +
+                    "actorUserId=${disconnectedPayload.actorUserId}"
+            )
+            if (!AppForegroundState.isForeground.value) {
+                PairingNotificationPresenter.showPartnerUnpaired(this, disconnectedPayload)
+            }
+            return
+        }
+
         val nudgePayload = CanvasNudgePushPayloadParser.parse(message.data)
         if (nudgePayload != null) {
             Log.i(

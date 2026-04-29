@@ -26,6 +26,13 @@ export interface PairingConfirmedPushPayload {
   actorDisplayName: string
 }
 
+export interface PairingDisconnectedPushPayload {
+  type: "PAIRING_DISCONNECTED"
+  pairSessionId: string
+  actorUserId: string
+  actorDisplayName: string
+}
+
 export interface DrawReminderPushPayload {
   type: "DRAW_REMINDER"
   pairSessionId: string
@@ -37,6 +44,7 @@ export type MulberryPushPayload =
   | CanvasUpdatedPushPayload
   | CanvasNudgePushPayload
   | PairingConfirmedPushPayload
+  | PairingDisconnectedPushPayload
   | DrawReminderPushPayload
 
 export interface MulberryPushMessage {
@@ -228,6 +236,15 @@ export class PushDispatchService {
     void this.sendPairingConfirmed(pairSessionId, actorUserId, actorDisplayName)
   }
 
+  enqueuePairingDisconnected(
+    pairSessionId: string,
+    recipientUserId: string,
+    actorUserId: string,
+    actorDisplayName: string,
+  ): void {
+    void this.sendPairingDisconnected(pairSessionId, recipientUserId, actorUserId, actorDisplayName)
+  }
+
   enqueueCanvasNudge(
     pairSessionId: string,
     actorUserId: string,
@@ -388,6 +405,65 @@ export class PushDispatchService {
     }
 
     console.info("[push] pairing confirmation sent", {
+      pairSessionId,
+      invalidTokenCount: result.invalidTokens.length,
+    })
+
+    if (result.invalidTokens.length > 0) {
+      await this.revokeTokens(result.invalidTokens)
+    }
+  }
+
+  private async sendPairingDisconnected(
+    pairSessionId: string,
+    recipientUserId: string,
+    actorUserId: string,
+    actorDisplayName: string,
+  ): Promise<void> {
+    const tokens = await this.activeUserTokens(recipientUserId)
+    if (tokens.length === 0) {
+      console.info("[push] no active tokens for pairing disconnected", {
+        pairSessionId,
+        recipientUserId,
+        actorUserId,
+      })
+      return
+    }
+
+    console.info("[push] sending pairing disconnected", {
+      pairSessionId,
+      recipientUserId,
+      actorUserId,
+      tokenCount: tokens.length,
+    })
+
+    let result: PushSendResult
+    try {
+      result = await this.sender.send({
+        tokens,
+        data: {
+          type: "PAIRING_DISCONNECTED",
+          pairSessionId,
+          actorUserId,
+          actorDisplayName,
+        },
+        android: {
+          priority: "high",
+          collapseKey: `pairing-${pairSessionId}`,
+          ttlMs: this.pairingConfirmationTtlMs,
+        },
+      })
+    } catch (error) {
+      console.error("[push] pairing disconnected send failed", {
+        pairSessionId,
+        recipientUserId,
+        actorUserId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+
+    console.info("[push] pairing disconnected sent", {
       pairSessionId,
       invalidTokenCount: result.invalidTokens.length,
     })

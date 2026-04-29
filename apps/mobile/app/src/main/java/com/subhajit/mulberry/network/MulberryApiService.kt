@@ -65,6 +65,9 @@ interface MulberryApiService {
     @POST("/debug/pairing-confirmation-push")
     suspend fun sendDebugPairingConfirmationPush(): DebugActionResponse
 
+    @POST("/debug/pairing-disconnected-push")
+    suspend fun sendDebugPairingDisconnectedPush(): DebugActionResponse
+
     @GET("/canvas/ops")
     suspend fun getCanvasOperations(@Query("afterRevision") afterRevision: Long): CanvasOpsResponse
 

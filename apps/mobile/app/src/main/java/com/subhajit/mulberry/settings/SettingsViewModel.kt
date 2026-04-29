@@ -320,6 +320,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun onSendDebugUnpairNotification() {
+        viewModelScope.launchWithBusy {
+            apiService.sendDebugPairingDisconnectedPush()
+            _effects.emit(SettingsEffect.Message("Unpair notification sent to partner"))
+        }
+    }
+
     fun onMockNewDoodleNotification() {
         val partnerName = uiState.value.bootstrapState.partnerDisplayName ?: "Your partner"
         val payload = CanvasNudgePushPayload(
