@@ -55,7 +55,7 @@ export default async function InvitePage({
   const code = normalizeInviteCode(raw)
 
   return (
-    <main className="h-[100svh] overflow-hidden text-white">
+    <main className="h-[100svh] overflow-hidden bg-background text-foreground">
       <section className="grid h-full grid-cols-1 lg:grid-cols-12">
         <div className="relative h-full overflow-y-auto px-5 py-10 sm:px-8 sm:py-14 lg:col-span-5 lg:px-16 lg:py-16">
           <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center text-center lg:mx-0 lg:items-start lg:justify-start lg:text-left">
@@ -65,12 +65,20 @@ export default async function InvitePage({
               className="inline-flex min-h-11 items-center justify-center lg:justify-start"
             >
               <Image
-                  src="/brand/wordmark-white.svg"
-                  alt="Mulberry"
-                  width={143}
-                  height={33}
-                  priority
-                  className="h-8 w-auto"
+                src="/brand/wordmark-color.svg"
+                alt="Mulberry"
+                width={143}
+                height={33}
+                priority
+                className="h-8 w-auto dark:hidden"
+              />
+              <Image
+                src="/brand/wordmark-white.svg"
+                alt="Mulberry"
+                width={143}
+                height={33}
+                priority
+                className="hidden h-8 w-auto dark:block"
               />
             </Link>
 
@@ -85,7 +93,7 @@ export default async function InvitePage({
             <h1 className="text-3xl font-semibold leading-[1.05] tracking-[-0.06em] sm:text-4xl">
               You&apos;ve been invited to Mulberry
             </h1>
-            <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-white/80 sm:text-base lg:mx-0">
+            <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-muted-foreground sm:text-base lg:mx-0">
               Mulberry is a minimal Android app for couples to share small drawings on each
               other&apos;s lock screen.
             </p>
@@ -99,7 +107,7 @@ export default async function InvitePage({
                       {code.split("").map((digit, index) => (
                         <div
                           key={`${digit}-${index}`}
-                          className="inline-flex aspect-square h-[clamp(2.125rem,9.5vw,4rem)] shrink-0 items-center justify-center rounded-2xl bg-neutral-900 text-[clamp(1.4rem,6.6vw,2.25rem)] font-semibold leading-none text-white"
+                          className="inline-flex aspect-square h-[clamp(2.125rem,9.5vw,4rem)] shrink-0 items-center justify-center rounded-2xl bg-neutral-200 text-[clamp(1.4rem,6.6vw,2.25rem)] font-semibold leading-none text-neutral-900 dark:bg-neutral-900 dark:text-white"
                         >
                           <span className="font-mono">{digit}</span>
                         </div>
@@ -107,11 +115,11 @@ export default async function InvitePage({
                     </div>
                     <InviteCodeCopyButton
                       code={code}
-                      className="h-[clamp(2.125rem,9.5vw,4rem)] w-[clamp(2.125rem,9.5vw,4rem)] rounded-2xl bg-neutral-800 text-white hover:bg-neutral-700"
+                      className="h-[clamp(2.125rem,9.5vw,4rem)] w-[clamp(2.125rem,9.5vw,4rem)] rounded-2xl bg-neutral-200 text-neutral-900 hover:bg-neutral-300 dark:bg-neutral-800 dark:text-white dark:hover:bg-neutral-700"
                     />
                   </div>
 
-                  <p className="mx-auto mt-5 max-w-xl text-sm leading-6 text-white/75 lg:mx-0 text-center lg:text-left">
+                  <p className="mx-auto mt-5 max-w-xl text-sm leading-6 text-muted-foreground lg:mx-0 text-center lg:text-left">
                     On Android, install Mulberry from Google Play. After install, opening the app will
                     continue setup automatically.
                   </p>
@@ -120,7 +128,7 @@ export default async function InvitePage({
                     <Button
                         asChild
                         size="lg"
-                        className="bg-white text-[#090d18] shadow-none hover:bg-white/90 hover:shadow-none"
+                        className="bg-brand text-white shadow-none hover:bg-brand/90 hover:shadow-none"
                     >
                       <a
                         href={playStoreUrlForInvite(code)}
@@ -132,7 +140,7 @@ export default async function InvitePage({
                             alt=""
                             width={26}
                             height={26}
-                            className="size-6"
+                            className="size-6 brightness-0 invert"
                         />
                         Get it on Google Play
                       </a>
@@ -141,11 +149,11 @@ export default async function InvitePage({
                 </>
             ) : (
                 <>
-                  <p className="text-sm font-medium tracking-wide text-white/70">Invite link</p>
-                  <h2 className="mt-3 text-2xl font-semibold tracking-[-0.045em] text-white">
+                  <p className="text-sm font-medium tracking-wide text-muted-foreground">Invite link</p>
+                  <h2 className="mt-3 text-2xl font-semibold tracking-[-0.045em]">
                     That invite link looks incomplete
                   </h2>
-                  <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-white/75">
+                  <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
                     Ask your partner to share the invite link again, or copy the 6-digit code they sent
                     you.
                   </p>
@@ -153,13 +161,13 @@ export default async function InvitePage({
                     <Button
                         asChild
                         size="lg"
-                        className="bg-white text-[#090d18] shadow-none hover:bg-white/90 hover:shadow-none"
+                        className="bg-brand text-white shadow-none hover:bg-brand/90 hover:shadow-none"
                     >
                       <a href={GOOGLE_PLAY_DOWNLOAD_URL}>Get it on Google Play</a>
                     </Button>
                     <Link
                         href="/"
-                        className="text-sm font-medium text-white/80 underline transition hover:text-white"
+                        className="text-sm font-medium text-muted-foreground underline transition hover:text-foreground"
                     >
                       Learn more
                     </Link>
@@ -169,7 +177,7 @@ export default async function InvitePage({
           </div>
         </div>
 
-        <div className="relative hidden h-full overflow-hidden bg-brand lg:col-span-7 lg:flex lg:items-center lg:justify-center">
+        <div className="relative hidden h-full overflow-hidden bg-brand text-white lg:col-span-7 lg:flex lg:items-center lg:justify-center">
           <div className="w-full max-w-lg px-8 py-12 xl:max-w-xl xl:px-12 xl:py-16 2xl:max-w-2xl">
             <div className="mx-auto flex max-h-[calc(100svh-8rem)] flex-col gap-10 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {notes.map((note) => (
