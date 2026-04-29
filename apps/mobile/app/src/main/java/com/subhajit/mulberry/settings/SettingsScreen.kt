@@ -38,6 +38,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -1589,6 +1590,8 @@ private fun AboutPane(
     onVersionTapped: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val uriHandler = LocalUriHandler.current
+
     SettingsDetailScaffold(
         title = "About",
         onBack = onBack,
@@ -1623,6 +1626,18 @@ private fun AboutPane(
             label = "App flavour",
             value = uiState.flavor.ifBlank { uiState.buildType.ifBlank { "default" } }
         )
+        AboutInfoRow(
+            label = "Website",
+            value = "mulberry.my",
+            onClick = { uriHandler.openUri("https://mulberry.my") },
+            showChevron = true
+        )
+        AboutInfoRow(
+            label = "GitHub",
+            value = "pingSubhajit/mulberry",
+            onClick = { uriHandler.openUri("https://github.com/pingSubhajit/mulberry") },
+            showChevron = true
+        )
     }
 }
 
@@ -1630,7 +1645,8 @@ private fun AboutPane(
 private fun AboutInfoRow(
     label: String,
     value: String,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    showChevron: Boolean = false
 ) {
     val rowModifier = Modifier
         .fillMaxWidth()
@@ -1667,9 +1683,12 @@ private fun AboutInfoRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
-                .padding(start = 18.dp)
+                .padding(start = 18.dp, end = if (showChevron) 18.dp else 0.dp)
                 .weight(1f)
         )
+        if (showChevron) {
+            RootChevron()
+        }
     }
 }
 
@@ -1717,7 +1736,7 @@ private fun DeveloperOptionsPane(
                     "App build" to "${uiState.appVersionName} (${uiState.appVersionCode}) ${uiState.buildType}"
                 )
             )
-            if (uiState.developerOptionsEnabled && uiState.buildType != "release") {
+            if (uiState.developerOptionsEnabled) {
                 Spacer(modifier = Modifier.height(18.dp))
                 SettingsSecondaryButton(
                     text = "Send Crashlytics test event",
@@ -1764,7 +1783,7 @@ private fun DeveloperOptionsPane(
             )
         }
 
-        if (uiState.enableDebugMenu) {
+        if (uiState.developerOptionsEnabled) {
             Spacer(modifier = Modifier.height(20.dp))
             DeveloperSectionCard(
                 title = "Feature overrides",
