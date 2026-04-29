@@ -11,6 +11,14 @@ export interface CanvasUpdatedPushPayload {
   actorUserId: string
 }
 
+export interface CanvasNudgePushPayload {
+  type: "CANVAS_NUDGE"
+  pairSessionId: string
+  latestRevision: string
+  actorUserId: string
+  actorDisplayName: string
+}
+
 export interface PairingConfirmedPushPayload {
   type: "PAIRING_CONFIRMED"
   pairSessionId: string
@@ -18,7 +26,10 @@ export interface PairingConfirmedPushPayload {
   actorDisplayName: string
 }
 
-export type MulberryPushPayload = CanvasUpdatedPushPayload | PairingConfirmedPushPayload
+export type MulberryPushPayload =
+  | CanvasUpdatedPushPayload
+  | CanvasNudgePushPayload
+  | PairingConfirmedPushPayload
 
 export interface MulberryPushMessage {
   tokens: string[]
@@ -101,10 +112,16 @@ export interface PushDispatchOptions {
   debounceMs?: number
   canvasUpdateTtlMs?: number
   pairingConfirmationTtlMs?: number
+  canvasNudgeDelayMs?: number
+  canvasNudgePollIntervalMs?: number
+  canvasNudgeTtlMs?: number
 }
 
 const DEFAULT_CANVAS_UPDATE_TTL_MS = 24 * 60 * 60 * 1_000
 const DEFAULT_PAIRING_CONFIRMATION_TTL_MS = 60_000
+const DEFAULT_CANVAS_NUDGE_DELAY_MS = 5 * 60 * 1_000
+const DEFAULT_CANVAS_NUDGE_POLL_INTERVAL_MS = 30_000
+const DEFAULT_CANVAS_NUDGE_TTL_MS = 24 * 60 * 60 * 1_000
 
 export class PushDispatchService {
   private readonly pendingByPairSession = new Map<string, PendingCanvasUpdate>()
@@ -112,6 +129,11 @@ export class PushDispatchService {
   private readonly debounceMs: number
   private readonly canvasUpdateTtlMs: number
   private readonly pairingConfirmationTtlMs: number
+  private readonly canvasNudgeDelayMs: number
+  private readonly canvasNudgePollIntervalMs: number
+  private readonly canvasNudgeTtlMs: number
+  private nudgePoller: ReturnType<typeof setInterval> | null = null
+  private nudgeFlushInProgress = false
 
   constructor(
     private readonly db: Database,
@@ -122,6 +144,14 @@ export class PushDispatchService {
     this.canvasUpdateTtlMs = options.canvasUpdateTtlMs ?? DEFAULT_CANVAS_UPDATE_TTL_MS
     this.pairingConfirmationTtlMs =
       options.pairingConfirmationTtlMs ?? DEFAULT_PAIRING_CONFIRMATION_TTL_MS
+    this.canvasNudgeDelayMs = options.canvasNudgeDelayMs ?? DEFAULT_CANVAS_NUDGE_DELAY_MS
+    this.canvasNudgePollIntervalMs =
+      options.canvasNudgePollIntervalMs ?? DEFAULT_CANVAS_NUDGE_POLL_INTERVAL_MS
+    this.canvasNudgeTtlMs = options.canvasNudgeTtlMs ?? DEFAULT_CANVAS_NUDGE_TTL_MS
+
+    this.nudgePoller = setInterval(() => {
+      void this.flushDueNudges()
+    }, this.canvasNudgePollIntervalMs)
   }
 
   enqueueCanvasUpdated(
@@ -161,6 +191,27 @@ export class PushDispatchService {
     actorDisplayName: string,
   ): void {
     void this.sendPairingConfirmed(pairSessionId, actorUserId, actorDisplayName)
+  }
+
+  enqueueCanvasNudge(
+    pairSessionId: string,
+    actorUserId: string,
+    latestRevision: number,
+  ): void {
+    const dueAt = new Date(Date.now() + this.canvasNudgeDelayMs).toISOString()
+    void this.db.query(
+      `
+      INSERT INTO canvas_nudges (pair_session_id, actor_user_id, latest_revision, due_at)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (pair_session_id)
+      DO UPDATE SET
+        actor_user_id = EXCLUDED.actor_user_id,
+        latest_revision = EXCLUDED.latest_revision,
+        due_at = EXCLUDED.due_at,
+        updated_at = NOW()
+      `,
+      [pairSessionId, actorUserId, latestRevision, dueAt],
+    )
   }
 
   async flushPairSession(pairSessionId: string): Promise<void> {
@@ -288,6 +339,10 @@ export class PushDispatchService {
     this.timers.forEach((timer) => clearTimeout(timer))
     this.timers.clear()
     this.pendingByPairSession.clear()
+    if (this.nudgePoller) {
+      clearInterval(this.nudgePoller)
+      this.nudgePoller = null
+    }
   }
 
   private async activePeerTokens(pairSessionId: string, actorUserId: string): Promise<string[]> {
@@ -320,6 +375,114 @@ export class PushDispatchService {
         [token],
       )
     }
+  }
+
+  private async flushDueNudges(): Promise<void> {
+    if (this.nudgeFlushInProgress) return
+    this.nudgeFlushInProgress = true
+    try {
+      const due = await this.db.transaction(async (tx) => {
+        const rows = await tx.query<{
+          pair_session_id: string
+          actor_user_id: string
+          latest_revision: string | number
+        }>(
+          `
+          SELECT pair_session_id, actor_user_id, latest_revision
+          FROM canvas_nudges
+          WHERE due_at <= NOW()
+          ORDER BY due_at ASC
+          LIMIT 20
+          FOR UPDATE SKIP LOCKED
+          `,
+        )
+        if (rows.rows.length === 0) return []
+        await tx.query(
+          `
+          DELETE FROM canvas_nudges
+          WHERE pair_session_id = ANY($1)
+          `,
+          [rows.rows.map((row) => row.pair_session_id)],
+        )
+        return rows.rows
+      })
+
+      for (const item of due) {
+        const pairSessionId = item.pair_session_id
+        const actorUserId = item.actor_user_id
+        const latestRevision = Number(item.latest_revision)
+        if (!Number.isFinite(latestRevision) || latestRevision <= 0) continue
+
+        const tokens = await this.activePeerTokens(pairSessionId, actorUserId)
+        if (tokens.length === 0) {
+          console.info("[push] no active peer tokens for canvas nudge", {
+            pairSessionId,
+            actorUserId,
+            latestRevision,
+          })
+          continue
+        }
+
+        const actorDisplayName = await this.lookupActorDisplayName(actorUserId)
+        console.info("[push] sending canvas nudge", {
+          pairSessionId,
+          actorUserId,
+          latestRevision,
+          tokenCount: tokens.length,
+        })
+
+        let result: PushSendResult
+        try {
+          result = await this.sender.send({
+            tokens,
+            data: {
+              type: "CANVAS_NUDGE",
+              pairSessionId,
+              latestRevision: String(latestRevision),
+              actorUserId,
+              actorDisplayName,
+            },
+            android: {
+              priority: "high",
+              collapseKey: `canvas-nudge-${pairSessionId}`,
+              ttlMs: this.canvasNudgeTtlMs,
+            },
+          })
+        } catch (error) {
+          console.error("[push] canvas nudge send failed", {
+            pairSessionId,
+            latestRevision,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          continue
+        }
+
+        console.info("[push] canvas nudge sent", {
+          pairSessionId,
+          latestRevision,
+          invalidTokenCount: result.invalidTokens.length,
+        })
+
+        if (result.invalidTokens.length > 0) {
+          await this.revokeTokens(result.invalidTokens)
+        }
+      }
+    } finally {
+      this.nudgeFlushInProgress = false
+    }
+  }
+
+  private async lookupActorDisplayName(userId: string): Promise<string> {
+    const rows = await this.db.query<{ display_name: string | null }>(
+      `
+      SELECT display_name
+      FROM user_profiles
+      WHERE user_id = $1
+      LIMIT 1
+      `,
+      [userId],
+    )
+    return rows.rows[0]?.display_name?.trim() || "Your partner"
   }
 }
 

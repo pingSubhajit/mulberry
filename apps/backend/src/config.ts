@@ -7,6 +7,9 @@ export interface AppConfig {
   firebaseServiceAccountJson?: string
   canvasUpdatePushTtlMs?: number
   pairingConfirmationPushTtlMs?: number
+  canvasNudgeDelayMs?: number
+  canvasNudgePollIntervalMs?: number
+  canvasNudgePushTtlMs?: number
   supabaseUrl?: string
   supabaseServiceRoleKey?: string
   supabaseWallpaperBucket?: string
@@ -35,6 +38,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     firebaseServiceAccountJson: env.FIREBASE_SERVICE_ACCOUNT_JSON,
     canvasUpdatePushTtlMs: optionalPositiveNumber(env.CANVAS_UPDATE_PUSH_TTL_MS),
     pairingConfirmationPushTtlMs: optionalPositiveNumber(env.PAIRING_CONFIRMATION_PUSH_TTL_MS),
+    canvasNudgeDelayMs: optionalPositiveNumber(env.CANVAS_NUDGE_DELAY_MS),
+    canvasNudgePollIntervalMs: optionalPositiveNumber(env.CANVAS_NUDGE_POLL_INTERVAL_MS),
+    canvasNudgePushTtlMs: optionalPositiveNumber(env.CANVAS_NUDGE_PUSH_TTL_MS),
     supabaseUrl: env.SUPABASE_URL,
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
     supabaseWallpaperBucket: env.SUPABASE_WALLPAPER_BUCKET,

@@ -760,7 +760,7 @@ export class MulberryService {
       }
     })
 
-    const { accepted, latestRevision, snapshotRevision, shouldPushCanvasUpdate } = await this.db.transaction(
+    const { accepted, latestRevision, snapshotRevision, shouldPushCanvasUpdate, shouldEnqueueCanvasNudge } = await this.db.transaction(
       async (tx) => {
         const snapshotRow = await this.getOrCreateCanvasSnapshot(context.pairSession.id, tx, true)
         let latestRevision = Number(snapshotRow.latest_revision)
@@ -769,6 +769,7 @@ export class MulberryService {
         const acceptedRecords: CanvasOperationRecord[] = []
         let snapshotChanged = false
         let shouldPushCanvasUpdate = false
+        let shouldEnqueueCanvasNudge = false
 
         for (const operation of operations) {
           const duplicate = await tx.query<CanvasOperationRecord>(
@@ -822,6 +823,7 @@ export class MulberryService {
           acceptedRecords.push(acceptedRecord)
           if (acceptedRecord.type === "FINISH_STROKE") {
             await this.recordPairActivityDay(tx, context.pairSession.id, operation.clientLocalDate)
+            shouldEnqueueCanvasNudge = true
           }
           const materialized = await this.materializeDurableOperation(
             tx,
@@ -859,6 +861,7 @@ export class MulberryService {
           latestRevision,
           snapshotRevision,
           shouldPushCanvasUpdate,
+          shouldEnqueueCanvasNudge,
         }
       },
     )
@@ -869,6 +872,14 @@ export class MulberryService {
         context.user.id,
         latestRevision,
         snapshotRevision,
+      )
+    }
+
+    if (shouldEnqueueCanvasNudge) {
+      this.pushDispatchService?.enqueueCanvasNudge(
+        context.pairSession.id,
+        context.user.id,
+        latestRevision,
       )
     }
 

@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 class MulberryFirebaseMessagingService : FirebaseMessagingService() {
     @Inject lateinit var fcmTokenRepository: FcmTokenRepository
     @Inject lateinit var backgroundCanvasSyncScheduler: BackgroundCanvasSyncScheduler
+    @Inject lateinit var canvasNudgeNotificationHandler: CanvasNudgeNotificationHandler
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -39,6 +40,19 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
             )
             if (!AppForegroundState.isForeground.value) {
                 PairingNotificationPresenter.showPartnerJoined(this, pairingPayload)
+            }
+            return
+        }
+
+        val nudgePayload = CanvasNudgePushPayloadParser.parse(message.data)
+        if (nudgePayload != null) {
+            Log.i(
+                TAG,
+                "Received canvas nudge push pairSessionId=${nudgePayload.pairSessionId} " +
+                    "latestRevision=${nudgePayload.latestRevision}"
+            )
+            serviceScope.launch {
+                canvasNudgeNotificationHandler.handleNudge(this@MulberryFirebaseMessagingService, nudgePayload)
             }
             return
         }

@@ -56,6 +56,14 @@
             android:noHistory="true"
             android:theme="@style/Theme.Mulberry.ShortcutDialog" />
 
+        <activity
+            android:name=".EnableWallpaperSyncActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:theme="@style/Theme.Mulberry.ShortcutDialog" />
+
         <service
             android:name=".wallpaper.MulberryWallpaperService"
             android:exported="true"

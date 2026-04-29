@@ -19,11 +19,14 @@ import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.network.PartnerProfileRequest
 import com.subhajit.mulberry.network.toDomainBootstrap
 import com.subhajit.mulberry.sync.BackgroundCanvasSyncCoordinator
+import com.subhajit.mulberry.sync.CanvasNudgeNotificationHandler
+import com.subhajit.mulberry.sync.CanvasNudgePushPayload
 import com.subhajit.mulberry.sync.CanvasSyncRepository
 import com.subhajit.mulberry.sync.FcmTokenRepository
 import com.subhajit.mulberry.sync.SyncMetadata
 import com.subhajit.mulberry.sync.SyncMetadataRepository
 import com.subhajit.mulberry.sync.SyncState
+import com.subhajit.mulberry.sync.PartnerDoodleNotificationPresenter
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
@@ -74,6 +77,7 @@ class SettingsViewModel @Inject constructor(
     featureFlagProvider: FeatureFlagProvider,
     private val developerOptionsRepository: DeveloperOptionsRepository,
     private val wallpaperSyncSettingsRepository: WallpaperSyncSettingsRepository,
+    private val canvasNudgeNotificationHandler: CanvasNudgeNotificationHandler,
     private val authRepository: AuthRepository,
     private val drawingRepository: DrawingRepository,
     private val canvasSyncRepository: CanvasSyncRepository,
@@ -309,6 +313,21 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launchWithBusy {
             apiService.sendDebugPairingConfirmationPush()
             _effects.emit(SettingsEffect.Message("Pairing notification sent to partner"))
+        }
+    }
+
+    fun onMockNewDoodleNotification() {
+        val partnerName = uiState.value.bootstrapState.partnerDisplayName ?: "Your partner"
+        val payload = CanvasNudgePushPayload(
+            pairSessionId = uiState.value.bootstrapState.pairSessionId,
+            latestRevision = uiState.value.syncMetadata.lastAppliedServerRevision + 1,
+            actorUserId = null,
+            actorDisplayName = partnerName
+        )
+        viewModelScope.launchWithBusy {
+            runCatching { canvasNudgeNotificationHandler.debugEvaluateAndLog(payload) }
+            PartnerDoodleNotificationPresenter.show(appContext, payload)
+            _effects.emit(SettingsEffect.Message("New doodle notification triggered (local)"))
         }
     }
 

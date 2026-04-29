@@ -5,6 +5,13 @@ data class BackgroundCanvasSyncPayload(
     val latestRevision: Long?
 )
 
+data class CanvasNudgePushPayload(
+    val pairSessionId: String?,
+    val latestRevision: Long?,
+    val actorUserId: String?,
+    val actorDisplayName: String
+)
+
 data class PairingConfirmedPushPayload(
     val pairSessionId: String?,
     val actorUserId: String?,
@@ -21,6 +28,22 @@ object BackgroundCanvasSyncPayloadParser {
         return BackgroundCanvasSyncPayload(
             pairSessionId = pairSessionId,
             latestRevision = latestRevision
+        )
+    }
+}
+
+object CanvasNudgePushPayloadParser {
+    private const val TYPE_CANVAS_NUDGE = "CANVAS_NUDGE"
+
+    fun parse(data: Map<String, String>): CanvasNudgePushPayload? {
+        if (data["type"] != TYPE_CANVAS_NUDGE) return null
+        val pairSessionId = data["pairSessionId"]?.takeIf { it.isNotBlank() }
+        val latestRevision = data["latestRevision"]?.toLongOrNull()
+        return CanvasNudgePushPayload(
+            pairSessionId = pairSessionId,
+            latestRevision = latestRevision,
+            actorUserId = data["actorUserId"]?.takeIf { it.isNotBlank() },
+            actorDisplayName = data["actorDisplayName"]?.takeIf { it.isNotBlank() } ?: "Your partner"
         )
     }
 }

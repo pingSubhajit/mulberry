@@ -46,6 +46,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     {
       canvasUpdateTtlMs: config.canvasUpdatePushTtlMs,
       pairingConfirmationTtlMs: config.pairingConfirmationPushTtlMs,
+      canvasNudgeDelayMs: config.canvasNudgeDelayMs,
+      canvasNudgePollIntervalMs: config.canvasNudgePollIntervalMs,
+      canvasNudgeTtlMs: config.canvasNudgePushTtlMs,
       ...options.pushOptions,
     },
   )

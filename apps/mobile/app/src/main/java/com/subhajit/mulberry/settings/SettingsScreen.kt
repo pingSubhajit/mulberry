@@ -173,6 +173,7 @@ fun SettingsRoute(
         onForceSyncNow = viewModel::onForceSyncNow,
         onRegenerateWallpaperSnapshot = viewModel::onRegenerateWallpaperSnapshot,
         onSendDebugPairingNotification = viewModel::onSendDebugPairingNotification,
+        onMockNewDoodleNotification = viewModel::onMockNewDoodleNotification,
         onSendCrashlyticsTestEvent = viewModel::onSendCrashlyticsTestEvent,
         onCrashlyticsTestCrash = viewModel::onCrashlyticsTestCrash
     )
@@ -201,6 +202,7 @@ private fun SettingsScreen(
     onForceSyncNow: () -> Unit,
     onRegenerateWallpaperSnapshot: () -> Unit,
     onSendDebugPairingNotification: () -> Unit,
+    onMockNewDoodleNotification: () -> Unit,
     onSendCrashlyticsTestEvent: () -> Unit,
     onCrashlyticsTestCrash: () -> Unit
 ) {
@@ -262,6 +264,7 @@ private fun SettingsScreen(
                 onFeatureFlagChanged = onFeatureFlagChanged,
                 onResetAppState = onResetAppState,
                 onSendDebugPairingNotification = onSendDebugPairingNotification,
+                onMockNewDoodleNotification = onMockNewDoodleNotification,
                 onSendCrashlyticsTestEvent = onSendCrashlyticsTestEvent,
                 onCrashlyticsTestCrash = onCrashlyticsTestCrash,
                 modifier = Modifier.padding(padding)
@@ -1704,6 +1707,7 @@ private fun DeveloperOptionsPane(
     onFeatureFlagChanged: (FeatureFlag, Boolean) -> Unit,
     onResetAppState: () -> Unit,
     onSendDebugPairingNotification: () -> Unit,
+    onMockNewDoodleNotification: () -> Unit,
     onSendCrashlyticsTestEvent: () -> Unit,
     onCrashlyticsTestCrash: () -> Unit,
     modifier: Modifier = Modifier
@@ -1780,6 +1784,13 @@ private fun DeveloperOptionsPane(
                 isBusy = uiState.isBusy,
                 onClick = onSendDebugPairingNotification,
                 enabled = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            SettingsSecondaryButton(
+                text = "Mock new doodle notification",
+                isBusy = uiState.isBusy,
+                onClick = onMockNewDoodleNotification,
+                enabled = !uiState.isBusy
             )
         }
 

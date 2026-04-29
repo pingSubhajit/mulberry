@@ -123,6 +123,18 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
     UPDATE canvas_snapshots
     SET latest_revision = GREATEST(latest_revision, revision);
 
+    CREATE TABLE IF NOT EXISTS canvas_nudges (
+      pair_session_id TEXT PRIMARY KEY REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      actor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      latest_revision BIGINT NOT NULL,
+      due_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS canvas_nudges_due_at_idx
+      ON canvas_nudges(due_at);
+
     CREATE TABLE IF NOT EXISTS pair_activity_days (
       pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,
       activity_day DATE NOT NULL,
