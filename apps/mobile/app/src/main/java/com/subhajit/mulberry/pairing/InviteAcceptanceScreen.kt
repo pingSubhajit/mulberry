@@ -51,6 +51,7 @@ import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.OnboardingPrivacyNotice
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.data.bootstrap.PendingInviteSummary
 import com.subhajit.mulberry.ui.theme.MulberryError
@@ -315,6 +316,7 @@ private fun InviteAcceptanceActions(
                 .fillMaxWidth()
                 .height(50.dp)
                 .testTag(TestTags.INVITE_ACCEPT_BUTTON)
+                .mulberryTapScale(enabled = isEnabled)
         ) {
             Text(
                 text = if (isLoading) {

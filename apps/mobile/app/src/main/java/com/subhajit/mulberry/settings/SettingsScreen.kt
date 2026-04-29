@@ -86,6 +86,7 @@ import com.subhajit.mulberry.core.flags.FeatureFlag
 import com.subhajit.mulberry.core.ui.PrivacyPolicySheetContent
 import com.subhajit.mulberry.core.ui.TermsOfUseSheetContent
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.sync.SyncState
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
@@ -1361,7 +1362,8 @@ private fun SettingsSaveButton(text: String, enabled: Boolean, onClick: () -> Un
         enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
-            .height(58.dp),
+            .height(58.dp)
+            .mulberryTapScale(enabled = enabled),
         shape = RoundedCornerShape(15.38.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = MulberryPrimary,
@@ -2144,7 +2146,10 @@ private fun SettingsPrimaryButton(
     Button(
         onClick = onClick,
         enabled = !isBusy,
-        modifier = Modifier.fillMaxWidth().height(54.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .mulberryTapScale(enabled = !isBusy),
         shape = RoundedCornerShape(15.38.dp),
         colors = ButtonDefaults.buttonColors(containerColor = MulberryPrimary)
     ) {
@@ -2162,7 +2167,10 @@ private fun SettingsSecondaryButton(
     OutlinedButton(
         onClick = onClick,
         enabled = enabled && !isBusy,
-        modifier = Modifier.fillMaxWidth().height(54.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .mulberryTapScale(enabled = enabled && !isBusy),
         shape = RoundedCornerShape(15.38.dp)
     ) {
         Text(text = text, color = MulberryPrimary, fontFamily = PoppinsFontFamily)
@@ -2181,7 +2189,8 @@ private fun SettingsDestructiveButton(
         modifier = Modifier
             .fillMaxWidth()
             .height(54.dp)
-            .testTag(TestTags.SETTINGS_RESET_BUTTON),
+            .testTag(TestTags.SETTINGS_RESET_BUTTON)
+            .mulberryTapScale(enabled = enabled),
         shape = RoundedCornerShape(15.38.dp),
         colors = ButtonDefaults.buttonColors(containerColor = MulberryPrimary)
     ) {
@@ -2214,12 +2223,12 @@ private fun ConfirmationDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
+            TextButton(onClick = onConfirm, modifier = Modifier.mulberryTapScale()) {
                 Text(confirmText, color = MulberryPrimary, fontFamily = PoppinsFontFamily)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, modifier = Modifier.mulberryTapScale()) {
                 Text("Cancel", fontFamily = PoppinsFontFamily)
             }
         },

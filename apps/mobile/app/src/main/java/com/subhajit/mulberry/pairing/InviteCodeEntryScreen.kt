@@ -55,6 +55,7 @@ import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.OnboardingPrivacyNotice
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.ui.theme.MulberryError
 import com.subhajit.mulberry.ui.theme.MulberryInk
@@ -183,6 +184,7 @@ private fun InviteCodeEntryScreen(
                         .fillMaxWidth()
                         .height(50.dp)
                         .testTag(TestTags.INVITE_CODE_SUBMIT_BUTTON)
+                        .mulberryTapScale(enabled = uiState.code.length == 6 && !uiState.isSubmitting)
                 ) {
                     Text(
                         text = if (uiState.isSubmitting) {

@@ -44,6 +44,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.core.ui.metadata.AuthLandingMetadata
 import com.subhajit.mulberry.core.ui.metadata.AuthProviderId
 import com.subhajit.mulberry.core.ui.metadata.MulberryUiMetadataProvider
@@ -196,6 +197,7 @@ private fun AuthLandingScreen(
                     .fillMaxWidth()
                     .height(50.dp)
                     .testTag(TestTags.AUTH_GOOGLE_BUTTON)
+                    .mulberryTapScale(enabled = !uiState.isLoading && googleProvider.enabled)
             ) {
                 Row(
                     horizontalArrangement = Arrangement.Center,

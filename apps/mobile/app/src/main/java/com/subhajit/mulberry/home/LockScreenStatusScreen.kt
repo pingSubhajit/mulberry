@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
 
 @Composable
@@ -101,7 +102,7 @@ private fun LockScreenStatusContent(
             TopAppBar(
                 title = { Text("Lock screen") },
                 navigationIcon = {
-                    TextButton(onClick = onNavigateBack) {
+                    TextButton(onClick = onNavigateBack, modifier = Modifier.mulberryTapScale()) {
                         Text("Back")
                     }
                 }
@@ -153,6 +154,7 @@ private fun LockScreenStatusContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(TestTags.LOCKSCREEN_OPEN_WALLPAPER_BUTTON)
+                        .mulberryTapScale()
                 ) {
                     val setupLabelResId = if (!isSelectedOnHome && !isSelectedOnLock) {
                         R.string.onboarding_wallpaper_setup_button
@@ -168,6 +170,7 @@ private fun LockScreenStatusContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(TestTags.LOCKSCREEN_SELECT_BACKGROUND_BUTTON)
+                    .mulberryTapScale()
             ) {
                 Text(
                     if (uiState.backgroundImageState.isConfigured) {
@@ -184,6 +187,7 @@ private fun LockScreenStatusContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(TestTags.LOCKSCREEN_CLEAR_BACKGROUND_BUTTON)
+                    .mulberryTapScale(enabled = uiState.backgroundImageState.isConfigured)
             ) {
                 Text("Remove Background Image")
             }
@@ -194,6 +198,7 @@ private fun LockScreenStatusContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag(TestTags.LOCKSCREEN_REFRESH_SNAPSHOT_BUTTON)
+                        .mulberryTapScale()
                 ) {
                     Text("Refresh Snapshot")
                 }

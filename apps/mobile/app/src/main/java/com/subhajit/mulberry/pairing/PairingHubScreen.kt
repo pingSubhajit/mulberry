@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.mulberryTapScale
 
 data class PairingHubUiState(
     val currentInvite: CreateInviteResult? = null,
@@ -89,6 +90,7 @@ private fun PairingHubScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(TestTags.PAIRING_CREATE_CODE_BUTTON)
+                .mulberryTapScale(enabled = !uiState.isLoading)
         ) {
             Text(if (uiState.isLoading) "Creating..." else "Generate Invite Code")
         }
@@ -98,6 +100,7 @@ private fun PairingHubScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(TestTags.PAIRING_ENTER_CODE_BUTTON)
+                .mulberryTapScale()
         ) {
             Text("Enter Code")
         }

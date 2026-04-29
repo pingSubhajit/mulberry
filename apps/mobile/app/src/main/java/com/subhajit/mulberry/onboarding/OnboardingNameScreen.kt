@@ -53,6 +53,7 @@ import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.OnboardingPrivacyNotice
 import com.subhajit.mulberry.core.ui.OnboardingTextField
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.core.ui.metadata.MulberryUiMetadataProvider
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
@@ -173,6 +174,7 @@ private fun OnboardingNameScreen(
                     .fillMaxWidth()
                     .height(50.dp)
                     .testTag(TestTags.ONBOARDING_NAME_CONTINUE_BUTTON)
+                    .mulberryTapScale(enabled = uiState.isStepOneValid)
             ) {
                 Text(
                     text = stringResource(R.string.onboarding_name_continue),

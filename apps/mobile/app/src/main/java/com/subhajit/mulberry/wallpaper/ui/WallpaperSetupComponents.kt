@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
@@ -191,6 +192,7 @@ fun WallpaperPrimaryButton(
         modifier = modifier
             .fillMaxWidth()
             .height(50.dp)
+            .mulberryTapScale(enabled = enabled)
     ) {
         Text(
             text = text,

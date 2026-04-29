@@ -178,6 +178,7 @@ private fun LegalDocumentSheetContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 50.dp)
+                .mulberryTapScale()
         ) {
             Text(
                 text = stringResource(R.string.privacy_policy_sheet_close),

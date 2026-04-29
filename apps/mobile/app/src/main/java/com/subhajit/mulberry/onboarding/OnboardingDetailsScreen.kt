@@ -56,6 +56,7 @@ import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.OnboardingPrivacyNotice
 import com.subhajit.mulberry.core.ui.OnboardingTextField
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.core.ui.metadata.MulberryUiMetadataProvider
 import com.subhajit.mulberry.ui.theme.MulberryError
@@ -208,6 +209,7 @@ private fun OnboardingDetailsScreen(
                         .fillMaxWidth()
                         .height(50.dp)
                         .testTag(TestTags.ONBOARDING_DETAILS_SUBMIT_BUTTON)
+                        .mulberryTapScale(enabled = uiState.draft.isComplete && !uiState.isSubmitting)
                 ) {
                     Text(
                         text = if (uiState.isSubmitting) {
@@ -260,13 +262,17 @@ private fun OnboardingDetailsScreen(
                                 ?.toAnniversaryDate()
                                 ?.let(onAnniversaryChanged)
                             showDatePicker.value = false
-                        }
+                        },
+                        modifier = Modifier.mulberryTapScale()
                     ) {
                         Text(stringResource(R.string.onboarding_date_picker_select))
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDatePicker.value = false }) {
+                    TextButton(
+                        onClick = { showDatePicker.value = false },
+                        modifier = Modifier.mulberryTapScale()
+                    ) {
                         Text(stringResource(R.string.onboarding_date_picker_cancel))
                     }
                 }

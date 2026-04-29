@@ -7,10 +7,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
 import com.subhajit.mulberry.canvas.CanvasRuntime
 import com.subhajit.mulberry.canvas.CanvasRuntimeEvent
+import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.sync.CanvasSyncRepository
 import com.subhajit.mulberry.ui.theme.MulberryTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -58,13 +60,14 @@ private fun ClearDoodlesShortcutDialog(
         text = { Text(stringResource(R.string.home_clear_canvas_body)) },
         confirmButton = {
             TextButton(
-                onClick = onConfirm
+                onClick = onConfirm,
+                modifier = Modifier.mulberryTapScale()
             ) {
                 Text(stringResource(R.string.home_clear_canvas_confirm))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, modifier = Modifier.mulberryTapScale()) {
                 Text(stringResource(R.string.home_clear_canvas_cancel))
             }
         }

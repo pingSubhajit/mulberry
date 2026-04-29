@@ -72,6 +72,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.ui.theme.MulberryError
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
@@ -528,6 +529,7 @@ private fun PrimaryOnboardingButton(
         modifier = modifier
             .fillMaxWidth()
             .height(50.dp)
+            .mulberryTapScale(enabled = enabled)
     ) {
         Text(
             text = text,

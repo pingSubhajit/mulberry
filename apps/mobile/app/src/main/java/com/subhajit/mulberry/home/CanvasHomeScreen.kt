@@ -107,6 +107,7 @@ import coil.compose.AsyncImage
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.app.shortcut.AppShortcutAction
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.data.bootstrap.AuthStatus
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.drawing.model.DrawingDefaults
@@ -544,7 +545,8 @@ private fun CanvasHomePane(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
-                    .testTag(TestTags.HOME_SHARE_INVITE_BUTTON),
+                    .testTag(TestTags.HOME_SHARE_INVITE_BUTTON)
+                    .mulberryTapScale(),
                 shape = RoundedCornerShape(15.38.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MulberryPrimary)
             ) {
@@ -953,13 +955,15 @@ private fun ClearCanvasConfirmationDialog(
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                modifier = Modifier.testTag(TestTags.CLEAR_CONFIRM_BUTTON)
+                modifier = Modifier
+                    .testTag(TestTags.CLEAR_CONFIRM_BUTTON)
+                    .mulberryTapScale()
             ) {
                 Text(stringResource(R.string.home_clear_canvas_confirm))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, modifier = Modifier.mulberryTapScale()) {
                 Text(stringResource(R.string.home_clear_canvas_cancel))
             }
         }
@@ -1278,7 +1282,8 @@ private fun InviteCodeBottomSheet(
                 enabled = !inviteSheet.isLoading,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(50.dp)
+                    .mulberryTapScale(enabled = !inviteSheet.isLoading),
                 shape = RoundedCornerShape(15.38.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MulberryPrimary,
@@ -1295,7 +1300,7 @@ private fun InviteCodeBottomSheet(
                 )
             }
             Spacer(modifier = Modifier.height(10.dp))
-            TextButton(onClick = onPartnerDetailsRequested) {
+            TextButton(onClick = onPartnerDetailsRequested, modifier = Modifier.mulberryTapScale()) {
                 Text(
                     text = "Change partner info",
                     color = MulberryPrimary,
@@ -1379,7 +1384,8 @@ private fun PartnerDetailsBottomSheet(
                 enabled = form.canSubmit,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(50.dp)
+                    .mulberryTapScale(enabled = form.canSubmit),
                 shape = RoundedCornerShape(15.38.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MulberryPrimary,
@@ -1588,7 +1594,8 @@ private fun JoinCodeBottomSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
-                    .testTag(TestTags.HOME_JOIN_CODE_SUBMIT_BUTTON),
+                    .testTag(TestTags.HOME_JOIN_CODE_SUBMIT_BUTTON)
+                    .mulberryTapScale(enabled = joinCode.code.length == 6 && !joinCode.isSubmitting),
                 shape = RoundedCornerShape(15.38.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MulberryPrimary,
@@ -1681,7 +1688,8 @@ private fun PairingConfirmedBottomSheet(
                     enabled = !confirmation.isDisconnecting,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
+                        .height(50.dp)
+                        .mulberryTapScale(enabled = !confirmation.isDisconnecting),
                     shape = RoundedCornerShape(15.38.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MulberryPrimary,
@@ -1820,7 +1828,8 @@ private fun InboundInvitePairedBottomSheet(
                 enabled = !confirmation.isDisconnecting,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(50.dp)
+                    .mulberryTapScale(enabled = !confirmation.isDisconnecting),
                 shape = RoundedCornerShape(15.38.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MulberryPrimary,
@@ -1849,7 +1858,8 @@ private fun InboundInvitePairedBottomSheet(
                 enabled = !confirmation.isDisconnecting,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(50.dp)
+                    .mulberryTapScale(enabled = !confirmation.isDisconnecting),
                 shape = RoundedCornerShape(15.38.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
