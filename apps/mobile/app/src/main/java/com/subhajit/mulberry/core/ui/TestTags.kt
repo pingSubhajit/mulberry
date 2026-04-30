@@ -38,6 +38,8 @@ object TestTags {
     const val CANVAS_SCREEN = "canvas_screen"
     const val DRAWING_CANVAS = "drawing_canvas"
     const val BRUSH_WIDTH_SLIDER = "brush_width_slider"
+    const val UNDO_BUTTON = "undo_button"
+    const val REDO_BUTTON = "redo_button"
     const val ERASER_BUTTON = "eraser_button"
     const val CLEAR_BUTTON = "clear_button"
     const val CLEAR_CONFIRM_BUTTON = "clear_confirm_button"

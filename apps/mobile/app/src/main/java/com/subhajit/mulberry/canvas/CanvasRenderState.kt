@@ -13,6 +13,8 @@ data class CanvasRenderState(
     val remoteActiveStrokes: Map<String, Stroke> = emptyMap(),
     val revision: Long = 0L,
     val snapshotState: CanvasSnapshotState = CanvasSnapshotState(),
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false,
     val toolState: ToolState = ToolState(
         selectedColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
         selectedWidth = DrawingDefaults.DEFAULT_WIDTH

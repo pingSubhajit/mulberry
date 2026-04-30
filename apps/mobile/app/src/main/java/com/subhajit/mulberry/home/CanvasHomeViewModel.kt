@@ -111,6 +111,8 @@ data class CanvasHomeUiState(
         selectedColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
         selectedWidth = DrawingDefaults.DEFAULT_WIDTH
     ),
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false,
     val wallpaperStatus: WallpaperStatusState = WallpaperStatusState(),
     val backgroundImageState: BackgroundImageState = BackgroundImageState(),
     val currentInvite: CreateInviteResult? = null,
@@ -251,6 +253,8 @@ class CanvasHomeViewModel @Inject constructor(
             featureFlags = baseState.featureFlags,
             canvasState = baseState.renderState.toCanvasState(),
             toolState = baseState.renderState.toolState,
+            canUndo = baseState.renderState.canUndo,
+            canRedo = baseState.renderState.canRedo,
             wallpaperStatus = baseState.wallpaperStatus,
             backgroundImageState = baseState.backgroundState,
             currentInvite = baseState.currentInvite,
@@ -721,6 +725,14 @@ class CanvasHomeViewModel @Inject constructor(
     fun onClearConfirmed() {
         canvasRuntime.submit(CanvasRuntimeEvent.ClearCanvas)
         showClearConfirmation.value = false
+    }
+
+    fun onUndoRequested() {
+        canvasRuntime.submit(CanvasRuntimeEvent.Undo)
+    }
+
+    fun onRedoRequested() {
+        canvasRuntime.submit(CanvasRuntimeEvent.Redo)
     }
 
     fun onBackgroundImageSelected(uri: Uri) {

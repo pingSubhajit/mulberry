@@ -247,6 +247,8 @@ fun CanvasHomeRoute(
         onClearRequested = viewModel::onClearRequested,
         onClearDismissed = viewModel::onClearDismissed,
         onClearConfirmed = viewModel::onClearConfirmed,
+        onUndoRequested = viewModel::onUndoRequested,
+        onRedoRequested = viewModel::onRedoRequested,
         onShortcutActionHandled = onShortcutActionHandled
     )
 }
@@ -290,6 +292,8 @@ private fun CanvasHomeScreen(
     onClearRequested: () -> Unit,
     onClearDismissed: () -> Unit,
     onClearConfirmed: () -> Unit,
+    onUndoRequested: () -> Unit,
+    onRedoRequested: () -> Unit,
     onShortcutActionHandled: (AppShortcutAction) -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { MainAppTab.entries.size })
@@ -425,7 +429,9 @@ private fun CanvasHomeScreen(
                         onColorSelected = onColorSelected,
                         onBrushWidthChanged = onBrushWidthChanged,
                         onEraserToggle = onEraserToggle,
-                        onClearRequested = onClearRequested
+                        onClearRequested = onClearRequested,
+                        onUndoRequested = onUndoRequested,
+                        onRedoRequested = onRedoRequested
                     )
 
                     MainAppTab.LockScreen -> LockScreenHomePane(
@@ -524,7 +530,9 @@ private fun CanvasHomePane(
     onColorSelected: (Long) -> Unit,
     onBrushWidthChanged: (Float) -> Unit,
     onEraserToggle: () -> Unit,
-    onClearRequested: () -> Unit
+    onClearRequested: () -> Unit,
+    onUndoRequested: () -> Unit,
+    onRedoRequested: () -> Unit
 ) {
     val userName = uiState.bootstrapState.userDisplayName
         ?.takeIf { it.isNotBlank() }
@@ -619,6 +627,8 @@ private fun CanvasHomePane(
             onBrushWidthChanged = onBrushWidthChanged,
             onEraserToggle = onEraserToggle,
             onClearRequested = onClearRequested,
+            onUndoRequested = onUndoRequested,
+            onRedoRequested = onRedoRequested,
             modifier = Modifier.testTag(TestTags.HOME_OPEN_CANVAS_BUTTON)
         )
     }
@@ -636,6 +646,8 @@ private fun PairedCanvasPane(
     onBrushWidthChanged: (Float) -> Unit,
     onEraserToggle: () -> Unit,
     onClearRequested: () -> Unit,
+    onUndoRequested: () -> Unit,
+    onRedoRequested: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -684,16 +696,34 @@ private fun PairedCanvasPane(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 CanvasActionButton(
+                    drawableRes = R.drawable.canvas_action_undo,
+                    contentDescription = stringResource(R.string.home_canvas_undo_content_description),
+                    selected = true,
+                    enabled = uiState.canUndo,
+                    onClick = onUndoRequested,
+                    modifier = Modifier.testTag(TestTags.UNDO_BUTTON)
+                )
+                CanvasActionButton(
+                    drawableRes = R.drawable.canvas_action_redo,
+                    contentDescription = stringResource(R.string.home_canvas_redo_content_description),
+                    selected = true,
+                    enabled = uiState.canRedo,
+                    onClick = onRedoRequested,
+                    modifier = Modifier.testTag(TestTags.REDO_BUTTON)
+                )
+                CanvasActionButton(
                     drawableRes = R.drawable.canvas_action_erase,
                     contentDescription = stringResource(R.string.home_canvas_erase_content_description),
                     selected = uiState.toolState.activeTool == DrawingTool.ERASE,
-                    onClick = onEraserToggle
+                    onClick = onEraserToggle,
+                    modifier = Modifier.testTag(TestTags.ERASER_BUTTON)
                 )
                 CanvasActionButton(
                     drawableRes = R.drawable.canvas_action_clear,
                     contentDescription = stringResource(R.string.home_canvas_clear_content_description),
-                    selected = false,
-                    onClick = onClearRequested
+                    selected = true,
+                    onClick = onClearRequested,
+                    modifier = Modifier.testTag(TestTags.CLEAR_BUTTON)
                 )
             }
         }
@@ -752,10 +782,17 @@ private fun CanvasActionButton(
     drawableRes: Int,
     contentDescription: String,
     selected: Boolean,
-    onClick: () -> Unit
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val iconAlpha = when {
+        !enabled -> 0.35f
+        selected -> 1f
+        else -> 0.60f
+    }
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(50.dp)
             .shadow(
                 elevation = 14.dp,
@@ -765,26 +802,17 @@ private fun CanvasActionButton(
                 spotColor = Color(0x1A3D3D3D)
             )
             .clip(CircleShape)
-            .background(
-                if (selected) {
-                    MaterialTheme.mulberryAppColors.softSurfaceSelected
-                } else {
-                    MaterialTheme.mulberryAppColors.softSurfaceStrong
-                }
-            )
-            .border(
-                width = if (selected) 2.dp else 0.dp,
-                color = if (selected) MulberryPrimary else Color.Transparent,
-                shape = CircleShape
-            )
-            .clickable(onClick = onClick)
+            .background(MaterialTheme.mulberryAppColors.softSurfaceStrong)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(7.dp),
         contentAlignment = Alignment.Center
     ) {
         Image(
             painter = painterResource(drawableRes),
             contentDescription = contentDescription,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(iconAlpha),
             contentScale = ContentScale.Fit
         )
     }
@@ -2123,7 +2151,9 @@ fun CanvasSurfaceRoute(
         onEraserToggle = viewModel::onEraserToggle,
         onClearRequested = viewModel::onClearRequested,
         onClearDismissed = viewModel::onClearDismissed,
-        onClearConfirmed = viewModel::onClearConfirmed
+        onClearConfirmed = viewModel::onClearConfirmed,
+        onUndoRequested = viewModel::onUndoRequested,
+        onRedoRequested = viewModel::onRedoRequested
     )
 }
 
@@ -2140,7 +2170,9 @@ private fun CanvasSurfaceScreen(
     onEraserToggle: () -> Unit,
     onClearRequested: () -> Unit,
     onClearDismissed: () -> Unit,
-    onClearConfirmed: () -> Unit
+    onClearConfirmed: () -> Unit,
+    onUndoRequested: () -> Unit,
+    onRedoRequested: () -> Unit
 ) {
     if (uiState.showClearConfirmation) {
         ClearCanvasConfirmationDialog(
@@ -2152,7 +2184,29 @@ private fun CanvasSurfaceScreen(
     Scaffold(
         modifier = Modifier.testTag(TestTags.CANVAS_SCREEN),
         floatingActionButton = {
+            val undoEnabled = uiState.canUndo
+            val redoEnabled = uiState.canRedo
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                FloatingActionButton(
+                    onClick = { if (undoEnabled) onUndoRequested() },
+                    modifier = Modifier
+                        .testTag(TestTags.UNDO_BUTTON)
+                        .alpha(if (undoEnabled) 1f else 0.45f),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ) {
+                    Text("Undo")
+                }
+                FloatingActionButton(
+                    onClick = { if (redoEnabled) onRedoRequested() },
+                    modifier = Modifier
+                        .testTag(TestTags.REDO_BUTTON)
+                        .alpha(if (redoEnabled) 1f else 0.45f),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ) {
+                    Text("Redo")
+                }
                 FloatingActionButton(
                     onClick = onEraserToggle,
                     modifier = Modifier.testTag(TestTags.ERASER_BUTTON),

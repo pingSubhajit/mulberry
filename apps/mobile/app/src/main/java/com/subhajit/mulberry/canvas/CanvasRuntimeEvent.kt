@@ -11,6 +11,8 @@ sealed interface CanvasRuntimeEvent {
     data object LocalRelease : CanvasRuntimeEvent
     data class EraseAt(val point: StrokePoint) : CanvasRuntimeEvent
     data object ClearCanvas : CanvasRuntimeEvent
+    data object Undo : CanvasRuntimeEvent
+    data object Redo : CanvasRuntimeEvent
     data class RemoteOperation(val operation: ServerCanvasOperation) : CanvasRuntimeEvent
     data class RemoteBatch(val operations: List<ServerCanvasOperation>) : CanvasRuntimeEvent
     data class RecoveryOperations(

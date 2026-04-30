@@ -18,6 +18,8 @@ import com.subhajit.mulberry.sync.SyncOperationPayload
 import com.subhajit.mulberry.sync.SyncState
 import com.subhajit.mulberry.sync.newClientOperation
 import com.subhajit.mulberry.sync.toAddStrokePayload
+import com.subhajit.mulberry.sync.toWireJson
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CompletableDeferred
@@ -65,6 +67,8 @@ class DefaultCanvasRuntime @Inject constructor(
     private val pendingAppendPoints = mutableListOf<StrokePoint>()
     private var canvasViewportWidthPx = 0
     private var canvasViewportHeightPx = 0
+    private val undoStack = ArrayDeque<HistoryAction>()
+    private val redoStack = ArrayDeque<HistoryAction>()
 
     init {
         applicationScope.launch {
@@ -80,7 +84,10 @@ class DefaultCanvasRuntime @Inject constructor(
         }
         applicationScope.launch {
             drawingRepository.toolState.collect { toolState ->
-                _renderState.update { it.copy(toolState = toolState) }
+                _renderState.update { current ->
+                    val next = current.copy(toolState = toolState)
+                    next.withUndoRedoAvailability()
+                }
             }
         }
     }
@@ -88,6 +95,7 @@ class DefaultCanvasRuntime @Inject constructor(
     override fun start(pairSessionId: String, userId: String) {
         activePairSessionId = pairSessionId
         activeUserId = userId
+        clearHistory()
         applicationScope.launch {
             val canvasState = persistenceStore.loadCanvasState()
             val toolState = persistenceStore.loadToolState()
@@ -99,7 +107,7 @@ class DefaultCanvasRuntime @Inject constructor(
                 snapshotState = canvasState.snapshotState,
                 toolState = toolState,
                 cacheToken = _renderState.value.cacheToken + 1
-            )
+            ).withUndoRedoAvailability()
         }
     }
 
@@ -107,12 +115,14 @@ class DefaultCanvasRuntime @Inject constructor(
         activePairSessionId = null
         activeUserId = null
         pendingAppendPoints.clear()
-        _renderState.update {
-            it.copy(
+        clearHistory()
+        _renderState.update { current ->
+            val next = current.copy(
                 localActiveStroke = null,
                 remoteActiveStrokes = emptyMap(),
                 syncState = SyncState.Disconnected
             )
+            next.withUndoRedoAvailability()
         }
     }
 
@@ -122,11 +132,12 @@ class DefaultCanvasRuntime @Inject constructor(
         pendingAppendPoints.clear()
         canvasViewportWidthPx = 0
         canvasViewportHeightPx = 0
-        _renderState.update {
+        clearHistory()
+        _renderState.update { current ->
             CanvasRenderState(
-                toolState = it.toolState,
+                toolState = current.toolState,
                 syncState = SyncState.Disconnected
-            )
+            ).withUndoRedoAvailability()
         }
     }
 
@@ -141,7 +152,10 @@ class DefaultCanvasRuntime @Inject constructor(
     }
 
     override fun setSyncState(syncState: SyncState) {
-        _renderState.update { it.copy(syncState = syncState) }
+        _renderState.update { current ->
+            val next = current.copy(syncState = syncState)
+            next.withUndoRedoAvailability()
+        }
     }
 
     private suspend fun handleEvent(event: CanvasRuntimeEvent) {
@@ -155,6 +169,8 @@ class DefaultCanvasRuntime @Inject constructor(
             CanvasRuntimeEvent.LocalRelease -> handleLocalRelease()
             is CanvasRuntimeEvent.EraseAt -> handleEraseAt(event.point)
             CanvasRuntimeEvent.ClearCanvas -> handleClearCanvas()
+            CanvasRuntimeEvent.Undo -> handleUndo()
+            CanvasRuntimeEvent.Redo -> handleRedo()
             is CanvasRuntimeEvent.RemoteOperation -> applyRemoteOperation(event.operation)
             is CanvasRuntimeEvent.RemoteBatch -> handleRecoveryOperations(
                 CanvasRuntimeEvent.RecoveryOperations(
@@ -181,7 +197,10 @@ class DefaultCanvasRuntime @Inject constructor(
         )
         pendingAppendPoints.clear()
         lastAppendFlushAt = System.currentTimeMillis()
-        _renderState.update { it.copy(localActiveStroke = stroke) }
+        _renderState.update { current ->
+            val next = current.copy(localActiveStroke = stroke)
+            next.withUndoRedoAvailability()
+        }
         outbound.send(
             newClientOperation(
                 type = DrawingOperationType.ADD_STROKE,
@@ -199,7 +218,10 @@ class DefaultCanvasRuntime @Inject constructor(
             samePointThreshold = currentPointThreshold()
         )
         if (next.points.size == active.points.size) return
-        _renderState.update { it.copy(localActiveStroke = next) }
+        _renderState.update { current ->
+            val state = current.copy(localActiveStroke = next)
+            state.withUndoRedoAvailability()
+        }
         pendingAppendPoints.add(point)
         flushAppendPointsIfNeeded(force = false)
     }
@@ -209,12 +231,14 @@ class DefaultCanvasRuntime @Inject constructor(
         val finished = strokeBuilder.finishStroke(active) ?: return
         flushAppendPointsIfNeeded(force = true)
         persistenceStore.persistLocalCommittedStroke(finished)
+        recordLocalAction(HistoryAction.DrawAction(finished))
         _renderState.update {
-            it.copy(
+            val next = it.copy(
                 committedStrokes = it.committedStrokes + finished,
                 localActiveStroke = null,
                 cacheToken = it.cacheToken + 1
             )
+            next.withUndoRedoAvailability()
         }
         outbound.send(
             newClientOperation(
@@ -235,15 +259,19 @@ class DefaultCanvasRuntime @Inject constructor(
             },
             point = point.denormalizeToSurface(renderWidth, renderHeight)
         ) ?: return
+        val committedStroke = _renderState.value.committedStrokes.firstOrNull { it.id == stroke.id }
+            ?: return
+        recordLocalAction(HistoryAction.EraseAction(stroke.id, committedStroke))
         persistenceStore.persistErase(stroke.id)
         _renderState.update {
-            it.copy(
+            val next = it.copy(
                 committedStrokes = it.committedStrokes.filterNot { committed ->
                     committed.id == stroke.id
                 },
                 remoteActiveStrokes = it.remoteActiveStrokes - stroke.id,
                 cacheToken = it.cacheToken + 1
             )
+            next.withUndoRedoAvailability()
         }
         outbound.send(
             newClientOperation(
@@ -256,13 +284,15 @@ class DefaultCanvasRuntime @Inject constructor(
 
     private suspend fun handleClearCanvas() {
         persistenceStore.persistClear()
+        clearHistory()
         _renderState.update {
-            it.copy(
+            val next = it.copy(
                 committedStrokes = emptyList(),
                 localActiveStroke = null,
                 remoteActiveStrokes = emptyMap(),
                 cacheToken = it.cacheToken + 1
             )
+            next.withUndoRedoAvailability()
         }
         outbound.send(
             newClientOperation(
@@ -314,7 +344,7 @@ class DefaultCanvasRuntime @Inject constructor(
                 val strokeId = operation.strokeId ?: return
                 persistenceStore.persistErase(strokeId, operation.serverRevision)
                 _renderState.update {
-                    it.copy(
+                    val next = it.copy(
                         committedStrokes = it.committedStrokes.filterNot { stroke ->
                             stroke.id == strokeId
                         },
@@ -322,18 +352,21 @@ class DefaultCanvasRuntime @Inject constructor(
                         revision = maxOf(it.revision, operation.serverRevision),
                         cacheToken = it.cacheToken + 1
                     )
+                    next.withUndoRedoAvailability()
                 }
             }
             SyncOperationPayload.ClearCanvas -> {
                 persistenceStore.persistClear(operation.serverRevision)
+                clearHistory()
                 _renderState.update {
-                    it.copy(
+                    val next = it.copy(
                         committedStrokes = emptyList(),
                         localActiveStroke = null,
                         remoteActiveStrokes = emptyMap(),
                         revision = maxOf(it.revision, operation.serverRevision),
                         cacheToken = it.cacheToken + 1
                     )
+                    next.withUndoRedoAvailability()
                 }
             }
         }
@@ -341,14 +374,16 @@ class DefaultCanvasRuntime @Inject constructor(
 
     private suspend fun handleRecoverySnapshot(event: CanvasRuntimeEvent.RecoverySnapshot) {
         persistenceStore.replaceFromServerSnapshot(event.strokes, event.serverRevision)
+        clearHistory()
         _renderState.update {
-            it.copy(
+            val next = it.copy(
                 committedStrokes = event.strokes,
                 localActiveStroke = null,
                 remoteActiveStrokes = emptyMap(),
                 revision = event.serverRevision,
                 cacheToken = it.cacheToken + 1
             )
+            next.withUndoRedoAvailability()
         }
     }
 
@@ -404,6 +439,7 @@ class DefaultCanvasRuntime @Inject constructor(
                 }
                 SyncOperationPayload.ClearCanvas -> {
                     persistenceStore.persistClear(operation.serverRevision)
+                    clearHistory()
                     committedStrokes = emptyList()
                     remoteActiveStrokes = emptyMap()
                     shouldClearLocalActive = true
@@ -414,18 +450,120 @@ class DefaultCanvasRuntime @Inject constructor(
         }
 
         _renderState.update {
-            it.copy(
+            val next = it.copy(
                 committedStrokes = committedStrokes,
                 localActiveStroke = if (shouldClearLocalActive) null else it.localActiveStroke,
                 remoteActiveStrokes = remoteActiveStrokes,
                 revision = revision,
                 cacheToken = if (cacheChanged) it.cacheToken + 1 else it.cacheToken
             )
+            next.withUndoRedoAvailability()
         }
     }
 
     private fun handleFlowControl(event: CanvasRuntimeEvent.FlowControl) {
         activeAppendHz = event.maxAppendHz.coerceIn(MIN_APPEND_HZ, DEFAULT_APPEND_HZ)
+    }
+
+    private fun CanvasRenderState.withUndoRedoAvailability(): CanvasRenderState = copy(
+        canUndo = localActiveStroke != null || undoStack.isNotEmpty(),
+        canRedo = localActiveStroke == null && redoStack.isNotEmpty()
+    )
+
+    private suspend fun handleUndo() {
+        val activeStroke = _renderState.value.localActiveStroke
+        if (activeStroke != null) {
+            pendingAppendPoints.clear()
+            _renderState.update { current ->
+                val next = current.copy(localActiveStroke = null)
+                next.withUndoRedoAvailability()
+            }
+            outbound.send(
+                newClientOperation(
+                    type = DrawingOperationType.DELETE_STROKE,
+                    strokeId = activeStroke.id,
+                    payload = SyncOperationPayload.DeleteStroke
+                )
+            )
+            return
+        }
+
+        val action = if (undoStack.isEmpty()) null else undoStack.removeLast()
+        if (action == null) {
+            refreshUndoRedoAvailability()
+            return
+        }
+        when (action) {
+            is HistoryAction.DrawAction -> {
+                redoStack.addLast(action)
+                persistenceStore.persistErase(action.stroke.id)
+                _renderState.update { current ->
+                    val next = current.copy(
+                        committedStrokes = current.committedStrokes.filterNot { it.id == action.stroke.id },
+                        remoteActiveStrokes = current.remoteActiveStrokes - action.stroke.id,
+                        cacheToken = current.cacheToken + 1
+                    )
+                    next.withUndoRedoAvailability()
+                }
+                outbound.send(
+                    newClientOperation(
+                        type = DrawingOperationType.DELETE_STROKE,
+                        strokeId = action.stroke.id,
+                        payload = SyncOperationPayload.DeleteStroke
+                    )
+                )
+            }
+            is HistoryAction.EraseAction -> {
+                val restored = replayStroke(action.deletedStroke)
+                redoStack.addLast(HistoryAction.EraseAction(deletedStrokeId = restored.id, deletedStroke = action.deletedStroke))
+                rewriteDrawActionStrokeId(
+                    oldStrokeId = action.deletedStrokeId,
+                    newStrokeId = restored.id
+                )
+                refreshUndoRedoAvailability()
+            }
+        }
+    }
+
+    private suspend fun handleRedo() {
+        if (_renderState.value.localActiveStroke != null) {
+            refreshUndoRedoAvailability()
+            return
+        }
+
+        val action = if (redoStack.isEmpty()) null else redoStack.removeLast()
+        if (action == null) {
+            refreshUndoRedoAvailability()
+            return
+        }
+        when (action) {
+            is HistoryAction.DrawAction -> {
+                val replayed = replayStroke(action.stroke)
+                undoStack.addLast(HistoryAction.DrawAction(replayed))
+                trimHistory()
+                refreshUndoRedoAvailability()
+            }
+            is HistoryAction.EraseAction -> {
+                undoStack.addLast(action)
+                trimHistory()
+                persistenceStore.persistErase(action.deletedStrokeId)
+                _renderState.update { current ->
+                    val next = current.copy(
+                        committedStrokes = current.committedStrokes.filterNot { it.id == action.deletedStrokeId },
+                        remoteActiveStrokes = current.remoteActiveStrokes - action.deletedStrokeId,
+                        cacheToken = current.cacheToken + 1
+                    )
+                    next.withUndoRedoAvailability()
+                }
+                outbound.send(
+                    newClientOperation(
+                        type = DrawingOperationType.DELETE_STROKE,
+                        strokeId = action.deletedStrokeId,
+                        payload = SyncOperationPayload.DeleteStroke
+                    )
+                )
+            }
+        }
     }
 
     private suspend fun flushAppendPointsIfNeeded(force: Boolean) {
@@ -446,10 +584,126 @@ class DefaultCanvasRuntime @Inject constructor(
         )
     }
 
+    private fun recordLocalAction(action: HistoryAction) {
+        redoStack.clear()
+        undoStack.addLast(action)
+        trimHistory()
+    }
+
+    private fun trimHistory() {
+        while (undoStack.size > MAX_ACTIONS) {
+            if (undoStack.isNotEmpty()) {
+                undoStack.removeFirst()
+            }
+        }
+        while (redoStack.size > MAX_ACTIONS) {
+            if (redoStack.isNotEmpty()) {
+                redoStack.removeFirst()
+            }
+        }
+    }
+
+    private fun clearHistory() {
+        undoStack.clear()
+        redoStack.clear()
+    }
+
+    private fun refreshUndoRedoAvailability() {
+        _renderState.update { current -> current.withUndoRedoAvailability() }
+    }
+
+    private fun rewriteDrawActionStrokeId(oldStrokeId: String, newStrokeId: String) {
+        if (oldStrokeId == newStrokeId) return
+        val rewritten = undoStack.map { action ->
+            when (action) {
+                is HistoryAction.DrawAction ->
+                    if (action.stroke.id == oldStrokeId) {
+                        HistoryAction.DrawAction(action.stroke.copy(id = newStrokeId))
+                    } else {
+                        action
+                    }
+                is HistoryAction.EraseAction -> action
+            }
+        }
+        undoStack.clear()
+        rewritten.forEach { undoStack.addLast(it) }
+    }
+
+    private suspend fun replayStroke(source: Stroke): Stroke {
+        val points = source.points
+        if (points.isEmpty()) return source
+
+        val newStroke = source.copy(id = UUID.randomUUID().toString())
+        persistenceStore.persistLocalCommittedStroke(newStroke)
+        _renderState.update { current ->
+            val next = current.copy(
+                committedStrokes = current.committedStrokes + newStroke,
+                cacheToken = current.cacheToken + 1
+            )
+            next.withUndoRedoAvailability()
+        }
+        outbound.send(
+            newClientOperation(
+                type = DrawingOperationType.ADD_STROKE,
+                strokeId = newStroke.id,
+                payload = newStroke.toAddStrokePayload()
+            )
+        )
+
+        val remaining = points.drop(1)
+        if (remaining.isNotEmpty()) {
+            replayAppendPoints(newStroke.id, remaining)
+        }
+
+        outbound.send(
+            newClientOperation(
+                type = DrawingOperationType.FINISH_STROKE,
+                strokeId = newStroke.id,
+                payload = SyncOperationPayload.FinishStroke
+            )
+        )
+        return newStroke
+    }
+
+    private suspend fun replayAppendPoints(strokeId: String, points: List<StrokePoint>) {
+        var chunk = mutableListOf<StrokePoint>()
+        for (point in points) {
+            chunk.add(point)
+            val candidate = newClientOperation(
+                type = DrawingOperationType.APPEND_POINTS,
+                strokeId = strokeId,
+                payload = SyncOperationPayload.AppendPoints(chunk)
+            )
+            val sizeBytes = candidate.toWireJson().encodeToByteArray().size
+            if (sizeBytes > MAX_APPEND_OP_BYTES && chunk.size > 1) {
+                val last = chunk.removeAt(chunk.size - 1)
+                outbound.send(
+                    newClientOperation(
+                        type = DrawingOperationType.APPEND_POINTS,
+                        strokeId = strokeId,
+                        payload = SyncOperationPayload.AppendPoints(chunk)
+                    )
+                )
+                chunk = mutableListOf(last)
+            }
+        }
+        if (chunk.isNotEmpty()) {
+            outbound.send(
+                newClientOperation(
+                    type = DrawingOperationType.APPEND_POINTS,
+                    strokeId = strokeId,
+                    payload = SyncOperationPayload.AppendPoints(chunk)
+                )
+            )
+        }
+    }
+
     private companion object {
         const val DEFAULT_APPEND_HZ = 20
         const val MIN_APPEND_HZ = 10
         const val DEFAULT_POINT_THRESHOLD_PX = 0.5f
+        const val MAX_ACTIONS = 50
+        const val MAX_APPEND_OP_BYTES = 16 * 1024
     }
 
     private fun hasCanvasViewport(): Boolean =
@@ -469,3 +723,8 @@ private data class RuntimeEventEnvelope(
     val event: CanvasRuntimeEvent,
     val completion: CompletableDeferred<Unit>? = null
 )
+
+private sealed interface HistoryAction {
+    data class DrawAction(val stroke: Stroke) : HistoryAction
+    data class EraseAction(val deletedStrokeId: String, val deletedStroke: Stroke) : HistoryAction
+}

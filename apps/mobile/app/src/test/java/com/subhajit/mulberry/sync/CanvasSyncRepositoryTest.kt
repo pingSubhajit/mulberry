@@ -602,6 +602,8 @@ private class FakeMulberryApiService : MulberryApiService {
 
     override suspend fun sendDebugPairingConfirmationPush(): DebugActionResponse = error("unused")
 
+    override suspend fun sendDebugPairingDisconnectedPush(): DebugActionResponse = error("unused")
+
     override suspend fun getCanvasOperations(afterRevision: Long): CanvasOpsResponse =
         CanvasOpsResponse(operations = emptyList())
 

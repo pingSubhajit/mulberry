@@ -87,6 +87,8 @@
     <string name="home_canvas_paired_body">Local strokes: %1$d</string>
     <string name="home_paired_canvas_guidance_title">Draw them something cute</string>
     <string name="home_paired_canvas_guidance_body">Whatever you draw will appear at the lockscreen of their phone</string>
+    <string name="home_canvas_undo_content_description">Undo</string>
+    <string name="home_canvas_redo_content_description">Redo</string>
     <string name="home_canvas_erase_content_description">Erase strokes</string>
     <string name="home_canvas_clear_content_description">Clear canvas</string>
     <string name="home_clear_canvas_title">Clear canvas?</string>
