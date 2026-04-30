@@ -1,7 +1,6 @@
 package com.subhajit.mulberry.home
 
 import android.content.Intent
-import android.graphics.Typeface as AndroidTypeface
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -121,8 +120,8 @@ import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.review.InAppReviewLauncher
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
-import com.subhajit.mulberry.ui.theme.MulberrySecondaryFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.ui.theme.VirgilFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import com.subhajit.mulberry.wallpaper.RemoteWallpaper
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
@@ -740,12 +739,7 @@ private fun CanvasBlankStateGuidance(modifier: Modifier = Modifier) {
 
 @Composable
 private fun rememberMulberryGuidanceFontFamily(): FontFamily {
-    val context = LocalContext.current
-    return remember(context) {
-        runCatching {
-            FontFamily(AndroidTypeface.createFromAsset(context.assets, "fonts/virgil.woff2"))
-        }.getOrDefault(MulberrySecondaryFontFamily)
-    }
+    return VirgilFontFamily
 }
 
 @Composable

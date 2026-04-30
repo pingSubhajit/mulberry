@@ -15,8 +15,10 @@ val PoppinsFontFamily = FontFamily(
     Font(R.font.poppins_bold, FontWeight.Bold)
 )
 
-// Virgil is staged in assets as WOFF2. Android font resources require a compatible
-// font container, so this slot stays explicit until the asset is converted safely.
+val VirgilFontFamily = FontFamily(
+    Font(R.font.virgil_regular, FontWeight.Normal)
+)
+
 val MulberrySecondaryFontFamily: FontFamily = PoppinsFontFamily
 
 val MulberryTypography = Typography(
