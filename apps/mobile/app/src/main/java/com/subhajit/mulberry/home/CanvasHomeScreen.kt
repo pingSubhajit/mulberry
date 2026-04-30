@@ -43,6 +43,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
@@ -74,8 +75,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -95,7 +98,9 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
@@ -688,50 +693,16 @@ private fun PairedCanvasPane(
                     modifier = Modifier.align(Alignment.Center)
                 )
             }
-
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 22.dp, bottom = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                CanvasActionButton(
-                    drawableRes = R.drawable.canvas_action_undo,
-                    contentDescription = stringResource(R.string.home_canvas_undo_content_description),
-                    selected = true,
-                    enabled = uiState.canUndo,
-                    onClick = onUndoRequested,
-                    modifier = Modifier.testTag(TestTags.UNDO_BUTTON)
-                )
-                CanvasActionButton(
-                    drawableRes = R.drawable.canvas_action_redo,
-                    contentDescription = stringResource(R.string.home_canvas_redo_content_description),
-                    selected = true,
-                    enabled = uiState.canRedo,
-                    onClick = onRedoRequested,
-                    modifier = Modifier.testTag(TestTags.REDO_BUTTON)
-                )
-                CanvasActionButton(
-                    drawableRes = R.drawable.canvas_action_erase,
-                    contentDescription = stringResource(R.string.home_canvas_erase_content_description),
-                    selected = uiState.toolState.activeTool == DrawingTool.ERASE,
-                    onClick = onEraserToggle,
-                    modifier = Modifier.testTag(TestTags.ERASER_BUTTON)
-                )
-                CanvasActionButton(
-                    drawableRes = R.drawable.canvas_action_clear,
-                    contentDescription = stringResource(R.string.home_canvas_clear_content_description),
-                    selected = true,
-                    onClick = onClearRequested,
-                    modifier = Modifier.testTag(TestTags.CLEAR_BUTTON)
-                )
-            }
         }
 
         CanvasControlTray(
             uiState = uiState,
             onBrushWidthChanged = onBrushWidthChanged,
-            onColorSelected = onColorSelected
+            onColorSelected = onColorSelected,
+            onUndoRequested = onUndoRequested,
+            onRedoRequested = onRedoRequested,
+            onEraserToggle = onEraserToggle,
+            onClearRequested = onClearRequested
         )
     }
 }
@@ -784,7 +755,8 @@ private fun CanvasActionButton(
     selected: Boolean,
     enabled: Boolean = true,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    size: Dp = 50.dp
 ) {
     val iconAlpha = when {
         !enabled -> 0.35f
@@ -793,7 +765,7 @@ private fun CanvasActionButton(
     }
     Box(
         modifier = modifier
-            .size(50.dp)
+            .size(size)
             .shadow(
                 elevation = 14.dp,
                 shape = CircleShape,
@@ -819,11 +791,123 @@ private fun CanvasActionButton(
 }
 
 @Composable
+private fun ColorDotButton(
+    colorArgb: Long,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .size(47.dp)
+            .shadow(
+                elevation = 12.dp,
+                shape = CircleShape,
+                clip = false,
+                ambientColor = Color(0x1A3D3D3D),
+                spotColor = Color(0x1A3D3D3D)
+            )
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        color = Color(colorArgb),
+        shape = CircleShape
+    ) {}
+}
+
+@Composable
+private fun BrushWidthButton(
+    width: Float,
+    accentColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .size(47.dp)
+            .shadow(
+                elevation = 12.dp,
+                shape = CircleShape,
+                clip = false,
+                ambientColor = Color(0x1A3D3D3D),
+                spotColor = Color(0x1A3D3D3D)
+            )
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        color = MaterialTheme.mulberryAppColors.softSurfaceStrong,
+        shape = CircleShape
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val t = ((width - DrawingDefaults.MIN_WIDTH) / (DrawingDefaults.MAX_WIDTH - DrawingDefaults.MIN_WIDTH))
+                .coerceIn(0f, 1f)
+
+            val insetPx = 7.dp.toPx()
+            val ringWidthPx = 4.dp.toPx()
+            val ringRadiusPx = (size.minDimension / 2f) - insetPx - (ringWidthPx / 2f)
+
+            drawCircle(
+                color = accentColor,
+                radius = ringRadiusPx,
+                style = Stroke(width = ringWidthPx)
+            )
+
+            val dotRadiusPx = 4.dp.toPx() + (11.dp.toPx() - 4.dp.toPx()) * t
+            drawCircle(color = accentColor, radius = dotRadiusPx)
+        }
+    }
+}
+
+@Composable
+private fun VerticalSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    colors: androidx.compose.material3.SliderColors,
+    modifier: Modifier = Modifier
+) {
+    Slider(
+        value = value,
+        onValueChange = onValueChange,
+        valueRange = valueRange,
+        colors = colors,
+        modifier = modifier.vertical()
+    )
+}
+
+private fun Modifier.vertical(): Modifier =
+    layout { measurable, constraints ->
+        val placeable = measurable.measure(
+            Constraints(
+                minWidth = constraints.minHeight,
+                maxWidth = constraints.maxHeight,
+                minHeight = constraints.minWidth,
+                maxHeight = constraints.maxWidth
+            )
+        )
+
+        val width = placeable.height.coerceIn(constraints.minWidth, constraints.maxWidth)
+        val height = placeable.width.coerceIn(constraints.minHeight, constraints.maxHeight)
+
+        layout(width, height) {
+            placeable.placeWithLayer(0, 0) {
+                rotationZ = -90f
+                transformOrigin = TransformOrigin(0f, 0f)
+                translationY = height.toFloat()
+            }
+        }
+    }
+
+@Composable
 private fun CanvasControlTray(
     uiState: CanvasHomeUiState,
     onBrushWidthChanged: (Float) -> Unit,
-    onColorSelected: (Long) -> Unit
+    onColorSelected: (Long) -> Unit,
+    onUndoRequested: () -> Unit,
+    onRedoRequested: () -> Unit,
+    onEraserToggle: () -> Unit,
+    onClearRequested: () -> Unit
 ) {
+    var showWidthPicker by remember { mutableStateOf(false) }
+    var showColorPicker by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -842,37 +926,124 @@ private fun CanvasControlTray(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .width(168.dp)
-                .height(36.dp)
-                .clip(RoundedCornerShape(500.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = 10.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Slider(
-                value = uiState.toolState.selectedWidth,
-                onValueChange = onBrushWidthChanged,
-                valueRange = DrawingDefaults.MIN_WIDTH..DrawingDefaults.MAX_WIDTH,
-                colors = SliderDefaults.colors(
-                    thumbColor = MulberryPrimary,
-                    activeTrackColor = MulberryPrimary,
-                    inactiveTrackColor = MaterialTheme.mulberryAppColors.softSurfaceAlt
-                ),
-                modifier = Modifier.testTag(TestTags.BRUSH_WIDTH_SLIDER)
+        Box {
+            BrushWidthButton(
+                width = uiState.toolState.selectedWidth,
+                accentColor = Color(uiState.toolState.selectedColorArgb),
+                onClick = {
+                    showWidthPicker = true
+                    showColorPicker = false
+                },
+                modifier = Modifier.testTag(TestTags.BRUSH_WIDTH_BUTTON)
             )
+
+            DropdownMenu(
+                expanded = showWidthPicker,
+                onDismissRequest = { showWidthPicker = false },
+                containerColor = MaterialTheme.mulberryAppColors.softSurface,
+                modifier = Modifier.width(72.dp),
+                properties = PopupProperties(focusable = true)
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .height(220.dp)
+                            .width(52.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        VerticalSlider(
+                            value = uiState.toolState.selectedWidth,
+                            onValueChange = onBrushWidthChanged,
+                            valueRange = DrawingDefaults.MIN_WIDTH..DrawingDefaults.MAX_WIDTH,
+                            colors = SliderDefaults.colors(
+                                thumbColor = MulberryPrimary,
+                                activeTrackColor = MulberryPrimary,
+                                inactiveTrackColor = MaterialTheme.mulberryAppColors.softSurfaceAlt
+                            ),
+                            modifier = Modifier
+                                .testTag(TestTags.BRUSH_WIDTH_SLIDER)
+                                .fillMaxSize()
+                        )
+                    }
+                }
+            }
         }
 
-        uiState.palette.forEach { color ->
-            ColorSwatch(
-                colorArgb = color,
-                isSelected = color == uiState.toolState.selectedColorArgb &&
-                    uiState.toolState.activeTool == DrawingTool.DRAW,
-                onClick = { onColorSelected(color) },
-                size = 47.dp
+        Box {
+            ColorDotButton(
+                colorArgb = uiState.toolState.selectedColorArgb,
+                onClick = {
+                    showColorPicker = true
+                    showWidthPicker = false
+                }
             )
+
+            DropdownMenu(
+                expanded = showColorPicker,
+                onDismissRequest = { showColorPicker = false },
+                containerColor = MaterialTheme.mulberryAppColors.softSurface,
+                properties = PopupProperties(focusable = true)
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    uiState.palette
+                        .take(16)
+                        .chunked(4)
+                        .forEach { rowColors ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                rowColors.forEach { color ->
+                                    ColorSwatch(
+                                        colorArgb = color,
+                                        isSelected = color == uiState.toolState.selectedColorArgb &&
+                                            uiState.toolState.activeTool == DrawingTool.DRAW,
+                                        onClick = {
+                                            onColorSelected(color)
+                                            showColorPicker = false
+                                        },
+                                        size = 44.dp
+                                    )
+                                }
+                            }
+                        }
+                }
+            }
         }
+
+        CanvasActionButton(
+            drawableRes = R.drawable.canvas_action_undo,
+            contentDescription = stringResource(R.string.home_canvas_undo_content_description),
+            selected = true,
+            enabled = uiState.canUndo,
+            onClick = onUndoRequested,
+            modifier = Modifier.testTag(TestTags.UNDO_BUTTON)
+        )
+        CanvasActionButton(
+            drawableRes = R.drawable.canvas_action_redo,
+            contentDescription = stringResource(R.string.home_canvas_redo_content_description),
+            selected = true,
+            enabled = uiState.canRedo,
+            onClick = onRedoRequested,
+            modifier = Modifier.testTag(TestTags.REDO_BUTTON)
+        )
+        CanvasActionButton(
+            drawableRes = R.drawable.canvas_action_erase,
+            contentDescription = stringResource(R.string.home_canvas_erase_content_description),
+            selected = uiState.toolState.activeTool == DrawingTool.ERASE,
+            onClick = onEraserToggle,
+            modifier = Modifier.testTag(TestTags.ERASER_BUTTON)
+        )
+        CanvasActionButton(
+            drawableRes = R.drawable.canvas_action_clear,
+            contentDescription = stringResource(R.string.home_canvas_clear_content_description),
+            selected = true,
+            onClick = onClearRequested,
+            modifier = Modifier.testTag(TestTags.CLEAR_BUTTON)
+        )
     }
 }
 

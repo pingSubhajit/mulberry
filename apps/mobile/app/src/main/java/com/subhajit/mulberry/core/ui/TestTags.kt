@@ -37,6 +37,7 @@ object TestTags {
     const val HOME_PAIRING_CONFIRMED_DISCONNECT_BUTTON = "home_pairing_confirmed_disconnect_button"
     const val CANVAS_SCREEN = "canvas_screen"
     const val DRAWING_CANVAS = "drawing_canvas"
+    const val BRUSH_WIDTH_BUTTON = "brush_width_button"
     const val BRUSH_WIDTH_SLIDER = "brush_width_slider"
     const val UNDO_BUTTON = "undo_button"
     const val REDO_BUTTON = "redo_button"
