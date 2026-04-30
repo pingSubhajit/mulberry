@@ -25,7 +25,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -118,6 +121,7 @@ fun WallpaperBackgroundSelectionSection(
     onViewMoreWallpapers: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    var previewItem by remember { mutableStateOf<WallpaperPreviewItem?>(null) }
     val wallpaperItems = buildList<WallpaperSelectionItem> {
         remoteWallpapers.forEach { wallpaper ->
             add(WallpaperSelectionItem.Remote(wallpaper))
@@ -142,7 +146,7 @@ fun WallpaperBackgroundSelectionSection(
                             is WallpaperSelectionItem.Preset -> PresetCard(
                                 preset = item.preset,
                                 isSelected = selectedPresetResId == item.preset.drawableResId,
-                                onClick = { onPresetSelected(item.preset.drawableResId) },
+                                onClick = { previewItem = WallpaperPreviewItem.Preset(item.preset) },
                                 modifier = Modifier.weight(1f)
                             )
 
@@ -150,7 +154,7 @@ fun WallpaperBackgroundSelectionSection(
                                 wallpaper = item.wallpaper,
                                 isSelected = selectedRemoteWallpaperId == item.wallpaper.id,
                                 isApplying = applyingRemoteWallpaperId == item.wallpaper.id,
-                                onClick = { onRemoteWallpaperSelected(item.wallpaper) },
+                                onClick = { previewItem = WallpaperPreviewItem.Remote(item.wallpaper) },
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -164,6 +168,19 @@ fun WallpaperBackgroundSelectionSection(
                 MoreWallpapersButton(onClick = onClick)
             }
         }
+    }
+
+    previewItem?.let { selected ->
+        WallpaperPreviewBottomSheet(
+            item = selected,
+            onDismiss = { previewItem = null },
+            onSetAsWallpaper = {
+                when (selected) {
+                    is WallpaperPreviewItem.Preset -> onPresetSelected(selected.preset.drawableResId)
+                    is WallpaperPreviewItem.Remote -> onRemoteWallpaperSelected(selected.wallpaper)
+                }
+            }
+        )
     }
 }
 

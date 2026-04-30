@@ -25,6 +25,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.Alignment
@@ -49,6 +52,8 @@ import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
+import com.subhajit.mulberry.wallpaper.ui.WallpaperPreviewBottomSheet
+import com.subhajit.mulberry.wallpaper.ui.WallpaperPreviewItem
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 
@@ -79,7 +84,7 @@ private fun WallpaperCatalogScreen(
     onWallpaperSelected: (RemoteWallpaper) -> Unit
 ) {
     val gridState = rememberLazyGridState()
-    val appColors = MaterialTheme.mulberryAppColors
+    var previewItem by remember { mutableStateOf<WallpaperPreviewItem?>(null) }
 
     LaunchedEffect(gridState, uiState.canLoadMore, uiState.wallpapers.size) {
         snapshotFlow {
@@ -91,76 +96,92 @@ private fun WallpaperCatalogScreen(
             .collect { onLoadMore() }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 20.dp)
-    ) {
-        Row(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 11.dp, bottom = 26.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
         ) {
-            CatalogBackButton(onClick = onBack)
-            Text(
-                text = stringResource(R.string.wallpaper_catalog_title),
-                color = MaterialTheme.colorScheme.onBackground,
-                style = TextStyle(
-                    fontFamily = PoppinsFontFamily,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 18.sp,
-                    lineHeight = 38.sp
-                ),
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Box(modifier = Modifier.fillMaxSize()) {
-            when {
-                uiState.isInitialLoading -> CircularProgressIndicator(
-                    color = MulberryPrimary,
-                    modifier = Modifier.align(Alignment.Center)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 11.dp, bottom = 26.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CatalogBackButton(onClick = onBack)
+                Text(
+                    text = stringResource(R.string.wallpaper_catalog_title),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    style = TextStyle(
+                        fontFamily = PoppinsFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 18.sp,
+                        lineHeight = 38.sp
+                    ),
+                    modifier = Modifier.weight(1f)
                 )
+            }
 
-                uiState.wallpapers.isEmpty() && uiState.errorMessage == null -> EmptyCatalogState()
+            Box(modifier = Modifier.fillMaxSize()) {
+                when {
+                    uiState.isInitialLoading -> CircularProgressIndicator(
+                        color = MulberryPrimary,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
 
-                uiState.wallpapers.isEmpty() -> ErrorCatalogState(
-                    message = uiState.errorMessage ?: stringResource(R.string.wallpaper_catalog_error),
-                    onRetry = onRetry,
-                    modifier = Modifier.align(Alignment.Center)
-                )
+                    uiState.wallpapers.isEmpty() && uiState.errorMessage == null -> EmptyCatalogState()
 
-                else -> LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    state = gridState,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(uiState.wallpapers, key = { it.id }) { wallpaper ->
-                        RemoteWallpaperCard(
-                            wallpaper = wallpaper,
-                            isSelected = uiState.selectedWallpaperId == wallpaper.id,
-                            isApplying = uiState.applyingWallpaperId == wallpaper.id,
-                            onClick = { onWallpaperSelected(wallpaper) }
-                        )
-                    }
-                    if (uiState.isPageLoading) {
-                        item {
-                            CircularProgressIndicator(
-                                color = MulberryPrimary,
-                                modifier = Modifier
-                                    .padding(24.dp)
-                                    .size(28.dp)
+                    uiState.wallpapers.isEmpty() -> ErrorCatalogState(
+                        message = uiState.errorMessage
+                            ?: stringResource(R.string.wallpaper_catalog_error),
+                        onRetry = onRetry,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+
+                    else -> LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        state = gridState,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(18.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(uiState.wallpapers, key = { it.id }) { wallpaper ->
+                            RemoteWallpaperCard(
+                                wallpaper = wallpaper,
+                                isSelected = uiState.selectedWallpaperId == wallpaper.id,
+                                isApplying = uiState.applyingWallpaperId == wallpaper.id,
+                                onClick = { previewItem = WallpaperPreviewItem.Remote(wallpaper) }
                             )
+                        }
+                        if (uiState.isPageLoading) {
+                            item {
+                                CircularProgressIndicator(
+                                    color = MulberryPrimary,
+                                    modifier = Modifier
+                                        .padding(24.dp)
+                                        .size(28.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
+        }
+
+        previewItem?.let { selected ->
+            WallpaperPreviewBottomSheet(
+                item = selected,
+                onDismiss = { previewItem = null },
+                onSetAsWallpaper = {
+                    when (selected) {
+                        is WallpaperPreviewItem.Remote -> onWallpaperSelected(selected.wallpaper)
+                        is WallpaperPreviewItem.Preset -> Unit
+                    }
+                }
+            )
         }
     }
 }
