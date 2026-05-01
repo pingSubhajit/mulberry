@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.subhajit.mulberry.drawing.DrawingRepository
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataEntity
+import com.subhajit.mulberry.drawing.data.local.CanvasTextElementDao
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.data.local.DrawingOperationEntity
 import com.subhajit.mulberry.drawing.data.local.DrawingOperationsDao
@@ -13,6 +14,7 @@ import com.subhajit.mulberry.drawing.data.local.toEntity
 import com.subhajit.mulberry.drawing.data.local.toPointEntities
 import com.subhajit.mulberry.drawing.engine.StrokeBuilder
 import com.subhajit.mulberry.drawing.geometry.normalizeStrokeWidth
+import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.BrushStyle
 import com.subhajit.mulberry.drawing.model.CanvasSnapshotState
 import com.subhajit.mulberry.drawing.model.CanvasState
@@ -34,6 +36,7 @@ class RoomDrawingRepository @Inject constructor(
     private val database: DrawingDatabase,
     private val drawingDao: DrawingDao,
     private val drawingOperationsDao: DrawingOperationsDao,
+    private val canvasTextElementDao: CanvasTextElementDao,
     private val canvasMetadataDao: CanvasMetadataDao,
     private val strokeBuilder: StrokeBuilder
 ) : DrawingRepository {
@@ -53,13 +56,15 @@ class RoomDrawingRepository @Inject constructor(
 
     override val canvasState: Flow<CanvasState> = combine(
         drawingDao.observeStrokeGraphs().map { list -> list.map { it.toDomain() } },
+        canvasTextElementDao.observeElements().map { list -> list.map { it.toDomain() } },
         activeStroke,
         metadataFlow
-    ) { strokes, active, metadata ->
+    ) { strokes, textElements, active, metadata ->
         CanvasState(
             strokes = strokes,
+            textElements = textElements,
             activeStroke = active,
-            isEmpty = strokes.isEmpty() && active == null,
+            isEmpty = strokes.isEmpty() && textElements.isEmpty() && active == null,
             revision = metadata.revision,
             snapshotState = CanvasSnapshotState(
                 isDirty = metadata.isSnapshotDirty,
@@ -191,6 +196,7 @@ class RoomDrawingRepository @Inject constructor(
             val metadata = currentMetadata()
             val nextRevision = metadata.revision + 1
             drawingDao.clearStrokes()
+            canvasTextElementDao.clear()
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.CLEAR_CANVAS,
@@ -414,6 +420,7 @@ class RoomDrawingRepository @Inject constructor(
         database.withTransaction {
             val metadata = currentMetadata()
             drawingDao.clearStrokes()
+            canvasTextElementDao.clear()
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.CLEAR_CANVAS,
@@ -434,21 +441,29 @@ class RoomDrawingRepository @Inject constructor(
         }
     }
 
-    override suspend fun replaceWithRemoteSnapshot(strokes: List<Stroke>, serverRevision: Long) {
+    override suspend fun replaceWithRemoteSnapshot(
+        strokes: List<Stroke>,
+        textElements: List<CanvasTextElement>,
+        serverRevision: Long
+    ) {
         activeStroke.value = null
         val now = System.currentTimeMillis()
         database.withTransaction {
             val metadata = currentMetadata()
             drawingDao.clearStrokes()
+            canvasTextElementDao.clear()
             strokes.forEach { stroke ->
                 drawingDao.insertStroke(stroke.toEntity())
                 drawingDao.deleteStrokePoints(stroke.id)
                 drawingDao.insertStrokePoints(stroke.toPointEntities())
             }
+            textElements.forEach { element ->
+                canvasTextElementDao.upsert(element.toEntity())
+            }
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.CLEAR_CANVAS,
-                    payload = """{"snapshotRestore":true,"strokeCount":${strokes.size}}""",
+                    payload = """{"snapshotRestore":true,"strokeCount":${strokes.size},"textElementCount":${textElements.size}}""",
                     revision = maxOf(metadata.revision + 1, serverRevision),
                     createdAt = now,
                     serverRevision = serverRevision,
@@ -465,11 +480,123 @@ class RoomDrawingRepository @Inject constructor(
         }
     }
 
+    override suspend fun upsertLocalTextElement(element: CanvasTextElement): Long {
+        val now = System.currentTimeMillis()
+        var nextRevision = 0L
+        database.withTransaction {
+            val metadata = currentMetadata()
+            nextRevision = metadata.revision + 1
+            canvasTextElementDao.upsert(element.toEntity())
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.UPDATE_TEXT_ELEMENT,
+                    strokeId = element.id,
+                    payload = element.textElementPayloadJson(),
+                    revision = nextRevision,
+                    createdAt = now
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = nextRevision,
+                    lastModifiedAt = now,
+                    selectedColorArgb = element.colorArgb,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+        return nextRevision
+    }
+
+    override suspend fun deleteLocalTextElement(elementId: String): Long {
+        val now = System.currentTimeMillis()
+        var nextRevision = 0L
+        database.withTransaction {
+            val metadata = currentMetadata()
+            val deleted = canvasTextElementDao.deleteById(elementId)
+            if (deleted == 0) {
+                nextRevision = metadata.revision
+                return@withTransaction
+            }
+            nextRevision = metadata.revision + 1
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.DELETE_TEXT_ELEMENT,
+                    strokeId = elementId,
+                    payload = "{}",
+                    revision = nextRevision,
+                    createdAt = now
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = nextRevision,
+                    lastModifiedAt = now,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+        return nextRevision
+    }
+
+    override suspend fun applyRemoteAddOrUpdateTextElement(element: CanvasTextElement, serverRevision: Long) {
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val metadata = currentMetadata()
+            canvasTextElementDao.upsert(element.toEntity())
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.UPDATE_TEXT_ELEMENT,
+                    strokeId = element.id,
+                    payload = element.textElementPayloadJson(),
+                    revision = maxOf(metadata.revision + 1, serverRevision),
+                    createdAt = now,
+                    serverRevision = serverRevision,
+                    syncStatus = "REMOTE_APPLIED"
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = maxOf(metadata.revision, serverRevision),
+                    lastModifiedAt = now,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+    }
+
+    override suspend fun applyRemoteDeleteTextElement(elementId: String, serverRevision: Long) {
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val metadata = currentMetadata()
+            canvasTextElementDao.deleteById(elementId)
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.DELETE_TEXT_ELEMENT,
+                    strokeId = elementId,
+                    payload = "{}",
+                    revision = maxOf(metadata.revision + 1, serverRevision),
+                    createdAt = now,
+                    serverRevision = serverRevision,
+                    syncStatus = "REMOTE_APPLIED"
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = maxOf(metadata.revision, serverRevision),
+                    lastModifiedAt = now,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+    }
+
     override suspend fun resetAllDrawingState() {
         activeStroke.value = null
         database.withTransaction {
             drawingDao.clearStrokes()
             drawingOperationsDao.clearOperations()
+            canvasTextElementDao.clear()
             canvasMetadataDao.upsertMetadata(CanvasMetadataEntity.default())
         }
     }
@@ -494,4 +621,24 @@ private fun pointsPayloadJson(points: List<StrokePoint>): String =
         separator = ","
     ) { point ->
         """{"x":${point.x},"y":${point.y}}"""
+    }
+
+private fun CanvasTextElement.textElementPayloadJson(): String {
+    return """{"id":"$id","text":${text.jsonQuoted()},"createdAt":$createdAt,"center":{"x":${center.x},"y":${center.y}},"rotationRad":$rotationRad,"scale":$scale,"boxWidth":$boxWidth,"colorArgb":$colorArgb,"backgroundPillEnabled":$backgroundPillEnabled,"font":"${font.name}","alignment":"${alignment.name}"}"""
+}
+
+private fun String.jsonQuoted(): String =
+    buildString(length + 2) {
+        append('"')
+        for (ch in this@jsonQuoted) {
+            when (ch) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> append(ch)
+            }
+        }
+        append('"')
     }

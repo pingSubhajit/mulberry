@@ -112,7 +112,8 @@ data class CanvasSnapshotResponse(
 )
 
 data class CanvasSnapshotPayload(
-    val strokes: List<CanvasSnapshotStroke> = emptyList()
+    val strokes: List<CanvasSnapshotStroke> = emptyList(),
+    val textElements: List<CanvasSnapshotTextElement> = emptyList()
 )
 
 data class CanvasSnapshotStroke(
@@ -122,6 +123,20 @@ data class CanvasSnapshotStroke(
     val createdAt: Long,
     val points: List<CanvasPointPayload> = emptyList(),
     val finished: Boolean = true
+)
+
+data class CanvasSnapshotTextElement(
+    val id: String,
+    val text: String,
+    val createdAt: Long,
+    val center: CanvasPointPayload,
+    val rotationRad: Float = 0f,
+    val scale: Float = 1f,
+    val boxWidth: Float,
+    val colorArgb: Long,
+    val backgroundPillEnabled: Boolean = false,
+    val font: String = "POPPINS",
+    val alignment: String = "CENTER"
 )
 
 data class CanvasOperationEnvelopeResponse(

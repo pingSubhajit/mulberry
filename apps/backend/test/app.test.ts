@@ -1425,6 +1425,7 @@ describe("Mulberry backend", () => {
     expect(snapshot.json().latestRevision).toBe(7)
     expect(snapshot.json().snapshot.strokes.map((stroke: { id: string }) => stroke.id))
       .toEqual(["current-stroke"])
+    expect(snapshot.json().snapshot.textElements ?? []).toEqual([])
     expect(tail.json().operations.map((operation: { serverRevision: number }) => operation.serverRevision))
       .toEqual([6, 7])
     first.close()
@@ -1469,6 +1470,7 @@ describe("Mulberry backend", () => {
     expect(inProgressSnapshot.json().snapshotRevision).toBe(0)
     expect(inProgressSnapshot.json().latestRevision).toBe(2)
     expect(inProgressSnapshot.json().snapshot.strokes).toEqual([])
+    expect(inProgressSnapshot.json().snapshot.textElements ?? []).toEqual([])
 
     first.send(
       JSON.stringify({
@@ -1489,6 +1491,67 @@ describe("Mulberry backend", () => {
     expect(finishedSnapshot.json().snapshotRevision).toBe(3)
     expect(finishedSnapshot.json().latestRevision).toBe(3)
     expect(stroke.points).toEqual([{ x: 1, y: 1 }, { x: 2, y: 2 }])
+    expect(finishedSnapshot.json().snapshot.textElements ?? []).toEqual([])
+    first.close()
+  })
+
+  it("materializes text elements into canvas snapshots", async () => {
+    const { inviter } = await pairUsers()
+    const first = await app.injectWS("/canvas/sync")
+
+    first.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: inviter.accessToken,
+        pairSessionId: inviter.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    await nextWsJson(first)
+
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP_BATCH",
+        batchId: "text-batch-1",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          addTextElementOperation("text-op-1", "text-1", "Hello", 0.5, 0.5),
+          updateTextElementOperation("text-op-2", "text-1", "Hello world", 0.5, 0.5),
+        ],
+      }),
+    )
+
+    const ack = await nextWsJson(first)
+    expect(ack.type).toBe("ACK_BATCH")
+    expect(ack.ackedThroughRevision).toBe(2)
+
+    const snapshotAfterUpsert = await app.inject({
+      method: "GET",
+      url: "/canvas/snapshot",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(snapshotAfterUpsert.statusCode).toBe(200)
+    expect(snapshotAfterUpsert.json().snapshot.textElements.map((element: { id: string }) => element.id))
+      .toEqual(["text-1"])
+    expect(snapshotAfterUpsert.json().snapshot.textElements[0].text).toBe("Hello world")
+
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP",
+        operation: deleteTextElementOperation("text-op-3", "text-1"),
+      }),
+    )
+    const deleteAck = await nextWsJson(first)
+    expect(deleteAck.type).toBe("ACK")
+    expect(deleteAck.serverRevision).toBe(3)
+
+    const snapshotAfterDelete = await app.inject({
+      method: "GET",
+      url: "/canvas/snapshot",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(snapshotAfterDelete.statusCode).toBe(200)
+    expect(snapshotAfterDelete.json().snapshot.textElements).toEqual([])
     first.close()
   })
 
@@ -1929,6 +1992,72 @@ function clearCanvasOperation(clientOperationId: string) {
     clientOperationId,
     type: "CLEAR_CANVAS",
     strokeId: null,
+    payload: {},
+    clientCreatedAt: new Date().toISOString(),
+  }
+}
+
+function addTextElementOperation(
+  clientOperationId: string,
+  elementId: string,
+  text: string,
+  x: number,
+  y: number,
+) {
+  return {
+    clientOperationId,
+    type: "ADD_TEXT_ELEMENT",
+    strokeId: elementId,
+    payload: {
+      id: elementId,
+      text,
+      createdAt: 123,
+      center: { x, y },
+      rotationRad: 0,
+      scale: 1,
+      boxWidth: 0.7,
+      colorArgb: 4278190080,
+      backgroundPillEnabled: false,
+      font: "POPPINS",
+      alignment: "CENTER",
+    },
+    clientCreatedAt: new Date().toISOString(),
+  }
+}
+
+function updateTextElementOperation(
+  clientOperationId: string,
+  elementId: string,
+  text: string,
+  x: number,
+  y: number,
+) {
+  return {
+    clientOperationId,
+    type: "UPDATE_TEXT_ELEMENT",
+    strokeId: elementId,
+    payload: {
+      id: elementId,
+      text,
+      createdAt: 123,
+      center: { x, y },
+      rotationRad: 0,
+      scale: 1,
+      boxWidth: 0.7,
+      colorArgb: 4278190080,
+      backgroundPillEnabled: false,
+      font: "POPPINS",
+      alignment: "CENTER",
+    },
+    clientCreatedAt: new Date().toISOString(),
+  }
+}
+
+function deleteTextElementOperation(clientOperationId: string, elementId: string) {
+  return {
+    clientOperationId,
+    type: "DELETE_TEXT_ELEMENT",
+    strokeId: elementId,
     payload: {},
     clientCreatedAt: new Date().toISOString(),
   }

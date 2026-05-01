@@ -17,6 +17,9 @@ export const CanvasOperationTypes = [
   "FINISH_STROKE",
   "DELETE_STROKE",
   "CLEAR_CANVAS",
+  "ADD_TEXT_ELEMENT",
+  "UPDATE_TEXT_ELEMENT",
+  "DELETE_TEXT_ELEMENT",
 ] as const
 export const DevicePlatforms = ["ANDROID"] as const
 

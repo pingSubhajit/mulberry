@@ -1,6 +1,8 @@
 package com.subhajit.mulberry.sync
 
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
+import com.subhajit.mulberry.drawing.model.CanvasTextAlign
+import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 
@@ -50,6 +52,36 @@ sealed interface SyncOperationPayload {
     data object DeleteStroke : SyncOperationPayload
 
     data object ClearCanvas : SyncOperationPayload
+
+    data class AddTextElement(
+        val id: String,
+        val text: String,
+        val createdAt: Long,
+        val center: StrokePoint,
+        val rotationRad: Float,
+        val scale: Float,
+        val boxWidth: Float,
+        val colorArgb: Long,
+        val backgroundPillEnabled: Boolean,
+        val font: CanvasTextFont,
+        val alignment: CanvasTextAlign
+    ) : SyncOperationPayload
+
+    data class UpdateTextElement(
+        val id: String,
+        val text: String,
+        val createdAt: Long,
+        val center: StrokePoint,
+        val rotationRad: Float,
+        val scale: Float,
+        val boxWidth: Float,
+        val colorArgb: Long,
+        val backgroundPillEnabled: Boolean,
+        val font: CanvasTextFont,
+        val alignment: CanvasTextAlign
+    ) : SyncOperationPayload
+
+    data object DeleteTextElement : SyncOperationPayload
 }
 
 fun Stroke.toAddStrokePayload(): SyncOperationPayload.AddStroke =

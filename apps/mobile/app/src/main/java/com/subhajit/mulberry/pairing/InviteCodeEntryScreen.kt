@@ -58,7 +58,6 @@ import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.ui.theme.MulberryError
-import com.subhajit.mulberry.ui.theme.MulberryInk
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
@@ -364,10 +363,11 @@ private fun CodeCell(
     isActive: Boolean,
     showCursor: Boolean
 ) {
+    val appColors = MaterialTheme.mulberryAppColors
     Row(
         modifier = Modifier
             .size(width = 51.dp, height = 66.dp)
-            .background(MaterialTheme.mulberryAppColors.inputSurface, RoundedCornerShape(15.38.dp)),
+            .background(appColors.inputSurface, RoundedCornerShape(15.38.dp)),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -381,7 +381,7 @@ private fun CodeCell(
         }
         Text(
             text = digit?.toString() ?: "0",
-            color = if (digit == null) MaterialTheme.mulberryAppColors.subtleText else MulberryInk,
+            color = if (digit == null) appColors.subtleText else MaterialTheme.colorScheme.onSurface,
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Normal,

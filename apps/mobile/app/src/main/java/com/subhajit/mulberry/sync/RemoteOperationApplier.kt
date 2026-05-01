@@ -1,7 +1,9 @@
 package com.subhajit.mulberry.sync
 
 import com.subhajit.mulberry.drawing.DrawingRepository
+import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.Stroke
+import com.subhajit.mulberry.drawing.model.StrokePoint
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -51,7 +53,53 @@ class DefaultRemoteOperationApplier @Inject constructor(
             SyncOperationPayload.ClearCanvas -> {
                 drawingRepository.applyRemoteClearCanvas(operation.serverRevision)
             }
+            is SyncOperationPayload.AddTextElement -> {
+                drawingRepository.applyRemoteAddOrUpdateTextElement(
+                    element = operation.payload.toDomainElement(),
+                    serverRevision = operation.serverRevision
+                )
+            }
+            is SyncOperationPayload.UpdateTextElement -> {
+                drawingRepository.applyRemoteAddOrUpdateTextElement(
+                    element = operation.payload.toDomainElement(),
+                    serverRevision = operation.serverRevision
+                )
+            }
+            SyncOperationPayload.DeleteTextElement -> {
+                drawingRepository.applyRemoteDeleteTextElement(
+                    elementId = operation.strokeId ?: return,
+                    serverRevision = operation.serverRevision
+                )
+            }
         }
         syncMetadataRepository.setLastAppliedServerRevision(operation.serverRevision)
     }
 }
+
+private fun SyncOperationPayload.AddTextElement.toDomainElement(): CanvasTextElement = CanvasTextElement(
+    id = id,
+    text = text,
+    createdAt = createdAt,
+    center = StrokePoint(x = center.x, y = center.y),
+    rotationRad = rotationRad,
+    scale = scale,
+    boxWidth = boxWidth,
+    colorArgb = colorArgb,
+    backgroundPillEnabled = backgroundPillEnabled,
+    font = font,
+    alignment = alignment
+)
+
+private fun SyncOperationPayload.UpdateTextElement.toDomainElement(): CanvasTextElement = CanvasTextElement(
+    id = id,
+    text = text,
+    createdAt = createdAt,
+    center = StrokePoint(x = center.x, y = center.y),
+    rotationRad = rotationRad,
+    scale = scale,
+    boxWidth = boxWidth,
+    colorArgb = colorArgb,
+    backgroundPillEnabled = backgroundPillEnabled,
+    font = font,
+    alignment = alignment
+)

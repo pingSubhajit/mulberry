@@ -248,6 +248,10 @@ fun CanvasHomeRoute(
         onColorSelected = viewModel::onColorSelected,
         onBrushWidthChanged = viewModel::onBrushWidthChanged,
         onEraserToggle = viewModel::onEraserToggle,
+        onTextToggle = viewModel::onTextToggle,
+        onTextElementAdded = viewModel::onTextElementAdded,
+        onTextElementUpdated = viewModel::onTextElementUpdated,
+        onTextElementDeleted = viewModel::onTextElementDeleted,
         onClearRequested = viewModel::onClearRequested,
         onClearDismissed = viewModel::onClearDismissed,
         onClearConfirmed = viewModel::onClearConfirmed,
@@ -293,6 +297,10 @@ private fun CanvasHomeScreen(
     onColorSelected: (Long) -> Unit,
     onBrushWidthChanged: (Float) -> Unit,
     onEraserToggle: () -> Unit,
+    onTextToggle: () -> Unit,
+    onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
+    onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
+    onTextElementDeleted: (String) -> Unit,
     onClearRequested: () -> Unit,
     onClearDismissed: () -> Unit,
     onClearConfirmed: () -> Unit,
@@ -433,6 +441,10 @@ private fun CanvasHomeScreen(
                         onColorSelected = onColorSelected,
                         onBrushWidthChanged = onBrushWidthChanged,
                         onEraserToggle = onEraserToggle,
+                        onTextToggle = onTextToggle,
+                        onTextElementAdded = onTextElementAdded,
+                        onTextElementUpdated = onTextElementUpdated,
+                        onTextElementDeleted = onTextElementDeleted,
                         onClearRequested = onClearRequested,
                         onUndoRequested = onUndoRequested,
                         onRedoRequested = onRedoRequested
@@ -534,6 +546,10 @@ private fun CanvasHomePane(
     onColorSelected: (Long) -> Unit,
     onBrushWidthChanged: (Float) -> Unit,
     onEraserToggle: () -> Unit,
+    onTextToggle: () -> Unit,
+    onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
+    onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
+    onTextElementDeleted: (String) -> Unit,
     onClearRequested: () -> Unit,
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit
@@ -630,6 +646,10 @@ private fun CanvasHomePane(
             onColorSelected = onColorSelected,
             onBrushWidthChanged = onBrushWidthChanged,
             onEraserToggle = onEraserToggle,
+            onTextToggle = onTextToggle,
+            onTextElementAdded = onTextElementAdded,
+            onTextElementUpdated = onTextElementUpdated,
+            onTextElementDeleted = onTextElementDeleted,
             onClearRequested = onClearRequested,
             onUndoRequested = onUndoRequested,
             onRedoRequested = onRedoRequested,
@@ -649,6 +669,10 @@ private fun PairedCanvasPane(
     onColorSelected: (Long) -> Unit,
     onBrushWidthChanged: (Float) -> Unit,
     onEraserToggle: () -> Unit,
+    onTextToggle: () -> Unit,
+    onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
+    onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
+    onTextElementDeleted: (String) -> Unit,
     onClearRequested: () -> Unit,
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit,
@@ -687,6 +711,19 @@ private fun PairedCanvasPane(
                 strokeRenderMode = uiState.canvasStrokeRenderMode
             )
 
+            CanvasTextOverlay(
+                elements = uiState.canvasState.textElements,
+                activeTool = uiState.toolState.activeTool,
+                palette = uiState.palette,
+                selectedColorArgb = uiState.toolState.selectedColorArgb,
+                onAddElement = onTextElementAdded,
+                onUpdateElement = onTextElementUpdated,
+                onDeleteElement = onTextElementDeleted,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
+            )
+
             if (uiState.canvasState.isEmpty) {
                 CanvasBlankStateGuidance(
                     modifier = Modifier.align(Alignment.Center)
@@ -701,6 +738,7 @@ private fun PairedCanvasPane(
             onUndoRequested = onUndoRequested,
             onRedoRequested = onRedoRequested,
             onEraserToggle = onEraserToggle,
+            onTextToggle = onTextToggle,
             onClearRequested = onClearRequested
         )
     }
@@ -897,6 +935,7 @@ private fun CanvasControlTray(
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit,
     onEraserToggle: () -> Unit,
+    onTextToggle: () -> Unit,
     onClearRequested: () -> Unit
 ) {
     var showWidthPicker by remember { mutableStateOf(false) }
@@ -925,8 +964,10 @@ private fun CanvasControlTray(
                 width = uiState.toolState.selectedWidth,
                 accentColor = Color(uiState.toolState.selectedColorArgb),
                 onClick = {
-                    showWidthPicker = true
-                    showColorPicker = false
+                    if (uiState.toolState.activeTool == DrawingTool.DRAW) {
+                        showWidthPicker = true
+                        showColorPicker = false
+                    }
                 },
                 modifier = Modifier.testTag(TestTags.BRUSH_WIDTH_BUTTON)
             )
@@ -1030,6 +1071,13 @@ private fun CanvasControlTray(
             selected = uiState.toolState.activeTool == DrawingTool.ERASE,
             onClick = onEraserToggle,
             modifier = Modifier.testTag(TestTags.ERASER_BUTTON)
+        )
+        CanvasActionButton(
+            drawableRes = R.drawable.canvas_action_text,
+            contentDescription = stringResource(R.string.home_canvas_text_content_description),
+            selected = uiState.toolState.activeTool == DrawingTool.TEXT,
+            onClick = onTextToggle,
+            modifier = Modifier.testTag(TestTags.TEXT_BUTTON)
         )
         CanvasActionButton(
             drawableRes = R.drawable.canvas_action_clear,

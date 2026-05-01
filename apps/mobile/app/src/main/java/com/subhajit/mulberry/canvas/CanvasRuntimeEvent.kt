@@ -2,6 +2,7 @@ package com.subhajit.mulberry.canvas
 
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
+import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.sync.ServerCanvasOperation
 
 sealed interface CanvasRuntimeEvent {
@@ -22,8 +23,13 @@ sealed interface CanvasRuntimeEvent {
 
     data class RecoverySnapshot(
         val strokes: List<Stroke>,
+        val textElements: List<CanvasTextElement>,
         val serverRevision: Long
     ) : CanvasRuntimeEvent
+
+    data class AddTextElement(val element: CanvasTextElement) : CanvasRuntimeEvent
+    data class UpdateTextElement(val element: CanvasTextElement) : CanvasRuntimeEvent
+    data class DeleteTextElement(val elementId: String) : CanvasRuntimeEvent
 
     data class FlowControl(
         val mode: FlowControlMode,

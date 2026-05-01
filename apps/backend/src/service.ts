@@ -57,6 +57,20 @@ interface MaterializedStroke {
   finished: boolean
 }
 
+interface MaterializedTextElement {
+  id: string
+  text: string
+  createdAt: number
+  center: { x: number; y: number }
+  rotationRad: number
+  scale: number
+  boxWidth: number
+  colorArgb: number
+  backgroundPillEnabled: boolean
+  font: string
+  alignment: string
+}
+
 interface UploadedProfilePhoto {
   filename?: string
   contentType?: string
@@ -1493,7 +1507,7 @@ export class MulberryService {
     db: Pick<Database, "query">,
     pairSessionId: string,
     operation: CanvasOperationRecord,
-    snapshot: { strokes: MaterializedStroke[] },
+    snapshot: { strokes: MaterializedStroke[]; textElements: MaterializedTextElement[] },
   ): Promise<boolean> {
     switch (operation.type) {
       case "FINISH_STROKE": {
@@ -1510,6 +1524,20 @@ export class MulberryService {
         return true
       case "CLEAR_CANVAS": {
         snapshot.strokes = []
+        snapshot.textElements = []
+        return true
+      }
+      case "ADD_TEXT_ELEMENT":
+      case "UPDATE_TEXT_ELEMENT": {
+        const payload = normalizeTextElement(operation.payload_json)
+        if (!payload) return false
+        snapshot.textElements = snapshot.textElements.filter((element) => element.id !== payload.id)
+        snapshot.textElements.push(payload)
+        return true
+      }
+      case "DELETE_TEXT_ELEMENT": {
+        if (!operation.stroke_id) return false
+        snapshot.textElements = snapshot.textElements.filter((element) => element.id !== operation.stroke_id)
         return true
       }
       default:
@@ -1735,20 +1763,29 @@ function normalizeTimestampString(raw: string | Date | null): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
 }
 
-function normalizeCanvasSnapshot(raw: unknown): { strokes: MaterializedStroke[] } {
+function normalizeCanvasSnapshot(raw: unknown): {
+  strokes: MaterializedStroke[]
+  textElements: MaterializedTextElement[]
+} {
   if (
     typeof raw === "object" &&
     raw !== null &&
     "strokes" in raw &&
     Array.isArray((raw as { strokes: unknown }).strokes)
   ) {
+    const candidate = raw as { strokes: unknown[]; textElements?: unknown }
     return {
-      strokes: (raw as { strokes: unknown[] }).strokes
+      strokes: candidate.strokes
         .map(normalizeStroke)
         .filter((stroke): stroke is MaterializedStroke => stroke !== null),
+      textElements: Array.isArray(candidate.textElements)
+        ? candidate.textElements
+          .map(normalizeTextElement)
+          .filter((element): element is MaterializedTextElement => element !== null)
+        : [],
     }
   }
-  return { strokes: [] }
+  return { strokes: [], textElements: [] }
 }
 
 function normalizeCanvasPoint(raw: unknown): { x: number; y: number } | null {
@@ -1781,5 +1818,38 @@ function normalizeStroke(raw: unknown): MaterializedStroke | null {
       })
       .filter((point): point is { x: number; y: number } => point !== null),
     finished: Boolean(candidate.finished),
+  }
+}
+
+function normalizeTextElement(raw: unknown): MaterializedTextElement | null {
+  if (typeof raw !== "object" || raw === null || !("id" in raw)) return null
+  const candidate = raw as {
+    id?: unknown
+    text?: unknown
+    createdAt?: unknown
+    center?: unknown
+    rotationRad?: unknown
+    scale?: unknown
+    boxWidth?: unknown
+    colorArgb?: unknown
+    backgroundPillEnabled?: unknown
+    font?: unknown
+    alignment?: unknown
+  }
+  if (typeof candidate.id !== "string") return null
+  const center = normalizeCanvasPoint(candidate.center)
+  if (!center) return null
+  return {
+    id: candidate.id,
+    text: typeof candidate.text === "string" ? candidate.text : "",
+    createdAt: Number(candidate.createdAt ?? Date.now()),
+    center,
+    rotationRad: Number(candidate.rotationRad ?? 0),
+    scale: Number(candidate.scale ?? 1),
+    boxWidth: Number(candidate.boxWidth ?? 0.7),
+    colorArgb: Number(candidate.colorArgb ?? 0xff111111),
+    backgroundPillEnabled: Boolean(candidate.backgroundPillEnabled),
+    font: typeof candidate.font === "string" ? candidate.font : "POPPINS",
+    alignment: typeof candidate.alignment === "string" ? candidate.alignment : "CENTER",
   }
 }

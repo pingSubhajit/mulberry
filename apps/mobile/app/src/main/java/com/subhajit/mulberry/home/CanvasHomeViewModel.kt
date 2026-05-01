@@ -16,6 +16,7 @@ import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 import com.subhajit.mulberry.drawing.DrawingRepository
 import com.subhajit.mulberry.drawing.model.CanvasState
+import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
@@ -683,6 +684,18 @@ class CanvasHomeViewModel @Inject constructor(
         canvasRuntime.submit(CanvasRuntimeEvent.EraseAt(point))
     }
 
+    fun onTextElementAdded(element: CanvasTextElement) {
+        canvasRuntime.submit(CanvasRuntimeEvent.AddTextElement(element))
+    }
+
+    fun onTextElementUpdated(element: CanvasTextElement) {
+        canvasRuntime.submit(CanvasRuntimeEvent.UpdateTextElement(element))
+    }
+
+    fun onTextElementDeleted(elementId: String) {
+        canvasRuntime.submit(CanvasRuntimeEvent.DeleteTextElement(elementId))
+    }
+
     fun onCanvasViewportChanged(widthPx: Int, heightPx: Int) {
         viewModelScope.launch {
             canvasRuntime.submitAndAwait(CanvasRuntimeEvent.CanvasViewportChanged(widthPx, heightPx))
@@ -693,7 +706,9 @@ class CanvasHomeViewModel @Inject constructor(
     fun onColorSelected(colorArgb: Long) {
         viewModelScope.launch {
             drawingRepository.setBrushColor(colorArgb)
-            drawingRepository.setTool(DrawingTool.DRAW)
+            val currentTool = uiState.value.toolState.activeTool
+            val nextTool = if (currentTool == DrawingTool.ERASE) DrawingTool.DRAW else currentTool
+            drawingRepository.setTool(nextTool)
         }
     }
 
@@ -709,6 +724,17 @@ class CanvasHomeViewModel @Inject constructor(
                 DrawingTool.DRAW
             } else {
                 DrawingTool.ERASE
+            }
+            drawingRepository.setTool(nextTool)
+        }
+    }
+
+    fun onTextToggle() {
+        viewModelScope.launch {
+            val nextTool = if (uiState.value.toolState.activeTool == DrawingTool.TEXT) {
+                DrawingTool.DRAW
+            } else {
+                DrawingTool.TEXT
             }
             drawingRepository.setTool(nextTool)
         }

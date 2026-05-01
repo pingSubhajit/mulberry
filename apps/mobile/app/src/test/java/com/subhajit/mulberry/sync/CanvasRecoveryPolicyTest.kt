@@ -1,6 +1,9 @@
 package com.subhajit.mulberry.sync
 
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
+import com.subhajit.mulberry.drawing.model.CanvasTextAlign
+import com.subhajit.mulberry.drawing.model.CanvasTextFont
+import com.subhajit.mulberry.drawing.model.StrokePoint
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -100,9 +103,27 @@ class CanvasRecoveryPolicyTest {
             DrawingOperationType.FINISH_STROKE -> SyncOperationPayload.FinishStroke
             DrawingOperationType.ADD_STROKE -> SyncOperationPayload.ClearCanvas
             DrawingOperationType.APPEND_POINTS -> SyncOperationPayload.ClearCanvas
+            DrawingOperationType.ADD_TEXT_ELEMENT -> sampleTextPayload()
+            DrawingOperationType.UPDATE_TEXT_ELEMENT -> sampleTextPayload()
+            DrawingOperationType.DELETE_TEXT_ELEMENT -> SyncOperationPayload.DeleteTextElement
         },
         clientCreatedAt = "2026-01-01T00:00:00.000Z",
         serverRevision = revision,
         createdAt = "2026-01-01T00:00:00.000Z"
     )
+
+    private fun sampleTextPayload(): SyncOperationPayload.AddTextElement =
+        SyncOperationPayload.AddTextElement(
+            id = "text-1",
+            text = "hello",
+            createdAt = 1L,
+            center = StrokePoint(x = 0.5f, y = 0.5f),
+            rotationRad = 0f,
+            scale = 1f,
+            boxWidth = 0.7f,
+            colorArgb = 0xFFFF0000L,
+            backgroundPillEnabled = false,
+            font = CanvasTextFont.POPPINS,
+            alignment = CanvasTextAlign.CENTER
+        )
 }

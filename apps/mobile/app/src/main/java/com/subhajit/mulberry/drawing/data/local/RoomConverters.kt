@@ -1,6 +1,8 @@
 package com.subhajit.mulberry.drawing.data.local
 
 import androidx.room.TypeConverter
+import com.subhajit.mulberry.drawing.model.CanvasTextAlign
+import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.sync.SyncOutboxStatus
@@ -24,4 +26,16 @@ class RoomConverters {
 
     @TypeConverter
     fun fromSyncOutboxStatus(value: SyncOutboxStatus): String = value.name
+
+    @TypeConverter
+    fun toCanvasTextFont(value: String): CanvasTextFont = CanvasTextFont.valueOf(value)
+
+    @TypeConverter
+    fun fromCanvasTextFont(value: CanvasTextFont): String = value.name
+
+    @TypeConverter
+    fun toCanvasTextAlign(value: String): CanvasTextAlign = CanvasTextAlign.valueOf(value)
+
+    @TypeConverter
+    fun fromCanvasTextAlign(value: CanvasTextAlign): String = value.name
 }

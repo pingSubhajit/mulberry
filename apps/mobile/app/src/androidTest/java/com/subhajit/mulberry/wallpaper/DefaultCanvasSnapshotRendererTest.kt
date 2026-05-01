@@ -32,10 +32,12 @@ class DefaultCanvasSnapshotRendererTest {
             context = context,
             database = database,
             drawingDao = database.drawingDao(),
+            canvasTextElementDao = database.canvasTextElementDao(),
             canvasMetadataDao = database.canvasMetadataDao(),
             appConfig = AppConfigFactory.fromFields(
                 environmentName = "dev",
-                apiBaseUrl = "http://localhost"
+                apiBaseUrl = "http://localhost",
+                enableDebugMenu = false
             )
         )
     }

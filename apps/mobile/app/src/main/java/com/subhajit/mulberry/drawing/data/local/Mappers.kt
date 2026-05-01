@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.drawing.data.local
 
+import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 
@@ -27,4 +28,33 @@ fun StrokeWithPoints.toDomain(): Stroke = Stroke(
     points = points
         .sortedBy { it.pointIndex }
         .map { StrokePoint(x = it.x, y = it.y) }
+)
+
+fun CanvasTextElement.toEntity(): CanvasTextElementEntity = CanvasTextElementEntity(
+    id = id,
+    text = text,
+    createdAt = createdAt,
+    centerX = center.x,
+    centerY = center.y,
+    rotationRad = rotationRad,
+    scale = scale,
+    boxWidth = boxWidth,
+    colorArgb = colorArgb,
+    backgroundPillEnabled = backgroundPillEnabled,
+    font = font,
+    alignment = alignment
+)
+
+fun CanvasTextElementEntity.toDomain(): CanvasTextElement = CanvasTextElement(
+    id = id,
+    text = text,
+    createdAt = createdAt,
+    center = StrokePoint(x = centerX, y = centerY),
+    rotationRad = rotationRad,
+    scale = scale,
+    boxWidth = boxWidth,
+    colorArgb = colorArgb,
+    backgroundPillEnabled = backgroundPillEnabled,
+    font = font,
+    alignment = alignment
 )

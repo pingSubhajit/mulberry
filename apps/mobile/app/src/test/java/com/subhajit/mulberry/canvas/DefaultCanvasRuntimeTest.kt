@@ -5,6 +5,8 @@ import com.subhajit.mulberry.drawing.engine.StrokeBuilder
 import com.subhajit.mulberry.drawing.engine.StrokeHitTester
 import com.subhajit.mulberry.drawing.geometry.normalizeStrokeWidth
 import com.subhajit.mulberry.drawing.model.CanvasState
+import com.subhajit.mulberry.drawing.model.CanvasTextElement
+import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.DrawingTool
@@ -216,6 +218,100 @@ class DefaultCanvasRuntimeTest {
         assertEquals(replayed.id, finish.strokeId)
 
         job.cancel()
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `add text element updates state and emits operation`() = runTest {
+        val drawingRepository = FakeDrawingRepository()
+        val persistenceStore = FakeCanvasPersistenceStore()
+        val runtime = DefaultCanvasRuntime(
+            persistenceStore = persistenceStore,
+            drawingRepository = drawingRepository,
+            strokeBuilder = StrokeBuilder(),
+            strokeHitTester = StrokeHitTester(),
+            applicationScope = backgroundScope
+        )
+
+        val outbound = mutableListOf<CanvasSyncOperation>()
+        val job = backgroundScope.launch {
+            runtime.outboundOperations.collect { outbound += it }
+        }
+
+        runtime.start(pairSessionId = "pair", userId = "user")
+        advanceUntilIdle()
+
+        val element = CanvasTextElement(
+            id = "text-1",
+            text = "Hello",
+            createdAt = 1L,
+            center = StrokePoint(x = 0.5f, y = 0.5f),
+            rotationRad = 0f,
+            scale = 1f,
+            boxWidth = 0.7f,
+            colorArgb = 0xff000000,
+            backgroundPillEnabled = false,
+            font = CanvasTextFont.POPPINS
+        )
+
+        runtime.submitAndAwait(CanvasRuntimeEvent.AddTextElement(element))
+        advanceUntilIdle()
+
+        assertEquals(listOf(element), runtime.renderState.value.committedTextElements)
+        val add = outbound.lastOrNull { it.type == DrawingOperationType.ADD_TEXT_ELEMENT }
+        requireNotNull(add)
+        assertEquals("text-1", add.strokeId)
+
+        runtime.submitAndAwait(CanvasRuntimeEvent.Undo)
+        advanceUntilIdle()
+
+        assertTrue(runtime.renderState.value.committedTextElements.isEmpty())
+        val delete = outbound.lastOrNull { it.type == DrawingOperationType.DELETE_TEXT_ELEMENT }
+        requireNotNull(delete)
+        assertEquals("text-1", delete.strokeId)
+
+        job.cancel()
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `update text element is undoable`() = runTest {
+        val drawingRepository = FakeDrawingRepository()
+        val persistenceStore = FakeCanvasPersistenceStore()
+        val runtime = DefaultCanvasRuntime(
+            persistenceStore = persistenceStore,
+            drawingRepository = drawingRepository,
+            strokeBuilder = StrokeBuilder(),
+            strokeHitTester = StrokeHitTester(),
+            applicationScope = backgroundScope
+        )
+
+        runtime.start(pairSessionId = "pair", userId = "user")
+        advanceUntilIdle()
+
+        val element = CanvasTextElement(
+            id = "text-1",
+            text = "Hello",
+            createdAt = 1L,
+            center = StrokePoint(x = 0.5f, y = 0.5f),
+            boxWidth = 0.7f,
+            colorArgb = 0xff000000
+        )
+        runtime.submitAndAwait(CanvasRuntimeEvent.AddTextElement(element))
+        advanceUntilIdle()
+
+        val updated = element.copy(text = "Hello world", rotationRad = 1.0f)
+        runtime.submitAndAwait(CanvasRuntimeEvent.UpdateTextElement(updated))
+        advanceUntilIdle()
+
+        assertEquals("Hello world", runtime.renderState.value.committedTextElements.single().text)
+
+        runtime.submitAndAwait(CanvasRuntimeEvent.Undo)
+        advanceUntilIdle()
+
+        val reverted = runtime.renderState.value.committedTextElements.single()
+        assertEquals("Hello", reverted.text)
+        assertEquals(0f, reverted.rotationRad, 0.0001f)
     }
 
     @Test
@@ -435,7 +531,19 @@ private class FakeCanvasPersistenceStore(
 
     override suspend fun persistClear(serverRevision: Long?) = Unit
 
-    override suspend fun replaceFromServerSnapshot(strokes: List<Stroke>, serverRevision: Long) = Unit
+    override suspend fun replaceFromServerSnapshot(
+        strokes: List<Stroke>,
+        textElements: List<CanvasTextElement>,
+        serverRevision: Long
+    ) = Unit
+
+    override suspend fun persistUpsertTextElement(element: CanvasTextElement): Long = 1L
+
+    override suspend fun persistDeleteTextElement(elementId: String): Long = 1L
+
+    override suspend fun persistRemoteUpsertTextElement(element: CanvasTextElement, serverRevision: Long) = Unit
+
+    override suspend fun persistRemoteDeleteTextElement(elementId: String, serverRevision: Long) = Unit
 }
 
 private class FakeDrawingRepository(
@@ -485,7 +593,19 @@ private class FakeDrawingRepository(
 
     override suspend fun applyRemoteClearCanvas(serverRevision: Long) = Unit
 
-    override suspend fun replaceWithRemoteSnapshot(strokes: List<Stroke>, serverRevision: Long) = Unit
+    override suspend fun upsertLocalTextElement(element: CanvasTextElement): Long = 1L
+
+    override suspend fun deleteLocalTextElement(elementId: String): Long = 1L
+
+    override suspend fun applyRemoteAddOrUpdateTextElement(element: CanvasTextElement, serverRevision: Long) = Unit
+
+    override suspend fun applyRemoteDeleteTextElement(elementId: String, serverRevision: Long) = Unit
+
+    override suspend fun replaceWithRemoteSnapshot(
+        strokes: List<Stroke>,
+        textElements: List<CanvasTextElement>,
+        serverRevision: Long
+    ) = Unit
 
     override suspend fun persistLocalCommittedStroke(stroke: Stroke): Long = 1L
 

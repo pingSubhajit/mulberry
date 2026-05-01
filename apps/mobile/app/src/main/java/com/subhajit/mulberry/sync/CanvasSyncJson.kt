@@ -2,6 +2,8 @@ package com.subhajit.mulberry.sync
 
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.subhajit.mulberry.drawing.model.CanvasTextAlign
+import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.network.CanvasOperationEnvelopeResponse
@@ -202,6 +204,37 @@ fun SyncOperationPayload.toJsonObject(): JsonObject = when (this) {
     SyncOperationPayload.FinishStroke -> JsonObject()
     SyncOperationPayload.DeleteStroke -> JsonObject()
     SyncOperationPayload.ClearCanvas -> JsonObject()
+    is SyncOperationPayload.AddTextElement -> gson.toJsonTree(
+        mapOf(
+            "id" to id,
+            "text" to text,
+            "createdAt" to createdAt,
+            "center" to mapOf("x" to center.x, "y" to center.y),
+            "rotationRad" to rotationRad,
+            "scale" to scale,
+            "boxWidth" to boxWidth,
+            "colorArgb" to colorArgb,
+            "backgroundPillEnabled" to backgroundPillEnabled,
+            "font" to font.name,
+            "alignment" to alignment.name
+        )
+    ).asJsonObject
+    is SyncOperationPayload.UpdateTextElement -> gson.toJsonTree(
+        mapOf(
+            "id" to id,
+            "text" to text,
+            "createdAt" to createdAt,
+            "center" to mapOf("x" to center.x, "y" to center.y),
+            "rotationRad" to rotationRad,
+            "scale" to scale,
+            "boxWidth" to boxWidth,
+            "colorArgb" to colorArgb,
+            "backgroundPillEnabled" to backgroundPillEnabled,
+            "font" to font.name,
+            "alignment" to alignment.name
+        )
+    ).asJsonObject
+    SyncOperationPayload.DeleteTextElement -> JsonObject()
 }
 
 fun JsonObject?.toSyncPayload(type: DrawingOperationType): SyncOperationPayload = when (type) {
@@ -231,6 +264,53 @@ fun JsonObject?.toSyncPayload(type: DrawingOperationType): SyncOperationPayload 
     DrawingOperationType.FINISH_STROKE -> SyncOperationPayload.FinishStroke
     DrawingOperationType.DELETE_STROKE -> SyncOperationPayload.DeleteStroke
     DrawingOperationType.CLEAR_CANVAS -> SyncOperationPayload.ClearCanvas
+    DrawingOperationType.ADD_TEXT_ELEMENT -> {
+        val center = this?.getAsJsonObject("center")
+        SyncOperationPayload.AddTextElement(
+            id = this?.get("id")?.asString.orEmpty(),
+            text = this?.get("text")?.asString.orEmpty(),
+            createdAt = this?.get("createdAt")?.asLong ?: System.currentTimeMillis(),
+            center = StrokePoint(
+                x = center?.get("x")?.asFloat ?: 0f,
+                y = center?.get("y")?.asFloat ?: 0f
+            ),
+            rotationRad = this?.get("rotationRad")?.asFloat ?: 0f,
+            scale = this?.get("scale")?.asFloat ?: 1f,
+            boxWidth = this?.get("boxWidth")?.asFloat ?: 0.7f,
+            colorArgb = this?.get("colorArgb")?.asLong ?: 0xff111111,
+            backgroundPillEnabled = this?.get("backgroundPillEnabled")?.asBoolean ?: false,
+            font = runCatching {
+                CanvasTextFont.valueOf(this?.get("font")?.asString ?: "POPPINS")
+            }.getOrElse { CanvasTextFont.POPPINS },
+            alignment = runCatching {
+                CanvasTextAlign.valueOf(this?.get("alignment")?.asString ?: "CENTER")
+            }.getOrElse { CanvasTextAlign.CENTER }
+        )
+    }
+    DrawingOperationType.UPDATE_TEXT_ELEMENT -> {
+        val center = this?.getAsJsonObject("center")
+        SyncOperationPayload.UpdateTextElement(
+            id = this?.get("id")?.asString.orEmpty(),
+            text = this?.get("text")?.asString.orEmpty(),
+            createdAt = this?.get("createdAt")?.asLong ?: System.currentTimeMillis(),
+            center = StrokePoint(
+                x = center?.get("x")?.asFloat ?: 0f,
+                y = center?.get("y")?.asFloat ?: 0f
+            ),
+            rotationRad = this?.get("rotationRad")?.asFloat ?: 0f,
+            scale = this?.get("scale")?.asFloat ?: 1f,
+            boxWidth = this?.get("boxWidth")?.asFloat ?: 0.7f,
+            colorArgb = this?.get("colorArgb")?.asLong ?: 0xff111111,
+            backgroundPillEnabled = this?.get("backgroundPillEnabled")?.asBoolean ?: false,
+            font = runCatching {
+                CanvasTextFont.valueOf(this?.get("font")?.asString ?: "POPPINS")
+            }.getOrElse { CanvasTextFont.POPPINS },
+            alignment = runCatching {
+                CanvasTextAlign.valueOf(this?.get("alignment")?.asString ?: "CENTER")
+            }.getOrElse { CanvasTextAlign.CENTER }
+        )
+    }
+    DrawingOperationType.DELETE_TEXT_ELEMENT -> SyncOperationPayload.DeleteTextElement
 }
 
 private fun nowIsoString(): String = SimpleDateFormat(

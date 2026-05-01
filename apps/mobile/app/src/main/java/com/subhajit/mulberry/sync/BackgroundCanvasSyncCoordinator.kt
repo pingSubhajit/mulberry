@@ -7,6 +7,9 @@ import com.subhajit.mulberry.drawing.geometry.containsLegacyGeometry
 import com.subhajit.mulberry.drawing.geometry.hasLegacyGeometry
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.DrawingRepository
+import com.subhajit.mulberry.drawing.model.CanvasTextAlign
+import com.subhajit.mulberry.drawing.model.CanvasTextElement
+import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.network.CanvasOperationBatchRequest
@@ -109,6 +112,7 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         }
 
         val snapshotStrokes = snapshot.snapshot.toDomainStrokes()
+        val snapshotTextElements = snapshot.snapshot.toDomainTextElements()
         if (snapshotStrokes.containsLegacyGeometry()) {
             clearLegacyCanvasAndQueueReset(reason = "background_snapshot_legacy_geometry")
             wallpaperCoordinator.ensureSnapshotCurrent()
@@ -118,6 +122,7 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
 
         drawingRepository.replaceWithRemoteSnapshot(
             strokes = snapshotStrokes,
+            textElements = snapshotTextElements,
             serverRevision = snapshot.snapshotRevision
         )
         syncMetadataRepository.setLastAppliedServerRevision(snapshot.snapshotRevision)
@@ -141,7 +146,8 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
             TAG,
             "Background snapshot sync applied snapshotRevision=${snapshot.snapshotRevision} " +
                 "latestRevision=${snapshot.latestRevision} " +
-                "strokeCount=${snapshot.snapshot.strokes.size}"
+                "strokeCount=${snapshot.snapshot.strokes.size} " +
+                "textElementCount=${snapshot.snapshot.textElements.size}"
         )
         BackgroundCanvasSyncResult.Synced
     }
@@ -220,5 +226,22 @@ private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainStrokes(
             points = stroke.points.map { point ->
                 StrokePoint(x = point.x, y = point.y)
             }
+        )
+    }
+
+private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainTextElements(): List<CanvasTextElement> =
+    textElements.map { element ->
+        CanvasTextElement(
+            id = element.id,
+            text = element.text,
+            createdAt = element.createdAt,
+            center = StrokePoint(x = element.center.x, y = element.center.y),
+            rotationRad = element.rotationRad,
+            scale = element.scale,
+            boxWidth = element.boxWidth,
+            colorArgb = element.colorArgb,
+            backgroundPillEnabled = element.backgroundPillEnabled,
+            font = runCatching { CanvasTextFont.valueOf(element.font) }.getOrElse { CanvasTextFont.POPPINS },
+            alignment = runCatching { CanvasTextAlign.valueOf(element.alignment) }.getOrElse { CanvasTextAlign.CENTER }
         )
     }

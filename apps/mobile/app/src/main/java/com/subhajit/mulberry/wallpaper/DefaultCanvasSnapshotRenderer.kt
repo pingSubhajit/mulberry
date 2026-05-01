@@ -5,17 +5,28 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Point
+import android.graphics.RectF
+import android.graphics.Typeface
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import androidx.core.graphics.createBitmap
+import androidx.core.content.res.ResourcesCompat
 import androidx.room.withTransaction
 import com.subhajit.mulberry.core.config.AppConfig
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataEntity
+import com.subhajit.mulberry.drawing.data.local.CanvasTextElementDao
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.data.local.DrawingDao
 import com.subhajit.mulberry.drawing.data.local.toDomain
 import com.subhajit.mulberry.drawing.geometry.denormalizeToSurface
+import com.subhajit.mulberry.drawing.model.CanvasTextAlign
+import com.subhajit.mulberry.drawing.model.CanvasTextElement
+import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.render.committedStrokeBitmapRenderer
+import com.subhajit.mulberry.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.FileOutputStream
 import javax.inject.Inject
@@ -28,6 +39,7 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: DrawingDatabase,
     private val drawingDao: DrawingDao,
+    private val canvasTextElementDao: CanvasTextElementDao,
     private val canvasMetadataDao: CanvasMetadataDao,
     private val appConfig: AppConfig
 ) : CanvasSnapshotRenderer {
@@ -38,21 +50,33 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
         snapshotFile.parentFile?.mkdirs()
         var capturedMetadata = CanvasMetadataEntity.default()
         var strokes = emptyList<Stroke>()
+        var textElements = emptyList<CanvasTextElement>()
 
         database.withTransaction {
             capturedMetadata = canvasMetadataDao.getMetadata() ?: CanvasMetadataEntity.default()
             strokes = drawingDao.getStrokeGraphs().map { it.toDomain() }
+            textElements = canvasTextElementDao.getElements().map { it.toDomain() }
         }
 
         val bitmap = createBitmap(dimensions.x, dimensions.y)
         val canvas = Canvas(bitmap)
-        drawStrokes(
-            canvas = canvas,
-            strokes = strokes,
+        val placement = calculatePlacement(
+            bitmapWidth = bitmap.width,
+            bitmapHeight = bitmap.height,
             screenWidth = context.resources.displayMetrics.widthPixels,
             screenHeight = context.resources.displayMetrics.heightPixels,
             authoredViewportWidth = capturedMetadata.canvasWidthPx,
             authoredViewportHeight = capturedMetadata.canvasHeightPx
+        )
+        drawStrokes(
+            canvas = canvas,
+            strokes = strokes,
+            placement = placement
+        )
+        drawTextElements(
+            canvas = canvas,
+            elements = textElements,
+            placement = placement
         )
 
         FileOutputStream(snapshotFile).use { output ->
@@ -106,20 +130,8 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
     private fun drawStrokes(
         canvas: Canvas,
         strokes: List<Stroke>,
-        screenWidth: Int,
-        screenHeight: Int,
-        authoredViewportWidth: Int,
-        authoredViewportHeight: Int
+        placement: SnapshotPlacement
     ) {
-        val placement = calculatePlacement(
-            bitmapWidth = canvas.width,
-            bitmapHeight = canvas.height,
-            screenWidth = screenWidth,
-            screenHeight = screenHeight,
-            authoredViewportWidth = authoredViewportWidth,
-            authoredViewportHeight = authoredViewportHeight
-        )
-
         appConfig.canvasStrokeRenderMode.committedStrokeBitmapRenderer().drawStrokes(
             canvas = canvas,
             strokes = strokes.map { stroke ->
@@ -131,6 +143,92 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
                 )
             }
         )
+    }
+
+    private fun drawTextElements(
+        canvas: Canvas,
+        elements: List<CanvasTextElement>,
+        placement: SnapshotPlacement
+    ) {
+        if (elements.isEmpty()) return
+
+        val density = context.resources.displayMetrics.density
+        val baseTextSizePx = 34f * density
+        val pillPaddingPx = 12f * density
+        val pillCornerPx = 18f * density
+
+        val poppins = loadTypeface(R.font.poppins_regular) ?: Typeface.DEFAULT
+        val virgil = loadTypeface(R.font.virgil_regular) ?: Typeface.DEFAULT
+
+        for (element in elements) {
+            val center = element.center.denormalizeToSurface(
+                width = placement.viewport.width,
+                height = placement.viewport.height,
+                offsetX = placement.offsetX,
+                offsetY = placement.offsetY
+            )
+            val wrapWidth = (element.boxWidth * placement.viewport.width).toInt().coerceAtLeast(1)
+            val typeface = when (element.font) {
+                CanvasTextFont.POPPINS -> poppins
+                CanvasTextFont.VIRGIL -> virgil
+            }
+            val backgroundColor = element.colorArgb.toInt()
+            val textColor = if (element.backgroundPillEnabled) {
+                if (luminance(backgroundColor) > 0.55f) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+            } else {
+                backgroundColor
+            }
+
+            val paint = TextPaint().apply {
+                isAntiAlias = true
+                color = textColor
+                textSize = baseTextSizePx
+                this.typeface = typeface
+            }
+            val alignment = when (element.alignment) {
+                CanvasTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL
+                CanvasTextAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
+                CanvasTextAlign.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
+            }
+            val layout = StaticLayout.Builder.obtain(element.text, 0, element.text.length, paint, wrapWidth)
+                .setAlignment(alignment)
+                .setIncludePad(false)
+                .build()
+
+            canvas.save()
+            canvas.translate(center.x, center.y)
+            canvas.rotate((element.rotationRad * 180f / Math.PI).toFloat())
+            canvas.scale(element.scale, element.scale)
+
+            val left = -layout.width / 2f
+            val top = -layout.height / 2f
+            if (element.backgroundPillEnabled) {
+                val pillPaint = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    color = backgroundColor
+                }
+                val rect = RectF(
+                    left - pillPaddingPx,
+                    top - pillPaddingPx,
+                    left + layout.width + pillPaddingPx,
+                    top + layout.height + pillPaddingPx
+                )
+                canvas.drawRoundRect(rect, pillCornerPx, pillCornerPx, pillPaint)
+            }
+            canvas.translate(left, top)
+            layout.draw(canvas)
+            canvas.restore()
+        }
+    }
+
+    private fun loadTypeface(fontResId: Int): Typeface? =
+        runCatching { ResourcesCompat.getFont(context, fontResId) }.getOrNull()
+
+    private fun luminance(color: Int): Float {
+        val r = ((color shr 16) and 0xFF) / 255f
+        val g = ((color shr 8) and 0xFF) / 255f
+        val b = (color and 0xFF) / 255f
+        return 0.2126f * r + 0.7152f * g + 0.0722f * b
     }
 
     internal fun calculatePlacement(

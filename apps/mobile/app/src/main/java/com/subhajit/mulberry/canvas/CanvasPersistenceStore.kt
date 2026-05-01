@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.canvas
 
 import com.subhajit.mulberry.drawing.DrawingRepository
+import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.CanvasState
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.ToolState
@@ -15,7 +16,16 @@ interface CanvasPersistenceStore {
     suspend fun persistRemoteCommittedStroke(stroke: Stroke, serverRevision: Long)
     suspend fun persistErase(strokeId: String, serverRevision: Long? = null)
     suspend fun persistClear(serverRevision: Long? = null)
-    suspend fun replaceFromServerSnapshot(strokes: List<Stroke>, serverRevision: Long)
+    suspend fun replaceFromServerSnapshot(
+        strokes: List<Stroke>,
+        textElements: List<CanvasTextElement>,
+        serverRevision: Long
+    )
+
+    suspend fun persistUpsertTextElement(element: CanvasTextElement): Long
+    suspend fun persistDeleteTextElement(elementId: String): Long
+    suspend fun persistRemoteUpsertTextElement(element: CanvasTextElement, serverRevision: Long)
+    suspend fun persistRemoteDeleteTextElement(elementId: String, serverRevision: Long)
 }
 
 @Singleton
@@ -51,7 +61,25 @@ class RoomCanvasPersistenceStore @Inject constructor(
         }
     }
 
-    override suspend fun replaceFromServerSnapshot(strokes: List<Stroke>, serverRevision: Long) {
-        drawingRepository.replaceWithRemoteSnapshot(strokes, serverRevision)
+    override suspend fun replaceFromServerSnapshot(
+        strokes: List<Stroke>,
+        textElements: List<CanvasTextElement>,
+        serverRevision: Long
+    ) {
+        drawingRepository.replaceWithRemoteSnapshot(strokes, textElements, serverRevision)
+    }
+
+    override suspend fun persistUpsertTextElement(element: CanvasTextElement): Long =
+        drawingRepository.upsertLocalTextElement(element)
+
+    override suspend fun persistDeleteTextElement(elementId: String): Long =
+        drawingRepository.deleteLocalTextElement(elementId)
+
+    override suspend fun persistRemoteUpsertTextElement(element: CanvasTextElement, serverRevision: Long) {
+        drawingRepository.applyRemoteAddOrUpdateTextElement(element, serverRevision)
+    }
+
+    override suspend fun persistRemoteDeleteTextElement(elementId: String, serverRevision: Long) {
+        drawingRepository.applyRemoteDeleteTextElement(elementId, serverRevision)
     }
 }

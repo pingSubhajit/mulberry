@@ -108,10 +108,13 @@ fun DrawingCanvas(
         )
     }
 
-    val gestureModifier = if (activeTool == DrawingTool.DRAW) {
-        Modifier.pointerInput(activeTool) {
+    val gestureModifier = when (activeTool) {
+        DrawingTool.DRAW -> Modifier.pointerInput(activeTool) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
+                // Claim the gesture immediately so parent horizontal pagers/tabs
+                // don't treat this as a swipe-to-navigate.
+                down.consume()
                 onDrawStart(down.position.toStrokePoint(canvasSize))
                 var pointer = down
                 while (true) {
@@ -129,12 +132,12 @@ fun DrawingCanvas(
                 onDrawEnd()
             }
         }
-    } else {
-        Modifier.pointerInput(activeTool) {
+        DrawingTool.ERASE -> Modifier.pointerInput(activeTool) {
             detectTapGestures { offset ->
                 onEraseTap(offset.toStrokePoint(canvasSize))
             }
         }
+        else -> Modifier
     }
 
     Canvas(

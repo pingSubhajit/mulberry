@@ -7,6 +7,7 @@ import com.subhajit.mulberry.drawing.engine.StrokeHitTester
 import com.subhajit.mulberry.drawing.geometry.denormalizeStrokeWidth
 import com.subhajit.mulberry.drawing.geometry.denormalizeToSurface
 import com.subhajit.mulberry.drawing.geometry.normalizeStrokeWidth
+import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.BrushStyle
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.DrawingTool
@@ -24,6 +25,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,6 +71,7 @@ class DefaultCanvasRuntime @Inject constructor(
     private var canvasViewportHeightPx = 0
     private val undoStack = ArrayDeque<HistoryAction>()
     private val redoStack = ArrayDeque<HistoryAction>()
+    private var startLoadJob: Job? = null
 
     init {
         applicationScope.launch {
@@ -96,11 +99,13 @@ class DefaultCanvasRuntime @Inject constructor(
         activePairSessionId = pairSessionId
         activeUserId = userId
         clearHistory()
-        applicationScope.launch {
+        startLoadJob?.cancel()
+        startLoadJob = applicationScope.launch {
             val canvasState = persistenceStore.loadCanvasState()
             val toolState = persistenceStore.loadToolState()
             _renderState.value = _renderState.value.copy(
                 committedStrokes = canvasState.strokes,
+                committedTextElements = canvasState.textElements,
                 localActiveStroke = null,
                 remoteActiveStrokes = emptyMap(),
                 revision = canvasState.revision,
@@ -115,6 +120,8 @@ class DefaultCanvasRuntime @Inject constructor(
         activePairSessionId = null
         activeUserId = null
         pendingAppendPoints.clear()
+        startLoadJob?.cancel()
+        startLoadJob = null
         clearHistory()
         _renderState.update { current ->
             val next = current.copy(
@@ -132,6 +139,8 @@ class DefaultCanvasRuntime @Inject constructor(
         pendingAppendPoints.clear()
         canvasViewportWidthPx = 0
         canvasViewportHeightPx = 0
+        startLoadJob?.cancel()
+        startLoadJob = null
         clearHistory()
         _renderState.update { current ->
             CanvasRenderState(
@@ -159,6 +168,10 @@ class DefaultCanvasRuntime @Inject constructor(
     }
 
     private suspend fun handleEvent(event: CanvasRuntimeEvent) {
+        // Ensure we have loaded the persisted state for the current session before applying
+        // any subsequent events. This avoids races where `start()`'s async load overwrites
+        // mutations performed immediately after start.
+        startLoadJob?.join()
         when (event) {
             is CanvasRuntimeEvent.CanvasViewportChanged -> {
                 canvasViewportWidthPx = event.widthPx
@@ -181,6 +194,9 @@ class DefaultCanvasRuntime @Inject constructor(
             is CanvasRuntimeEvent.RecoveryOperations -> handleRecoveryOperations(event)
             is CanvasRuntimeEvent.RecoverySnapshot -> handleRecoverySnapshot(event)
             is CanvasRuntimeEvent.FlowControl -> handleFlowControl(event)
+            is CanvasRuntimeEvent.AddTextElement -> handleAddTextElement(event.element)
+            is CanvasRuntimeEvent.UpdateTextElement -> handleUpdateTextElement(event.element)
+            is CanvasRuntimeEvent.DeleteTextElement -> handleDeleteTextElement(event.elementId)
         }
     }
 
@@ -361,8 +377,51 @@ class DefaultCanvasRuntime @Inject constructor(
                 _renderState.update {
                     val next = it.copy(
                         committedStrokes = emptyList(),
+                        committedTextElements = emptyList(),
                         localActiveStroke = null,
                         remoteActiveStrokes = emptyMap(),
+                        revision = maxOf(it.revision, operation.serverRevision),
+                        cacheToken = it.cacheToken + 1
+                    )
+                    next.withUndoRedoAvailability()
+                }
+            }
+            is SyncOperationPayload.AddTextElement -> {
+                val payload = operation.payload
+                val element = payload.toDomainElement()
+                persistenceStore.persistRemoteUpsertTextElement(element, operation.serverRevision)
+                _renderState.update {
+                    val nextElements = it.committedTextElements
+                        .filterNot { existing -> existing.id == element.id } + element
+                    it.copy(
+                        committedTextElements = nextElements,
+                        revision = maxOf(it.revision, operation.serverRevision),
+                        cacheToken = it.cacheToken + 1
+                    ).withUndoRedoAvailability()
+                }
+            }
+            is SyncOperationPayload.UpdateTextElement -> {
+                val payload = operation.payload
+                val element = payload.toDomainElement()
+                persistenceStore.persistRemoteUpsertTextElement(element, operation.serverRevision)
+                _renderState.update {
+                    val nextElements = it.committedTextElements
+                        .filterNot { existing -> existing.id == element.id } + element
+                    it.copy(
+                        committedTextElements = nextElements,
+                        revision = maxOf(it.revision, operation.serverRevision),
+                        cacheToken = it.cacheToken + 1
+                    ).withUndoRedoAvailability()
+                }
+            }
+            SyncOperationPayload.DeleteTextElement -> {
+                val elementId = operation.strokeId ?: return
+                persistenceStore.persistRemoteDeleteTextElement(elementId, operation.serverRevision)
+                _renderState.update {
+                    val next = it.copy(
+                        committedTextElements = it.committedTextElements.filterNot { element ->
+                            element.id == elementId
+                        },
                         revision = maxOf(it.revision, operation.serverRevision),
                         cacheToken = it.cacheToken + 1
                     )
@@ -373,11 +432,12 @@ class DefaultCanvasRuntime @Inject constructor(
     }
 
     private suspend fun handleRecoverySnapshot(event: CanvasRuntimeEvent.RecoverySnapshot) {
-        persistenceStore.replaceFromServerSnapshot(event.strokes, event.serverRevision)
+        persistenceStore.replaceFromServerSnapshot(event.strokes, event.textElements, event.serverRevision)
         clearHistory()
         _renderState.update {
             val next = it.copy(
                 committedStrokes = event.strokes,
+                committedTextElements = event.textElements,
                 localActiveStroke = null,
                 remoteActiveStrokes = emptyMap(),
                 revision = event.serverRevision,
@@ -395,6 +455,7 @@ class DefaultCanvasRuntime @Inject constructor(
 
         val initialState = _renderState.value
         var committedStrokes = initialState.committedStrokes
+        var committedTextElements = initialState.committedTextElements
         var remoteActiveStrokes = initialState.remoteActiveStrokes
         var revision = initialState.revision
         var shouldClearLocalActive = false
@@ -441,8 +502,27 @@ class DefaultCanvasRuntime @Inject constructor(
                     persistenceStore.persistClear(operation.serverRevision)
                     clearHistory()
                     committedStrokes = emptyList()
+                    committedTextElements = emptyList()
                     remoteActiveStrokes = emptyMap()
                     shouldClearLocalActive = true
+                    cacheChanged = true
+                }
+                is SyncOperationPayload.AddTextElement -> {
+                    val element = operation.payload.toDomainElement()
+                    persistenceStore.persistRemoteUpsertTextElement(element, operation.serverRevision)
+                    committedTextElements = committedTextElements.filterNot { it.id == element.id } + element
+                    cacheChanged = true
+                }
+                is SyncOperationPayload.UpdateTextElement -> {
+                    val element = operation.payload.toDomainElement()
+                    persistenceStore.persistRemoteUpsertTextElement(element, operation.serverRevision)
+                    committedTextElements = committedTextElements.filterNot { it.id == element.id } + element
+                    cacheChanged = true
+                }
+                SyncOperationPayload.DeleteTextElement -> {
+                    val elementId = operation.strokeId ?: return@forEach
+                    persistenceStore.persistRemoteDeleteTextElement(elementId, operation.serverRevision)
+                    committedTextElements = committedTextElements.filterNot { it.id == elementId }
                     cacheChanged = true
                 }
             }
@@ -452,6 +532,7 @@ class DefaultCanvasRuntime @Inject constructor(
         _renderState.update {
             val next = it.copy(
                 committedStrokes = committedStrokes,
+                committedTextElements = committedTextElements,
                 localActiveStroke = if (shouldClearLocalActive) null else it.localActiveStroke,
                 remoteActiveStrokes = remoteActiveStrokes,
                 revision = revision,
@@ -522,6 +603,64 @@ class DefaultCanvasRuntime @Inject constructor(
                 )
                 refreshUndoRedoAvailability()
             }
+            is HistoryAction.AddTextAction -> {
+                redoStack.addLast(action)
+                persistenceStore.persistDeleteTextElement(action.elementId)
+                _renderState.update { current ->
+                    val next = current.copy(
+                        committedTextElements = current.committedTextElements.filterNot { it.id == action.elementId },
+                        cacheToken = current.cacheToken + 1
+                    )
+                    next.withUndoRedoAvailability()
+                }
+                outbound.send(
+                    newClientOperation(
+                        type = DrawingOperationType.DELETE_TEXT_ELEMENT,
+                        strokeId = action.elementId,
+                        payload = SyncOperationPayload.DeleteTextElement
+                    )
+                )
+            }
+            is HistoryAction.DeleteTextAction -> {
+                redoStack.addLast(action)
+                persistenceStore.persistUpsertTextElement(action.element)
+                _renderState.update { current ->
+                    val nextElements = current.committedTextElements
+                        .filterNot { it.id == action.element.id } + action.element
+                    val next = current.copy(
+                        committedTextElements = nextElements,
+                        cacheToken = current.cacheToken + 1
+                    )
+                    next.withUndoRedoAvailability()
+                }
+                outbound.send(
+                    newClientOperation(
+                        type = DrawingOperationType.ADD_TEXT_ELEMENT,
+                        strokeId = action.element.id,
+                        payload = action.element.toAddPayload()
+                    )
+                )
+            }
+            is HistoryAction.UpdateTextAction -> {
+                redoStack.addLast(action)
+                persistenceStore.persistUpsertTextElement(action.before)
+                _renderState.update { current ->
+                    val nextElements = current.committedTextElements
+                        .filterNot { it.id == action.before.id } + action.before
+                    val next = current.copy(
+                        committedTextElements = nextElements,
+                        cacheToken = current.cacheToken + 1
+                    )
+                    next.withUndoRedoAvailability()
+                }
+                outbound.send(
+                    newClientOperation(
+                        type = DrawingOperationType.UPDATE_TEXT_ELEMENT,
+                        strokeId = action.before.id,
+                        payload = action.before.toUpdatePayload()
+                    )
+                )
+            }
         }
     }
 
@@ -563,7 +702,132 @@ class DefaultCanvasRuntime @Inject constructor(
                     )
                 )
             }
+            is HistoryAction.AddTextAction -> {
+                undoStack.addLast(action)
+                trimHistory()
+                persistenceStore.persistUpsertTextElement(action.addedElement)
+                _renderState.update { current ->
+                    val nextElements = current.committedTextElements
+                        .filterNot { it.id == action.addedElement.id } + action.addedElement
+                    val next = current.copy(
+                        committedTextElements = nextElements,
+                        cacheToken = current.cacheToken + 1
+                    )
+                    next.withUndoRedoAvailability()
+                }
+                outbound.send(
+                    newClientOperation(
+                        type = DrawingOperationType.ADD_TEXT_ELEMENT,
+                        strokeId = action.addedElement.id,
+                        payload = action.addedElement.toAddPayload()
+                    )
+                )
+            }
+            is HistoryAction.DeleteTextAction -> {
+                undoStack.addLast(action)
+                trimHistory()
+                persistenceStore.persistDeleteTextElement(action.element.id)
+                _renderState.update { current ->
+                    val next = current.copy(
+                        committedTextElements = current.committedTextElements.filterNot { it.id == action.element.id },
+                        cacheToken = current.cacheToken + 1
+                    )
+                    next.withUndoRedoAvailability()
+                }
+                outbound.send(
+                    newClientOperation(
+                        type = DrawingOperationType.DELETE_TEXT_ELEMENT,
+                        strokeId = action.element.id,
+                        payload = SyncOperationPayload.DeleteTextElement
+                    )
+                )
+            }
+            is HistoryAction.UpdateTextAction -> {
+                undoStack.addLast(action)
+                trimHistory()
+                persistenceStore.persistUpsertTextElement(action.after)
+                _renderState.update { current ->
+                    val nextElements = current.committedTextElements
+                        .filterNot { it.id == action.after.id } + action.after
+                    val next = current.copy(
+                        committedTextElements = nextElements,
+                        cacheToken = current.cacheToken + 1
+                    )
+                    next.withUndoRedoAvailability()
+                }
+                outbound.send(
+                    newClientOperation(
+                        type = DrawingOperationType.UPDATE_TEXT_ELEMENT,
+                        strokeId = action.after.id,
+                        payload = action.after.toUpdatePayload()
+                    )
+                )
+            }
         }
+    }
+
+    private suspend fun handleAddTextElement(element: CanvasTextElement) {
+        persistenceStore.persistUpsertTextElement(element)
+        recordLocalAction(HistoryAction.AddTextAction(elementId = element.id, addedElement = element))
+        _renderState.update { current ->
+            val nextElements = current.committedTextElements.filterNot { it.id == element.id } + element
+            val next = current.copy(
+                committedTextElements = nextElements,
+                cacheToken = current.cacheToken + 1
+            )
+            next.withUndoRedoAvailability()
+        }
+        outbound.send(
+            newClientOperation(
+                type = DrawingOperationType.ADD_TEXT_ELEMENT,
+                strokeId = element.id,
+                payload = element.toAddPayload()
+            )
+        )
+    }
+
+    private suspend fun handleUpdateTextElement(element: CanvasTextElement) {
+        val before = _renderState.value.committedTextElements.firstOrNull { it.id == element.id }
+        persistenceStore.persistUpsertTextElement(element)
+        if (before != null && before != element) {
+            recordLocalAction(HistoryAction.UpdateTextAction(before = before, after = element))
+        }
+        _renderState.update { current ->
+            val nextElements = current.committedTextElements.filterNot { it.id == element.id } + element
+            val next = current.copy(
+                committedTextElements = nextElements,
+                cacheToken = current.cacheToken + 1
+            )
+            next.withUndoRedoAvailability()
+        }
+        outbound.send(
+            newClientOperation(
+                type = DrawingOperationType.UPDATE_TEXT_ELEMENT,
+                strokeId = element.id,
+                payload = element.toUpdatePayload()
+            )
+        )
+    }
+
+    private suspend fun handleDeleteTextElement(elementId: String) {
+        val existing = _renderState.value.committedTextElements.firstOrNull { it.id == elementId }
+            ?: return
+        persistenceStore.persistDeleteTextElement(elementId)
+        recordLocalAction(HistoryAction.DeleteTextAction(existing))
+        _renderState.update { current ->
+            val next = current.copy(
+                committedTextElements = current.committedTextElements.filterNot { it.id == elementId },
+                cacheToken = current.cacheToken + 1
+            )
+            next.withUndoRedoAvailability()
+        }
+        outbound.send(
+            newClientOperation(
+                type = DrawingOperationType.DELETE_TEXT_ELEMENT,
+                strokeId = elementId,
+                payload = SyncOperationPayload.DeleteTextElement
+            )
+        )
     }
 
     private suspend fun flushAppendPointsIfNeeded(force: Boolean) {
@@ -622,7 +886,10 @@ class DefaultCanvasRuntime @Inject constructor(
                     } else {
                         action
                     }
-                is HistoryAction.EraseAction -> action
+                is HistoryAction.EraseAction,
+                is HistoryAction.AddTextAction,
+                is HistoryAction.DeleteTextAction,
+                is HistoryAction.UpdateTextAction -> action
             }
         }
         undoStack.clear()
@@ -727,4 +994,63 @@ private data class RuntimeEventEnvelope(
 private sealed interface HistoryAction {
     data class DrawAction(val stroke: Stroke) : HistoryAction
     data class EraseAction(val deletedStrokeId: String, val deletedStroke: Stroke) : HistoryAction
+    data class AddTextAction(val elementId: String, val addedElement: CanvasTextElement) : HistoryAction
+    data class DeleteTextAction(val element: CanvasTextElement) : HistoryAction
+    data class UpdateTextAction(val before: CanvasTextElement, val after: CanvasTextElement) : HistoryAction
 }
+
+private fun SyncOperationPayload.AddTextElement.toDomainElement(): CanvasTextElement = CanvasTextElement(
+    id = id,
+    text = text,
+    createdAt = createdAt,
+    center = center,
+    rotationRad = rotationRad,
+    scale = scale,
+    boxWidth = boxWidth,
+    colorArgb = colorArgb,
+    backgroundPillEnabled = backgroundPillEnabled,
+    font = font,
+    alignment = alignment
+)
+
+private fun SyncOperationPayload.UpdateTextElement.toDomainElement(): CanvasTextElement = CanvasTextElement(
+    id = id,
+    text = text,
+    createdAt = createdAt,
+    center = center,
+    rotationRad = rotationRad,
+    scale = scale,
+    boxWidth = boxWidth,
+    colorArgb = colorArgb,
+    backgroundPillEnabled = backgroundPillEnabled,
+    font = font,
+    alignment = alignment
+)
+
+private fun CanvasTextElement.toAddPayload(): SyncOperationPayload.AddTextElement = SyncOperationPayload.AddTextElement(
+    id = id,
+    text = text,
+    createdAt = createdAt,
+    center = center,
+    rotationRad = rotationRad,
+    scale = scale,
+    boxWidth = boxWidth,
+    colorArgb = colorArgb,
+    backgroundPillEnabled = backgroundPillEnabled,
+    font = font,
+    alignment = alignment
+)
+
+private fun CanvasTextElement.toUpdatePayload(): SyncOperationPayload.UpdateTextElement = SyncOperationPayload.UpdateTextElement(
+    id = id,
+    text = text,
+    createdAt = createdAt,
+    center = center,
+    rotationRad = rotationRad,
+    scale = scale,
+    boxWidth = boxWidth,
+    colorArgb = colorArgb,
+    backgroundPillEnabled = backgroundPillEnabled,
+    font = font,
+    alignment = alignment
+)

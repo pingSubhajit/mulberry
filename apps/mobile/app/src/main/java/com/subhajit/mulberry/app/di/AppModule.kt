@@ -24,6 +24,7 @@ import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.drawing.DrawingRepository
 import com.subhajit.mulberry.drawing.data.RoomDrawingRepository
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
+import com.subhajit.mulberry.drawing.data.local.CanvasTextElementDao
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.data.local.DrawingDao
 import com.subhajit.mulberry.drawing.data.local.DrawingOperationsDao
@@ -299,6 +300,10 @@ object AppProvidesModule {
     @Provides
     fun provideDrawingOperationsDao(database: DrawingDatabase): DrawingOperationsDao =
         database.drawingOperationsDao()
+
+    @Provides
+    fun provideCanvasTextElementDao(database: DrawingDatabase): CanvasTextElementDao =
+        database.canvasTextElementDao()
 
     @Provides
     fun provideCanvasMetadataDao(database: DrawingDatabase): CanvasMetadataDao =

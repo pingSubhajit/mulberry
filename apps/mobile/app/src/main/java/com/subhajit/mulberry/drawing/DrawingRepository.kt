@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.drawing
 
 import com.subhajit.mulberry.drawing.model.CanvasState
+import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
@@ -39,7 +40,19 @@ interface DrawingRepository {
 
     suspend fun applyRemoteClearCanvas(serverRevision: Long)
 
-    suspend fun replaceWithRemoteSnapshot(strokes: List<Stroke>, serverRevision: Long)
+    suspend fun upsertLocalTextElement(element: CanvasTextElement): Long
+
+    suspend fun deleteLocalTextElement(elementId: String): Long
+
+    suspend fun applyRemoteAddOrUpdateTextElement(element: CanvasTextElement, serverRevision: Long)
+
+    suspend fun applyRemoteDeleteTextElement(elementId: String, serverRevision: Long)
+
+    suspend fun replaceWithRemoteSnapshot(
+        strokes: List<Stroke>,
+        textElements: List<CanvasTextElement>,
+        serverRevision: Long
+    )
 
     suspend fun persistLocalCommittedStroke(stroke: Stroke): Long
 
