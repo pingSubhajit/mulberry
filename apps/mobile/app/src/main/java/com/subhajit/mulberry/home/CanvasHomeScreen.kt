@@ -72,10 +72,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
@@ -129,6 +132,9 @@ import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.ui.WallpaperBackgroundSelectionSection
 import com.subhajit.mulberry.wallpaper.ui.WallpaperLockScreenPreview
 import com.subhajit.mulberry.wallpaper.ui.WallpaperPrimaryButton
+import android.graphics.RenderEffect
+import android.graphics.Shader
+import android.os.Build
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import nl.dionsegijn.konfetti.compose.KonfettiView
@@ -311,6 +317,7 @@ private fun CanvasHomeScreen(
     val pagerState = rememberPagerState(pageCount = { MainAppTab.entries.size })
     val coroutineScope = rememberCoroutineScope()
     val selectedTab = MainAppTab.entries[pagerState.currentPage]
+    var textEditorSession by remember { mutableStateOf<CanvasTextEditorSession?>(null) }
     val headerTitle = when (selectedTab) {
         MainAppTab.Canvas -> if (uiState.bootstrapState.pairingStatus == PairingStatus.UNPAIRED) {
             stringResource(R.string.home_unpaired_title)
@@ -407,12 +414,25 @@ private fun CanvasHomeScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        val editorOpen = textEditorSession != null
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding()
                 .navigationBarsPadding()
+                .graphicsLayer {
+                    if (editorOpen && Build.VERSION.SDK_INT >= 31) {
+                        renderEffect = RenderEffect.createBlurEffect(
+                            18f,
+                            18f,
+                            Shader.TileMode.CLAMP
+                        ).asComposeRenderEffect()
+                    } else {
+                        renderEffect = null
+                    }
+                    alpha = if (editorOpen) 0.92f else 1f
+                }
                 .testTag(TestTags.HOME_SCREEN)
         ) {
             MainAppHeader(
@@ -445,6 +465,8 @@ private fun CanvasHomeScreen(
                         onTextElementAdded = onTextElementAdded,
                         onTextElementUpdated = onTextElementUpdated,
                         onTextElementDeleted = onTextElementDeleted,
+                        onTextEditorRequested = { session -> textEditorSession = session },
+                        isTextEditorOpen = textEditorSession != null,
                         onClearRequested = onClearRequested,
                         onUndoRequested = onUndoRequested,
                         onRedoRequested = onRedoRequested
@@ -475,6 +497,25 @@ private fun CanvasHomeScreen(
             )
         }
 
+        val session = textEditorSession
+        if (session != null) {
+            TextEditorOverlay(
+                element = session.element,
+                palette = uiState.palette,
+                autoFocus = true,
+                onDismiss = {
+                    textEditorSession = null
+                },
+                onDone = { updated ->
+                    if (updated.text.isBlank()) onTextElementDeleted(updated.id) else onTextElementUpdated(updated)
+                    textEditorSession = null
+                },
+                onDelete = { elementId ->
+                    onTextElementDeleted(elementId)
+                    textEditorSession = null
+                }
+            )
+        }
     }
 }
 
@@ -550,6 +591,8 @@ private fun CanvasHomePane(
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
+    onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
+    isTextEditorOpen: Boolean,
     onClearRequested: () -> Unit,
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit
@@ -650,6 +693,8 @@ private fun CanvasHomePane(
             onTextElementAdded = onTextElementAdded,
             onTextElementUpdated = onTextElementUpdated,
             onTextElementDeleted = onTextElementDeleted,
+            onTextEditorRequested = onTextEditorRequested,
+            isTextEditorOpen = isTextEditorOpen,
             onClearRequested = onClearRequested,
             onUndoRequested = onUndoRequested,
             onRedoRequested = onRedoRequested,
@@ -673,6 +718,8 @@ private fun PairedCanvasPane(
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
+    onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
+    isTextEditorOpen: Boolean,
     onClearRequested: () -> Unit,
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit,
@@ -719,6 +766,8 @@ private fun PairedCanvasPane(
                 onAddElement = onTextElementAdded,
                 onUpdateElement = onTextElementUpdated,
                 onDeleteElement = onTextElementDeleted,
+                onRequestEdit = onTextEditorRequested,
+                isEditorOpen = isTextEditorOpen,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(8.dp)
@@ -786,14 +835,19 @@ private fun CanvasActionButton(
     contentDescription: String,
     selected: Boolean,
     enabled: Boolean = true,
+    showSelectedRing: Boolean = selected,
+    dimWhenNotSelected: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 50.dp
 ) {
+    val ringWidth = 2.dp
+    val ringColor = MulberryPrimary.copy(alpha = 0.95f)
     val iconAlpha = when {
         !enabled -> 0.35f
         selected -> 1f
-        else -> 0.60f
+        dimWhenNotSelected -> 0.60f
+        else -> 1f
     }
     Box(
         modifier = modifier
@@ -807,6 +861,11 @@ private fun CanvasActionButton(
             )
             .clip(CircleShape)
             .background(MaterialTheme.mulberryAppColors.softSurfaceStrong)
+            .border(
+                width = if (showSelectedRing) ringWidth else 0.dp,
+                color = if (showSelectedRing) ringColor else Color.Transparent,
+                shape = CircleShape
+            )
             .clickable(enabled = enabled, onClick = onClick)
             .padding(7.dp),
         contentAlignment = Alignment.Center
@@ -817,7 +876,12 @@ private fun CanvasActionButton(
             modifier = Modifier
                 .fillMaxSize()
                 .alpha(iconAlpha),
-            contentScale = ContentScale.Fit
+            contentScale = ContentScale.Fit,
+            colorFilter = if (drawableRes == R.drawable.canvas_action_text) {
+                ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
+            } else {
+                null
+            }
         )
     }
 }
@@ -1035,7 +1099,8 @@ private fun CanvasControlTray(
                                     ColorSwatch(
                                         colorArgb = color,
                                         isSelected = color == uiState.toolState.selectedColorArgb &&
-                                            uiState.toolState.activeTool == DrawingTool.DRAW,
+                                            (uiState.toolState.activeTool == DrawingTool.DRAW ||
+                                                uiState.toolState.activeTool == DrawingTool.TEXT),
                                         onClick = {
                                             onColorSelected(color)
                                             showColorPicker = false
@@ -1053,6 +1118,8 @@ private fun CanvasControlTray(
             drawableRes = R.drawable.canvas_action_undo,
             contentDescription = stringResource(R.string.home_canvas_undo_content_description),
             selected = true,
+            showSelectedRing = false,
+            dimWhenNotSelected = false,
             enabled = uiState.canUndo,
             onClick = onUndoRequested,
             modifier = Modifier.testTag(TestTags.UNDO_BUTTON)
@@ -1061,6 +1128,8 @@ private fun CanvasControlTray(
             drawableRes = R.drawable.canvas_action_redo,
             contentDescription = stringResource(R.string.home_canvas_redo_content_description),
             selected = true,
+            showSelectedRing = false,
+            dimWhenNotSelected = false,
             enabled = uiState.canRedo,
             onClick = onRedoRequested,
             modifier = Modifier.testTag(TestTags.REDO_BUTTON)
@@ -1083,6 +1152,8 @@ private fun CanvasControlTray(
             drawableRes = R.drawable.canvas_action_clear,
             contentDescription = stringResource(R.string.home_canvas_clear_content_description),
             selected = true,
+            showSelectedRing = false,
+            dimWhenNotSelected = false,
             onClick = onClearRequested,
             modifier = Modifier.testTag(TestTags.CLEAR_BUTTON)
         )
@@ -2490,7 +2561,8 @@ private fun CanvasSurfaceScreen(
                             ColorSwatch(
                                 colorArgb = color,
                                 isSelected = color == uiState.toolState.selectedColorArgb &&
-                                    uiState.toolState.activeTool == DrawingTool.DRAW,
+                                    (uiState.toolState.activeTool == DrawingTool.DRAW ||
+                                        uiState.toolState.activeTool == DrawingTool.TEXT),
                                 onClick = { onColorSelected(color) }
                             )
                         }

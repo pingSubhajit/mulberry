@@ -304,6 +304,7 @@ class DefaultCanvasRuntime @Inject constructor(
         _renderState.update {
             val next = it.copy(
                 committedStrokes = emptyList(),
+                committedTextElements = emptyList(),
                 localActiveStroke = null,
                 remoteActiveStrokes = emptyMap(),
                 cacheToken = it.cacheToken + 1

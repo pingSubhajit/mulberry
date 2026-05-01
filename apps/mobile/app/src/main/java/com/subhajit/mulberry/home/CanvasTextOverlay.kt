@@ -5,29 +5,43 @@ import android.graphics.Typeface
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +53,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onSizeChanged
@@ -64,12 +80,18 @@ import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.VirgilFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import java.util.UUID
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import kotlin.math.PI
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+
+data class CanvasTextEditorSession(
+    val element: CanvasTextElement,
+    val isNew: Boolean
+)
 
 @Composable
 fun CanvasTextOverlay(
@@ -80,19 +102,26 @@ fun CanvasTextOverlay(
     onAddElement: (CanvasTextElement) -> Unit,
     onUpdateElement: (CanvasTextElement) -> Unit,
     onDeleteElement: (String) -> Unit,
+    onRequestEdit: (CanvasTextEditorSession) -> Unit,
+    isEditorOpen: Boolean,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var selectedElementId by remember { mutableStateOf<String?>(null) }
-    var editor by remember { mutableStateOf<TextEditorState?>(null) }
     var liveTransformPreview by remember { mutableStateOf<CanvasTextElement?>(null) }
 
     LaunchedEffect(activeTool) {
         if (activeTool != DrawingTool.TEXT) {
             selectedElementId = null
-            editor = null
+            liveTransformPreview = null
+        }
+    }
+
+    LaunchedEffect(isEditorOpen) {
+        if (!isEditorOpen) {
+            selectedElementId = null
             liveTransformPreview = null
         }
     }
@@ -100,119 +129,214 @@ fun CanvasTextOverlay(
     val poppinsTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.poppins_regular) ?: Typeface.DEFAULT }
     val virgilTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.virgil_regular) ?: Typeface.DEFAULT }
     val baseTextSizePx = with(density) { 34.sp.toPx() }
+    var isTransformInProgress by remember { mutableStateOf(false) }
 
-    // Important: only install pointer handlers when TEXT tool is active, otherwise this
-    // overlay sits above the drawing canvas and blocks all drawing gestures.
-    val tapModifier = if (activeTool == DrawingTool.TEXT) {
-        Modifier.pointerInput(elements, selectedElementId, canvasSize, selectedColorArgb) {
-            detectTapGestures(
-                onTap = { offset ->
-                    if (canvasSize.width > 0 && canvasSize.height > 0) {
-                        val hitId = hitTest(
-                            elements,
-                            offset,
-                            canvasSize,
-                            baseTextSizePx,
-                            poppinsTypeface,
-                            virgilTypeface
-                        )
-                        if (hitId != null) {
-                            selectedElementId = hitId
-                        } else {
-                            val id = UUID.randomUUID().toString()
-                            val element = CanvasTextElement(
-                                id = id,
-                                text = "",
-                                createdAt = System.currentTimeMillis(),
-                                center = offset.toNormalizedPoint(canvasSize),
-                                rotationRad = 0f,
-                                scale = 1f,
-                                boxWidth = 0.7f,
-                                colorArgb = selectedColorArgb,
-                                backgroundPillEnabled = false,
-                                font = CanvasTextFont.POPPINS,
-                                alignment = CanvasTextAlign.CENTER
-                            )
-                            onAddElement(element)
-                            selectedElementId = id
-                            editor = TextEditorState(elementId = id, initialText = "", isNew = true)
-                        }
+    // Important: only install pointer handlers when needed; this overlay sits above the
+    // drawing canvas so it must not block drawing/erase gestures unless it consumes them.
+    val gestureModifier = when {
+        activeTool == DrawingTool.TEXT && !isEditorOpen -> Modifier.pointerInput(elements, canvasSize, selectedColorArgb) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                if (canvasSize.width <= 0 || canvasSize.height <= 0) return@awaitEachGesture
+
+                val hitId = hitTest(
+                    elements = elements,
+                    pointPx = down.position,
+                    canvasSize = canvasSize,
+                    textSizePx = baseTextSizePx,
+                    poppins = poppinsTypeface,
+                    virgil = virgilTypeface
+                )
+                val initialDown = down.position
+                val touchSlop = viewConfiguration.touchSlop
+
+                selectedElementId = hitId
+                liveTransformPreview = null
+
+                var beganTransform = false
+                var beganDrag = false
+                var lastCentroid = initialDown
+                var lastAngle = 0f
+                var lastSpan = 0f
+
+                fun activeElement(): CanvasTextElement? {
+                    val selected = selectedElementId ?: return null
+                    return liveTransformPreview ?: elements.firstOrNull { it.id == selected }
+                }
+
+                // Track pointers until all are up.
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val pressed = event.changes.filter { it.pressed }
+                    if (pressed.isEmpty()) break
+
+                    if (hitId == null) {
+                        // Not on a text element; let the user complete the tap to create.
+                        continue
                     }
-                },
-                onDoubleTap = { offset ->
-                    if (canvasSize.width > 0 && canvasSize.height > 0) {
-                        val hitId = hitTest(
-                            elements,
-                            offset,
-                            canvasSize,
-                            baseTextSizePx,
-                            poppinsTypeface,
-                            virgilTypeface
+
+                    val current = activeElement() ?: break
+                    val positions = pressed.map { it.position }
+                    val centroid = positions.reduce { acc, offset -> acc + offset } / positions.size.toFloat()
+                    val panDelta = centroid - lastCentroid
+
+                    val span = if (positions.size >= 2) {
+                        (positions[1] - positions[0]).getDistance()
+                    } else {
+                        0f
+                    }
+                    val angle = if (positions.size >= 2) {
+                        atan2(
+                            (positions[1].y - positions[0].y),
+                            (positions[1].x - positions[0].x)
                         )
-                        if (hitId != null) {
-                            val target = elements.firstOrNull { it.id == hitId }
-                            if (target != null) {
-                                selectedElementId = hitId
-                                editor = TextEditorState(
-                                    elementId = hitId,
-                                    initialText = target.text,
-                                    isNew = false
-                                )
-                            }
+                    } else {
+                        0f
+                    }
+
+                    val totalMove = (centroid - initialDown).getDistance()
+                    if (!beganTransform && positions.size >= 2 && totalMove > touchSlop) {
+                        beganTransform = true
+                        beganDrag = true
+                        isTransformInProgress = true
+                        lastAngle = angle
+                        lastSpan = span.coerceAtLeast(1f)
+                    } else if (!beganDrag && positions.size == 1 && totalMove > touchSlop) {
+                        beganDrag = true
+                        isTransformInProgress = true
+                    }
+
+                    if (beganDrag) {
+                        val zoomChange = if (beganTransform) {
+                            val safeSpan = span.coerceAtLeast(1f)
+                            safeSpan / lastSpan.coerceAtLeast(1f)
+                        } else {
+                            1f
+                        }
+                        val rotationDelta = if (beganTransform) {
+                            (angle - lastAngle)
+                        } else {
+                            0f
+                        }
+
+                        val centerPx = current.center.denormalize(canvasSize)
+                        val nextCenterPx = centerPx + panDelta
+                        val nextScale = (current.scale * zoomChange).coerceIn(0.3f, 6f)
+                        val nextRotation = current.rotationRad + rotationDelta
+                        liveTransformPreview = current.copy(
+                            center = nextCenterPx.toNormalizedPoint(canvasSize),
+                            scale = nextScale,
+                            rotationRad = nextRotation
+                        )
+
+                        pressed.forEach { it.consume() }
+                        lastCentroid = centroid
+                        if (beganTransform) {
+                            lastAngle = angle
+                            lastSpan = span.coerceAtLeast(1f)
                         }
                     }
                 }
-            )
-        }
-    } else {
-        Modifier
-    }
 
-    val transformState = rememberTransformableState { zoomChange, panChange, rotationDegrees ->
-        if (activeTool != DrawingTool.TEXT) return@rememberTransformableState
-        if (editor != null) return@rememberTransformableState
-        if (canvasSize.width <= 0 || canvasSize.height <= 0) return@rememberTransformableState
-        val selectedId = selectedElementId ?: return@rememberTransformableState
-        val current = liveTransformPreview ?: elements.firstOrNull { it.id == selectedId }
-            ?: return@rememberTransformableState
+                // Gesture ended.
+                isTransformInProgress = false
 
-        val centerPx = current.center.denormalize(canvasSize)
-        val nextCenterPx = centerPx + panChange
-        val nextScale = (current.scale * zoomChange).coerceIn(0.3f, 6f)
-        val nextRotation = current.rotationRad + rotationDegrees.degreesToRadians()
-        liveTransformPreview = current.copy(
-            center = nextCenterPx.toNormalizedPoint(canvasSize),
-            scale = nextScale,
-            rotationRad = nextRotation
-        )
-    }
+                if (hitId == null) {
+                    // Tap empty area => create + edit.
+                    val id = UUID.randomUUID().toString()
+                    val element = CanvasTextElement(
+                        id = id,
+                        text = "",
+                        createdAt = System.currentTimeMillis(),
+                        center = initialDown.toNormalizedPoint(canvasSize),
+                        rotationRad = 0f,
+                        scale = 1f,
+                        boxWidth = 0.7f,
+                        colorArgb = selectedColorArgb,
+                        backgroundPillEnabled = false,
+                        font = CanvasTextFont.POPPINS,
+                        alignment = CanvasTextAlign.CENTER
+                    )
+                    onAddElement(element)
+                    selectedElementId = null
+                    onRequestEdit(CanvasTextEditorSession(element = element, isNew = true))
+                    return@awaitEachGesture
+                }
 
-    LaunchedEffect(transformState.isTransformInProgress, selectedElementId, elements) {
-        if (!transformState.isTransformInProgress) {
-            val selectedId = selectedElementId ?: return@LaunchedEffect
-            val base = elements.firstOrNull { it.id == selectedId } ?: return@LaunchedEffect
-            val preview = liveTransformPreview ?: return@LaunchedEffect
-            liveTransformPreview = null
-            if (preview != base) {
-                onUpdateElement(preview)
+                val base = elements.firstOrNull { it.id == hitId }
+                val preview = liveTransformPreview
+                liveTransformPreview = null
+
+                if (beganDrag) {
+                    if (preview != null && base != null && preview != base) {
+                        onUpdateElement(preview)
+                    }
+                    selectedElementId = null
+                } else {
+                    // It's a tap on the element -> enter edit mode.
+                    val target = base ?: return@awaitEachGesture
+                    selectedElementId = null
+                    onRequestEdit(CanvasTextEditorSession(element = target, isNew = false))
+                }
             }
         }
+        activeTool == DrawingTool.ERASE && !isEditorOpen -> Modifier.pointerInput(elements, canvasSize) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                if (canvasSize.width <= 0 || canvasSize.height <= 0) return@awaitEachGesture
+
+                val hitId = hitTest(
+                    elements = elements,
+                    pointPx = down.position,
+                    canvasSize = canvasSize,
+                    textSizePx = baseTextSizePx,
+                    poppins = poppinsTypeface,
+                    virgil = virgilTypeface
+                ) ?: return@awaitEachGesture
+
+                // Consume so stroke-eraser doesn't also trigger.
+                down.consume()
+
+                // Wait until the pointer is released/cancelled.
+                var pointer = down
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == pointer.id }
+                        ?: event.changes.firstOrNull()
+                        ?: break
+                    pointer = change
+                    if (!change.pressed) break
+                    change.consume()
+                }
+
+                onDeleteElement(hitId)
+            }
+        }
+        else -> Modifier
     }
 
-    val transformModifier = if (activeTool == DrawingTool.TEXT) {
-        Modifier.transformable(
-            state = transformState,
-            enabled = selectedElementId != null && editor == null
-        )
-    } else {
-        Modifier
-    }
+    // All gestures are handled in a single pointerInput block (`gestureModifier`) so
+    // tap-to-edit and drag-to-reposition work in the same gesture without requiring
+    // a prior selection or recomposition.
+
+    val boundsAlpha by animateFloatAsState(
+        targetValue = if (
+            activeTool == DrawingTool.TEXT &&
+                !isEditorOpen &&
+                isTransformInProgress
+        ) {
+            1f
+        } else {
+            0f
+        },
+        animationSpec = tween(durationMillis = 140),
+        label = "textBoundsAlpha"
+    )
 
     Box(
         modifier = modifier
             .onSizeChanged { canvasSize = it }
-            .then(tapModifier)
-            .then(transformModifier)
+            .then(gestureModifier)
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawIntoCanvas { canvas ->
@@ -281,12 +405,18 @@ fun CanvasTextOverlay(
 
                     native.restore()
 
-                    if (activeTool == DrawingTool.TEXT && element.id == selectedElementId) {
+                    // Only show bounds while the user is actively repositioning (dragging/pinching).
+                    if (element.id == selectedElementId && boundsAlpha > 0f) {
                         val outlinePaint = android.graphics.Paint().apply {
                             isAntiAlias = true
                             style = android.graphics.Paint.Style.STROKE
                             strokeWidth = with(density) { 2.dp.toPx() }
-                            color = 0x66FFFFFF
+                            color = android.graphics.Color.argb(
+                                (0x66 * boundsAlpha).toInt().coerceIn(0, 255),
+                                255,
+                                255,
+                                255
+                            )
                         }
                         native.save()
                         native.translate(center.x, center.y)
@@ -300,221 +430,335 @@ fun CanvasTextOverlay(
             }
         }
 
-        val selectedId = selectedElementId
-        if (activeTool == DrawingTool.TEXT && selectedId != null && editor == null) {
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(10.dp)
-                    .size(44.dp)
-                    .clickable {
-                        onDeleteElement(selectedId)
-                        selectedElementId = null
-                    },
-                color = MaterialTheme.mulberryAppColors.softSurfaceStrong,
-                shape = CircleShape
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    androidx.compose.material3.Text(
-                        text = "Del",
-                        fontFamily = PoppinsFontFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-        }
-    }
-
-    val editorState = editor
-    if (editorState != null) {
-        val element = elements.firstOrNull { it.id == editorState.elementId }
-        if (element != null) {
-            TextEditorOverlay(
-                element = element,
-                palette = palette,
-                autoFocus = editorState.isNew,
-                onDismiss = {
-                    if (editorState.isNew && element.text.isBlank()) {
-                        onDeleteElement(element.id)
-                    }
-                    editor = null
-                },
-                onDone = { updated ->
-                    if (editorState.isNew && updated.text.isBlank()) {
-                        onDeleteElement(updated.id)
-                    } else {
-                        onUpdateElement(updated)
-                    }
-                    editor = null
-                }
-            )
-        } else {
-            editor = null
-        }
+        // Delete is now handled inside the text edit toolbar (not on-canvas).
     }
 }
 
-private data class TextEditorState(
-    val elementId: String,
-    val initialText: String,
-    val isNew: Boolean
-)
+private enum class TextEditorPanel {
+    NONE,
+    FONT,
+    SIZE,
+    COLOR,
+    ALIGN
+}
 
 @Composable
-private fun TextEditorOverlay(
+fun TextEditorOverlay(
     element: CanvasTextElement,
     palette: List<Long>,
     autoFocus: Boolean,
     onDismiss: () -> Unit,
-    onDone: (CanvasTextElement) -> Unit
+    onDone: (CanvasTextElement) -> Unit,
+    onDelete: (String) -> Unit
 ) {
     var textField by remember(element.id) { mutableStateOf(TextFieldValue(element.text)) }
     var font by remember(element.id) { mutableStateOf(element.font) }
     var alignment by remember(element.id) { mutableStateOf(element.alignment) }
     var backgroundPillEnabled by remember(element.id) { mutableStateOf(element.backgroundPillEnabled) }
     var colorArgb by remember(element.id) { mutableStateOf(element.colorArgb) }
+    var scale by remember(element.id) { mutableStateOf(element.scale.coerceIn(0.3f, 6f)) }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    var panel by remember(element.id) { mutableStateOf(TextEditorPanel.NONE) }
+    var enter by remember(element.id) { mutableStateOf(false) }
+
+    LaunchedEffect(element.id) {
+        enter = true
+    }
+
+    val overlayAlpha by animateFloatAsState(
+        targetValue = if (enter) 1f else 0f,
+        animationSpec = tween(durationMillis = 110, easing = FastOutLinearInEasing),
+        label = "textEditorOverlayAlpha"
+    )
+
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (enter) 1f else 0f,
+        animationSpec = tween(durationMillis = 120, delayMillis = 45, easing = FastOutSlowInEasing),
+        label = "textEditorContentAlpha"
+    )
+
+    val contentScale by animateFloatAsState(
+        targetValue = if (enter) 1f else 0.98f,
+        animationSpec = tween(durationMillis = 120, delayMillis = 45, easing = FastOutSlowInEasing),
+        label = "textEditorContentScale"
+    )
+
+    fun commitAndExit() {
+        val nextText = textField.text
+        keyboardController?.hide()
+        if (nextText.isBlank()) {
+            onDelete(element.id)
+            return
+        }
+
+        onDone(
+            element.copy(
+                text = nextText,
+                font = font,
+                alignment = alignment,
+                backgroundPillEnabled = backgroundPillEnabled,
+                colorArgb = colorArgb,
+                scale = scale
+            )
+        )
+    }
+
+    fun deleteAndExit() {
+        keyboardController?.hide()
+        onDelete(element.id)
+    }
 
     LaunchedEffect(element.id, autoFocus) {
-        if (autoFocus) {
-            focusRequester.requestFocus()
-            keyboardController?.show()
-        }
+        // In v1, keep the keyboard open for the entire edit session (new or existing text).
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
+    BackHandler(onBack = { commitAndExit() })
+
+    val backgroundColor = Color(colorArgb)
+    val textColor = if (backgroundPillEnabled) {
+        val isLight = luminance(colorArgb.toInt()) > 0.55f
+        if (isLight) Color.Black else Color.White
+    } else {
+        backgroundColor
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.55f))
-            .clickable(onClick = onDismiss),
-        contentAlignment = Alignment.Center
+            .background(Color.Black.copy(alpha = 0.78f * overlayAlpha))
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
     ) {
-        Surface(
+        // Background hit target: tapping outside the text/controls exits edit mode.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures { commitAndExit() }
+                }
+        )
+
+        // Top "Done"
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {}
-                ),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.mulberryAppColors.softSurface
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 18.dp, vertical = 12.dp)
+                .alpha(contentAlpha)
         ) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    androidx.compose.material3.Text(
-                        text = "Edit text",
-                        fontFamily = PoppinsFontFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 16.sp
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    Button(
-                        onClick = {
-                            onDone(
-                                element.copy(
-                                    text = textField.text,
-                                    font = font,
-                                    alignment = alignment,
-                                    backgroundPillEnabled = backgroundPillEnabled,
-                                    colorArgb = colorArgb
-                                )
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0E7C59))
+            Text(
+                text = "Done",
+                color = Color.White,
+                fontFamily = PoppinsFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 18.sp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
                     ) {
-                        androidx.compose.material3.Text(
-                            text = "Done",
-                            color = Color.White,
-                            fontFamily = PoppinsFontFamily,
-                            fontWeight = FontWeight.Medium
-                        )
+                        commitAndExit()
                     }
-                }
+            )
+        }
 
-                androidx.compose.foundation.text.BasicTextField(
+        // Centered text editor
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 28.dp)
+                .padding(top = 64.dp, bottom = 96.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            val pillModifier = if (backgroundPillEnabled) {
+                Modifier
+                    .background(backgroundColor, RoundedCornerShape(24.dp))
+                    .padding(horizontal = 18.dp, vertical = 14.dp)
+            } else {
+                Modifier
+            }
+
+            Box(
+                modifier = pillModifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    focusRequester.requestFocus()
+                    keyboardController?.show()
+                }.alpha(contentAlpha),
+                contentAlignment = Alignment.Center
+            ) {
+                BasicTextField(
                     value = textField,
-                    onValueChange = { textField = it },
+                    onValueChange = { next -> textField = next },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
+                    cursorBrush = SolidColor(textColor),
                     textStyle = TextStyle(
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = textColor,
                         fontFamily = when (font) {
                             CanvasTextFont.POPPINS -> PoppinsFontFamily
                             CanvasTextFont.VIRGIL -> VirgilFontFamily
                         },
-                        fontSize = 26.sp,
+                        fontSize = (34f * scale).coerceIn(12f, 160f).sp,
+                        fontWeight = FontWeight.Medium,
                         textAlign = when (alignment) {
                             CanvasTextAlign.LEFT -> TextAlign.Left
                             CanvasTextAlign.CENTER -> TextAlign.Center
                             CanvasTextAlign.RIGHT -> TextAlign.Right
                         }
                     ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .background(MaterialTheme.mulberryAppColors.softSurfaceAlt, RoundedCornerShape(14.dp))
-                        .padding(12.dp)
-                        .focusRequester(focusRequester)
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TogglePill(
-                        label = "Poppins",
-                        selected = font == CanvasTextFont.POPPINS
-                    ) { font = CanvasTextFont.POPPINS }
-                    TogglePill(
-                        label = "Virgil",
-                        selected = font == CanvasTextFont.VIRGIL
-                    ) { font = CanvasTextFont.VIRGIL }
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TogglePill(
-                        label = "Left",
-                        selected = alignment == CanvasTextAlign.LEFT
-                    ) { alignment = CanvasTextAlign.LEFT }
-                    TogglePill(
-                        label = "Center",
-                        selected = alignment == CanvasTextAlign.CENTER
-                    ) { alignment = CanvasTextAlign.CENTER }
-                    TogglePill(
-                        label = "Right",
-                        selected = alignment == CanvasTextAlign.RIGHT
-                    ) { alignment = CanvasTextAlign.RIGHT }
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TogglePill(
-                        label = "Pill",
-                        selected = backgroundPillEnabled
-                    ) { backgroundPillEnabled = !backgroundPillEnabled }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    palette.forEach { candidate ->
+                    decorationBox = { inner ->
                         Box(
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(34.dp)
-                                .background(Color(candidate), RoundedCornerShape(999.dp))
-                                .alpha(if (candidate == colorArgb) 1f else 0.55f)
-                                .clickable { colorArgb = candidate }
+                                .graphicsLayer {
+                                    scaleX = contentScale
+                                    scaleY = contentScale
+                                }
+                        ) {
+                            if (textField.text.isBlank()) {
+                                Text(
+                                    text = "Type something",
+                                    color = Color.White.copy(alpha = 0.45f),
+                                    fontFamily = PoppinsFontFamily,
+                                    fontSize = 28.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            inner()
+                        }
+                    }
+                )
+            }
+        }
+
+        // Bottom toolbars (secondary + optional tertiary)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .alpha(contentAlpha),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            when (panel) {
+                TextEditorPanel.FONT -> {
+                    EditorTertiaryBar {
+                        TogglePill(label = "Poppins", selected = font == CanvasTextFont.POPPINS) {
+                            font = CanvasTextFont.POPPINS
+                            focusRequester.requestFocus()
+                        }
+                        TogglePill(label = "Virgil", selected = font == CanvasTextFont.VIRGIL) {
+                            font = CanvasTextFont.VIRGIL
+                            focusRequester.requestFocus()
+                        }
+                    }
+                }
+
+                TextEditorPanel.SIZE -> {
+                    EditorTertiaryBar {
+                        Text(
+                            text = "Aa",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = PoppinsFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp
+                        )
+                        androidx.compose.material3.Slider(
+                            value = scale,
+                            onValueChange = { scale = it },
+                            valueRange = 0.3f..6f,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "AA",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = PoppinsFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 16.sp
                         )
                     }
                 }
+
+                TextEditorPanel.ALIGN -> {
+                    EditorTertiaryBar {
+                        TogglePill(label = "Left", selected = alignment == CanvasTextAlign.LEFT) {
+                            alignment = CanvasTextAlign.LEFT
+                            focusRequester.requestFocus()
+                        }
+                        TogglePill(label = "Center", selected = alignment == CanvasTextAlign.CENTER) {
+                            alignment = CanvasTextAlign.CENTER
+                            focusRequester.requestFocus()
+                        }
+                        TogglePill(label = "Right", selected = alignment == CanvasTextAlign.RIGHT) {
+                            alignment = CanvasTextAlign.RIGHT
+                            focusRequester.requestFocus()
+                        }
+                    }
+                }
+
+                TextEditorPanel.COLOR -> {
+                    val scroll = rememberScrollState()
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.mulberryAppColors.softSurface.copy(alpha = 0.92f)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .horizontalScroll(scroll)
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            palette.forEach { candidate ->
+                                val selected = candidate == colorArgb
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(Color(candidate), CircleShape)
+                                        .border(
+                                            width = if (selected) 3.dp else 1.dp,
+                                            color = if (selected) Color.White else Color.White.copy(alpha = 0.25f),
+                                            shape = CircleShape
+                                        )
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) {
+                                            colorArgb = candidate
+                                            focusRequester.requestFocus()
+                                        }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                TextEditorPanel.NONE -> Unit
             }
+
+            EditorSecondaryBar(
+                panel = panel,
+                onPanelChanged = { next ->
+                    panel = if (panel == next) TextEditorPanel.NONE else next
+                    focusRequester.requestFocus()
+                },
+                backgroundPillEnabled = backgroundPillEnabled,
+                onTogglePill = {
+                    backgroundPillEnabled = !backgroundPillEnabled
+                    focusRequester.requestFocus()
+                },
+                onDelete = { deleteAndExit() }
+            )
         }
     }
 }
@@ -539,6 +783,98 @@ private fun TogglePill(
             fontFamily = PoppinsFontFamily,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun EditorSecondaryBar(
+    panel: TextEditorPanel,
+    onPanelChanged: (TextEditorPanel) -> Unit,
+    backgroundPillEnabled: Boolean,
+    onTogglePill: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.mulberryAppColors.softSurface.copy(alpha = 0.92f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            EditorToolChip(
+                label = "Aa",
+                selected = panel == TextEditorPanel.FONT
+            ) { onPanelChanged(TextEditorPanel.FONT) }
+            EditorToolChip(
+                label = "Size",
+                selected = panel == TextEditorPanel.SIZE
+            ) { onPanelChanged(TextEditorPanel.SIZE) }
+            EditorToolChip(
+                label = "Color",
+                selected = panel == TextEditorPanel.COLOR
+            ) { onPanelChanged(TextEditorPanel.COLOR) }
+            EditorToolChip(
+                label = "Align",
+                selected = panel == TextEditorPanel.ALIGN
+            ) { onPanelChanged(TextEditorPanel.ALIGN) }
+            Spacer(modifier = Modifier.weight(1f))
+            EditorToolChip(
+                label = if (backgroundPillEnabled) "Pill On" else "Pill",
+                selected = backgroundPillEnabled
+            ) { onTogglePill() }
+            EditorToolChip(
+                label = "Delete",
+                selected = false
+            ) { onDelete() }
+        }
+    }
+}
+
+@Composable
+private fun EditorTertiaryBar(content: @Composable RowScope.() -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.mulberryAppColors.softSurface.copy(alpha = 0.92f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content
+        )
+    }
+}
+
+@Composable
+private fun EditorToolChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val bg = if (selected) Color(0xFF0E7C59) else MaterialTheme.mulberryAppColors.softSurfaceAlt
+    val fg = if (selected) Color.White else MaterialTheme.colorScheme.onSurface
+    Surface(
+        color = bg,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            )
+    ) {
+        Text(
+            text = label,
+            color = fg,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
         )
     }
 }

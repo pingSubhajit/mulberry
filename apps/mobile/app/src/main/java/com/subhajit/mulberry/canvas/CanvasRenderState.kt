@@ -18,7 +18,8 @@ data class CanvasRenderState(
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
     val toolState: ToolState = ToolState(
-        selectedColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
+        strokeColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
+        textColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
         selectedWidth = DrawingDefaults.DEFAULT_WIDTH
     ),
     val syncState: SyncState = SyncState.Disconnected,

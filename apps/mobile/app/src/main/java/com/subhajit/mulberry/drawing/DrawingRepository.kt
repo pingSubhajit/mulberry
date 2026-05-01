@@ -20,6 +20,8 @@ interface DrawingRepository {
 
     suspend fun setBrushColor(colorArgb: Long)
 
+    suspend fun setTextColor(colorArgb: Long)
+
     suspend fun setBrushWidth(width: Float)
 
     suspend fun setTool(tool: DrawingTool)

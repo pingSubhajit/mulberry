@@ -14,6 +14,7 @@ data class CanvasMetadataEntity(
     val canvasWidthPx: Int = 0,
     val canvasHeightPx: Int = 0,
     val selectedColorArgb: Long = DrawingDefaults.DEFAULT_COLOR_ARGB,
+    val selectedTextColorArgb: Long = DrawingDefaults.DEFAULT_COLOR_ARGB,
     val selectedWidth: Float = DrawingDefaults.DEFAULT_WIDTH,
     val selectedTool: DrawingTool = DrawingTool.DRAW,
     val coordinateSpaceVersion: Int = NORMALIZED_COORDINATE_SPACE_VERSION,

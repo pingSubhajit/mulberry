@@ -316,6 +316,52 @@ class DefaultCanvasRuntimeTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun `clear canvas clears text elements`() = runTest {
+        val drawingRepository = FakeDrawingRepository()
+        val persistenceStore = FakeCanvasPersistenceStore()
+        val runtime = DefaultCanvasRuntime(
+            persistenceStore = persistenceStore,
+            drawingRepository = drawingRepository,
+            strokeBuilder = StrokeBuilder(),
+            strokeHitTester = StrokeHitTester(),
+            applicationScope = backgroundScope
+        )
+
+        val outbound = mutableListOf<CanvasSyncOperation>()
+        val job = backgroundScope.launch {
+            runtime.outboundOperations.collect { outbound += it }
+        }
+
+        runtime.start(pairSessionId = "pair", userId = "user")
+        advanceUntilIdle()
+
+        runtime.submitAndAwait(
+            CanvasRuntimeEvent.AddTextElement(
+                CanvasTextElement(
+                    id = "text-1",
+                    text = "Hello",
+                    createdAt = 1L,
+                    center = StrokePoint(x = 0.5f, y = 0.5f),
+                    boxWidth = 0.7f,
+                    colorArgb = 0xff000000
+                )
+            )
+        )
+        advanceUntilIdle()
+        assertTrue(runtime.renderState.value.committedTextElements.isNotEmpty())
+
+        runtime.submitAndAwait(CanvasRuntimeEvent.ClearCanvas)
+        advanceUntilIdle()
+
+        assertTrue(runtime.renderState.value.committedTextElements.isEmpty())
+        val clear = outbound.lastOrNull { it.type == DrawingOperationType.CLEAR_CANVAS }
+        requireNotNull(clear)
+
+        job.cancel()
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun `erase undo restores stroke and redo erases restored id`() = runTest {
         val drawingRepository = FakeDrawingRepository()
         val persistenceStore = FakeCanvasPersistenceStore()
@@ -515,7 +561,8 @@ class DefaultCanvasRuntimeTest {
 private class FakeCanvasPersistenceStore(
     private val toolState: ToolState = ToolState(
         activeTool = DrawingTool.DRAW,
-        selectedColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
+        strokeColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
+        textColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
         selectedWidth = DrawingDefaults.DEFAULT_WIDTH
     )
 ) : CanvasPersistenceStore {
@@ -549,7 +596,8 @@ private class FakeCanvasPersistenceStore(
 private class FakeDrawingRepository(
     initialToolState: ToolState = ToolState(
         activeTool = DrawingTool.DRAW,
-        selectedColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
+        strokeColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
+        textColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
         selectedWidth = DrawingDefaults.DEFAULT_WIDTH
     )
 ) : DrawingRepository {
@@ -568,6 +616,8 @@ private class FakeDrawingRepository(
     override suspend fun finishStroke(): Stroke? = null
 
     override suspend fun setBrushColor(colorArgb: Long) = Unit
+
+    override suspend fun setTextColor(colorArgb: Long) = Unit
 
     override suspend fun setBrushWidth(width: Float) = Unit
 

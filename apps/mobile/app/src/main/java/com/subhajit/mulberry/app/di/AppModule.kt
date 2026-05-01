@@ -27,6 +27,7 @@ import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
 import com.subhajit.mulberry.drawing.data.local.CanvasTextElementDao
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.data.local.DrawingDao
+import com.subhajit.mulberry.drawing.data.local.DrawingMigrations
 import com.subhajit.mulberry.drawing.data.local.DrawingOperationsDao
 import com.subhajit.mulberry.navigation.BootstrapRouteResolver
 import com.subhajit.mulberry.network.AuthHeaderInterceptor
@@ -292,7 +293,7 @@ object AppProvidesModule {
         context,
         DrawingDatabase::class.java,
         "drawing.db"
-    ).fallbackToDestructiveMigration().build()
+    ).addMigrations(DrawingMigrations.MIGRATION_7_8).fallbackToDestructiveMigration().build()
 
     @Provides
     fun provideDrawingDao(database: DrawingDatabase): DrawingDao = database.drawingDao()

@@ -49,7 +49,8 @@ class RoomDrawingRepository @Inject constructor(
     override val toolState: Flow<ToolState> = metadataFlow.map { metadata ->
         ToolState(
             activeTool = metadata.selectedTool,
-            selectedColorArgb = metadata.selectedColorArgb,
+            strokeColorArgb = metadata.selectedColorArgb,
+            textColorArgb = metadata.selectedTextColorArgb,
             selectedWidth = metadata.selectedWidth
         )
     }
@@ -120,6 +121,16 @@ class RoomDrawingRepository @Inject constructor(
         canvasMetadataDao.upsertMetadata(
             metadata.copy(
                 selectedColorArgb = colorArgb,
+                lastModifiedAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    override suspend fun setTextColor(colorArgb: Long) {
+        val metadata = currentMetadata()
+        canvasMetadataDao.upsertMetadata(
+            metadata.copy(
+                selectedTextColorArgb = colorArgb,
                 lastModifiedAt = System.currentTimeMillis()
             )
         )
@@ -500,7 +511,7 @@ class RoomDrawingRepository @Inject constructor(
                 metadata.copy(
                     revision = nextRevision,
                     lastModifiedAt = now,
-                    selectedColorArgb = element.colorArgb,
+                    selectedTextColorArgb = element.colorArgb,
                     isSnapshotDirty = true
                 )
             )

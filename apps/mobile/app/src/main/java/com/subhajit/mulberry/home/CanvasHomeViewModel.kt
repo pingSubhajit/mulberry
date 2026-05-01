@@ -109,7 +109,8 @@ data class CanvasHomeUiState(
     val featureFlags: FeatureFlags = FeatureFlags(),
     val canvasState: CanvasState = CanvasState(),
     val toolState: ToolState = ToolState(
-        selectedColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
+        strokeColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
+        textColorArgb = DrawingDefaults.DEFAULT_COLOR_ARGB,
         selectedWidth = DrawingDefaults.DEFAULT_WIDTH
     ),
     val canUndo: Boolean = false,
@@ -705,10 +706,14 @@ class CanvasHomeViewModel @Inject constructor(
 
     fun onColorSelected(colorArgb: Long) {
         viewModelScope.launch {
-            drawingRepository.setBrushColor(colorArgb)
             val currentTool = uiState.value.toolState.activeTool
+            when (currentTool) {
+                DrawingTool.TEXT -> drawingRepository.setTextColor(colorArgb)
+                else -> drawingRepository.setBrushColor(colorArgb)
+            }
+
             val nextTool = if (currentTool == DrawingTool.ERASE) DrawingTool.DRAW else currentTool
-            drawingRepository.setTool(nextTool)
+            if (nextTool != currentTool) drawingRepository.setTool(nextTool)
         }
     }
 
