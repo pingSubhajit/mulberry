@@ -84,6 +84,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.subhajit.mulberry.MainActivity
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.flags.FeatureFlag
 import com.subhajit.mulberry.core.ui.PrivacyPolicySheetContent
@@ -168,6 +169,24 @@ fun SettingsRoute(
                         snackbarHostState.showSnackbar("Unable to request review flow (no Activity).")
                     }
                 }
+                SettingsEffect.LaunchInAppUpdateManual -> {
+                    val mainActivity = activity as? MainActivity
+                    if (mainActivity == null) {
+                        snackbarHostState.showSnackbar("Unable to request update flow (no MainActivity).")
+                        return@collect
+                    }
+                    val installer = runCatching {
+                        mainActivity.packageManager.getInstallerPackageName(mainActivity.packageName)
+                    }.getOrNull()
+                    if (installer != "com.android.vending") {
+                        snackbarHostState.showSnackbar(
+                            "Not installed from Play Store (installer=${installer ?: "unknown"}); update UI won't appear."
+                        )
+                        return@collect
+                    }
+                    snackbarHostState.showSnackbar("Requesting Play update prompt…")
+                    mainActivity.triggerInAppUpdateManual()
+                }
                 is SettingsEffect.Message -> snackbarHostState.showSnackbar(effect.text)
             }
         }
@@ -205,7 +224,8 @@ fun SettingsRoute(
         onMockDrawReminderNotification = viewModel::onMockDrawReminderNotification,
         onSendCrashlyticsTestEvent = viewModel::onSendCrashlyticsTestEvent,
         onCrashlyticsTestCrash = viewModel::onCrashlyticsTestCrash,
-        onTriggerInAppReview = viewModel::onTriggerInAppReviewClicked
+        onTriggerInAppReview = viewModel::onTriggerInAppReviewClicked,
+        onTriggerInAppUpdate = viewModel::onTriggerInAppUpdateClicked
     )
 }
 
@@ -237,7 +257,8 @@ private fun SettingsScreen(
     onMockDrawReminderNotification: () -> Unit,
     onSendCrashlyticsTestEvent: () -> Unit,
     onCrashlyticsTestCrash: () -> Unit,
-    onTriggerInAppReview: () -> Unit
+    onTriggerInAppReview: () -> Unit,
+    onTriggerInAppUpdate: () -> Unit
 ) {
     Scaffold(
         modifier = Modifier
@@ -303,6 +324,7 @@ private fun SettingsScreen(
                 onSendCrashlyticsTestEvent = onSendCrashlyticsTestEvent,
                 onCrashlyticsTestCrash = onCrashlyticsTestCrash,
                 onTriggerInAppReview = onTriggerInAppReview,
+                onTriggerInAppUpdate = onTriggerInAppUpdate,
                 modifier = Modifier.padding(padding)
             )
         } else {
@@ -1749,6 +1771,7 @@ private fun DeveloperOptionsPane(
     onSendCrashlyticsTestEvent: () -> Unit,
     onCrashlyticsTestCrash: () -> Unit,
     onTriggerInAppReview: () -> Unit,
+    onTriggerInAppUpdate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showResetConfirmation by remember { mutableStateOf(false) }
@@ -1798,6 +1821,13 @@ private fun DeveloperOptionsPane(
                     text = "Trigger in-app review (debug)",
                     isBusy = uiState.isBusy,
                     onClick = onTriggerInAppReview,
+                    enabled = !uiState.isBusy
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                SettingsSecondaryButton(
+                    text = "Check for update now (debug)",
+                    isBusy = uiState.isBusy,
+                    onClick = onTriggerInAppUpdate,
                     enabled = !uiState.isBusy
                 )
             }

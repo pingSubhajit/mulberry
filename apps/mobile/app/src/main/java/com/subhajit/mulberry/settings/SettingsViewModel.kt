@@ -72,6 +72,7 @@ sealed interface SettingsEffect {
     data object RestartFromBootstrap : SettingsEffect
     data object NavigateHome : SettingsEffect
     data object LaunchInAppReviewManual : SettingsEffect
+    data object LaunchInAppUpdateManual : SettingsEffect
     data class Message(val text: String) : SettingsEffect
 }
 
@@ -182,6 +183,12 @@ class SettingsViewModel @Inject constructor(
     fun onTriggerInAppReviewClicked() {
         viewModelScope.launch {
             _effects.emit(SettingsEffect.LaunchInAppReviewManual)
+        }
+    }
+
+    fun onTriggerInAppUpdateClicked() {
+        viewModelScope.launch {
+            _effects.emit(SettingsEffect.LaunchInAppUpdateManual)
         }
     }
 

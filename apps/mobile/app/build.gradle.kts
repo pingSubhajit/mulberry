@@ -188,6 +188,8 @@ dependencies {
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.messaging)
     implementation(libs.play.installreferrer)
+    implementation(libs.play.app.update)
+    implementation(libs.play.app.update.ktx)
     implementation(libs.play.review)
     implementation(libs.play.review.ktx)
     implementation(libs.coil.compose)

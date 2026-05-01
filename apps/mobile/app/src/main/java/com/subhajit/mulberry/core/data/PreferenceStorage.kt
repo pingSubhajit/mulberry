@@ -62,6 +62,9 @@ object PreferenceStorage {
     val reviewLastAttemptAtMs = longPreferencesKey("review_last_attempt_at_ms")
     val reviewNextEligibleAtMs = longPreferencesKey("review_next_eligible_at_ms")
 
+    val inAppUpdateDeclinedVersionCode = intPreferencesKey("in_app_update_declined_version_code")
+    val inAppUpdateDeclinedAtMs = longPreferencesKey("in_app_update_declined_at_ms")
+
     val placeholderPairingControlsOverride =
         booleanPreferencesKey("flag_placeholder_pairing_controls_override")
     val wallpaperSetupCtaOverride =

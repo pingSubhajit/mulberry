@@ -33,7 +33,8 @@ import com.subhajit.mulberry.app.shortcut.AppShortcutAction
 
 @Composable
 fun MulberryNavHost(
-    navController: NavHostController = rememberNavController()
+    navController: NavHostController = rememberNavController(),
+    onRouteChanged: (String?) -> Unit = {}
 ) {
     val shortcutAction by AppShortcutActionController.pendingAction.collectAsStateWithLifecycle()
     val hasPendingInboundInvite by InboundInviteActionController.pendingAction.collectAsStateWithLifecycle()
@@ -41,6 +42,10 @@ fun MulberryNavHost(
     val currentRoute = currentBackStackEntry?.destination?.route
     val inboundInviteCoordinator: InboundInviteDeepLinkCoordinatorViewModel = hiltViewModel()
     val latestRoute = rememberUpdatedState(currentRoute)
+
+    LaunchedEffect(currentRoute) {
+        onRouteChanged(currentRoute)
+    }
 
     LaunchedEffect(shortcutAction, currentRoute) {
         val action = shortcutAction ?: return@LaunchedEffect

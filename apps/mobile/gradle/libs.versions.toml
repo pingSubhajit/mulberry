@@ -35,6 +35,7 @@ ink = "1.0.0"
 konfetti = "2.0.5"
 installReferrer = "2.2"
 playReview = "2.0.2"
+playAppUpdate = "2.1.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -90,6 +91,8 @@ konfetti-compose = { group = "nl.dionsegijn", name = "konfetti-compose", version
 play-installreferrer = { group = "com.android.installreferrer", name = "installreferrer", version.ref = "installReferrer" }
 play-review = { group = "com.google.android.play", name = "review", version.ref = "playReview" }
 play-review-ktx = { group = "com.google.android.play", name = "review-ktx", version.ref = "playReview" }
+play-app-update = { group = "com.google.android.play", name = "app-update", version.ref = "playAppUpdate" }
+play-app-update-ktx = { group = "com.google.android.play", name = "app-update-ktx", version.ref = "playAppUpdate" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

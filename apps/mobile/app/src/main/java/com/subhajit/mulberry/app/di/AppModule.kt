@@ -76,6 +76,10 @@ import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import com.subhajit.mulberry.wallpaper.WallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.WallpaperStatusCalculator
 import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
+import com.subhajit.mulberry.update.DataStoreInAppUpdatePromptStateStore
+import com.subhajit.mulberry.update.InAppUpdatePromptStateStore
+import com.google.android.play.core.appupdate.AppUpdateManager
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -189,6 +193,12 @@ abstract class AppBindingsModule {
     abstract fun bindInboundInviteRepository(
         implementation: DataStoreInboundInviteRepository
     ): InboundInviteRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindInAppUpdatePromptStateStore(
+        implementation: DataStoreInAppUpdatePromptStateStore
+    ): InAppUpdatePromptStateStore
 
     @Binds
     @Singleton
@@ -364,4 +374,10 @@ object AppProvidesModule {
     @Provides
     @Singleton
     fun provideBootstrapRouteResolver(): BootstrapRouteResolver = BootstrapRouteResolver()
+
+    @Provides
+    @Singleton
+    fun provideAppUpdateManager(
+        @ApplicationContext context: Context
+    ): AppUpdateManager = AppUpdateManagerFactory.create(context)
 }
