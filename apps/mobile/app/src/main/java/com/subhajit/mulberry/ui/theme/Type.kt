@@ -19,6 +19,22 @@ val VirgilFontFamily = FontFamily(
     Font(R.font.virgil_regular, FontWeight.Normal)
 )
 
+val DmSansFontFamily = FontFamily(
+    Font(R.font.dm_sans_regular, FontWeight.Normal)
+)
+
+val SpaceMonoFontFamily = FontFamily(
+    Font(R.font.space_mono_regular, FontWeight.Normal)
+)
+
+val PlayfairDisplayFontFamily = FontFamily(
+    Font(R.font.playfair_display_regular, FontWeight.Normal)
+)
+
+val BangersFontFamily = FontFamily(
+    Font(R.font.bangers_regular, FontWeight.Normal)
+)
+
 val MulberrySecondaryFontFamily: FontFamily = PoppinsFontFamily
 
 val MulberryTypography = Typography(

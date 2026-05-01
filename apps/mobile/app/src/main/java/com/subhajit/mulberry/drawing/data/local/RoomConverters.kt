@@ -28,7 +28,8 @@ class RoomConverters {
     fun fromSyncOutboxStatus(value: SyncOutboxStatus): String = value.name
 
     @TypeConverter
-    fun toCanvasTextFont(value: String): CanvasTextFont = CanvasTextFont.valueOf(value)
+    fun toCanvasTextFont(value: String): CanvasTextFont =
+        runCatching { CanvasTextFont.valueOf(value) }.getOrElse { CanvasTextFont.POPPINS }
 
     @TypeConverter
     fun fromCanvasTextFont(value: CanvasTextFont): String = value.name

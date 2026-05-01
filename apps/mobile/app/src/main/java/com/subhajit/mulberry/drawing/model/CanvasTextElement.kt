@@ -16,7 +16,11 @@ data class CanvasTextElement(
 
 enum class CanvasTextFont {
     POPPINS,
-    VIRGIL
+    VIRGIL,
+    DM_SANS,
+    SPACE_MONO,
+    PLAYFAIR_DISPLAY,
+    BANGERS
 }
 
 enum class CanvasTextAlign {
@@ -24,4 +28,3 @@ enum class CanvasTextAlign {
     CENTER,
     RIGHT
 }
-

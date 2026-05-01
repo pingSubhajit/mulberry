@@ -65,6 +65,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -81,6 +82,10 @@ import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.VirgilFontFamily
+import com.subhajit.mulberry.ui.theme.DmSansFontFamily
+import com.subhajit.mulberry.ui.theme.SpaceMonoFontFamily
+import com.subhajit.mulberry.ui.theme.PlayfairDisplayFontFamily
+import com.subhajit.mulberry.ui.theme.BangersFontFamily
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import java.util.UUID
@@ -132,6 +137,10 @@ fun CanvasTextOverlay(
 
     val poppinsTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.poppins_regular) ?: Typeface.DEFAULT }
     val virgilTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.virgil_regular) ?: Typeface.DEFAULT }
+    val dmSansTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.dm_sans_regular) ?: Typeface.DEFAULT }
+    val spaceMonoTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.space_mono_regular) ?: Typeface.DEFAULT }
+    val playfairTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.playfair_display_regular) ?: Typeface.DEFAULT }
+    val bangersTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.bangers_regular) ?: Typeface.DEFAULT }
     val baseTextSizePx = with(density) { 34.sp.toPx() }
     var isTransformInProgress by remember { mutableStateOf(false) }
 
@@ -149,7 +158,11 @@ fun CanvasTextOverlay(
                     canvasSize = canvasSize,
                     textSizePx = baseTextSizePx,
                     poppins = poppinsTypeface,
-                    virgil = virgilTypeface
+                    virgil = virgilTypeface,
+                    dmSans = dmSansTypeface,
+                    spaceMono = spaceMonoTypeface,
+                    playfair = playfairTypeface,
+                    bangers = bangersTypeface
                 )
                 val initialDown = down.position
                 val touchSlop = viewConfiguration.touchSlop
@@ -295,7 +308,11 @@ fun CanvasTextOverlay(
                     canvasSize = canvasSize,
                     textSizePx = baseTextSizePx,
                     poppins = poppinsTypeface,
-                    virgil = virgilTypeface
+                    virgil = virgilTypeface,
+                    dmSans = dmSansTypeface,
+                    spaceMono = spaceMonoTypeface,
+                    playfair = playfairTypeface,
+                    bangers = bangersTypeface
                 ) ?: return@awaitEachGesture
 
                 // Consume so stroke-eraser doesn't also trigger.
@@ -358,6 +375,10 @@ fun CanvasTextOverlay(
                     val typeface = when (element.font) {
                         CanvasTextFont.POPPINS -> poppinsTypeface
                         CanvasTextFont.VIRGIL -> virgilTypeface
+                        CanvasTextFont.DM_SANS -> dmSansTypeface
+                        CanvasTextFont.SPACE_MONO -> spaceMonoTypeface
+                        CanvasTextFont.PLAYFAIR_DISPLAY -> playfairTypeface
+                        CanvasTextFont.BANGERS -> bangersTypeface
                     }
                     val backgroundColor = element.colorArgb.toInt()
                     val textColor = if (element.backgroundPillEnabled) {
@@ -608,6 +629,10 @@ fun TextEditorOverlay(
                         fontFamily = when (font) {
                             CanvasTextFont.POPPINS -> PoppinsFontFamily
                             CanvasTextFont.VIRGIL -> VirgilFontFamily
+                            CanvasTextFont.DM_SANS -> DmSansFontFamily
+                            CanvasTextFont.SPACE_MONO -> SpaceMonoFontFamily
+                            CanvasTextFont.PLAYFAIR_DISPLAY -> PlayfairDisplayFontFamily
+                            CanvasTextFont.BANGERS -> BangersFontFamily
                         },
                         fontSize = (34f * scale).coerceIn(12f, 160f).sp,
                         fontWeight = FontWeight.Medium,
@@ -654,7 +679,15 @@ fun TextEditorOverlay(
         ) {
             when (panel) {
                 TextEditorPanel.FONT -> {
-                    EditorTertiaryBar {
+                    val scroll = rememberScrollState()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(scroll)
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         FontOption(
                             label = "Poppins",
                             fontFamily = PoppinsFontFamily,
@@ -669,6 +702,38 @@ fun TextEditorOverlay(
                             selected = font == CanvasTextFont.VIRGIL
                         ) {
                             font = CanvasTextFont.VIRGIL
+                            focusRequester.requestFocus()
+                        }
+                        FontOption(
+                            label = "DM Sans",
+                            fontFamily = DmSansFontFamily,
+                            selected = font == CanvasTextFont.DM_SANS
+                        ) {
+                            font = CanvasTextFont.DM_SANS
+                            focusRequester.requestFocus()
+                        }
+                        FontOption(
+                            label = "Space Mono",
+                            fontFamily = SpaceMonoFontFamily,
+                            selected = font == CanvasTextFont.SPACE_MONO
+                        ) {
+                            font = CanvasTextFont.SPACE_MONO
+                            focusRequester.requestFocus()
+                        }
+                        FontOption(
+                            label = "Playfair",
+                            fontFamily = PlayfairDisplayFontFamily,
+                            selected = font == CanvasTextFont.PLAYFAIR_DISPLAY
+                        ) {
+                            font = CanvasTextFont.PLAYFAIR_DISPLAY
+                            focusRequester.requestFocus()
+                        }
+                        FontOption(
+                            label = "Bangers",
+                            fontFamily = BangersFontFamily,
+                            selected = font == CanvasTextFont.BANGERS
+                        ) {
+                            font = CanvasTextFont.BANGERS
                             focusRequester.requestFocus()
                         }
                     }
@@ -783,7 +848,10 @@ private fun FontOption(
             color = Color.White,
             fontFamily = fontFamily,
             fontSize = 12.sp,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -909,7 +977,11 @@ private fun hitTest(
     canvasSize: IntSize,
     textSizePx: Float,
     poppins: Typeface,
-    virgil: Typeface
+    virgil: Typeface,
+    dmSans: Typeface,
+    spaceMono: Typeface,
+    playfair: Typeface,
+    bangers: Typeface
 ): String? {
     if (canvasSize.width <= 0 || canvasSize.height <= 0) return null
     val paint = TextPaint().apply { isAntiAlias = true }
@@ -921,6 +993,10 @@ private fun hitTest(
         paint.typeface = when (element.font) {
             CanvasTextFont.POPPINS -> poppins
             CanvasTextFont.VIRGIL -> virgil
+            CanvasTextFont.DM_SANS -> dmSans
+            CanvasTextFont.SPACE_MONO -> spaceMono
+            CanvasTextFont.PLAYFAIR_DISPLAY -> playfair
+            CanvasTextFont.BANGERS -> bangers
         }
         val alignment = when (element.alignment) {
             CanvasTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL

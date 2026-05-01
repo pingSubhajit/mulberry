@@ -159,6 +159,10 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
 
         val poppins = loadTypeface(R.font.poppins_regular) ?: Typeface.DEFAULT
         val virgil = loadTypeface(R.font.virgil_regular) ?: Typeface.DEFAULT
+        val dmSans = loadTypeface(R.font.dm_sans_regular) ?: Typeface.DEFAULT
+        val spaceMono = loadTypeface(R.font.space_mono_regular) ?: Typeface.DEFAULT
+        val playfair = loadTypeface(R.font.playfair_display_regular) ?: Typeface.DEFAULT
+        val bangers = loadTypeface(R.font.bangers_regular) ?: Typeface.DEFAULT
 
         for (element in elements) {
             val center = element.center.denormalizeToSurface(
@@ -171,6 +175,10 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
             val typeface = when (element.font) {
                 CanvasTextFont.POPPINS -> poppins
                 CanvasTextFont.VIRGIL -> virgil
+                CanvasTextFont.DM_SANS -> dmSans
+                CanvasTextFont.SPACE_MONO -> spaceMono
+                CanvasTextFont.PLAYFAIR_DISPLAY -> playfair
+                CanvasTextFont.BANGERS -> bangers
             }
             val backgroundColor = element.colorArgb.toInt()
             val textColor = if (element.backgroundPillEnabled) {
