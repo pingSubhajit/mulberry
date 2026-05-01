@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -70,6 +71,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.core.content.res.ResourcesCompat
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.drawing.model.CanvasTextAlign
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
@@ -78,6 +81,7 @@ import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.VirgilFontFamily
+import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import java.util.UUID
 import kotlin.math.atan2
@@ -439,7 +443,6 @@ private enum class TextEditorPanel {
     FONT,
     SIZE,
     COLOR,
-    ALIGN
 }
 
 @Composable
@@ -652,11 +655,19 @@ fun TextEditorOverlay(
             when (panel) {
                 TextEditorPanel.FONT -> {
                     EditorTertiaryBar {
-                        TogglePill(label = "Poppins", selected = font == CanvasTextFont.POPPINS) {
+                        FontOption(
+                            label = "Poppins",
+                            fontFamily = PoppinsFontFamily,
+                            selected = font == CanvasTextFont.POPPINS
+                        ) {
                             font = CanvasTextFont.POPPINS
                             focusRequester.requestFocus()
                         }
-                        TogglePill(label = "Virgil", selected = font == CanvasTextFont.VIRGIL) {
+                        FontOption(
+                            label = "Virgil",
+                            fontFamily = VirgilFontFamily,
+                            selected = font == CanvasTextFont.VIRGIL
+                        ) {
                             font = CanvasTextFont.VIRGIL
                             focusRequester.requestFocus()
                         }
@@ -667,7 +678,7 @@ fun TextEditorOverlay(
                     EditorTertiaryBar {
                         Text(
                             text = "Aa",
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = Color.White,
                             fontFamily = PoppinsFontFamily,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp
@@ -680,7 +691,7 @@ fun TextEditorOverlay(
                         )
                         Text(
                             text = "AA",
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = Color.White,
                             fontFamily = PoppinsFontFamily,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 16.sp
@@ -688,57 +699,35 @@ fun TextEditorOverlay(
                     }
                 }
 
-                TextEditorPanel.ALIGN -> {
-                    EditorTertiaryBar {
-                        TogglePill(label = "Left", selected = alignment == CanvasTextAlign.LEFT) {
-                            alignment = CanvasTextAlign.LEFT
-                            focusRequester.requestFocus()
-                        }
-                        TogglePill(label = "Center", selected = alignment == CanvasTextAlign.CENTER) {
-                            alignment = CanvasTextAlign.CENTER
-                            focusRequester.requestFocus()
-                        }
-                        TogglePill(label = "Right", selected = alignment == CanvasTextAlign.RIGHT) {
-                            alignment = CanvasTextAlign.RIGHT
-                            focusRequester.requestFocus()
-                        }
-                    }
-                }
-
                 TextEditorPanel.COLOR -> {
                     val scroll = rememberScrollState()
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.mulberryAppColors.softSurface.copy(alpha = 0.92f)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(scroll)
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .horizontalScroll(scroll)
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            palette.forEach { candidate ->
-                                val selected = candidate == colorArgb
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .background(Color(candidate), CircleShape)
-                                        .border(
-                                            width = if (selected) 3.dp else 1.dp,
-                                            color = if (selected) Color.White else Color.White.copy(alpha = 0.25f),
-                                            shape = CircleShape
-                                        )
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null
-                                        ) {
-                                            colorArgb = candidate
-                                            focusRequester.requestFocus()
-                                        }
-                                )
-                            }
+                        palette.forEach { candidate ->
+                            val selected = candidate == colorArgb
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(Color(candidate), CircleShape)
+                                    .border(
+                                        width = if (selected) 2.dp else 1.dp,
+                                        color = if (selected) MulberryPrimary else Color.White.copy(alpha = 0.22f),
+                                        shape = CircleShape
+                                    )
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        colorArgb = candidate
+                                        focusRequester.requestFocus()
+                                    }
+                            )
                         }
                     }
                 }
@@ -750,6 +739,15 @@ fun TextEditorOverlay(
                 panel = panel,
                 onPanelChanged = { next ->
                     panel = if (panel == next) TextEditorPanel.NONE else next
+                    focusRequester.requestFocus()
+                },
+                alignment = alignment,
+                onCycleAlignment = {
+                    alignment = when (alignment) {
+                        CanvasTextAlign.LEFT -> CanvasTextAlign.CENTER
+                        CanvasTextAlign.CENTER -> CanvasTextAlign.RIGHT
+                        CanvasTextAlign.RIGHT -> CanvasTextAlign.LEFT
+                    }
                     focusRequester.requestFocus()
                 },
                 backgroundPillEnabled = backgroundPillEnabled,
@@ -764,23 +762,26 @@ fun TextEditorOverlay(
 }
 
 @Composable
-private fun TogglePill(
+private fun FontOption(
     label: String,
+    fontFamily: androidx.compose.ui.text.font.FontFamily,
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    val bg = if (selected) Color(0xFF0E7C59) else MaterialTheme.mulberryAppColors.softSurfaceAlt
-    val fg = if (selected) Color.White else MaterialTheme.colorScheme.onSurface
     Box(
         modifier = Modifier
-            .background(bg, RoundedCornerShape(999.dp))
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) MulberryPrimary else Color.White.copy(alpha = 0.18f),
+                shape = RoundedCornerShape(999.dp)
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
         androidx.compose.material3.Text(
             text = label,
-            color = fg,
-            fontFamily = PoppinsFontFamily,
+            color = Color.White,
+            fontFamily = fontFamily,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium
         )
@@ -791,91 +792,114 @@ private fun TogglePill(
 private fun EditorSecondaryBar(
     panel: TextEditorPanel,
     onPanelChanged: (TextEditorPanel) -> Unit,
+    alignment: CanvasTextAlign,
+    onCycleAlignment: () -> Unit,
     backgroundPillEnabled: Boolean,
     onTogglePill: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.mulberryAppColors.softSurface.copy(alpha = 0.92f)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            EditorToolChip(
-                label = "Aa",
-                selected = panel == TextEditorPanel.FONT
-            ) { onPanelChanged(TextEditorPanel.FONT) }
-            EditorToolChip(
-                label = "Size",
-                selected = panel == TextEditorPanel.SIZE
-            ) { onPanelChanged(TextEditorPanel.SIZE) }
-            EditorToolChip(
-                label = "Color",
-                selected = panel == TextEditorPanel.COLOR
-            ) { onPanelChanged(TextEditorPanel.COLOR) }
-            EditorToolChip(
-                label = "Align",
-                selected = panel == TextEditorPanel.ALIGN
-            ) { onPanelChanged(TextEditorPanel.ALIGN) }
-            Spacer(modifier = Modifier.weight(1f))
-            EditorToolChip(
-                label = if (backgroundPillEnabled) "Pill On" else "Pill",
-                selected = backgroundPillEnabled
-            ) { onTogglePill() }
-            EditorToolChip(
-                label = "Delete",
-                selected = false
-            ) { onDelete() }
+        EditorIconButton(
+            iconRes = R.drawable.ic_text_toolbar_font,
+            contentDescription = "Font",
+            selected = panel == TextEditorPanel.FONT
+        ) { onPanelChanged(TextEditorPanel.FONT) }
+        EditorIconButton(
+            iconRes = R.drawable.ic_text_toolbar_size,
+            contentDescription = "Size",
+            selected = panel == TextEditorPanel.SIZE
+        ) { onPanelChanged(TextEditorPanel.SIZE) }
+        EditorIconButton(
+            iconRes = R.drawable.ic_text_toolbar_color,
+            contentDescription = "Color",
+            selected = panel == TextEditorPanel.COLOR,
+            tint = Color.Unspecified
+        ) { onPanelChanged(TextEditorPanel.COLOR) }
+
+        val alignIcon = when (alignment) {
+            CanvasTextAlign.LEFT -> R.drawable.ic_text_toolbar_align_left
+            CanvasTextAlign.CENTER -> R.drawable.ic_text_toolbar_align_center
+            CanvasTextAlign.RIGHT -> R.drawable.ic_text_toolbar_align_right
         }
+        EditorIconButton(
+            iconRes = alignIcon,
+            contentDescription = "Alignment",
+            selected = false
+        ) { onCycleAlignment() }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        EditorIconButton(
+            iconRes = R.drawable.ic_text_toolbar_pill,
+            contentDescription = "Background pill",
+            selected = backgroundPillEnabled
+        ) { onTogglePill() }
+        EditorIconButton(
+            iconRes = R.drawable.ic_text_toolbar_delete,
+            contentDescription = "Delete",
+            selected = false
+        ) { onDelete() }
     }
 }
 
 @Composable
 private fun EditorTertiaryBar(content: @Composable RowScope.() -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.mulberryAppColors.softSurface.copy(alpha = 0.92f)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = content
-        )
-    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content
+    )
 }
 
 @Composable
-private fun EditorToolChip(
-    label: String,
+private fun EditorIconButton(
+    iconRes: Int,
+    contentDescription: String,
     selected: Boolean,
+    tint: Color = Color.White,
     onClick: () -> Unit
 ) {
-    val bg = if (selected) Color(0xFF0E7C59) else MaterialTheme.mulberryAppColors.softSurfaceAlt
-    val fg = if (selected) Color.White else MaterialTheme.colorScheme.onSurface
-    Surface(
-        color = bg,
-        shape = RoundedCornerShape(14.dp),
+    Box(
         modifier = Modifier
+            .size(42.dp)
+            .background(Color.White.copy(alpha = 0.10f), CircleShape)
+            .then(
+                if (selected) {
+                    Modifier.border(2.dp, MulberryPrimary, CircleShape)
+                } else {
+                    Modifier.border(1.dp, Color.White.copy(alpha = 0.14f), CircleShape)
+                }
+            )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            )
+                indication = null
+            ) { onClick() },
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = label,
-            color = fg,
-            fontFamily = PoppinsFontFamily,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-        )
+        // Use Image for bitmap resources (e.g. the color icon); Icon for vectors.
+        if (tint == Color.Unspecified) {
+            Image(
+                painter = painterResource(iconRes),
+                contentDescription = contentDescription,
+                modifier = Modifier.size(22.dp)
+            )
+        } else {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(22.dp)
+            )
+        }
     }
 }
 
