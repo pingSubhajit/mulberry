@@ -763,6 +763,7 @@ private fun PairedCanvasPane(
                 activeTool = uiState.toolState.activeTool,
                 palette = uiState.palette,
                 selectedColorArgb = uiState.toolState.selectedColorArgb,
+                onEraseTap = onCanvasTap,
                 onAddElement = onTextElementAdded,
                 onUpdateElement = onTextElementUpdated,
                 onDeleteElement = onTextElementDeleted,

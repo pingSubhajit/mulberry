@@ -108,6 +108,7 @@ fun CanvasTextOverlay(
     activeTool: DrawingTool,
     palette: List<Long>,
     selectedColorArgb: Long,
+    onEraseTap: (StrokePoint) -> Unit,
     onAddElement: (CanvasTextElement) -> Unit,
     onUpdateElement: (CanvasTextElement) -> Unit,
     onDeleteElement: (String) -> Unit,
@@ -313,10 +314,13 @@ fun CanvasTextOverlay(
                     spaceMono = spaceMonoTypeface,
                     playfair = playfairTypeface,
                     bangers = bangersTypeface
-                ) ?: return@awaitEachGesture
+                )
 
-                // Consume so stroke-eraser doesn't also trigger.
+                // Consume so the parent pager/tab row doesn't treat this as a swipe-to-navigate.
                 down.consume()
+                val initialDown = down.position
+                val touchSlop = viewConfiguration.touchSlop
+                var movedBeyondSlop = false
 
                 // Wait until the pointer is released/cancelled.
                 var pointer = down
@@ -327,10 +331,19 @@ fun CanvasTextOverlay(
                         ?: break
                     pointer = change
                     if (!change.pressed) break
+                    if (!movedBeyondSlop && (change.position - initialDown).getDistance() > touchSlop) {
+                        movedBeyondSlop = true
+                    }
                     change.consume()
                 }
 
-                onDeleteElement(hitId)
+                if (movedBeyondSlop) return@awaitEachGesture
+
+                if (hitId != null) {
+                    onDeleteElement(hitId)
+                } else {
+                    onEraseTap(initialDown.toNormalizedPoint(canvasSize))
+                }
             }
         }
         else -> Modifier
