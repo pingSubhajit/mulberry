@@ -10,9 +10,12 @@ interface DrawingOperationsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOperation(operation: DrawingOperationEntity)
 
-    @Query("SELECT * FROM drawing_operation_entities ORDER BY revision ASC, id ASC")
-    suspend fun getOperations(): List<DrawingOperationEntity>
+    @Query("SELECT * FROM drawing_operation_entities WHERE canvasKey = :canvasKey ORDER BY revision ASC, id ASC")
+    suspend fun getOperations(canvasKey: String): List<DrawingOperationEntity>
+
+    @Query("DELETE FROM drawing_operation_entities WHERE canvasKey = :canvasKey")
+    suspend fun clearOperations(canvasKey: String)
 
     @Query("DELETE FROM drawing_operation_entities")
-    suspend fun clearOperations()
+    suspend fun clearAllOperations()
 }

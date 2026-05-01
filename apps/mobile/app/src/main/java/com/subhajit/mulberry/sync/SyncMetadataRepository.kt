@@ -102,6 +102,7 @@ class DataStoreSyncMetadataRepository @Inject constructor(
 
 private data class PersistedCanvasSyncOperation(
     val clientOperationId: String,
+    val canvasKey: String? = null,
     val type: String,
     val strokeId: String?,
     val payloadJson: String,
@@ -111,6 +112,7 @@ private data class PersistedCanvasSyncOperation(
         val operationType = DrawingOperationType.valueOf(type)
         return CanvasSyncOperation(
             clientOperationId = clientOperationId,
+            canvasKey = canvasKey ?: CanvasKeys.SHARED,
             type = operationType,
             strokeId = strokeId,
             payload = JsonParser.parseString(payloadJson).asJsonObject.toSyncPayload(operationType),
@@ -122,6 +124,7 @@ private data class PersistedCanvasSyncOperation(
         fun fromDomain(operation: CanvasSyncOperation): PersistedCanvasSyncOperation =
             PersistedCanvasSyncOperation(
                 clientOperationId = operation.clientOperationId,
+                canvasKey = operation.canvasKey,
                 type = operation.type.name,
                 strokeId = operation.strokeId,
                 payloadJson = operation.payload.toJsonObject().toString(),

@@ -95,6 +95,14 @@
     <string name="home_clear_canvas_body">This removes all strokes from the shared canvas.</string>
     <string name="home_clear_canvas_confirm">Clear</string>
     <string name="home_clear_canvas_cancel">Cancel</string>
+    <string name="home_clear_canvas_title_dedicated">Clear doodles?</string>
+    <string name="home_clear_canvas_body_dedicated">Choose what to clear.</string>
+    <string name="home_clear_partner_wallpaper">Clear partner’s wallpaper</string>
+    <string name="home_clear_my_wallpaper">Clear my wallpaper</string>
+    <string name="shortcut_clear_partner_wallpaper_title">Clear partner’s wallpaper?</string>
+    <string name="shortcut_clear_partner_wallpaper_body">This removes all doodles from your partner’s wallpaper.</string>
+    <string name="shortcut_clear_my_wallpaper_title">Clear my wallpaper?</string>
+    <string name="shortcut_clear_my_wallpaper_body">This removes all doodles from your wallpaper (and clears your partner’s canvas).</string>
     <string name="home_lockscreen_selected_body">Mulberry is set as your wallpaper.</string>
     <string name="home_lockscreen_unselected_body">Set up Mulberry as your live lock screen wallpaper.</string>
     <string name="home_invite_sheet_title">Invite your partner</string>
@@ -113,6 +121,10 @@
     <string name="home_inbound_invite_keep_pairing">Keep current pairing</string>
     <string name="shortcut_clear_doodles_short_label">Clear doodles</string>
     <string name="shortcut_clear_doodles_long_label">Clear doodles</string>
+    <string name="shortcut_clear_partner_wallpaper_short_label">Clear partner wallpaper</string>
+    <string name="shortcut_clear_partner_wallpaper_long_label">Clear partner wallpaper</string>
+    <string name="shortcut_clear_my_wallpaper_short_label">Clear my wallpaper</string>
+    <string name="shortcut_clear_my_wallpaper_long_label">Clear my wallpaper</string>
     <string name="shortcut_change_wallpaper_short_label">Change Wallpaper</string>
     <string name="shortcut_change_wallpaper_long_label">Change Wallpaper</string>
     <string name="shortcut_disabled_message">Shortcut unavailable</string>

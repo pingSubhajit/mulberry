@@ -64,9 +64,22 @@ interface UploadedProfilePhoto {
 }
 
 const PARTNER_PROFILE_UPDATE_COOLDOWN_MS = 72 * 60 * 60 * 1_000
+const CANVAS_MODE_TOGGLE_COOLDOWN_MS = 24 * 60 * 60 * 1_000
+const DEDICATED_CANVAS_CAPABILITY_TTL_MS = 14 * 24 * 60 * 60 * 1_000
 const PARTNER_DETAILS_REQUIRED_MESSAGE = "Partner details are required before creating an invite"
 const PROFILE_PHOTO_PREFIX = "profile-photos"
 const PROFILE_PHOTO_MAX_BYTES = 10 * 1024 * 1024
+const DEFAULT_CANVAS_KEY = "shared"
+
+function normalizeCanvasKey(raw: unknown): string {
+  if (typeof raw !== "string") return DEFAULT_CANVAS_KEY
+  const trimmed = raw.trim()
+  return trimmed ? trimmed : DEFAULT_CANVAS_KEY
+}
+
+function canvasKeyForUser(userId: string): string {
+  return `user:${userId}`
+}
 
 export class MulberryService {
   constructor(
@@ -121,16 +134,18 @@ export class MulberryService {
         token,
         platform,
         app_environment,
+        supports_dedicated_canvas,
         last_seen_at,
         revoked_at
-      ) VALUES ($1, $2, $3, $4, $5, NOW(), NULL)
+      ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NULL)
       ON CONFLICT (token) DO UPDATE SET
         user_id = EXCLUDED.user_id,
         platform = EXCLUDED.platform,
         app_environment = EXCLUDED.app_environment,
+        supports_dedicated_canvas = EXCLUDED.supports_dedicated_canvas,
         last_seen_at = NOW(),
         revoked_at = NULL
-      RETURNING id, user_id, token, platform, app_environment, last_seen_at, revoked_at
+      RETURNING id, user_id, token, platform, app_environment, supports_dedicated_canvas, last_seen_at, revoked_at
       `,
       [
         tokenId,
@@ -138,6 +153,7 @@ export class MulberryService {
         request.token.trim(),
         request.platform,
         request.appEnvironment.trim(),
+        Boolean(request.supportsDedicatedCanvas),
       ],
     )
     return this.deviceTokenToRecord(rows.rows[0])
@@ -759,18 +775,152 @@ export class MulberryService {
     }
   }
 
-  async getCanvasSnapshot(accessToken: string): Promise<CanvasSnapshotResponse> {
+  async getCanvasSnapshot(
+    accessToken: string,
+    canvasKeyInput?: string | null,
+  ): Promise<CanvasSnapshotResponse> {
     const context = await this.requireDefaultCanvasSessionContext(accessToken)
-    const row = await this.getOrCreateCanvasSnapshot(context.pairSession.id)
+    const canvasKey = normalizeCanvasKey(canvasKeyInput)
+    const row = await this.getOrCreateCanvasSnapshot(context.pairSession.id, canvasKey)
     const snapshotRevision = Number(row.revision)
     return {
       pairSessionId: context.pairSession.id,
+      canvasKey,
       snapshotRevision,
-      latestRevision: Number(row.latest_revision),
+      latestRevision: await this.getLatestCanvasRevision(context.pairSession.id),
       revision: snapshotRevision,
       snapshot: row.snapshot_json,
       updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
     }
+  }
+
+  async setCanvasMode(accessToken: string, modeInput: string): Promise<BootstrapResponse> {
+    const context = await this.requireDefaultCanvasSessionContext(accessToken)
+    const desiredMode = modeInput === "DEDICATED"
+      ? "DEDICATED"
+      : modeInput === "SHARED"
+        ? "SHARED"
+        : null
+    if (!desiredMode) {
+      throw new HttpError(400, "mode must be SHARED or DEDICATED")
+    }
+
+    const currentMode = context.pairSession.canvas_mode === "DEDICATED" ? "DEDICATED" : "SHARED"
+    if (currentMode === desiredMode) {
+      return this.buildBootstrap(context.user.id)
+    }
+
+    const now = Date.now()
+    const nextToggleAtMs = context.pairSession.canvas_mode_next_toggle_at
+      ? new Date(context.pairSession.canvas_mode_next_toggle_at).getTime()
+      : 0
+    if (Number.isFinite(nextToggleAtMs) && nextToggleAtMs > now) {
+      throw new HttpError(
+        429,
+        `Canvas mode can be changed again at ${new Date(nextToggleAtMs).toISOString()}`,
+      )
+    }
+
+    if (desiredMode === "DEDICATED") {
+      const available = await this.isDedicatedCanvasAvailable(context.pairSession)
+      if (!available) {
+        throw new HttpError(400, "Dedicated canvas is not available yet")
+      }
+    }
+
+    const actorDisplayName = (await this.getProfile(context.user.id))?.display_name ?? "Your partner"
+    await this.db.transaction(async (tx) => {
+      const lockedRows = await tx.query<PairSessionRecord>(
+        `
+        SELECT id, user_one_id, user_two_id, created_at,
+          canvas_mode, canvas_mode_updated_at, canvas_mode_next_toggle_at
+        FROM pair_sessions
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [context.pairSession.id],
+      )
+      const locked = lockedRows.rows[0]
+      if (!locked) {
+        throw new HttpError(403, "User is not paired")
+      }
+
+      const lockedMode = locked.canvas_mode === "DEDICATED" ? "DEDICATED" : "SHARED"
+      if (lockedMode === desiredMode) {
+        return
+      }
+      const lockedNextToggleAtMs = locked.canvas_mode_next_toggle_at
+        ? new Date(locked.canvas_mode_next_toggle_at).getTime()
+        : 0
+      if (Number.isFinite(lockedNextToggleAtMs) && lockedNextToggleAtMs > Date.now()) {
+        throw new HttpError(
+          429,
+          `Canvas mode can be changed again at ${new Date(lockedNextToggleAtMs).toISOString()}`,
+        )
+      }
+      if (desiredMode === "DEDICATED") {
+        const available = await this.isDedicatedCanvasAvailable(locked, tx)
+        if (!available) {
+          throw new HttpError(400, "Dedicated canvas is not available yet")
+        }
+      }
+
+      const pairState = await this.getOrCreateCanvasPairState(locked.id, tx, true)
+      const latestRevision = Number(pairState.latest_revision)
+
+      if (desiredMode === "DEDICATED") {
+        const sharedRow = await this.getOrCreateCanvasSnapshot(locked.id, DEFAULT_CANVAS_KEY, tx, true)
+        const sharedSnapshot = normalizeCanvasSnapshot(sharedRow.snapshot_json)
+        await this.upsertCanvasSnapshot(
+          tx,
+          locked.id,
+          canvasKeyForUser(locked.user_one_id),
+          latestRevision,
+          sharedSnapshot,
+        )
+        await this.upsertCanvasSnapshot(
+          tx,
+          locked.id,
+          canvasKeyForUser(locked.user_two_id),
+          latestRevision,
+          sharedSnapshot,
+        )
+      } else {
+        const oneRow = await this.getOrCreateCanvasSnapshot(locked.id, canvasKeyForUser(locked.user_one_id), tx, true)
+        const twoRow = await this.getOrCreateCanvasSnapshot(locked.id, canvasKeyForUser(locked.user_two_id), tx, true)
+        const oneSnapshot = normalizeCanvasSnapshot(oneRow.snapshot_json)
+        const twoSnapshot = normalizeCanvasSnapshot(twoRow.snapshot_json)
+        const merged = mergeCanvasStrokes(oneSnapshot.strokes, twoSnapshot.strokes)
+        await this.upsertCanvasSnapshot(
+          tx,
+          locked.id,
+          DEFAULT_CANVAS_KEY,
+          latestRevision,
+          { strokes: merged },
+        )
+      }
+
+      const nextToggleAt = new Date(Date.now() + CANVAS_MODE_TOGGLE_COOLDOWN_MS).toISOString()
+      await tx.query(
+        `
+        UPDATE pair_sessions
+        SET canvas_mode = $2,
+          canvas_mode_updated_at = NOW(),
+          canvas_mode_next_toggle_at = $3
+        WHERE id = $1
+        `,
+        [locked.id, desiredMode, nextToggleAt],
+      )
+    })
+
+    this.pushDispatchService?.enqueueCanvasModeChanged(
+      context.pairSession.id,
+      context.user.id,
+      actorDisplayName,
+      desiredMode,
+    )
+
+    return this.buildBootstrap(context.user.id)
   }
 
   async acceptCanvasOperation(
@@ -796,21 +946,64 @@ export class MulberryService {
 
     const { accepted, latestRevision, snapshotRevision, shouldPushCanvasUpdate, shouldEnqueueCanvasNudge, shouldRecordUserDrew } = await this.db.transaction(
       async (tx) => {
-        const snapshotRow = await this.getOrCreateCanvasSnapshot(context.pairSession.id, tx, true)
-        let latestRevision = Number(snapshotRow.latest_revision)
-        let snapshotRevision = Number(snapshotRow.revision)
-        const snapshot = normalizeCanvasSnapshot(snapshotRow.snapshot_json)
+        const pairStateRow = await this.getOrCreateCanvasPairState(context.pairSession.id, tx, true)
+        let latestRevision = Number(pairStateRow.latest_revision)
+        let snapshotRevision = 0
         const acceptedRecords: CanvasOperationRecord[] = []
-        let snapshotChanged = false
+        const snapshotsByKey = new Map<string, {
+          snapshot: { strokes: MaterializedStroke[] }
+          revision: number
+          changed: boolean
+        }>()
         let shouldPushCanvasUpdate = false
         let shouldEnqueueCanvasNudge = false
         let shouldRecordUserDrew = false
 
+        const pairUserKeys = new Set([
+          canvasKeyForUser(context.pairSession.user_one_id),
+          canvasKeyForUser(context.pairSession.user_two_id),
+        ])
+        const allowedKeys = new Set<string>([DEFAULT_CANVAS_KEY, ...pairUserKeys])
+        const canvasMode = context.pairSession.canvas_mode === "DEDICATED" ? "DEDICATED" : "SHARED"
+
+        const requireSnapshot = async (canvasKey: string) => {
+          const existing = snapshotsByKey.get(canvasKey)
+          if (existing) return existing
+          const snapshotRow = await this.getOrCreateCanvasSnapshot(context.pairSession.id, canvasKey, tx, true)
+          const next = {
+            snapshot: normalizeCanvasSnapshot(snapshotRow.snapshot_json),
+            revision: Number(snapshotRow.revision),
+            changed: false,
+          }
+          snapshotsByKey.set(canvasKey, next)
+          return next
+        }
+
         for (const operation of operations) {
+          const canvasKey = normalizeCanvasKey(operation.canvasKey)
+          if (!allowedKeys.has(canvasKey)) {
+            throw new HttpError(400, "Unsupported canvasKey")
+          }
+
+          if (canvasMode === "SHARED") {
+            if (canvasKey !== DEFAULT_CANVAS_KEY) {
+              throw new HttpError(400, "canvasKey is not allowed in shared mode")
+            }
+          } else {
+            const ownKey = canvasKeyForUser(context.user.id)
+            const isDrawingOperation = operation.type !== "CLEAR_CANVAS"
+            if (isDrawingOperation && canvasKey !== ownKey) {
+              throw new HttpError(400, "canvasKey must be your canvas in dedicated mode")
+            }
+            if (!isDrawingOperation && canvasKey === DEFAULT_CANVAS_KEY) {
+              throw new HttpError(400, "shared canvasKey is not allowed in dedicated mode")
+            }
+          }
+
           const duplicate = await tx.query<CanvasOperationRecord>(
             `
             SELECT id, pair_session_id, server_revision, client_operation_id, actor_user_id,
-              type, stroke_id, payload_json, client_created_at, created_at
+              canvas_key, type, stroke_id, payload_json, client_created_at, created_at
             FROM canvas_operations
             WHERE pair_session_id = $1 AND actor_user_id = $2 AND client_operation_id = $3
             LIMIT 1
@@ -834,13 +1027,14 @@ export class MulberryService {
               server_revision,
               client_operation_id,
               actor_user_id,
+              canvas_key,
               type,
               stroke_id,
               payload_json,
               client_created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
             RETURNING id, pair_session_id, server_revision, client_operation_id, actor_user_id,
-              type, stroke_id, payload_json, client_created_at, created_at
+              canvas_key, type, stroke_id, payload_json, client_created_at, created_at
             `,
             [
               id,
@@ -848,6 +1042,7 @@ export class MulberryService {
               latestRevision,
               operation.clientOperationId,
               context.user.id,
+              canvasKey,
               operation.type,
               operation.strokeId ?? null,
               JSON.stringify(operation.payload ?? {}),
@@ -861,36 +1056,55 @@ export class MulberryService {
             shouldEnqueueCanvasNudge = true
             shouldRecordUserDrew = true
           }
-          const materialized = await this.materializeDurableOperation(
-            tx,
-            context.pairSession.id,
-            acceptedRecord,
-            snapshot,
-          )
-          if (materialized) {
-            snapshotRevision = Number(acceptedRecord.server_revision)
-            snapshotChanged = true
-            shouldPushCanvasUpdate = true
+          if (
+            acceptedRecord.type === "FINISH_STROKE" ||
+            acceptedRecord.type === "DELETE_STROKE" ||
+            acceptedRecord.type === "CLEAR_CANVAS"
+          ) {
+            const snapshotState = await requireSnapshot(canvasKey)
+            const materialized = await this.materializeDurableOperation(
+              tx,
+              context.pairSession.id,
+              acceptedRecord,
+              snapshotState.snapshot,
+            )
+            if (materialized) {
+              snapshotState.revision = Number(acceptedRecord.server_revision)
+              snapshotState.changed = true
+              snapshotRevision = Math.max(snapshotRevision, Number(acceptedRecord.server_revision))
+              shouldPushCanvasUpdate = true
+            }
           }
         }
 
         await tx.query(
           `
-          UPDATE canvas_snapshots
+          UPDATE canvas_pair_state
           SET latest_revision = $2,
-            revision = $3,
-            snapshot_json = CASE WHEN $4 THEN $5::jsonb ELSE snapshot_json END,
-            updated_at = CASE WHEN $4 THEN NOW() ELSE updated_at END
+            updated_at = NOW()
           WHERE pair_session_id = $1
           `,
-          [
-            context.pairSession.id,
-            latestRevision,
-            snapshotRevision,
-            snapshotChanged,
-            JSON.stringify(snapshot),
-          ],
+          [context.pairSession.id, latestRevision],
         )
+
+        for (const [canvasKey, state] of snapshotsByKey.entries()) {
+          if (!state.changed) continue
+          await tx.query(
+            `
+            UPDATE canvas_snapshots_v2
+            SET revision = $3,
+              snapshot_json = $4::jsonb,
+              updated_at = NOW()
+            WHERE pair_session_id = $1 AND canvas_key = $2
+            `,
+            [
+              context.pairSession.id,
+              canvasKey,
+              state.revision,
+              JSON.stringify(state.snapshot),
+            ],
+          )
+        }
 
         return {
           accepted: acceptedRecords.map((row) => this.canvasOperationToEnvelope(row)),
@@ -1194,11 +1408,10 @@ export class MulberryService {
     const user = await this.getUserById(userId)
     let profile = await this.getProfile(userId)
     const pairSession = await this.getPairSession(userId)
-    const partnerUser = pairSession
-      ? await this.getUserById(
-          pairSession.user_one_id === userId ? pairSession.user_two_id : pairSession.user_one_id,
-        )
+    const partnerUserId = pairSession
+      ? (pairSession.user_one_id === userId ? pairSession.user_two_id : pairSession.user_one_id)
       : null
+    const partnerUser = partnerUserId ? await this.getUserById(partnerUserId) : null
     const pendingInvite = await this.getPendingInvite(userId)
     let onboardingCompleted = Boolean(profile?.onboarding_completed_at)
     if (pendingInvite && !onboardingCompleted) {
@@ -1226,6 +1439,7 @@ export class MulberryService {
       userEmail: user?.email ?? null,
       userPhotoUrl: this.profilePhotoUrl(profile?.profile_photo_path) ?? user?.google_picture_url ?? null,
       userDisplayName: profile?.display_name ?? null,
+      partnerUserId,
       partnerPhotoUrl: pairSession
         ? this.profilePhotoUrl((partnerUser ? await this.getProfile(partnerUser.id) : null)?.profile_photo_path) ??
           partnerUser?.google_picture_url ??
@@ -1252,6 +1466,11 @@ export class MulberryService {
             status: "REDEEMED",
           }
         : null,
+      canvasMode: pairSession?.canvas_mode === "DEDICATED" ? "DEDICATED" : "SHARED",
+      canvasModeNextToggleAt: pairSession?.canvas_mode_next_toggle_at
+        ? new Date(pairSession.canvas_mode_next_toggle_at).toISOString()
+        : null,
+      dedicatedCanvasAvailable: pairSession ? await this.isDedicatedCanvasAvailable(pairSession) : false,
     }
   }
 
@@ -1301,7 +1520,8 @@ export class MulberryService {
   private async getPairSession(userId: string): Promise<PairSessionRecord | null> {
     const rows = await this.db.query<PairSessionRecord>(
       `
-      SELECT id, user_one_id, user_two_id, created_at
+      SELECT id, user_one_id, user_two_id, created_at,
+        canvas_mode, canvas_mode_updated_at, canvas_mode_next_toggle_at
       FROM pair_sessions
       WHERE user_one_id = $1 OR user_two_id = $1
       LIMIT 1
@@ -1309,6 +1529,57 @@ export class MulberryService {
       [userId],
     )
     return rows.rows[0] ?? null
+  }
+
+  private async isDedicatedCanvasAvailable(
+    pairSession: Pick<PairSessionRecord, "user_one_id" | "user_two_id">,
+    db: Pick<Database, "query"> = this.db,
+  ): Promise<boolean> {
+    const cutoff = new Date(Date.now() - DEDICATED_CANVAS_CAPABILITY_TTL_MS).toISOString()
+    const rows = await db.query<{
+      user_id: string
+      supported: boolean
+      last_seen_at: Date | string
+    }>(
+      `
+      SELECT user_id,
+        BOOL_OR(supports_dedicated_canvas) AS supported,
+        MAX(last_seen_at) AS last_seen_at
+      FROM device_tokens
+      WHERE revoked_at IS NULL
+        AND user_id = ANY($1)
+      GROUP BY user_id
+      `,
+      [[pairSession.user_one_id, pairSession.user_two_id]],
+    )
+    const statusByUser = new Map(rows.rows.map((row) => [row.user_id, row]))
+    for (const userId of [pairSession.user_one_id, pairSession.user_two_id]) {
+      const status = statusByUser.get(userId)
+      if (!status?.supported) return false
+      const lastSeenAt = new Date(status.last_seen_at).toISOString()
+      if (lastSeenAt < cutoff) return false
+    }
+    return true
+  }
+
+  private async upsertCanvasSnapshot(
+    db: Pick<Database, "query">,
+    pairSessionId: string,
+    canvasKey: string,
+    revision: number,
+    snapshot: { strokes: MaterializedStroke[] },
+  ): Promise<void> {
+    await db.query(
+      `
+      INSERT INTO canvas_snapshots_v2 (pair_session_id, canvas_key, revision, snapshot_json, updated_at)
+      VALUES ($1, $2, $3, $4::jsonb, NOW())
+      ON CONFLICT (pair_session_id, canvas_key) DO UPDATE SET
+        revision = EXCLUDED.revision,
+        snapshot_json = EXCLUDED.snapshot_json,
+        updated_at = NOW()
+      `,
+      [pairSessionId, canvasKey, revision, JSON.stringify(snapshot)],
+    )
   }
 
   private async storeProfilePhoto(
@@ -1402,7 +1673,7 @@ export class MulberryService {
     const rows = await this.db.query<{ latest_revision: string | number }>(
       `
       SELECT latest_revision
-      FROM canvas_snapshots
+      FROM canvas_pair_state
       WHERE pair_session_id = $1
       `,
       [pairSessionId],
@@ -1428,7 +1699,7 @@ export class MulberryService {
     const rows = await this.db.query<CanvasOperationRecord>(
       `
       SELECT id, pair_session_id, server_revision, client_operation_id, actor_user_id,
-        type, stroke_id, payload_json, client_created_at, created_at
+        canvas_key, type, stroke_id, payload_json, client_created_at, created_at
       FROM canvas_operations
       WHERE pair_session_id = $1 AND server_revision > $2
       ORDER BY server_revision ASC
@@ -1438,53 +1709,88 @@ export class MulberryService {
     return rows.rows.map((row) => this.canvasOperationToEnvelope(row))
   }
 
-  private async getOrCreateCanvasSnapshot(pairSessionId: string): Promise<{
-    revision: string | number
+  private async getOrCreateCanvasPairState(pairSessionId: string): Promise<{
     latest_revision: string | number
-    snapshot_json: unknown
-    updated_at: Date | string
   }>
-  private async getOrCreateCanvasSnapshot(
+  private async getOrCreateCanvasPairState(
     pairSessionId: string,
     db: Pick<Database, "query">,
     lockForUpdate: true,
   ): Promise<{
-    revision: string | number
     latest_revision: string | number
-    snapshot_json: unknown
-    updated_at: Date | string
   }>
-  private async getOrCreateCanvasSnapshot(
+  private async getOrCreateCanvasPairState(
     pairSessionId: string,
     db: Pick<Database, "query"> = this.db,
     lockForUpdate = false,
   ): Promise<{
-    revision: string | number
     latest_revision: string | number
-    snapshot_json: unknown
-    updated_at: Date | string
   }> {
     await db.query(
       `
-      INSERT INTO canvas_snapshots (pair_session_id)
+      INSERT INTO canvas_pair_state (pair_session_id)
       VALUES ($1)
       ON CONFLICT (pair_session_id) DO NOTHING
       `,
       [pairSessionId],
     )
-    const rows = await db.query<{
-      revision: string | number
-      latest_revision: string | number
-      snapshot_json: unknown
-      updated_at: Date | string
-    }>(
+    const rows = await db.query<{ latest_revision: string | number }>(
       `
-      SELECT revision, latest_revision, snapshot_json, updated_at
-      FROM canvas_snapshots
+      SELECT latest_revision
+      FROM canvas_pair_state
       WHERE pair_session_id = $1
       ${lockForUpdate ? "FOR UPDATE" : ""}
       `,
       [pairSessionId],
+    )
+    return rows.rows[0]
+  }
+
+  private async getOrCreateCanvasSnapshot(pairSessionId: string, canvasKey: string): Promise<{
+    revision: string | number
+    snapshot_json: unknown
+    updated_at: Date | string
+  }>
+  private async getOrCreateCanvasSnapshot(
+    pairSessionId: string,
+    canvasKey: string,
+    db: Pick<Database, "query">,
+    lockForUpdate: true,
+  ): Promise<{
+    revision: string | number
+    snapshot_json: unknown
+    updated_at: Date | string
+  }>
+  private async getOrCreateCanvasSnapshot(
+    pairSessionId: string,
+    canvasKey: string,
+    db: Pick<Database, "query"> = this.db,
+    lockForUpdate = false,
+  ): Promise<{
+    revision: string | number
+    snapshot_json: unknown
+    updated_at: Date | string
+  }> {
+    await db.query(
+      `
+      INSERT INTO canvas_snapshots_v2 (pair_session_id, canvas_key)
+      VALUES ($1, $2)
+      ON CONFLICT (pair_session_id, canvas_key) DO NOTHING
+      `,
+      [pairSessionId, canvasKey],
+    )
+    const rows = await db.query<{
+      revision: string | number
+      snapshot_json: unknown
+      updated_at: Date | string
+    }>(
+      `
+      SELECT revision, snapshot_json, updated_at
+      FROM canvas_snapshots_v2
+      WHERE pair_session_id = $1 AND canvas_key = $2
+      ${lockForUpdate ? "FOR UPDATE" : ""}
+      `,
+      [pairSessionId, canvasKey],
     )
     return rows.rows[0]
   }
@@ -1499,7 +1805,13 @@ export class MulberryService {
       case "FINISH_STROKE": {
         const strokeId = operation.stroke_id
         if (!strokeId) return false
-        const stroke = await this.reconstructFinishedStroke(db, pairSessionId, strokeId, Number(operation.server_revision))
+        const stroke = await this.reconstructFinishedStroke(
+          db,
+          pairSessionId,
+          operation.canvas_key,
+          strokeId,
+          Number(operation.server_revision),
+        )
         if (!stroke) return false
         snapshot.strokes = snapshot.strokes.filter((stroke) => stroke.id !== strokeId)
         snapshot.strokes.push(stroke)
@@ -1520,21 +1832,23 @@ export class MulberryService {
   private async reconstructFinishedStroke(
     db: Pick<Database, "query">,
     pairSessionId: string,
+    canvasKey: string,
     strokeId: string,
     throughRevision: number,
   ): Promise<MaterializedStroke | null> {
     const rows = await db.query<CanvasOperationRecord>(
       `
       SELECT id, pair_session_id, server_revision, client_operation_id, actor_user_id,
-        type, stroke_id, payload_json, client_created_at, created_at
+        canvas_key, type, stroke_id, payload_json, client_created_at, created_at
       FROM canvas_operations
       WHERE pair_session_id = $1
-        AND stroke_id = $2
-        AND server_revision <= $3
+        AND canvas_key = $2
+        AND stroke_id = $3
+        AND server_revision <= $4
         AND type IN ('ADD_STROKE', 'APPEND_POINTS')
       ORDER BY server_revision ASC
       `,
-      [pairSessionId, strokeId, throughRevision],
+      [pairSessionId, canvasKey, strokeId, throughRevision],
     )
     let stroke: MaterializedStroke | null = null
     for (const operation of rows.rows) {
@@ -1567,6 +1881,7 @@ export class MulberryService {
       clientOperationId: row.client_operation_id,
       actorUserId: row.actor_user_id,
       pairSessionId: row.pair_session_id,
+      canvasKey: row.canvas_key,
       type: row.type,
       strokeId: row.stroke_id,
       payload: row.payload_json,
@@ -1749,6 +2064,19 @@ function normalizeCanvasSnapshot(raw: unknown): { strokes: MaterializedStroke[] 
     }
   }
   return { strokes: [] }
+}
+
+function mergeCanvasStrokes(
+  one: MaterializedStroke[],
+  two: MaterializedStroke[],
+): MaterializedStroke[] {
+  const byId = new Map<string, MaterializedStroke>()
+  for (const stroke of [...one, ...two]) {
+    if (!byId.has(stroke.id)) {
+      byId.set(stroke.id, stroke)
+    }
+  }
+  return [...byId.values()].sort((a, b) => a.createdAt - b.createdAt)
 }
 
 function normalizeCanvasPoint(raw: unknown): { x: number; y: number } | null {

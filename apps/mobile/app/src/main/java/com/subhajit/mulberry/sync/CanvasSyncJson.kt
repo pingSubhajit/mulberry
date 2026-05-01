@@ -31,6 +31,7 @@ data class ClientOperationBatchMessage(
 
 data class ClientOperationBody(
     val clientOperationId: String,
+    val canvasKey: String? = null,
     val type: String,
     val strokeId: String?,
     val payload: JsonObject,
@@ -92,10 +93,12 @@ data class ErrorMessage(
 
 fun newClientOperation(
     type: DrawingOperationType,
+    canvasKey: String = CanvasKeys.SHARED,
     strokeId: String?,
     payload: SyncOperationPayload
 ): CanvasSyncOperation = CanvasSyncOperation(
     clientOperationId = UUID.randomUUID().toString(),
+    canvasKey = canvasKey,
     type = type,
     strokeId = strokeId,
     payload = payload,
@@ -106,6 +109,7 @@ fun CanvasSyncOperation.toWireJson(): String = gson.toJson(
     ClientOperationMessage(
         operation = ClientOperationBody(
             clientOperationId = clientOperationId,
+            canvasKey = canvasKey,
             type = type.name,
             strokeId = strokeId,
             payload = payload.toJsonObject(),
@@ -121,6 +125,7 @@ fun List<CanvasSyncOperation>.toBatchWireJson(batchId: String): String = gson.to
         operations = map { operation ->
             ClientOperationBody(
                 clientOperationId = operation.clientOperationId,
+                canvasKey = operation.canvasKey,
                 type = operation.type.name,
                 strokeId = operation.strokeId,
                 payload = operation.payload.toJsonObject(),
@@ -135,6 +140,7 @@ fun List<CanvasSyncOperation>.toBatchWireJson(batchId: String): String = gson.to
 fun CanvasSyncOperation.toClientRequest(): ClientCanvasOperationRequest =
     ClientCanvasOperationRequest(
         clientOperationId = clientOperationId,
+        canvasKey = canvasKey,
         type = type.name,
         strokeId = strokeId,
         payload = payload.toJsonObject(),
@@ -178,6 +184,7 @@ fun CanvasOperationEnvelopeResponse.toDomainOperation(): ServerCanvasOperation =
         clientOperationId = clientOperationId,
         actorUserId = actorUserId,
         pairSessionId = pairSessionId,
+        canvasKey = canvasKey,
         type = DrawingOperationType.valueOf(type),
         strokeId = strokeId,
         payload = payload.toSyncPayload(DrawingOperationType.valueOf(type)),

@@ -14,6 +14,7 @@ sealed interface SyncState {
 
 data class CanvasSyncOperation(
     val clientOperationId: String,
+    val canvasKey: String,
     val type: DrawingOperationType,
     val strokeId: String?,
     val payload: SyncOperationPayload,
@@ -24,6 +25,7 @@ data class ServerCanvasOperation(
     val clientOperationId: String,
     val actorUserId: String,
     val pairSessionId: String,
+    val canvasKey: String,
     val type: DrawingOperationType,
     val strokeId: String?,
     val payload: SyncOperationPayload,

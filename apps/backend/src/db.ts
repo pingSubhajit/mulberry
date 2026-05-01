@@ -65,9 +65,13 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       token TEXT NOT NULL UNIQUE,
       platform TEXT NOT NULL,
       app_environment TEXT NOT NULL,
+      supports_dedicated_canvas BOOLEAN NOT NULL DEFAULT FALSE,
       last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       revoked_at TIMESTAMPTZ
     );
+
+    ALTER TABLE device_tokens
+      ADD COLUMN IF NOT EXISTS supports_dedicated_canvas BOOLEAN NOT NULL DEFAULT FALSE;
 
     CREATE INDEX IF NOT EXISTS device_tokens_active_user_idx
       ON device_tokens(user_id)
@@ -77,8 +81,20 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       id TEXT PRIMARY KEY,
       user_one_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       user_two_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      canvas_mode TEXT NOT NULL DEFAULT 'SHARED',
+      canvas_mode_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      canvas_mode_next_toggle_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE pair_sessions
+      ADD COLUMN IF NOT EXISTS canvas_mode TEXT NOT NULL DEFAULT 'SHARED';
+
+    ALTER TABLE pair_sessions
+      ADD COLUMN IF NOT EXISTS canvas_mode_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+    ALTER TABLE pair_sessions
+      ADD COLUMN IF NOT EXISTS canvas_mode_next_toggle_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
     CREATE TABLE IF NOT EXISTS invites (
       id TEXT PRIMARY KEY,
@@ -97,6 +113,7 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       server_revision BIGINT NOT NULL,
       client_operation_id TEXT NOT NULL,
       actor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      canvas_key TEXT NOT NULL DEFAULT 'shared',
       type TEXT NOT NULL,
       stroke_id TEXT,
       payload_json JSONB NOT NULL,
@@ -105,6 +122,9 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       UNIQUE (pair_session_id, server_revision),
       UNIQUE (pair_session_id, actor_user_id, client_operation_id)
     );
+
+    ALTER TABLE canvas_operations
+      ADD COLUMN IF NOT EXISTS canvas_key TEXT NOT NULL DEFAULT 'shared';
 
     CREATE INDEX IF NOT EXISTS canvas_operations_pair_revision_idx
       ON canvas_operations(pair_session_id, server_revision);
@@ -122,6 +142,36 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
 
     UPDATE canvas_snapshots
     SET latest_revision = GREATEST(latest_revision, revision);
+
+    CREATE TABLE IF NOT EXISTS canvas_pair_state (
+      pair_session_id TEXT PRIMARY KEY REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      latest_revision BIGINT NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    INSERT INTO canvas_pair_state (pair_session_id, latest_revision, updated_at)
+    SELECT pair_session_id, GREATEST(latest_revision, revision), COALESCE(updated_at, NOW())
+    FROM canvas_snapshots
+    ON CONFLICT (pair_session_id) DO UPDATE SET
+      latest_revision = GREATEST(canvas_pair_state.latest_revision, EXCLUDED.latest_revision),
+      updated_at = EXCLUDED.updated_at;
+
+    CREATE TABLE IF NOT EXISTS canvas_snapshots_v2 (
+      pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      canvas_key TEXT NOT NULL,
+      revision BIGINT NOT NULL DEFAULT 0,
+      snapshot_json JSONB NOT NULL DEFAULT '{"strokes":[]}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (pair_session_id, canvas_key)
+    );
+
+    INSERT INTO canvas_snapshots_v2 (pair_session_id, canvas_key, revision, snapshot_json, updated_at)
+    SELECT pair_session_id, 'shared', revision, snapshot_json, COALESCE(updated_at, NOW())
+    FROM canvas_snapshots
+    ON CONFLICT (pair_session_id, canvas_key) DO UPDATE SET
+      revision = GREATEST(canvas_snapshots_v2.revision, EXCLUDED.revision),
+      snapshot_json = EXCLUDED.snapshot_json,
+      updated_at = EXCLUDED.updated_at;
 
     CREATE TABLE IF NOT EXISTS canvas_nudges (
       pair_session_id TEXT PRIMARY KEY REFERENCES pair_sessions(id) ON DELETE CASCADE,

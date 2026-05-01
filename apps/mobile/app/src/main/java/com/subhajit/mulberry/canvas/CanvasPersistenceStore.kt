@@ -9,49 +9,49 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
 
 interface CanvasPersistenceStore {
-    suspend fun loadCanvasState(): CanvasState
-    suspend fun loadToolState(): ToolState
-    suspend fun persistLocalCommittedStroke(stroke: Stroke): Long
-    suspend fun persistRemoteCommittedStroke(stroke: Stroke, serverRevision: Long)
-    suspend fun persistErase(strokeId: String, serverRevision: Long? = null)
-    suspend fun persistClear(serverRevision: Long? = null)
-    suspend fun replaceFromServerSnapshot(strokes: List<Stroke>, serverRevision: Long)
+    suspend fun loadCanvasState(canvasKey: String): CanvasState
+    suspend fun loadToolState(canvasKey: String): ToolState
+    suspend fun persistLocalCommittedStroke(canvasKey: String, stroke: Stroke): Long
+    suspend fun persistRemoteCommittedStroke(canvasKey: String, stroke: Stroke, serverRevision: Long)
+    suspend fun persistErase(canvasKey: String, strokeId: String, serverRevision: Long? = null)
+    suspend fun persistClear(canvasKey: String, serverRevision: Long? = null)
+    suspend fun replaceFromServerSnapshot(canvasKey: String, strokes: List<Stroke>, serverRevision: Long)
 }
 
 @Singleton
 class RoomCanvasPersistenceStore @Inject constructor(
     private val drawingRepository: DrawingRepository
 ) : CanvasPersistenceStore {
-    override suspend fun loadCanvasState(): CanvasState =
-        drawingRepository.canvasState.first()
+    override suspend fun loadCanvasState(canvasKey: String): CanvasState =
+        drawingRepository.canvasState(canvasKey).first()
 
-    override suspend fun loadToolState(): ToolState =
-        drawingRepository.toolState.first()
+    override suspend fun loadToolState(canvasKey: String): ToolState =
+        drawingRepository.toolState(canvasKey).first()
 
-    override suspend fun persistLocalCommittedStroke(stroke: Stroke): Long =
-        drawingRepository.persistLocalCommittedStroke(stroke)
+    override suspend fun persistLocalCommittedStroke(canvasKey: String, stroke: Stroke): Long =
+        drawingRepository.persistLocalCommittedStroke(canvasKey, stroke)
 
-    override suspend fun persistRemoteCommittedStroke(stroke: Stroke, serverRevision: Long) {
-        drawingRepository.persistRemoteCommittedStroke(stroke, serverRevision)
+    override suspend fun persistRemoteCommittedStroke(canvasKey: String, stroke: Stroke, serverRevision: Long) {
+        drawingRepository.persistRemoteCommittedStroke(canvasKey, stroke, serverRevision)
     }
 
-    override suspend fun persistErase(strokeId: String, serverRevision: Long?) {
+    override suspend fun persistErase(canvasKey: String, strokeId: String, serverRevision: Long?) {
         if (serverRevision == null) {
-            drawingRepository.eraseStroke(strokeId)
+            drawingRepository.eraseStroke(canvasKey, strokeId)
         } else {
-            drawingRepository.applyRemoteDeleteStroke(strokeId, serverRevision)
+            drawingRepository.applyRemoteDeleteStroke(canvasKey, strokeId, serverRevision)
         }
     }
 
-    override suspend fun persistClear(serverRevision: Long?) {
+    override suspend fun persistClear(canvasKey: String, serverRevision: Long?) {
         if (serverRevision == null) {
-            drawingRepository.clearCanvas()
+            drawingRepository.clearCanvas(canvasKey)
         } else {
-            drawingRepository.applyRemoteClearCanvas(serverRevision)
+            drawingRepository.applyRemoteClearCanvas(canvasKey, serverRevision)
         }
     }
 
-    override suspend fun replaceFromServerSnapshot(strokes: List<Stroke>, serverRevision: Long) {
-        drawingRepository.replaceWithRemoteSnapshot(strokes, serverRevision)
+    override suspend fun replaceFromServerSnapshot(canvasKey: String, strokes: List<Stroke>, serverRevision: Long) {
+        drawingRepository.replaceWithRemoteSnapshot(canvasKey, strokes, serverRevision)
     }
 }

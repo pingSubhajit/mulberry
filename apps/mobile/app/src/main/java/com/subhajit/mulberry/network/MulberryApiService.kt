@@ -75,7 +75,10 @@ interface MulberryApiService {
     suspend fun postCanvasOperationBatch(@Body request: CanvasOperationBatchRequest): CanvasOpsResponse
 
     @GET("/canvas/snapshot")
-    suspend fun getCanvasSnapshot(): CanvasSnapshotResponse
+    suspend fun getCanvasSnapshot(@Query("canvasKey") canvasKey: String? = null): CanvasSnapshotResponse
+
+    @POST("/canvas/mode")
+    suspend fun setCanvasMode(@Body request: CanvasModeRequest): BootstrapResponse
 
     @GET("/wallpapers")
     suspend fun getWallpapers(

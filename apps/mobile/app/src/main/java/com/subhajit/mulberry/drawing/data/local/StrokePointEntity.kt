@@ -10,16 +10,16 @@ import androidx.room.PrimaryKey
     foreignKeys = [
         ForeignKey(
             entity = StrokeEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["strokeId"],
+            parentColumns = ["key"],
+            childColumns = ["strokeKey"],
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["strokeId"])]
+    indices = [Index(value = ["strokeKey"])]
 )
 data class StrokePointEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
-    val strokeId: String,
+    val strokeKey: String,
     val pointIndex: Int,
     val x: Float,
     val y: Float

@@ -114,6 +114,7 @@ import com.subhajit.mulberry.app.shortcut.AppShortcutAction
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.data.bootstrap.AuthStatus
+import com.subhajit.mulberry.data.bootstrap.CanvasMode
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.DrawingTool
@@ -251,6 +252,7 @@ fun CanvasHomeRoute(
         onClearRequested = viewModel::onClearRequested,
         onClearDismissed = viewModel::onClearDismissed,
         onClearConfirmed = viewModel::onClearConfirmed,
+        onClearMyWallpaperConfirmed = viewModel::onClearMyWallpaperConfirmed,
         onUndoRequested = viewModel::onUndoRequested,
         onRedoRequested = viewModel::onRedoRequested,
         onShortcutActionHandled = onShortcutActionHandled
@@ -296,6 +298,7 @@ private fun CanvasHomeScreen(
     onClearRequested: () -> Unit,
     onClearDismissed: () -> Unit,
     onClearConfirmed: () -> Unit,
+    onClearMyWallpaperConfirmed: () -> Unit,
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit,
     onShortcutActionHandled: (AppShortcutAction) -> Unit
@@ -322,6 +325,14 @@ private fun CanvasHomeScreen(
 
         when (action) {
             AppShortcutAction.ClearDoodles -> {
+                if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
+                    onClearRequested()
+                }
+                onShortcutActionHandled(action)
+            }
+
+            AppShortcutAction.ClearPartnerWallpaper,
+            AppShortcutAction.ClearMyWallpaper -> {
                 if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
                     onClearRequested()
                 }
@@ -392,10 +403,18 @@ private fun CanvasHomeScreen(
         )
     }
     if (uiState.showClearConfirmation) {
-        ClearCanvasConfirmationDialog(
-            onDismiss = onClearDismissed,
-            onConfirm = onClearConfirmed
-        )
+        if (uiState.bootstrapState.canvasMode == CanvasMode.DEDICATED) {
+            ClearCanvasDedicatedDialog(
+                onDismiss = onClearDismissed,
+                onClearPartnerWallpaper = onClearConfirmed,
+                onClearMyWallpaper = onClearMyWallpaperConfirmed
+            )
+        } else {
+            ClearCanvasConfirmationDialog(
+                onDismiss = onClearDismissed,
+                onConfirm = onClearConfirmed
+            )
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -1177,6 +1196,40 @@ private fun ClearCanvasConfirmationDialog(
                     .mulberryTapScale()
             ) {
                 Text(stringResource(R.string.home_clear_canvas_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.mulberryTapScale()) {
+                Text(stringResource(R.string.home_clear_canvas_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun ClearCanvasDedicatedDialog(
+    onDismiss: () -> Unit,
+    onClearPartnerWallpaper: () -> Unit,
+    onClearMyWallpaper: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.home_clear_canvas_title_dedicated)) },
+        text = { Text(stringResource(R.string.home_clear_canvas_body_dedicated)) },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(
+                    onClick = onClearPartnerWallpaper,
+                    modifier = Modifier.mulberryTapScale()
+                ) {
+                    Text(stringResource(R.string.home_clear_partner_wallpaper))
+                }
+                TextButton(
+                    onClick = onClearMyWallpaper,
+                    modifier = Modifier.mulberryTapScale()
+                ) {
+                    Text(stringResource(R.string.home_clear_my_wallpaper))
+                }
             }
         },
         dismissButton = {

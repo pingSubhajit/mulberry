@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.network
 
 import com.subhajit.mulberry.data.bootstrap.AuthStatus
+import com.subhajit.mulberry.data.bootstrap.CanvasMode
 import com.subhajit.mulberry.data.bootstrap.InviteStatus
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.data.bootstrap.PendingInviteSummary
@@ -14,6 +15,7 @@ fun BootstrapResponse.toDomainBootstrap(): SessionBootstrapState = SessionBootst
     userEmail = userEmail,
     userPhotoUrl = userPhotoUrl,
     userDisplayName = userDisplayName,
+    partnerUserId = partnerUserId,
     partnerPhotoUrl = partnerPhotoUrl,
     partnerDisplayName = partnerDisplayName,
     anniversaryDate = anniversaryDate,
@@ -30,5 +32,8 @@ fun BootstrapResponse.toDomainBootstrap(): SessionBootstrapState = SessionBootst
             recipientDisplayName = it.recipientDisplayName,
             status = InviteStatus.valueOf(it.status)
         )
-    }
+    },
+    canvasMode = runCatching { CanvasMode.valueOf(canvasMode) }.getOrDefault(CanvasMode.SHARED),
+    canvasModeNextToggleAt = canvasModeNextToggleAt,
+    dedicatedCanvasAvailable = dedicatedCanvasAvailable
 )

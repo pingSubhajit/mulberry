@@ -25,6 +25,7 @@ data class BootstrapResponse(
     val userEmail: String?,
     val userPhotoUrl: String?,
     val userDisplayName: String?,
+    val partnerUserId: String? = null,
     val partnerPhotoUrl: String?,
     val partnerDisplayName: String?,
     val anniversaryDate: String?,
@@ -33,7 +34,10 @@ data class BootstrapResponse(
     val currentStreakDays: Int = 0,
     val pairingStatus: String,
     val pairSessionId: String?,
-    val invite: InviteResponse?
+    val invite: InviteResponse?,
+    val canvasMode: String = "SHARED",
+    val canvasModeNextToggleAt: String? = null,
+    val dedicatedCanvasAvailable: Boolean = false
 )
 
 data class InviteResponse(
@@ -95,6 +99,7 @@ data class CanvasOperationBatchRequest(
 
 data class ClientCanvasOperationRequest(
     val clientOperationId: String,
+    val canvasKey: String? = null,
     val type: String,
     val strokeId: String?,
     val payload: JsonObject,
@@ -104,11 +109,16 @@ data class ClientCanvasOperationRequest(
 
 data class CanvasSnapshotResponse(
     val pairSessionId: String,
+    val canvasKey: String = "shared",
     val revision: Long,
     val snapshotRevision: Long = revision,
     val latestRevision: Long = revision,
     val snapshot: CanvasSnapshotPayload,
     val updatedAt: String?
+)
+
+data class CanvasModeRequest(
+    val mode: String
 )
 
 data class CanvasSnapshotPayload(
@@ -128,6 +138,7 @@ data class CanvasOperationEnvelopeResponse(
     val clientOperationId: String,
     val actorUserId: String,
     val pairSessionId: String,
+    val canvasKey: String = "shared",
     val type: String,
     val strokeId: String?,
     val payload: com.google.gson.JsonObject?,
@@ -144,7 +155,8 @@ data class CanvasPointPayload(
 data class RegisterFcmTokenRequest(
     val token: String,
     val platform: String = "ANDROID",
-    val appEnvironment: String
+    val appEnvironment: String,
+    val supportsDedicatedCanvas: Boolean = true
 )
 
 data class UnregisterFcmTokenRequest(

@@ -90,6 +90,7 @@ import com.subhajit.mulberry.core.ui.PrivacyPolicySheetContent
 import com.subhajit.mulberry.core.ui.TermsOfUseSheetContent
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.mulberryTapScale
+import com.subhajit.mulberry.data.bootstrap.CanvasMode
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.review.InAppReviewLauncher
 import com.subhajit.mulberry.sync.SyncState
@@ -126,6 +127,7 @@ fun SettingsRoute(
     val activity = context as? ComponentActivity
     val snackbarHostState = remember { SnackbarHostState() }
     var pane by remember { mutableStateOf(SettingsPane.Home) }
+    var pendingCanvasModeToggle by remember { mutableStateOf<CanvasMode?>(null) }
     val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) viewModel.onProfilePhotoSelected(uri)
     }
@@ -169,6 +171,9 @@ fun SettingsRoute(
                     }
                 }
                 is SettingsEffect.Message -> snackbarHostState.showSnackbar(effect.text)
+                is SettingsEffect.ConfirmCanvasModeToggle -> {
+                    pendingCanvasModeToggle = effect.desiredMode
+                }
             }
         }
     }
@@ -187,6 +192,7 @@ fun SettingsRoute(
         onDisconnectPartner = viewModel::onDisconnectPartner,
         onPartnerProfileSave = viewModel::onPartnerProfileSave,
         onPartnerPhotoChangeRequested = { partnerPhotoPicker.launch("image/*") },
+        onCanvasModeToggleRequested = viewModel::onCanvasModeToggleRequested,
         onResetAppState = viewModel::onResetAppState,
         onLogout = viewModel::onLogout,
         onSeedDemoSession = viewModel::onSeedDemoSession,
@@ -207,6 +213,29 @@ fun SettingsRoute(
         onCrashlyticsTestCrash = viewModel::onCrashlyticsTestCrash,
         onTriggerInAppReview = viewModel::onTriggerInAppReviewClicked
     )
+
+    pendingCanvasModeToggle?.let { desiredMode ->
+        val title = if (desiredMode == CanvasMode.DEDICATED) {
+            "Switch to dedicated canvas?"
+        } else {
+            "Switch to shared canvas?"
+        }
+        val body = if (desiredMode == CanvasMode.DEDICATED) {
+            "Dedicated canvas means what you draw in the app shows up on your partner’s wallpaper, and your wallpaper shows what your partner draws. You can change this once a day."
+        } else {
+            "Shared canvas means you both draw on the same canvas and see the same doodles on both wallpapers. Switching back merges what you both drew."
+        }
+        ConfirmationDialog(
+            title = title,
+            body = body,
+            confirmText = "Switch",
+            onDismiss = { pendingCanvasModeToggle = null },
+            onConfirm = {
+                pendingCanvasModeToggle = null
+                viewModel.onCanvasModeToggleConfirmed(desiredMode)
+            }
+        )
+    }
 }
 
 @Composable
@@ -222,6 +251,7 @@ private fun SettingsScreen(
     onDisconnectPartner: () -> Unit,
     onPartnerProfileSave: (String, String) -> Unit,
     onPartnerPhotoChangeRequested: () -> Unit,
+    onCanvasModeToggleRequested: (CanvasMode) -> Unit,
     onResetAppState: () -> Unit,
     onLogout: () -> Unit,
     onSeedDemoSession: () -> Unit,
@@ -271,6 +301,7 @@ private fun SettingsScreen(
                 onDisconnectPartner = onDisconnectPartner,
                 onPartnerProfileSave = onPartnerProfileSave,
                 onPartnerPhotoChangeRequested = onPartnerPhotoChangeRequested,
+                onCanvasModeToggleRequested = onCanvasModeToggleRequested,
                 modifier = Modifier.padding(padding)
             )
         } else if (pane == SettingsPane.PrivacyLegal) {
@@ -1008,6 +1039,7 @@ private fun PartnerPane(
     onDisconnectPartner: () -> Unit,
     onPartnerProfileSave: (String, String) -> Unit,
     onPartnerPhotoChangeRequested: () -> Unit,
+    onCanvasModeToggleRequested: (CanvasMode) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showDisconnectConfirmation by remember { mutableStateOf(false) }
@@ -1110,6 +1142,36 @@ private fun PartnerPane(
             title = "Daily streak",
             value = "${uiState.bootstrapState.currentStreakDays} days"
         )
+
+        Spacer(modifier = Modifier.height(34.dp))
+        SoftCard {
+            val isDedicated = uiState.bootstrapState.canvasMode == CanvasMode.DEDICATED
+            val body = if (isDedicated) {
+                "What you draw here shows up on your partner’s wallpaper. Your wallpaper shows what your partner draws."
+            } else {
+                "You both draw on the same canvas and see the same doodles on both wallpapers."
+            }
+            ToggleRow(
+                title = "Dedicated canvas",
+                body = body,
+                checked = isDedicated,
+                enabled = !uiState.isBusy,
+                onCheckedChange = { checked ->
+                    onCanvasModeToggleRequested(if (checked) CanvasMode.DEDICATED else CanvasMode.SHARED)
+                }
+            )
+            val cooldown = canvasModeCooldownText(uiState.bootstrapState.canvasModeNextToggleAt)
+            if (cooldown != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "Can be changed again $cooldown.",
+                    color = MaterialTheme.mulberryAppColors.mutedText,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+            }
+        }
     }
 
     if (showDisconnectConfirmation) {
@@ -2163,6 +2225,7 @@ private fun ToggleRow(
     title: String,
     body: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
@@ -2186,8 +2249,21 @@ private fun ToggleRow(
                 lineHeight = 18.sp
             )
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
+}
+
+private fun canvasModeCooldownText(nextToggleAt: String?): String? {
+    if (nextToggleAt.isNullOrBlank()) return null
+    return runCatching {
+        val minutes = ChronoUnit.MINUTES.between(Instant.now(), Instant.parse(nextToggleAt))
+        if (minutes <= 0) {
+            null
+        } else {
+            val hours = ((minutes + 59) / 60).coerceAtLeast(1)
+            "in $hours hours"
+        }
+    }.getOrNull()
 }
 
 @Composable

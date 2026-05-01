@@ -5,10 +5,11 @@ import androidx.room.PrimaryKey
 import com.subhajit.mulberry.drawing.geometry.NORMALIZED_COORDINATE_SPACE_VERSION
 import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.DrawingTool
+import com.subhajit.mulberry.sync.CanvasKeys
 
 @Entity(tableName = "canvas_metadata_entity")
 data class CanvasMetadataEntity(
-    @PrimaryKey val id: Int = METADATA_ID,
+    @PrimaryKey val canvasKey: String = CanvasKeys.SHARED,
     val revision: Long = 0L,
     val lastModifiedAt: Long = 0L,
     val canvasWidthPx: Int = 0,
@@ -22,8 +23,6 @@ data class CanvasMetadataEntity(
     val cachedImagePath: String? = null
 ) {
     companion object {
-        const val METADATA_ID = 1
-
-        fun default() = CanvasMetadataEntity()
+        fun default(canvasKey: String = CanvasKeys.SHARED) = CanvasMetadataEntity(canvasKey = canvasKey)
     }
 }

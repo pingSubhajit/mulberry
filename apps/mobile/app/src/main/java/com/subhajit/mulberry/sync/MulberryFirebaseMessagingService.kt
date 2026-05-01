@@ -4,6 +4,11 @@ import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.subhajit.mulberry.app.AppForegroundState
+import com.subhajit.mulberry.app.InAppSnackbarBus
+import com.subhajit.mulberry.bootstrap.BootstrapRepository
+import com.subhajit.mulberry.drawing.DrawingRepository
+import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
+import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -11,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 @AndroidEntryPoint
 class MulberryFirebaseMessagingService : FirebaseMessagingService() {
@@ -18,6 +24,12 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
     @Inject lateinit var backgroundCanvasSyncScheduler: BackgroundCanvasSyncScheduler
     @Inject lateinit var canvasNudgeNotificationHandler: CanvasNudgeNotificationHandler
     @Inject lateinit var drawReminderNotificationHandler: DrawReminderNotificationHandler
+    @Inject lateinit var bootstrapRepository: BootstrapRepository
+    @Inject lateinit var canvasSyncRepository: CanvasSyncRepository
+    @Inject lateinit var drawingRepository: DrawingRepository
+    @Inject lateinit var canvasSnapshotRenderer: CanvasSnapshotRenderer
+    @Inject lateinit var backgroundCanvasSyncCoordinator: BackgroundCanvasSyncCoordinator
+    @Inject lateinit var wallpaperCoordinator: WallpaperCoordinator
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -87,6 +99,19 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
             return
         }
 
+        val canvasModePayload = CanvasModeChangedPushPayloadParser.parse(message.data)
+        if (canvasModePayload != null) {
+            Log.i(
+                TAG,
+                "Received canvas mode changed push pairSessionId=${canvasModePayload.pairSessionId} " +
+                    "mode=${canvasModePayload.canvasMode}"
+            )
+            serviceScope.launch {
+                handleCanvasModeChanged(canvasModePayload)
+            }
+            return
+        }
+
         val payload = BackgroundCanvasSyncPayloadParser.parse(message.data) ?: return
         Log.i(
             TAG,
@@ -106,5 +131,30 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
 
     private companion object {
         const val TAG = "MulberryFcm"
+    }
+
+    private suspend fun handleCanvasModeChanged(payload: CanvasModeChangedPushPayload) {
+        val actorName = payload.actorDisplayName.takeIf { it.isNotBlank() } ?: "Your partner"
+        val modeName = payload.canvasMode.displayName
+
+        bootstrapRepository.refreshBootstrap()
+        canvasSyncRepository.reset()
+        drawingRepository.resetAllDrawingState()
+        canvasSnapshotRenderer.clearSnapshots()
+        canvasSyncRepository.start()
+
+        val refreshed = bootstrapRepository.cachedState.first()
+        backgroundCanvasSyncCoordinator.syncToLatestSnapshot(
+            pairSessionId = refreshed.pairSessionId ?: payload.pairSessionId,
+            latestRevisionHint = null
+        )
+        wallpaperCoordinator.ensureSnapshotCurrent()
+        wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+
+        if (AppForegroundState.isForeground.value) {
+            InAppSnackbarBus.show("$actorName switched canvas mode to $modeName.")
+        } else {
+            CanvasModeChangedNotificationPresenter.show(this, payload)
+        }
     }
 }

@@ -1,5 +1,7 @@
 package com.subhajit.mulberry.sync
 
+import com.subhajit.mulberry.data.bootstrap.CanvasMode
+
 data class BackgroundCanvasSyncPayload(
     val pairSessionId: String?,
     val latestRevision: Long?
@@ -28,6 +30,13 @@ data class DrawReminderPushPayload(
     val pairSessionId: String?,
     val partnerDisplayName: String,
     val reminderCount: Int
+)
+
+data class CanvasModeChangedPushPayload(
+    val pairSessionId: String?,
+    val actorUserId: String?,
+    val actorDisplayName: String,
+    val canvasMode: CanvasMode
 )
 
 object BackgroundCanvasSyncPayloadParser {
@@ -95,6 +104,23 @@ object DrawReminderPushPayloadParser {
             pairSessionId = data["pairSessionId"]?.takeIf { it.isNotBlank() },
             partnerDisplayName = data["partnerDisplayName"]?.takeIf { it.isNotBlank() } ?: "Your partner",
             reminderCount = data["reminderCount"]?.toIntOrNull() ?: 0
+        )
+    }
+}
+
+object CanvasModeChangedPushPayloadParser {
+    private const val TYPE_CANVAS_MODE_CHANGED = "CANVAS_MODE_CHANGED"
+
+    fun parse(data: Map<String, String>): CanvasModeChangedPushPayload? {
+        if (data["type"] != TYPE_CANVAS_MODE_CHANGED) return null
+        val mode = runCatching {
+            CanvasMode.valueOf(data["canvasMode"]?.trim().orEmpty())
+        }.getOrNull() ?: return null
+        return CanvasModeChangedPushPayload(
+            pairSessionId = data["pairSessionId"]?.takeIf { it.isNotBlank() },
+            actorUserId = data["actorUserId"]?.takeIf { it.isNotBlank() },
+            actorDisplayName = data["actorDisplayName"]?.takeIf { it.isNotBlank() } ?: "Your partner",
+            canvasMode = mode
         )
     }
 }

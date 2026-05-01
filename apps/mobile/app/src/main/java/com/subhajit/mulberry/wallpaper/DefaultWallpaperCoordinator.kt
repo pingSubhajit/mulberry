@@ -5,9 +5,11 @@ import android.app.WallpaperInfo
 import android.content.ComponentName
 import android.content.Context
 import com.subhajit.mulberry.app.di.ApplicationScope
+import com.subhajit.mulberry.data.bootstrap.CanvasMode
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataEntity
+import com.subhajit.mulberry.sync.CanvasKeys
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.lang.reflect.Method
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -38,6 +41,7 @@ class DefaultWallpaperCoordinator @Inject constructor(
 
     private val selectedOnHomeState = MutableStateFlow(false)
     private val selectedOnLockState = MutableStateFlow(false)
+    private val wallpaperCanvasKeyState = MutableStateFlow(CanvasKeys.SHARED)
     private val renderMutex = Mutex()
     private var wallpaperSyncEnabled: Boolean = true
     private val wallpaperInfoByWhichMethod: Method? by lazy(LazyThreadSafetyMode.NONE) {
@@ -52,14 +56,34 @@ class DefaultWallpaperCoordinator @Inject constructor(
         }
 
         applicationScope.launch {
+            sessionBootstrapRepository.state.collect { bootstrap ->
+                val partnerUserId = bootstrap.partnerUserId
+                val next = if (
+                    bootstrap.canvasMode == CanvasMode.DEDICATED &&
+                        !partnerUserId.isNullOrBlank()
+                ) {
+                    CanvasKeys.user(partnerUserId!!)
+                } else {
+                    CanvasKeys.SHARED
+                }
+                wallpaperCanvasKeyState.value = next
+            }
+        }
+
+        applicationScope.launch {
             wallpaperSyncSettingsRepository.enabled.collect { enabled ->
                 wallpaperSyncEnabled = enabled
             }
         }
 
+        val wallpaperMetadataFlow = wallpaperCanvasKeyState.flatMapLatest { canvasKey ->
+            canvasMetadataDao.observeMetadata(canvasKey).map {
+                it ?: CanvasMetadataEntity.default(canvasKey)
+            }
+        }
+
         applicationScope.launch {
-            canvasMetadataDao.observeMetadata()
-                .distinctUntilChangedByRelevantFields()
+            wallpaperMetadataFlow.distinctUntilChangedByRelevantFields()
                 .collect { metadata ->
                     if (wallpaperSyncEnabled && (metadata.isSnapshotDirty || !metadata.hasSnapshotFile())) {
                         ensureSnapshotCurrent()
@@ -80,9 +104,10 @@ class DefaultWallpaperCoordinator @Inject constructor(
     override suspend fun ensureSnapshotCurrent() {
         if (!wallpaperSyncSettingsRepository.enabled.first()) return
         renderMutex.withLock {
-            val metadata = canvasMetadataDao.getMetadata() ?: CanvasMetadataEntity.default()
+            val canvasKey = wallpaperCanvasKeyState.value
+            val metadata = canvasMetadataDao.getMetadata(canvasKey) ?: CanvasMetadataEntity.default(canvasKey)
             if (!metadata.isSnapshotDirty && metadata.hasSnapshotFile()) return
-            snapshotRenderer.renderCurrentSnapshot()
+            snapshotRenderer.renderCurrentSnapshot(canvasKey)
         }
     }
 
@@ -102,7 +127,9 @@ class DefaultWallpaperCoordinator @Inject constructor(
         selectedOnHomeState,
         selectedOnLockState,
         backgroundImageRepository.backgroundState,
-        canvasMetadataDao.observeMetadata().mapDefault()
+        wallpaperCanvasKeyState.flatMapLatest { canvasKey ->
+            canvasMetadataDao.observeMetadata(canvasKey).map { it ?: CanvasMetadataEntity.default(canvasKey) }
+        }
     ) { isSelectedOnHome, isSelectedOnLock, backgroundState, metadata ->
         wallpaperStatusCalculator.calculate(
             isWallpaperSelectedOnHome = isSelectedOnHome,
@@ -151,12 +178,8 @@ class DefaultWallpaperCoordinator @Inject constructor(
         return if (id > 0) id else null
     }
 
-    private fun Flow<CanvasMetadataEntity?>.mapDefault(): Flow<CanvasMetadataEntity> = map {
-        it ?: CanvasMetadataEntity.default()
-    }
-
-    private fun Flow<CanvasMetadataEntity?>.distinctUntilChangedByRelevantFields():
-        Flow<CanvasMetadataEntity> = mapDefault().distinctUntilChanged { old, new ->
+    private fun Flow<CanvasMetadataEntity>.distinctUntilChangedByRelevantFields(): Flow<CanvasMetadataEntity> =
+        distinctUntilChanged { old, new ->
             old.revision == new.revision &&
                 old.isSnapshotDirty == new.isSnapshotDirty &&
                 old.cachedImagePath == new.cachedImagePath

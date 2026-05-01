@@ -40,12 +40,21 @@ export interface DrawReminderPushPayload {
   reminderCount: string
 }
 
+export interface CanvasModeChangedPushPayload {
+  type: "CANVAS_MODE_CHANGED"
+  pairSessionId: string
+  actorUserId: string
+  actorDisplayName: string
+  canvasMode: "SHARED" | "DEDICATED"
+}
+
 export type MulberryPushPayload =
   | CanvasUpdatedPushPayload
   | CanvasNudgePushPayload
   | PairingConfirmedPushPayload
   | PairingDisconnectedPushPayload
   | DrawReminderPushPayload
+  | CanvasModeChangedPushPayload
 
 export interface MulberryPushMessage {
   tokens: string[]
@@ -245,6 +254,15 @@ export class PushDispatchService {
     void this.sendPairingDisconnected(pairSessionId, recipientUserId, actorUserId, actorDisplayName)
   }
 
+  enqueueCanvasModeChanged(
+    pairSessionId: string,
+    actorUserId: string,
+    actorDisplayName: string,
+    canvasMode: "SHARED" | "DEDICATED",
+  ): void {
+    void this.sendCanvasModeChanged(pairSessionId, actorUserId, actorDisplayName, canvasMode)
+  }
+
   enqueueCanvasNudge(
     pairSessionId: string,
     actorUserId: string,
@@ -406,6 +424,67 @@ export class PushDispatchService {
 
     console.info("[push] pairing confirmation sent", {
       pairSessionId,
+      invalidTokenCount: result.invalidTokens.length,
+    })
+
+    if (result.invalidTokens.length > 0) {
+      await this.revokeTokens(result.invalidTokens)
+    }
+  }
+
+  private async sendCanvasModeChanged(
+    pairSessionId: string,
+    actorUserId: string,
+    actorDisplayName: string,
+    canvasMode: "SHARED" | "DEDICATED",
+  ): Promise<void> {
+    const tokens = await this.activePeerTokens(pairSessionId, actorUserId)
+    if (tokens.length === 0) {
+      console.info("[push] no active peer tokens for canvas mode change", {
+        pairSessionId,
+        actorUserId,
+        canvasMode,
+      })
+      return
+    }
+
+    console.info("[push] sending canvas mode change", {
+      pairSessionId,
+      actorUserId,
+      canvasMode,
+      tokenCount: tokens.length,
+    })
+
+    let result: PushSendResult
+    try {
+      result = await this.sender.send({
+        tokens,
+        data: {
+          type: "CANVAS_MODE_CHANGED",
+          pairSessionId,
+          actorUserId,
+          actorDisplayName,
+          canvasMode,
+        },
+        android: {
+          priority: "high",
+          collapseKey: `canvas-mode-${pairSessionId}`,
+          ttlMs: this.canvasUpdateTtlMs,
+        },
+      })
+    } catch (error) {
+      console.error("[push] canvas mode change send failed", {
+        pairSessionId,
+        actorUserId,
+        canvasMode,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+
+    console.info("[push] canvas mode change sent", {
+      pairSessionId,
+      canvasMode,
       invalidTokenCount: result.invalidTokens.length,
     })
 

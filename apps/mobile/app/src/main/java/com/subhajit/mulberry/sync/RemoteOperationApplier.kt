@@ -19,6 +19,7 @@ class DefaultRemoteOperationApplier @Inject constructor(
             is SyncOperationPayload.AddStroke -> {
                 val payload = operation.payload
                 drawingRepository.applyRemoteAddStroke(
+                    canvasKey = operation.canvasKey,
                     stroke = Stroke(
                         id = payload.id,
                         colorArgb = payload.colorArgb,
@@ -31,6 +32,7 @@ class DefaultRemoteOperationApplier @Inject constructor(
             }
             is SyncOperationPayload.AppendPoints -> {
                 drawingRepository.applyRemoteAppendPoints(
+                    canvasKey = operation.canvasKey,
                     strokeId = operation.strokeId ?: return,
                     points = operation.payload.points,
                     serverRevision = operation.serverRevision
@@ -38,18 +40,20 @@ class DefaultRemoteOperationApplier @Inject constructor(
             }
             SyncOperationPayload.FinishStroke -> {
                 drawingRepository.applyRemoteFinishStroke(
+                    canvasKey = operation.canvasKey,
                     strokeId = operation.strokeId ?: return,
                     serverRevision = operation.serverRevision
                 )
             }
             SyncOperationPayload.DeleteStroke -> {
                 drawingRepository.applyRemoteDeleteStroke(
+                    canvasKey = operation.canvasKey,
                     strokeId = operation.strokeId ?: return,
                     serverRevision = operation.serverRevision
                 )
             }
             SyncOperationPayload.ClearCanvas -> {
-                drawingRepository.applyRemoteClearCanvas(operation.serverRevision)
+                drawingRepository.applyRemoteClearCanvas(operation.canvasKey, operation.serverRevision)
             }
         }
         syncMetadataRepository.setLastAppliedServerRevision(operation.serverRevision)

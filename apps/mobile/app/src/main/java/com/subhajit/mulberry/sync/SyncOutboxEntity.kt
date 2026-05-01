@@ -21,6 +21,7 @@ enum class SyncOutboxStatus {
 data class SyncOutboxEntity(
     @PrimaryKey val clientOperationId: String,
     val sequenceNumber: Long,
+    val canvasKey: String = CanvasKeys.SHARED,
     val type: DrawingOperationType,
     val strokeId: String?,
     val payloadJson: String,
@@ -34,6 +35,7 @@ data class SyncOutboxEntity(
     fun toDomain(): CanvasSyncOperation =
         CanvasSyncOperation(
             clientOperationId = clientOperationId,
+            canvasKey = canvasKey,
             type = type,
             strokeId = strokeId,
             payload = JsonParser.parseString(payloadJson).asJsonObject.toSyncPayload(type),
@@ -45,6 +47,7 @@ data class SyncOutboxEntity(
             SyncOutboxEntity(
                 clientOperationId = operation.clientOperationId,
                 sequenceNumber = sequenceNumber,
+                canvasKey = operation.canvasKey,
                 type = operation.type,
                 strokeId = operation.strokeId,
                 payloadJson = operation.payload.toJsonObject().toString(),

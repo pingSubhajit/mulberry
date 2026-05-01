@@ -8,6 +8,7 @@ import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.data.local.DrawingOperationEntity
 import com.subhajit.mulberry.drawing.data.local.DrawingOperationsDao
 import com.subhajit.mulberry.drawing.data.local.DrawingDao
+import com.subhajit.mulberry.drawing.data.local.strokeKey
 import com.subhajit.mulberry.drawing.data.local.toDomain
 import com.subhajit.mulberry.drawing.data.local.toEntity
 import com.subhajit.mulberry.drawing.data.local.toPointEntities
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 
 @Singleton
 class RoomDrawingRepository @Inject constructor(
@@ -38,12 +40,12 @@ class RoomDrawingRepository @Inject constructor(
     private val strokeBuilder: StrokeBuilder
 ) : DrawingRepository {
 
-    private val activeStroke = MutableStateFlow<Stroke?>(null)
+    private val activeStrokeByCanvasKey = MutableStateFlow<Map<String, Stroke?>>(emptyMap())
 
-    private val metadataFlow = canvasMetadataDao.observeMetadata()
-        .map { it ?: CanvasMetadataEntity.default() }
+    private fun metadataFlow(canvasKey: String): Flow<CanvasMetadataEntity> =
+        canvasMetadataDao.observeMetadata(canvasKey).map { it ?: CanvasMetadataEntity.default(canvasKey) }
 
-    override val toolState: Flow<ToolState> = metadataFlow.map { metadata ->
+    override fun toolState(canvasKey: String): Flow<ToolState> = metadataFlow(canvasKey).map { metadata ->
         ToolState(
             activeTool = metadata.selectedTool,
             selectedColorArgb = metadata.selectedColorArgb,
@@ -51,10 +53,10 @@ class RoomDrawingRepository @Inject constructor(
         )
     }
 
-    override val canvasState: Flow<CanvasState> = combine(
-        drawingDao.observeStrokeGraphs().map { list -> list.map { it.toDomain() } },
-        activeStroke,
-        metadataFlow
+    override fun canvasState(canvasKey: String): Flow<CanvasState> = combine(
+        drawingDao.observeStrokeGraphs(canvasKey).map { list -> list.map { it.toDomain() } },
+        activeStrokeByCanvasKey.map { it[canvasKey] },
+        metadataFlow(canvasKey)
     ) { strokes, active, metadata ->
         CanvasState(
             strokes = strokes,
@@ -69,8 +71,8 @@ class RoomDrawingRepository @Inject constructor(
         )
     }
 
-    override suspend fun startStroke(point: StrokePoint): Stroke? {
-        val metadata = currentMetadata()
+    override suspend fun startStroke(canvasKey: String, point: StrokePoint): Stroke? {
+        val metadata = currentMetadata(canvasKey)
         if (metadata.selectedTool != DrawingTool.DRAW) return null
 
         val stroke = strokeBuilder.startStroke(
@@ -84,34 +86,36 @@ class RoomDrawingRepository @Inject constructor(
                 )
             )
         )
-        activeStroke.value = stroke
+        activeStrokeByCanvasKey.update { current -> current + (canvasKey to stroke) }
         return stroke
     }
 
-    override suspend fun appendPoint(point: StrokePoint): Stroke? {
-        val active = activeStroke.value ?: return null
+    override suspend fun appendPoint(canvasKey: String, point: StrokePoint): Stroke? {
+        val active = activeStrokeByCanvasKey.value[canvasKey] ?: return null
         val next = strokeBuilder.appendPoint(
             stroke = active,
             point = point,
             samePointThreshold = normalizeStrokeWidth(
                 width = 0.5f,
-                surfaceWidth = currentMetadata().canvasWidthPx,
-                surfaceHeight = currentMetadata().canvasHeightPx
+                surfaceWidth = currentMetadata(canvasKey).canvasWidthPx,
+                surfaceHeight = currentMetadata(canvasKey).canvasHeightPx
             )
         )
-        activeStroke.value = next
+        activeStrokeByCanvasKey.update { current -> current + (canvasKey to next) }
         return next
     }
 
-    override suspend fun finishStroke(): Stroke? {
-        val committedStroke = strokeBuilder.finishStroke(activeStroke.value ?: return null) ?: return null
-        persistLocalCommittedStroke(committedStroke)
-        activeStroke.value = null
+    override suspend fun finishStroke(canvasKey: String): Stroke? {
+        val committedStroke =
+            strokeBuilder.finishStroke(activeStrokeByCanvasKey.value[canvasKey] ?: return null)
+                ?: return null
+        persistLocalCommittedStroke(canvasKey, committedStroke)
+        activeStrokeByCanvasKey.update { current -> current + (canvasKey to null) }
         return committedStroke
     }
 
-    override suspend fun setBrushColor(colorArgb: Long) {
-        val metadata = currentMetadata()
+    override suspend fun setBrushColor(canvasKey: String, colorArgb: Long) {
+        val metadata = currentMetadata(canvasKey)
         canvasMetadataDao.upsertMetadata(
             metadata.copy(
                 selectedColorArgb = colorArgb,
@@ -120,8 +124,8 @@ class RoomDrawingRepository @Inject constructor(
         )
     }
 
-    override suspend fun setBrushWidth(width: Float) {
-        val metadata = currentMetadata()
+    override suspend fun setBrushWidth(canvasKey: String, width: Float) {
+        val metadata = currentMetadata(canvasKey)
         canvasMetadataDao.upsertMetadata(
             metadata.copy(
                 selectedWidth = width.coerceIn(DrawingDefaults.MIN_WIDTH, DrawingDefaults.MAX_WIDTH),
@@ -130,8 +134,8 @@ class RoomDrawingRepository @Inject constructor(
         )
     }
 
-    override suspend fun setTool(tool: DrawingTool) {
-        val metadata = currentMetadata()
+    override suspend fun setTool(canvasKey: String, tool: DrawingTool) {
+        val metadata = currentMetadata(canvasKey)
         canvasMetadataDao.upsertMetadata(
             metadata.copy(
                 selectedTool = tool,
@@ -140,10 +144,10 @@ class RoomDrawingRepository @Inject constructor(
         )
     }
 
-    override suspend fun setCanvasViewport(widthPx: Int, heightPx: Int) {
+    override suspend fun setCanvasViewport(canvasKey: String, widthPx: Int, heightPx: Int) {
         if (widthPx <= 0 || heightPx <= 0) return
 
-        val metadata = currentMetadata()
+        val metadata = currentMetadata(canvasKey)
         if (metadata.canvasWidthPx == widthPx && metadata.canvasHeightPx == heightPx) return
 
         canvasMetadataDao.upsertMetadata(
@@ -156,17 +160,18 @@ class RoomDrawingRepository @Inject constructor(
         )
     }
 
-    override suspend fun eraseStroke(strokeId: String) {
-        activeStroke.value = null
+    override suspend fun eraseStroke(canvasKey: String, strokeId: String) {
+        activeStrokeByCanvasKey.update { current -> current + (canvasKey to null) }
         val now = System.currentTimeMillis()
         database.withTransaction {
-            val metadata = currentMetadata()
-            val deleted = drawingDao.deleteStrokeById(strokeId)
+            val metadata = currentMetadata(canvasKey)
+            val deleted = drawingDao.deleteStrokeByKey(strokeKey(canvasKey, strokeId))
             if (deleted == 0) return@withTransaction
 
             val nextRevision = metadata.revision + 1
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
+                    canvasKey = canvasKey,
                     type = DrawingOperationType.DELETE_STROKE,
                     strokeId = strokeId,
                     payload = "{}",
@@ -184,15 +189,16 @@ class RoomDrawingRepository @Inject constructor(
         }
     }
 
-    override suspend fun clearCanvas() {
-        activeStroke.value = null
+    override suspend fun clearCanvas(canvasKey: String) {
+        activeStrokeByCanvasKey.update { current -> current + (canvasKey to null) }
         val now = System.currentTimeMillis()
         database.withTransaction {
-            val metadata = currentMetadata()
+            val metadata = currentMetadata(canvasKey)
             val nextRevision = metadata.revision + 1
-            drawingDao.clearStrokes()
+            drawingDao.clearStrokes(canvasKey)
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
+                    canvasKey = canvasKey,
                     type = DrawingOperationType.CLEAR_CANVAS,
                     payload = "{}",
                     revision = nextRevision,
@@ -209,21 +215,22 @@ class RoomDrawingRepository @Inject constructor(
         }
     }
 
-    override suspend fun applyRemoteAddStroke(stroke: Stroke, serverRevision: Long) {
-        persistRemoteCommittedStroke(stroke, serverRevision)
+    override suspend fun applyRemoteAddStroke(canvasKey: String, stroke: Stroke, serverRevision: Long) {
+        persistRemoteCommittedStroke(canvasKey, stroke, serverRevision)
     }
 
-    override suspend fun persistLocalCommittedStroke(stroke: Stroke): Long {
+    override suspend fun persistLocalCommittedStroke(canvasKey: String, stroke: Stroke): Long {
         val now = System.currentTimeMillis()
         var nextRevision = 0L
         database.withTransaction {
-            val metadata = currentMetadata()
+            val metadata = currentMetadata(canvasKey)
             nextRevision = metadata.revision + 1
-            drawingDao.insertStroke(stroke.toEntity())
-            drawingDao.deleteStrokePoints(stroke.id)
-            drawingDao.insertStrokePoints(stroke.toPointEntities())
+            drawingDao.insertStroke(stroke.toEntity(canvasKey))
+            drawingDao.deleteStrokePoints(strokeKey(canvasKey, stroke.id))
+            drawingDao.insertStrokePoints(stroke.toPointEntities(canvasKey))
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
+                    canvasKey = canvasKey,
                     type = DrawingOperationType.ADD_STROKE,
                     strokeId = stroke.id,
                     payload = stroke.addStrokePayloadJson(),
@@ -234,6 +241,7 @@ class RoomDrawingRepository @Inject constructor(
             if (stroke.points.size > 1) {
                 drawingOperationsDao.insertOperation(
                     DrawingOperationEntity(
+                        canvasKey = canvasKey,
                         type = DrawingOperationType.APPEND_POINTS,
                         strokeId = stroke.id,
                         payload = pointsPayloadJson(stroke.points.drop(1)),
@@ -255,15 +263,16 @@ class RoomDrawingRepository @Inject constructor(
         return nextRevision
     }
 
-    override suspend fun persistRemoteCommittedStroke(stroke: Stroke, serverRevision: Long) {
+    override suspend fun persistRemoteCommittedStroke(canvasKey: String, stroke: Stroke, serverRevision: Long) {
         val now = System.currentTimeMillis()
         database.withTransaction {
-            val metadata = currentMetadata()
-            drawingDao.insertStroke(stroke.toEntity())
-            drawingDao.deleteStrokePoints(stroke.id)
-            drawingDao.insertStrokePoints(stroke.toPointEntities())
+            val metadata = currentMetadata(canvasKey)
+            drawingDao.insertStroke(stroke.toEntity(canvasKey))
+            drawingDao.deleteStrokePoints(strokeKey(canvasKey, stroke.id))
+            drawingDao.insertStrokePoints(stroke.toPointEntities(canvasKey))
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
+                    canvasKey = canvasKey,
                     type = DrawingOperationType.ADD_STROKE,
                     strokeId = stroke.id,
                     payload = stroke.addStrokePayloadJson(),
@@ -276,6 +285,7 @@ class RoomDrawingRepository @Inject constructor(
             if (stroke.points.size > 1) {
                 drawingOperationsDao.insertOperation(
                     DrawingOperationEntity(
+                        canvasKey = canvasKey,
                         type = DrawingOperationType.APPEND_POINTS,
                         strokeId = stroke.id,
                         payload = pointsPayloadJson(stroke.points.drop(1)),
@@ -297,6 +307,7 @@ class RoomDrawingRepository @Inject constructor(
     }
 
     override suspend fun applyRemoteAppendPoints(
+        canvasKey: String,
         strokeId: String,
         points: List<StrokePoint>,
         serverRevision: Long
@@ -304,10 +315,12 @@ class RoomDrawingRepository @Inject constructor(
         if (points.isEmpty()) return
         val now = System.currentTimeMillis()
         database.withTransaction {
-            val metadata = currentMetadata()
-            if (!drawingDao.strokeExists(strokeId)) {
+            val metadata = currentMetadata(canvasKey)
+            val strokeKey = strokeKey(canvasKey, strokeId)
+            if (!drawingDao.strokeExists(strokeKey)) {
                 drawingOperationsDao.insertOperation(
                     DrawingOperationEntity(
+                        canvasKey = canvasKey,
                         type = DrawingOperationType.APPEND_POINTS,
                         strokeId = strokeId,
                         payload = pointsPayloadJson(points),
@@ -325,11 +338,11 @@ class RoomDrawingRepository @Inject constructor(
                 )
                 return@withTransaction
             }
-            val startIndex = drawingDao.maxPointIndex(strokeId) + 1
+            val startIndex = drawingDao.maxPointIndex(strokeKey) + 1
             drawingDao.insertStrokePoints(
                 points.mapIndexed { index, point ->
                     com.subhajit.mulberry.drawing.data.local.StrokePointEntity(
-                        strokeId = strokeId,
+                        strokeKey = strokeKey,
                         pointIndex = startIndex + index,
                         x = point.x,
                         y = point.y
@@ -338,6 +351,7 @@ class RoomDrawingRepository @Inject constructor(
             )
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
+                    canvasKey = canvasKey,
                     type = DrawingOperationType.APPEND_POINTS,
                     strokeId = strokeId,
                     payload = pointsPayloadJson(points),
@@ -357,12 +371,13 @@ class RoomDrawingRepository @Inject constructor(
         }
     }
 
-    override suspend fun applyRemoteFinishStroke(strokeId: String, serverRevision: Long) {
+    override suspend fun applyRemoteFinishStroke(canvasKey: String, strokeId: String, serverRevision: Long) {
         val now = System.currentTimeMillis()
         database.withTransaction {
-            val metadata = currentMetadata()
+            val metadata = currentMetadata(canvasKey)
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
+                    canvasKey = canvasKey,
                     type = DrawingOperationType.FINISH_STROKE,
                     strokeId = strokeId,
                     payload = "{}",
@@ -382,13 +397,14 @@ class RoomDrawingRepository @Inject constructor(
         }
     }
 
-    override suspend fun applyRemoteDeleteStroke(strokeId: String, serverRevision: Long) {
+    override suspend fun applyRemoteDeleteStroke(canvasKey: String, strokeId: String, serverRevision: Long) {
         val now = System.currentTimeMillis()
         database.withTransaction {
-            val metadata = currentMetadata()
-            drawingDao.deleteStrokeById(strokeId)
+            val metadata = currentMetadata(canvasKey)
+            drawingDao.deleteStrokeByKey(strokeKey(canvasKey, strokeId))
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
+                    canvasKey = canvasKey,
                     type = DrawingOperationType.DELETE_STROKE,
                     strokeId = strokeId,
                     payload = "{}",
@@ -408,14 +424,15 @@ class RoomDrawingRepository @Inject constructor(
         }
     }
 
-    override suspend fun applyRemoteClearCanvas(serverRevision: Long) {
-        activeStroke.value = null
+    override suspend fun applyRemoteClearCanvas(canvasKey: String, serverRevision: Long) {
+        activeStrokeByCanvasKey.update { current -> current + (canvasKey to null) }
         val now = System.currentTimeMillis()
         database.withTransaction {
-            val metadata = currentMetadata()
-            drawingDao.clearStrokes()
+            val metadata = currentMetadata(canvasKey)
+            drawingDao.clearStrokes(canvasKey)
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
+                    canvasKey = canvasKey,
                     type = DrawingOperationType.CLEAR_CANVAS,
                     payload = "{}",
                     revision = maxOf(metadata.revision + 1, serverRevision),
@@ -434,19 +451,20 @@ class RoomDrawingRepository @Inject constructor(
         }
     }
 
-    override suspend fun replaceWithRemoteSnapshot(strokes: List<Stroke>, serverRevision: Long) {
-        activeStroke.value = null
+    override suspend fun replaceWithRemoteSnapshot(canvasKey: String, strokes: List<Stroke>, serverRevision: Long) {
+        activeStrokeByCanvasKey.update { current -> current + (canvasKey to null) }
         val now = System.currentTimeMillis()
         database.withTransaction {
-            val metadata = currentMetadata()
-            drawingDao.clearStrokes()
+            val metadata = currentMetadata(canvasKey)
+            drawingDao.clearStrokes(canvasKey)
             strokes.forEach { stroke ->
-                drawingDao.insertStroke(stroke.toEntity())
-                drawingDao.deleteStrokePoints(stroke.id)
-                drawingDao.insertStrokePoints(stroke.toPointEntities())
+                drawingDao.insertStroke(stroke.toEntity(canvasKey))
+                drawingDao.deleteStrokePoints(strokeKey(canvasKey, stroke.id))
+                drawingDao.insertStrokePoints(stroke.toPointEntities(canvasKey))
             }
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
+                    canvasKey = canvasKey,
                     type = DrawingOperationType.CLEAR_CANVAS,
                     payload = """{"snapshotRestore":true,"strokeCount":${strokes.size}}""",
                     revision = maxOf(metadata.revision + 1, serverRevision),
@@ -466,16 +484,16 @@ class RoomDrawingRepository @Inject constructor(
     }
 
     override suspend fun resetAllDrawingState() {
-        activeStroke.value = null
+        activeStrokeByCanvasKey.value = emptyMap()
         database.withTransaction {
-            drawingDao.clearStrokes()
-            drawingOperationsDao.clearOperations()
-            canvasMetadataDao.upsertMetadata(CanvasMetadataEntity.default())
+            drawingDao.clearAllStrokes()
+            drawingOperationsDao.clearAllOperations()
+            canvasMetadataDao.clearAllMetadata()
         }
     }
 
-    private suspend fun currentMetadata(): CanvasMetadataEntity =
-        canvasMetadataDao.getMetadata() ?: CanvasMetadataEntity.default()
+    private suspend fun currentMetadata(canvasKey: String): CanvasMetadataEntity =
+        canvasMetadataDao.getMetadata(canvasKey) ?: CanvasMetadataEntity.default(canvasKey)
 }
 
 private fun Stroke.addStrokePayloadJson(): String {

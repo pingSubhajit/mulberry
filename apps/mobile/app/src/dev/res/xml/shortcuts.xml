@@ -1,19 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
-        android:shortcutId="clear_doodles"
-        android:enabled="true"
-        android:icon="@drawable/ic_shortcut_clear_doodles"
-        android:shortcutShortLabel="@string/shortcut_clear_doodles_short_label"
-        android:shortcutLongLabel="@string/shortcut_clear_doodles_long_label"
-        android:shortcutDisabledMessage="@string/shortcut_disabled_message">
-        <intent
-            android:action="com.subhajit.mulberry.action.CLEAR_DOODLES"
-            android:targetPackage="com.subhajit.mulberry.dev"
-            android:targetClass="com.subhajit.mulberry.ClearDoodlesShortcutActivity" />
-    </shortcut>
-
-    <shortcut
         android:shortcutId="change_wallpaper"
         android:enabled="true"
         android:icon="@drawable/ic_shortcut_change_wallpaper"

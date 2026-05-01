@@ -27,6 +27,9 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             val recipientDisplayName = preferences[PreferenceStorage.pendingRecipientDisplayName]
             val inviteStatus = preferences[PreferenceStorage.pendingInviteStatus]
                 ?.let(InviteStatus::valueOf)
+            val canvasMode = preferences[PreferenceStorage.canvasMode]
+                ?.let { raw -> runCatching { CanvasMode.valueOf(raw) }.getOrNull() }
+                ?: CanvasMode.SHARED
 
             SessionBootstrapState(
                 authStatus = preferences[PreferenceStorage.authStatus]
@@ -38,6 +41,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                 userEmail = preferences[PreferenceStorage.userEmail],
                 userPhotoUrl = preferences[PreferenceStorage.userPhotoUrl],
                 userDisplayName = preferences[PreferenceStorage.userDisplayName],
+                partnerUserId = preferences[PreferenceStorage.partnerUserId],
                 partnerPhotoUrl = preferences[PreferenceStorage.partnerPhotoUrl],
                 partnerDisplayName = preferences[PreferenceStorage.partnerDisplayName],
                 anniversaryDate = preferences[PreferenceStorage.anniversaryDate],
@@ -64,7 +68,11 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                     )
                 } else {
                     null
-                }
+                },
+                canvasMode = canvasMode,
+                canvasModeNextToggleAt = preferences[PreferenceStorage.canvasModeNextToggleAt],
+                dedicatedCanvasAvailable =
+                    preferences[PreferenceStorage.dedicatedCanvasAvailable] ?: false
             )
         }
         .distinctUntilChanged()
@@ -100,6 +108,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             updateNullable(preferences, PreferenceStorage.userEmail, state.userEmail)
             updateNullable(preferences, PreferenceStorage.userPhotoUrl, state.userPhotoUrl)
             updateNullable(preferences, PreferenceStorage.userDisplayName, state.userDisplayName)
+            updateNullable(preferences, PreferenceStorage.partnerUserId, state.partnerUserId)
             updateNullable(preferences, PreferenceStorage.partnerPhotoUrl, state.partnerPhotoUrl)
             updateNullable(preferences, PreferenceStorage.partnerDisplayName, state.partnerDisplayName)
             updateNullable(preferences, PreferenceStorage.anniversaryDate, state.anniversaryDate)
@@ -112,6 +121,13 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences[PreferenceStorage.currentStreakDays] = state.currentStreakDays
             preferences[PreferenceStorage.pairingStatus] = state.pairingStatus.name
             updateNullable(preferences, PreferenceStorage.pairSessionId, state.pairSessionId)
+            preferences[PreferenceStorage.canvasMode] = state.canvasMode.name
+            updateNullable(
+                preferences,
+                PreferenceStorage.canvasModeNextToggleAt,
+                state.canvasModeNextToggleAt
+            )
+            preferences[PreferenceStorage.dedicatedCanvasAvailable] = state.dedicatedCanvasAvailable
 
             if (state.pendingInvite == null) {
                 preferences.remove(PreferenceStorage.pendingInviteId)
@@ -194,12 +210,18 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences.remove(PreferenceStorage.userEmail)
             preferences.remove(PreferenceStorage.userPhotoUrl)
             preferences.remove(PreferenceStorage.userDisplayName)
+            preferences.remove(PreferenceStorage.partnerUserId)
             preferences.remove(PreferenceStorage.partnerPhotoUrl)
             preferences.remove(PreferenceStorage.partnerDisplayName)
             preferences.remove(PreferenceStorage.anniversaryDate)
             preferences.remove(PreferenceStorage.partnerProfileNextUpdateAt)
+            preferences.remove(PreferenceStorage.pairedAt)
+            preferences.remove(PreferenceStorage.currentStreakDays)
             preferences.remove(PreferenceStorage.pairingStatus)
             preferences.remove(PreferenceStorage.pairSessionId)
+            preferences.remove(PreferenceStorage.canvasMode)
+            preferences.remove(PreferenceStorage.canvasModeNextToggleAt)
+            preferences.remove(PreferenceStorage.dedicatedCanvasAvailable)
             preferences.remove(PreferenceStorage.pendingInviteId)
             preferences.remove(PreferenceStorage.pendingInviteCode)
             preferences.remove(PreferenceStorage.pendingInviterDisplayName)

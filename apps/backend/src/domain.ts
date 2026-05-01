@@ -18,12 +18,14 @@ export const CanvasOperationTypes = [
   "DELETE_STROKE",
   "CLEAR_CANVAS",
 ] as const
+export const CanvasModes = ["SHARED", "DEDICATED"] as const
 export const DevicePlatforms = ["ANDROID"] as const
 
 export type AuthStatus = (typeof AuthStatuses)[number]
 export type PairingStatus = (typeof PairingStatuses)[number]
 export type InviteStatus = (typeof InviteStatuses)[number]
 export type CanvasOperationType = (typeof CanvasOperationTypes)[number]
+export type CanvasMode = (typeof CanvasModes)[number]
 export type DevicePlatform = (typeof DevicePlatforms)[number]
 
 export interface InviteSummary {
@@ -42,6 +44,7 @@ export interface BootstrapResponse {
   userEmail: string | null
   userPhotoUrl: string | null
   userDisplayName: string | null
+  partnerUserId: string | null
   partnerPhotoUrl: string | null
   partnerDisplayName: string | null
   anniversaryDate: string | null
@@ -51,6 +54,9 @@ export interface BootstrapResponse {
   pairingStatus: PairingStatus
   pairSessionId: string | null
   invite: InviteSummary | null
+  canvasMode: CanvasMode
+  canvasModeNextToggleAt: string | null
+  dedicatedCanvasAvailable: boolean
 }
 
 export interface AuthResponse {
@@ -84,6 +90,7 @@ export interface CanvasOperationEnvelope {
   clientOperationId: string
   actorUserId: string
   pairSessionId: string
+  canvasKey: string
   type: CanvasOperationType
   strokeId: string | null
   payload: unknown
@@ -94,6 +101,7 @@ export interface CanvasOperationEnvelope {
 
 export interface ClientCanvasOperation {
   clientOperationId: string
+  canvasKey?: string | null
   type: CanvasOperationType
   strokeId?: string | null
   payload: unknown
@@ -113,6 +121,7 @@ export interface CanvasOpsResponse {
 
 export interface CanvasSnapshotResponse {
   pairSessionId: string
+  canvasKey: string
   snapshotRevision: number
   latestRevision: number
   revision: number
@@ -124,6 +133,7 @@ export interface RegisterFcmTokenRequest {
   token: string
   platform: DevicePlatform
   appEnvironment: string
+  supportsDedicatedCanvas?: boolean
 }
 
 export interface DeviceTokenRecord {
@@ -182,6 +192,9 @@ export interface PairSessionRecord {
   user_one_id: string
   user_two_id: string
   created_at: Date | string
+  canvas_mode?: CanvasMode
+  canvas_mode_updated_at?: Date | string
+  canvas_mode_next_toggle_at?: Date | string
 }
 
 export interface CanvasOperationRecord {
@@ -190,6 +203,7 @@ export interface CanvasOperationRecord {
   server_revision: number
   client_operation_id: string
   actor_user_id: string
+  canvas_key: string
   type: CanvasOperationType
   stroke_id: string | null
   payload_json: unknown
@@ -203,6 +217,7 @@ export interface DeviceTokenRow {
   token: string
   platform: DevicePlatform
   app_environment: string
+  supports_dedicated_canvas?: boolean
   last_seen_at: Date | string
   revoked_at: Date | string | null
 }

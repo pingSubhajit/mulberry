@@ -20,6 +20,11 @@ enum class InviteStatus(val displayName: String) {
     EXPIRED("Expired")
 }
 
+enum class CanvasMode(val displayName: String) {
+    SHARED("Shared"),
+    DEDICATED("Dedicated")
+}
+
 data class PendingInviteSummary(
     val inviteId: String,
     val code: String,
@@ -42,6 +47,7 @@ data class SessionBootstrapState(
     val userEmail: String? = null,
     val userPhotoUrl: String? = null,
     val userDisplayName: String? = null,
+    val partnerUserId: String? = null,
     val partnerPhotoUrl: String? = null,
     val partnerDisplayName: String? = null,
     val anniversaryDate: String? = null,
@@ -50,5 +56,8 @@ data class SessionBootstrapState(
     val currentStreakDays: Int = 0,
     val pairingStatus: PairingStatus = PairingStatus.UNPAIRED,
     val pairSessionId: String? = null,
-    val pendingInvite: PendingInviteSummary? = null
+    val pendingInvite: PendingInviteSummary? = null,
+    val canvasMode: CanvasMode = CanvasMode.SHARED,
+    val canvasModeNextToggleAt: String? = null,
+    val dedicatedCanvasAvailable: Boolean = false
 )

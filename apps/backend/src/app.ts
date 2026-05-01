@@ -119,11 +119,13 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       token?: string
       platform?: "ANDROID"
       appEnvironment?: string
+      supportsDedicatedCanvas?: boolean
     }
     return service.registerFcmToken(requireBearerToken(request), {
       token: body.token ?? "",
       platform: body.platform ?? "ANDROID",
       appEnvironment: body.appEnvironment ?? "",
+      supportsDedicatedCanvas: Boolean(body.supportsDedicatedCanvas),
     })
   })
 
@@ -240,8 +242,14 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return { operations: accepted }
   })
 
+  app.post("/canvas/mode", async (request) => {
+    const body = request.body as { mode?: string }
+    return service.setCanvasMode(requireBearerToken(request), body.mode ?? "")
+  })
+
   app.get("/canvas/snapshot", async (request) => {
-    return service.getCanvasSnapshot(requireBearerToken(request))
+    const query = request.query as { canvasKey?: string }
+    return service.getCanvasSnapshot(requireBearerToken(request), query.canvasKey)
   })
 
   app.get("/wallpapers", async (request) => {

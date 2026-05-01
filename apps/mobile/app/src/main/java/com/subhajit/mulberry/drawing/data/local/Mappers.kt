@@ -3,16 +3,18 @@ package com.subhajit.mulberry.drawing.data.local
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 
-fun Stroke.toEntity(): StrokeEntity = StrokeEntity(
-    id = id,
+fun Stroke.toEntity(canvasKey: String): StrokeEntity = StrokeEntity(
+    key = strokeKey(canvasKey, id),
+    canvasKey = canvasKey,
+    strokeId = id,
     colorArgb = colorArgb,
     width = width,
     createdAt = createdAt
 )
 
-fun Stroke.toPointEntities(): List<StrokePointEntity> = points.mapIndexed { index, point ->
+fun Stroke.toPointEntities(canvasKey: String): List<StrokePointEntity> = points.mapIndexed { index, point ->
     StrokePointEntity(
-        strokeId = id,
+        strokeKey = strokeKey(canvasKey, id),
         pointIndex = index,
         x = point.x,
         y = point.y
@@ -20,7 +22,7 @@ fun Stroke.toPointEntities(): List<StrokePointEntity> = points.mapIndexed { inde
 }
 
 fun StrokeWithPoints.toDomain(): Stroke = Stroke(
-    id = stroke.id,
+    id = stroke.strokeId,
     colorArgb = stroke.colorArgb,
     width = stroke.width,
     createdAt = stroke.createdAt,

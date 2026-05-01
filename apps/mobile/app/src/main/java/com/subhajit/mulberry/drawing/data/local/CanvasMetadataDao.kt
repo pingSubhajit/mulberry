@@ -7,12 +7,18 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CanvasMetadataDao {
-    @Query("SELECT * FROM canvas_metadata_entity WHERE id = :metadataId")
-    fun observeMetadata(metadataId: Int = CanvasMetadataEntity.METADATA_ID): Flow<CanvasMetadataEntity?>
+    @Query("SELECT * FROM canvas_metadata_entity WHERE canvasKey = :canvasKey")
+    fun observeMetadata(canvasKey: String): Flow<CanvasMetadataEntity?>
 
-    @Query("SELECT * FROM canvas_metadata_entity WHERE id = :metadataId")
-    suspend fun getMetadata(metadataId: Int = CanvasMetadataEntity.METADATA_ID): CanvasMetadataEntity?
+    @Query("SELECT * FROM canvas_metadata_entity WHERE canvasKey = :canvasKey")
+    suspend fun getMetadata(canvasKey: String): CanvasMetadataEntity?
 
     @Upsert
     suspend fun upsertMetadata(metadata: CanvasMetadataEntity)
+
+    @Query("DELETE FROM canvas_metadata_entity WHERE canvasKey = :canvasKey")
+    suspend fun deleteMetadata(canvasKey: String)
+
+    @Query("DELETE FROM canvas_metadata_entity")
+    suspend fun clearAllMetadata()
 }

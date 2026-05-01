@@ -32,16 +32,16 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
     private val appConfig: AppConfig
 ) : CanvasSnapshotRenderer {
 
-    override suspend fun renderCurrentSnapshot(): SnapshotRenderResult = withContext(Dispatchers.IO) {
+    override suspend fun renderCurrentSnapshot(canvasKey: String): SnapshotRenderResult = withContext(Dispatchers.IO) {
         val dimensions = resolveSnapshotDimensions()
         val snapshotFile = WallpaperFiles.snapshotFile(context)
         snapshotFile.parentFile?.mkdirs()
-        var capturedMetadata = CanvasMetadataEntity.default()
+        var capturedMetadata = CanvasMetadataEntity.default(canvasKey)
         var strokes = emptyList<Stroke>()
 
         database.withTransaction {
-            capturedMetadata = canvasMetadataDao.getMetadata() ?: CanvasMetadataEntity.default()
-            strokes = drawingDao.getStrokeGraphs().map { it.toDomain() }
+            capturedMetadata = canvasMetadataDao.getMetadata(canvasKey) ?: CanvasMetadataEntity.default(canvasKey)
+            strokes = drawingDao.getStrokeGraphs(canvasKey).map { it.toDomain() }
         }
 
         val bitmap = createBitmap(dimensions.x, dimensions.y)
@@ -62,7 +62,7 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
 
         val renderedAt = System.currentTimeMillis()
         database.withTransaction {
-            val latestMetadata = canvasMetadataDao.getMetadata() ?: CanvasMetadataEntity.default()
+            val latestMetadata = canvasMetadataDao.getMetadata(canvasKey) ?: CanvasMetadataEntity.default(canvasKey)
             val snapshotMatchesCurrent = latestMetadata.revision == capturedMetadata.revision
             canvasMetadataDao.upsertMetadata(
                 latestMetadata.copy(

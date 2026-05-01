@@ -11,9 +11,11 @@ import com.subhajit.mulberry.core.config.AppConfig
 import com.subhajit.mulberry.core.flags.FeatureFlag
 import com.subhajit.mulberry.core.flags.FeatureFlagProvider
 import com.subhajit.mulberry.core.flags.FeatureFlags
+import com.subhajit.mulberry.data.bootstrap.CanvasMode
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 import com.subhajit.mulberry.drawing.DrawingRepository
+import com.subhajit.mulberry.network.CanvasModeRequest
 import com.subhajit.mulberry.network.DisplayNameRequest
 import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.network.PartnerProfileRequest
@@ -37,6 +39,7 @@ import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import java.time.Instant
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
@@ -73,6 +76,7 @@ sealed interface SettingsEffect {
     data object NavigateHome : SettingsEffect
     data object LaunchInAppReviewManual : SettingsEffect
     data class Message(val text: String) : SettingsEffect
+    data class ConfirmCanvasModeToggle(val desiredMode: CanvasMode) : SettingsEffect
 }
 
 @HiltViewModel
@@ -279,6 +283,62 @@ class SettingsViewModel @Inject constructor(
             val bootstrap = apiService.updatePartnerProfilePhoto(uri.toImagePart()).toDomainBootstrap()
             sessionRepository.cacheBootstrap(bootstrap)
             _effects.emit(SettingsEffect.Message("Partner photo updated"))
+        }
+    }
+
+    fun onCanvasModeToggleRequested(desiredMode: CanvasMode) {
+        val state = uiState.value
+        val bootstrap = state.bootstrapState
+        val isPaired = bootstrap.pairingStatus == com.subhajit.mulberry.data.bootstrap.PairingStatus.PAIRED
+        val nextToggleAt = bootstrap.canvasModeNextToggleAt
+        val now = Instant.now()
+        val cooldownActive = runCatching {
+            !nextToggleAt.isNullOrBlank() && Instant.parse(nextToggleAt).isAfter(now)
+        }.getOrDefault(false)
+
+        viewModelScope.launch {
+            when {
+                state.isBusy -> _effects.emit(SettingsEffect.Message("Please wait…"))
+                !isPaired -> _effects.emit(SettingsEffect.Message("Pair with a partner to change canvas mode."))
+                desiredMode == CanvasMode.DEDICATED && !bootstrap.dedicatedCanvasAvailable ->
+                    _effects.emit(SettingsEffect.Message("Dedicated canvas isn’t available yet. Ask your partner to update Mulberry."))
+                state.syncState != SyncState.Connected ->
+                    _effects.emit(SettingsEffect.Message("Connect to sync before changing canvas mode."))
+                state.pendingOperationCount > 0 ->
+                    _effects.emit(SettingsEffect.Message("Finish syncing before changing canvas mode."))
+                cooldownActive ->
+                    _effects.emit(SettingsEffect.Message("Canvas mode can only be changed once a day. Try again later."))
+                else -> _effects.emit(SettingsEffect.ConfirmCanvasModeToggle(desiredMode))
+            }
+        }
+    }
+
+    fun onCanvasModeToggleConfirmed(desiredMode: CanvasMode) {
+        viewModelScope.launchWithBusy {
+            val bootstrap = apiService.setCanvasMode(
+                CanvasModeRequest(mode = desiredMode.name)
+            ).toDomainBootstrap()
+            sessionRepository.cacheBootstrap(bootstrap)
+
+            // Ensure the runtime + wallpaper immediately pivot to the new mode.
+            canvasSyncRepository.reset()
+            drawingRepository.resetAllDrawingState()
+            canvasSnapshotRenderer.clearSnapshots()
+            canvasSyncRepository.start()
+
+            backgroundCanvasSyncCoordinator.syncToLatestSnapshot(
+                pairSessionId = bootstrap.pairSessionId,
+                latestRevisionHint = null
+            )
+            wallpaperCoordinator.ensureSnapshotCurrent()
+            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+
+            // TODO: Add a notification preference for canvas mode changes.
+            _effects.emit(
+                SettingsEffect.Message(
+                    "Canvas mode updated to ${desiredMode.displayName}. Your partner will be notified."
+                )
+            )
         }
     }
 

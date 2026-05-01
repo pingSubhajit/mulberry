@@ -36,7 +36,7 @@ interface CanvasRuntime {
     val renderState: StateFlow<CanvasRenderState>
     val outboundOperations: Flow<CanvasSyncOperation>
 
-    fun start(pairSessionId: String, userId: String)
+    fun start(pairSessionId: String, userId: String, canvasKey: String)
     fun stop()
     fun reset()
     fun submit(event: CanvasRuntimeEvent)
@@ -62,6 +62,8 @@ class DefaultCanvasRuntime @Inject constructor(
 
     private var activePairSessionId: String? = null
     private var activeUserId: String? = null
+    private var activeCanvasKey: String? = null
+    private var toolStateJob: kotlinx.coroutines.Job? = null
     private var activeAppendHz = DEFAULT_APPEND_HZ
     private var lastAppendFlushAt = 0L
     private val pendingAppendPoints = mutableListOf<StrokePoint>()
@@ -82,23 +84,25 @@ class DefaultCanvasRuntime @Inject constructor(
                 }
             }
         }
-        applicationScope.launch {
-            drawingRepository.toolState.collect { toolState ->
+    }
+
+    override fun start(pairSessionId: String, userId: String, canvasKey: String) {
+        activePairSessionId = pairSessionId
+        activeUserId = userId
+        activeCanvasKey = canvasKey
+        clearHistory()
+        toolStateJob?.cancel()
+        toolStateJob = applicationScope.launch {
+            drawingRepository.toolState(canvasKey).collect { toolState ->
                 _renderState.update { current ->
                     val next = current.copy(toolState = toolState)
                     next.withUndoRedoAvailability()
                 }
             }
         }
-    }
-
-    override fun start(pairSessionId: String, userId: String) {
-        activePairSessionId = pairSessionId
-        activeUserId = userId
-        clearHistory()
         applicationScope.launch {
-            val canvasState = persistenceStore.loadCanvasState()
-            val toolState = persistenceStore.loadToolState()
+            val canvasState = persistenceStore.loadCanvasState(canvasKey)
+            val toolState = persistenceStore.loadToolState(canvasKey)
             _renderState.value = _renderState.value.copy(
                 committedStrokes = canvasState.strokes,
                 localActiveStroke = null,
@@ -114,6 +118,9 @@ class DefaultCanvasRuntime @Inject constructor(
     override fun stop() {
         activePairSessionId = null
         activeUserId = null
+        activeCanvasKey = null
+        toolStateJob?.cancel()
+        toolStateJob = null
         pendingAppendPoints.clear()
         clearHistory()
         _renderState.update { current ->
@@ -129,6 +136,9 @@ class DefaultCanvasRuntime @Inject constructor(
     override fun reset() {
         activePairSessionId = null
         activeUserId = null
+        activeCanvasKey = null
+        toolStateJob?.cancel()
+        toolStateJob = null
         pendingAppendPoints.clear()
         canvasViewportWidthPx = 0
         canvasViewportHeightPx = 0
@@ -140,6 +150,8 @@ class DefaultCanvasRuntime @Inject constructor(
             ).withUndoRedoAvailability()
         }
     }
+
+    private fun requireActiveCanvasKey(): String = activeCanvasKey ?: com.subhajit.mulberry.sync.CanvasKeys.SHARED
 
     override fun submit(event: CanvasRuntimeEvent) {
         events.trySend(RuntimeEventEnvelope(event))
@@ -204,6 +216,7 @@ class DefaultCanvasRuntime @Inject constructor(
         outbound.send(
             newClientOperation(
                 type = DrawingOperationType.ADD_STROKE,
+                canvasKey = requireActiveCanvasKey(),
                 strokeId = stroke.id,
                 payload = stroke.toAddStrokePayload()
             )
@@ -230,7 +243,7 @@ class DefaultCanvasRuntime @Inject constructor(
         val active = _renderState.value.localActiveStroke ?: return
         val finished = strokeBuilder.finishStroke(active) ?: return
         flushAppendPointsIfNeeded(force = true)
-        persistenceStore.persistLocalCommittedStroke(finished)
+        persistenceStore.persistLocalCommittedStroke(requireActiveCanvasKey(), finished)
         recordLocalAction(HistoryAction.DrawAction(finished))
         _renderState.update {
             val next = it.copy(
@@ -243,6 +256,7 @@ class DefaultCanvasRuntime @Inject constructor(
         outbound.send(
             newClientOperation(
                 type = DrawingOperationType.FINISH_STROKE,
+                canvasKey = requireActiveCanvasKey(),
                 strokeId = finished.id,
                 payload = SyncOperationPayload.FinishStroke
             )
@@ -262,7 +276,7 @@ class DefaultCanvasRuntime @Inject constructor(
         val committedStroke = _renderState.value.committedStrokes.firstOrNull { it.id == stroke.id }
             ?: return
         recordLocalAction(HistoryAction.EraseAction(stroke.id, committedStroke))
-        persistenceStore.persistErase(stroke.id)
+        persistenceStore.persistErase(requireActiveCanvasKey(), stroke.id)
         _renderState.update {
             val next = it.copy(
                 committedStrokes = it.committedStrokes.filterNot { committed ->
@@ -276,6 +290,7 @@ class DefaultCanvasRuntime @Inject constructor(
         outbound.send(
             newClientOperation(
                 type = DrawingOperationType.DELETE_STROKE,
+                canvasKey = requireActiveCanvasKey(),
                 strokeId = stroke.id,
                 payload = SyncOperationPayload.DeleteStroke
             )
@@ -283,7 +298,7 @@ class DefaultCanvasRuntime @Inject constructor(
     }
 
     private suspend fun handleClearCanvas() {
-        persistenceStore.persistClear()
+        persistenceStore.persistClear(requireActiveCanvasKey())
         clearHistory()
         _renderState.update {
             val next = it.copy(
@@ -297,6 +312,7 @@ class DefaultCanvasRuntime @Inject constructor(
         outbound.send(
             newClientOperation(
                 type = DrawingOperationType.CLEAR_CANVAS,
+                canvasKey = requireActiveCanvasKey(),
                 strokeId = null,
                 payload = SyncOperationPayload.ClearCanvas
             )
@@ -304,6 +320,7 @@ class DefaultCanvasRuntime @Inject constructor(
     }
 
     private suspend fun applyRemoteOperation(operation: ServerCanvasOperation) {
+        if (operation.canvasKey != requireActiveCanvasKey()) return
         when (operation.payload) {
             is SyncOperationPayload.AddStroke -> {
                 val payload = operation.payload
@@ -329,7 +346,11 @@ class DefaultCanvasRuntime @Inject constructor(
             SyncOperationPayload.FinishStroke -> {
                 val strokeId = operation.strokeId ?: return
                 val finished = _renderState.value.remoteActiveStrokes[strokeId] ?: return
-                persistenceStore.persistRemoteCommittedStroke(finished, operation.serverRevision)
+                persistenceStore.persistRemoteCommittedStroke(
+                    requireActiveCanvasKey(),
+                    finished,
+                    operation.serverRevision
+                )
                 _renderState.update {
                     it.copy(
                         committedStrokes = it.committedStrokes
@@ -342,7 +363,7 @@ class DefaultCanvasRuntime @Inject constructor(
             }
             SyncOperationPayload.DeleteStroke -> {
                 val strokeId = operation.strokeId ?: return
-                persistenceStore.persistErase(strokeId, operation.serverRevision)
+                persistenceStore.persistErase(requireActiveCanvasKey(), strokeId, operation.serverRevision)
                 _renderState.update {
                     val next = it.copy(
                         committedStrokes = it.committedStrokes.filterNot { stroke ->
@@ -356,7 +377,7 @@ class DefaultCanvasRuntime @Inject constructor(
                 }
             }
             SyncOperationPayload.ClearCanvas -> {
-                persistenceStore.persistClear(operation.serverRevision)
+                persistenceStore.persistClear(requireActiveCanvasKey(), operation.serverRevision)
                 clearHistory()
                 _renderState.update {
                     val next = it.copy(
@@ -373,7 +394,7 @@ class DefaultCanvasRuntime @Inject constructor(
     }
 
     private suspend fun handleRecoverySnapshot(event: CanvasRuntimeEvent.RecoverySnapshot) {
-        persistenceStore.replaceFromServerSnapshot(event.strokes, event.serverRevision)
+        persistenceStore.replaceFromServerSnapshot(requireActiveCanvasKey(), event.strokes, event.serverRevision)
         clearHistory()
         _renderState.update {
             val next = it.copy(
@@ -389,7 +410,8 @@ class DefaultCanvasRuntime @Inject constructor(
 
     private suspend fun handleRecoveryOperations(event: CanvasRuntimeEvent.RecoveryOperations) {
         if (!event.publishAtomically) {
-            event.operations.forEach { applyRemoteOperation(it) }
+            event.operations.filter { it.canvasKey == requireActiveCanvasKey() }
+                .forEach { applyRemoteOperation(it) }
             return
         }
 
@@ -400,7 +422,10 @@ class DefaultCanvasRuntime @Inject constructor(
         var shouldClearLocalActive = false
         var cacheChanged = false
 
-        event.operations.sortedBy { it.serverRevision }.forEach { operation ->
+        event.operations
+            .filter { it.canvasKey == requireActiveCanvasKey() }
+            .sortedBy { it.serverRevision }
+            .forEach { operation ->
             when (operation.payload) {
                 is SyncOperationPayload.AddStroke -> {
                     val payload = operation.payload
@@ -425,20 +450,24 @@ class DefaultCanvasRuntime @Inject constructor(
                     val finished = remoteActiveStrokes[strokeId]
                         ?: committedStrokes.firstOrNull { it.id == strokeId }
                         ?: return@forEach
-                    persistenceStore.persistRemoteCommittedStroke(finished, operation.serverRevision)
+                    persistenceStore.persistRemoteCommittedStroke(
+                        requireActiveCanvasKey(),
+                        finished,
+                        operation.serverRevision
+                    )
                     committedStrokes = committedStrokes.filterNot { it.id == strokeId } + finished
                     remoteActiveStrokes = remoteActiveStrokes - strokeId
                     cacheChanged = true
                 }
                 SyncOperationPayload.DeleteStroke -> {
                     val strokeId = operation.strokeId ?: return@forEach
-                    persistenceStore.persistErase(strokeId, operation.serverRevision)
+                    persistenceStore.persistErase(requireActiveCanvasKey(), strokeId, operation.serverRevision)
                     committedStrokes = committedStrokes.filterNot { it.id == strokeId }
                     remoteActiveStrokes = remoteActiveStrokes - strokeId
                     cacheChanged = true
                 }
                 SyncOperationPayload.ClearCanvas -> {
-                    persistenceStore.persistClear(operation.serverRevision)
+                    persistenceStore.persistClear(requireActiveCanvasKey(), operation.serverRevision)
                     clearHistory()
                     committedStrokes = emptyList()
                     remoteActiveStrokes = emptyMap()
@@ -481,6 +510,7 @@ class DefaultCanvasRuntime @Inject constructor(
             outbound.send(
                 newClientOperation(
                     type = DrawingOperationType.DELETE_STROKE,
+                    canvasKey = requireActiveCanvasKey(),
                     strokeId = activeStroke.id,
                     payload = SyncOperationPayload.DeleteStroke
                 )
@@ -496,7 +526,7 @@ class DefaultCanvasRuntime @Inject constructor(
         when (action) {
             is HistoryAction.DrawAction -> {
                 redoStack.addLast(action)
-                persistenceStore.persistErase(action.stroke.id)
+                persistenceStore.persistErase(requireActiveCanvasKey(), action.stroke.id)
                 _renderState.update { current ->
                     val next = current.copy(
                         committedStrokes = current.committedStrokes.filterNot { it.id == action.stroke.id },
@@ -508,6 +538,7 @@ class DefaultCanvasRuntime @Inject constructor(
                 outbound.send(
                     newClientOperation(
                         type = DrawingOperationType.DELETE_STROKE,
+                        canvasKey = requireActiveCanvasKey(),
                         strokeId = action.stroke.id,
                         payload = SyncOperationPayload.DeleteStroke
                     )
@@ -546,7 +577,7 @@ class DefaultCanvasRuntime @Inject constructor(
             is HistoryAction.EraseAction -> {
                 undoStack.addLast(action)
                 trimHistory()
-                persistenceStore.persistErase(action.deletedStrokeId)
+                persistenceStore.persistErase(requireActiveCanvasKey(), action.deletedStrokeId)
                 _renderState.update { current ->
                     val next = current.copy(
                         committedStrokes = current.committedStrokes.filterNot { it.id == action.deletedStrokeId },
@@ -558,6 +589,7 @@ class DefaultCanvasRuntime @Inject constructor(
                 outbound.send(
                     newClientOperation(
                         type = DrawingOperationType.DELETE_STROKE,
+                        canvasKey = requireActiveCanvasKey(),
                         strokeId = action.deletedStrokeId,
                         payload = SyncOperationPayload.DeleteStroke
                     )
@@ -578,6 +610,7 @@ class DefaultCanvasRuntime @Inject constructor(
         outbound.send(
             newClientOperation(
                 type = DrawingOperationType.APPEND_POINTS,
+                canvasKey = requireActiveCanvasKey(),
                 strokeId = strokeId,
                 payload = SyncOperationPayload.AppendPoints(points)
             )
@@ -634,7 +667,7 @@ class DefaultCanvasRuntime @Inject constructor(
         if (points.isEmpty()) return source
 
         val newStroke = source.copy(id = UUID.randomUUID().toString())
-        persistenceStore.persistLocalCommittedStroke(newStroke)
+        persistenceStore.persistLocalCommittedStroke(requireActiveCanvasKey(), newStroke)
         _renderState.update { current ->
             val next = current.copy(
                 committedStrokes = current.committedStrokes + newStroke,
@@ -645,6 +678,7 @@ class DefaultCanvasRuntime @Inject constructor(
         outbound.send(
             newClientOperation(
                 type = DrawingOperationType.ADD_STROKE,
+                canvasKey = requireActiveCanvasKey(),
                 strokeId = newStroke.id,
                 payload = newStroke.toAddStrokePayload()
             )
@@ -658,6 +692,7 @@ class DefaultCanvasRuntime @Inject constructor(
         outbound.send(
             newClientOperation(
                 type = DrawingOperationType.FINISH_STROKE,
+                canvasKey = requireActiveCanvasKey(),
                 strokeId = newStroke.id,
                 payload = SyncOperationPayload.FinishStroke
             )
@@ -671,6 +706,7 @@ class DefaultCanvasRuntime @Inject constructor(
             chunk.add(point)
             val candidate = newClientOperation(
                 type = DrawingOperationType.APPEND_POINTS,
+                canvasKey = requireActiveCanvasKey(),
                 strokeId = strokeId,
                 payload = SyncOperationPayload.AppendPoints(chunk)
             )
@@ -680,6 +716,7 @@ class DefaultCanvasRuntime @Inject constructor(
                 outbound.send(
                     newClientOperation(
                         type = DrawingOperationType.APPEND_POINTS,
+                        canvasKey = requireActiveCanvasKey(),
                         strokeId = strokeId,
                         payload = SyncOperationPayload.AppendPoints(chunk)
                     )
@@ -691,6 +728,7 @@ class DefaultCanvasRuntime @Inject constructor(
             outbound.send(
                 newClientOperation(
                     type = DrawingOperationType.APPEND_POINTS,
+                    canvasKey = requireActiveCanvasKey(),
                     strokeId = strokeId,
                     payload = SyncOperationPayload.AppendPoints(chunk)
                 )

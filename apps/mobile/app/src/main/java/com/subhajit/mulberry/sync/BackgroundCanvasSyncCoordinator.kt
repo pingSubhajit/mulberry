@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.sync
 
 import android.util.Log
+import com.subhajit.mulberry.data.bootstrap.CanvasMode
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.drawing.geometry.containsLegacyGeometry
@@ -13,6 +14,7 @@ import com.subhajit.mulberry.network.CanvasOperationBatchRequest
 import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
+import com.subhajit.mulberry.sync.CanvasKeys
 import java.time.Instant
 import java.util.UUID
 import javax.inject.Inject
@@ -93,42 +95,78 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
                 "latestRevisionHint=$latestRevisionHint pairSessionId=${bootstrap.pairSessionId}"
         )
 
-        val snapshot = apiService.getCanvasSnapshot()
-        if (snapshot.pairSessionId != bootstrap.pairSessionId) {
+        val canvasKeys = if (
+            bootstrap.canvasMode == CanvasMode.DEDICATED &&
+                !bootstrap.partnerUserId.isNullOrBlank()
+        ) {
+            setOf(
+                CanvasKeys.user(session.userId),
+                CanvasKeys.user(bootstrap.partnerUserId!!)
+            )
+        } else {
+            setOf(CanvasKeys.SHARED)
+        }
+
+        val snapshots = canvasKeys.associateWith { canvasKey ->
+            apiService.getCanvasSnapshot(canvasKey = canvasKey)
+        }
+        if (snapshots.values.any { it.pairSessionId != bootstrap.pairSessionId }) {
             return@runCatching skip("snapshot pair session mismatch")
         }
-        if (snapshot.latestRevision < localRevision) {
+        val latestRevision = snapshots.values.maxOfOrNull { it.latestRevision } ?: 0L
+        if (latestRevision < localRevision) {
             Log.i(
                 TAG,
                 "Background snapshot is behind local state; refreshing wallpaper from local DB " +
-                    "snapshotLatestRevision=${snapshot.latestRevision} localRevision=$localRevision"
+                    "snapshotLatestRevision=$latestRevision localRevision=$localRevision"
             )
             wallpaperCoordinator.ensureSnapshotCurrent()
             wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
             return@runCatching BackgroundCanvasSyncResult.AlreadyCurrent
         }
 
-        val snapshotStrokes = snapshot.snapshot.toDomainStrokes()
-        if (snapshotStrokes.containsLegacyGeometry()) {
-            clearLegacyCanvasAndQueueReset(reason = "background_snapshot_legacy_geometry")
-            wallpaperCoordinator.ensureSnapshotCurrent()
-            wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
-            return@runCatching BackgroundCanvasSyncResult.Synced
+        val snapshotRevisionsByKey = mutableMapOf<String, Long>()
+        val snapshotStrokesByKey = mutableMapOf<String, List<Stroke>>()
+        snapshots.forEach { (canvasKey, snapshot) ->
+            val strokes = snapshot.snapshot.toDomainStrokes()
+            snapshotRevisionsByKey[canvasKey] = snapshot.snapshotRevision
+            snapshotStrokesByKey[canvasKey] = strokes
+            if (strokes.containsLegacyGeometry()) {
+                clearLegacyCanvasAndQueueReset(
+                    reason = "background_snapshot_legacy_geometry",
+                    canvasKeys = canvasKeys
+                )
+                wallpaperCoordinator.ensureSnapshotCurrent()
+                wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+                return@runCatching BackgroundCanvasSyncResult.Synced
+            }
         }
 
-        drawingRepository.replaceWithRemoteSnapshot(
-            strokes = snapshotStrokes,
-            serverRevision = snapshot.snapshotRevision
-        )
-        syncMetadataRepository.setLastAppliedServerRevision(snapshot.snapshotRevision)
-        if (snapshot.latestRevision > snapshot.snapshotRevision) {
-            val tail = apiService.getCanvasOperations(snapshot.snapshotRevision)
+        val baseRevision = snapshotRevisionsByKey.values.minOrNull() ?: 0L
+        snapshotStrokesByKey.forEach { (canvasKey, strokes) ->
+            drawingRepository.replaceWithRemoteSnapshot(
+                canvasKey = canvasKey,
+                strokes = strokes,
+                serverRevision = snapshotRevisionsByKey[canvasKey] ?: baseRevision
+            )
+        }
+        syncMetadataRepository.setLastAppliedServerRevision(baseRevision)
+
+        if (latestRevision > baseRevision) {
+            val tail = apiService.getCanvasOperations(baseRevision)
                 .operations
                 .map { it.toDomainOperation() }
-                .filter { it.serverRevision > snapshot.snapshotRevision }
+                .filter { it.serverRevision > baseRevision }
+                .filter { operation ->
+                    operation.canvasKey in canvasKeys &&
+                        operation.serverRevision > (snapshotRevisionsByKey[operation.canvasKey] ?: baseRevision)
+                }
                 .sortedBy { it.serverRevision }
             if (tail.any { operation -> operation.hasLegacyGeometry() }) {
-                clearLegacyCanvasAndQueueReset(reason = "background_tail_legacy_geometry")
+                clearLegacyCanvasAndQueueReset(
+                    reason = "background_tail_legacy_geometry",
+                    canvasKeys = canvasKeys
+                )
                 wallpaperCoordinator.ensureSnapshotCurrent()
                 wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
                 return@runCatching BackgroundCanvasSyncResult.Synced
@@ -139,9 +177,8 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
         Log.i(
             TAG,
-            "Background snapshot sync applied snapshotRevision=${snapshot.snapshotRevision} " +
-                "latestRevision=${snapshot.latestRevision} " +
-                "strokeCount=${snapshot.snapshot.strokes.size}"
+            "Background snapshot sync applied baseRevision=$baseRevision latestRevision=$latestRevision " +
+                "canvasKeys=${canvasKeys.size} totalStrokeCount=${snapshotStrokesByKey.values.sumOf { it.size }}"
         )
         BackgroundCanvasSyncResult.Synced
     }
@@ -165,17 +202,20 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         drawingRepository.resetAllDrawingState()
     }
 
-    private suspend fun clearLegacyCanvasAndQueueReset(reason: String) {
+    private suspend fun clearLegacyCanvasAndQueueReset(reason: String, canvasKeys: Set<String>) {
         Log.w(TAG, "Clearing legacy pixel-space background canvas data reason=$reason")
         syncOutboxStore.clear()
         drawingRepository.resetAllDrawingState()
-        syncOutboxStore.enqueue(
-            newClientOperation(
-                type = DrawingOperationType.CLEAR_CANVAS,
-                strokeId = null,
-                payload = SyncOperationPayload.ClearCanvas
+        canvasKeys.forEach { canvasKey ->
+            syncOutboxStore.enqueue(
+                newClientOperation(
+                    type = DrawingOperationType.CLEAR_CANVAS,
+                    canvasKey = canvasKey,
+                    strokeId = null,
+                    payload = SyncOperationPayload.ClearCanvas
+                )
             )
-        )
+        }
     }
 
     private suspend fun flushPendingOutbox() {

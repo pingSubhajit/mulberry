@@ -4,10 +4,13 @@ import android.util.Log
 import com.subhajit.mulberry.canvas.CanvasRuntime
 import com.subhajit.mulberry.canvas.CanvasRuntimeEvent
 import com.subhajit.mulberry.canvas.FlowControlMode
+import com.subhajit.mulberry.data.bootstrap.CanvasMode
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.drawing.geometry.containsLegacyGeometry
 import com.subhajit.mulberry.drawing.geometry.hasLegacyGeometry
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
+import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
+import com.subhajit.mulberry.drawing.DrawingRepository
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
@@ -44,6 +47,8 @@ class DefaultCanvasSyncRepository @Inject constructor(
     private val canvasRuntime: CanvasRuntime,
     private val apiService: MulberryApiService,
     private val recoveryPolicy: CanvasRecoveryPolicy,
+    private val drawingRepository: DrawingRepository,
+    private val remoteOperationApplier: RemoteOperationApplier,
     @com.subhajit.mulberry.app.di.ApplicationScope private val applicationScope: CoroutineScope
 ) : CanvasSyncRepository {
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Disconnected)
@@ -63,8 +68,24 @@ class DefaultCanvasSyncRepository @Inject constructor(
     private var currentUserId: String? = null
     private var activeAccessToken: String? = null
     private var activePairSessionId: String? = null
+    private var activeCanvasKey: String? = null
     private var lastForegroundStoppedAt: Long? = null
     private var lastAppliedRevisionCache = 0L
+
+    private fun canvasKeyForRuntime(bootstrap: SessionBootstrapState, userId: String): String =
+        if (bootstrap.canvasMode == CanvasMode.DEDICATED) {
+            CanvasKeys.user(userId)
+        } else {
+            CanvasKeys.SHARED
+        }
+
+    private fun canvasKeysForSync(bootstrap: SessionBootstrapState, userId: String): Set<String> {
+        val runtimeKey = canvasKeyForRuntime(bootstrap, userId)
+        if (bootstrap.canvasMode != CanvasMode.DEDICATED) return setOf(runtimeKey)
+        val partnerUserId = bootstrap.partnerUserId
+        if (partnerUserId.isNullOrBlank()) return setOf(runtimeKey)
+        return setOf(runtimeKey, CanvasKeys.user(partnerUserId))
+    }
 
     override fun start() {
         if (!started) {
@@ -140,6 +161,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
             bootstrap.pairingStatus == PairingStatus.PAIRED &&
             bootstrap.pairSessionId != null
         ) {
+            val desiredCanvasKey = canvasKeyForRuntime(bootstrap, session.userId)
             establishConnection(
                 session = session,
                 pairSessionId = bootstrap.pairSessionId,
@@ -148,6 +170,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
                 restartRuntime = activeConnectionGeneration == null ||
                     activeAccessToken != session.accessToken ||
                     activePairSessionId != bootstrap.pairSessionId ||
+                    activeCanvasKey != desiredCanvasKey ||
                     syncState.value is SyncState.Disconnected
             )
         } else {
@@ -473,6 +496,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
         resetSendTracking()
         syncOutboxStore.clear()
         syncMetadataRepository.resetForPairSession(pairSessionId)
+        drawingRepository.resetAllDrawingState()
         canvasRuntime.submitAndAwait(
             CanvasRuntimeEvent.RecoverySnapshot(
                 strokes = emptyList(),
@@ -486,16 +510,31 @@ class DefaultCanvasSyncRepository @Inject constructor(
         val userId = currentUserId
         val remoteOperations = operations.filterNot { it.actorUserId == userId }
         if (remoteOperations.isNotEmpty()) {
-            canvasRuntime.submitAndAwait(CanvasRuntimeEvent.RemoteBatch(remoteOperations))
+            val runtimeCanvasKey = activeCanvasKey ?: CanvasKeys.SHARED
+            val runtimeOps = remoteOperations.filter { it.canvasKey == runtimeCanvasKey }
+            val backgroundOps = remoteOperations.filterNot { it.canvasKey == runtimeCanvasKey }
+            if (runtimeOps.isNotEmpty()) {
+                canvasRuntime.submitAndAwait(CanvasRuntimeEvent.RemoteBatch(runtimeOps))
+            }
+            backgroundOps.sortedBy { it.serverRevision }
+                .forEach { remoteOperationApplier.apply(it) }
         }
         persistLastAppliedRevision(operations.last().serverRevision)
     }
 
-    private suspend fun fetchAndApplyTailFrom(revision: Long) {
-        val tail = apiService.getCanvasOperations(revision)
+    private suspend fun fetchAndApplyTailFrom(
+        baseRevision: Long,
+        snapshotRevisionsByKey: Map<String, Long>,
+        canvasKeys: Set<String>
+    ) {
+        val tail = apiService.getCanvasOperations(baseRevision)
             .operations
             .map { it.toDomainOperation() }
-            .filter { it.serverRevision > revision }
+            .filter { it.serverRevision > baseRevision }
+            .filter { operation ->
+                operation.canvasKey in canvasKeys &&
+                    operation.serverRevision > (snapshotRevisionsByKey[operation.canvasKey] ?: baseRevision)
+            }
             .sortedBy { it.serverRevision }
         if (tail.any { operation -> operation.hasLegacyGeometry() }) {
             clearLegacyCanvasAndQueueReset(reason = "tail_legacy_geometry")
@@ -507,23 +546,45 @@ class DefaultCanvasSyncRepository @Inject constructor(
     }
 
     private suspend fun recoverFromSnapshotAndTail() {
-        val snapshot = apiService.getCanvasSnapshot()
         if (!canReplaceFromSnapshot()) return
-        val strokes = snapshot.snapshot.toDomainStrokes()
-        if (strokes.containsLegacyGeometry()) {
-            clearLegacyCanvasAndQueueReset(reason = "snapshot_legacy_geometry")
-            return
+        val bootstrap = sessionBootstrapRepository.state.first()
+        val userId = currentUserId ?: bootstrap.userId ?: return
+        val canvasKeys = canvasKeysForSync(bootstrap, userId)
+        val runtimeCanvasKey = activeCanvasKey ?: canvasKeyForRuntime(bootstrap, userId)
+
+        val snapshots = canvasKeys.associateWith { canvasKey ->
+            apiService.getCanvasSnapshot(canvasKey = canvasKey)
         }
-        canvasRuntime.submitAndAwait(
-            CanvasRuntimeEvent.RecoverySnapshot(
-                strokes = strokes,
-                serverRevision = snapshot.snapshotRevision
-            )
-        )
-        persistLastAppliedRevision(snapshot.snapshotRevision)
+        val snapshotRevisionsByKey = snapshots.mapValues { (_, snapshot) -> snapshot.snapshotRevision }
+        val baseRevision = snapshotRevisionsByKey.values.minOrNull() ?: 0L
+        val latestRevision = snapshots.values.maxOfOrNull { it.latestRevision } ?: baseRevision
+
+        snapshots.forEach { (canvasKey, snapshot) ->
+            val strokes = snapshot.snapshot.toDomainStrokes()
+            if (strokes.containsLegacyGeometry()) {
+                clearLegacyCanvasAndQueueReset(reason = "snapshot_legacy_geometry")
+                return
+            }
+            if (canvasKey == runtimeCanvasKey) {
+                canvasRuntime.submitAndAwait(
+                    CanvasRuntimeEvent.RecoverySnapshot(
+                        strokes = strokes,
+                        serverRevision = snapshot.snapshotRevision
+                    )
+                )
+            } else {
+                drawingRepository.replaceWithRemoteSnapshot(canvasKey, strokes, snapshot.snapshotRevision)
+            }
+        }
+
+        persistLastAppliedRevision(baseRevision)
         revisionBuffer.clear()
-        if (snapshot.latestRevision > snapshot.snapshotRevision) {
-            fetchAndApplyTailFrom(snapshot.snapshotRevision)
+        if (latestRevision > baseRevision) {
+            fetchAndApplyTailFrom(
+                baseRevision = baseRevision,
+                snapshotRevisionsByKey = snapshotRevisionsByKey,
+                canvasKeys = canvasKeys
+            )
         }
     }
 
@@ -585,12 +646,19 @@ class DefaultCanvasSyncRepository @Inject constructor(
         val userId = currentUserId
         val remoteOperations = compacted.filterNot { it.actorUserId == userId }
         if (remoteOperations.isNotEmpty()) {
-            canvasRuntime.submitAndAwait(
-                CanvasRuntimeEvent.RecoveryOperations(
-                    operations = remoteOperations,
-                    publishAtomically = true
+            val runtimeCanvasKey = activeCanvasKey ?: CanvasKeys.SHARED
+            val runtimeOps = remoteOperations.filter { it.canvasKey == runtimeCanvasKey }
+            val backgroundOps = remoteOperations.filterNot { it.canvasKey == runtimeCanvasKey }
+            if (runtimeOps.isNotEmpty()) {
+                canvasRuntime.submitAndAwait(
+                    CanvasRuntimeEvent.RecoveryOperations(
+                        operations = runtimeOps,
+                        publishAtomically = true
+                    )
                 )
-            )
+            }
+            backgroundOps.sortedBy { it.serverRevision }
+                .forEach { remoteOperationApplier.apply(it) }
         }
         persistLastAppliedRevision(ordered.last().serverRevision)
     }
@@ -605,19 +673,27 @@ class DefaultCanvasSyncRepository @Inject constructor(
         revisionBuffer.clear()
         syncOutboxStore.clear()
         resetSendTracking()
+        drawingRepository.resetAllDrawingState()
         canvasRuntime.submitAndAwait(
             CanvasRuntimeEvent.RecoverySnapshot(
                 strokes = emptyList(),
                 serverRevision = lastAppliedRevisionCache
             )
         )
-        queueLocalOperation(
-            newClientOperation(
-                type = DrawingOperationType.CLEAR_CANVAS,
-                strokeId = null,
-                payload = SyncOperationPayload.ClearCanvas
-            )
-        )
+        val bootstrap = sessionBootstrapRepository.state.first()
+        val userId = currentUserId ?: bootstrap.userId
+        if (userId != null) {
+            canvasKeysForSync(bootstrap, userId).forEach { canvasKey ->
+                queueLocalOperation(
+                    newClientOperation(
+                        type = DrawingOperationType.CLEAR_CANVAS,
+                        canvasKey = canvasKey,
+                        strokeId = null,
+                        payload = SyncOperationPayload.ClearCanvas
+                    )
+                )
+            }
+        }
     }
 
     private suspend fun ensureSyncStorageInitializedLocked() {
@@ -638,6 +714,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
     ) {
         connectionMutex.withLock {
             ensureSyncStorageInitializedLocked()
+            val bootstrap = sessionBootstrapRepository.state.first()
             val sameConnection =
                 !forceReconnect &&
                     activeAccessToken == session.accessToken &&
@@ -662,10 +739,12 @@ class DefaultCanvasSyncRepository @Inject constructor(
             activeAccessToken = session.accessToken
             activePairSessionId = pairSessionId
             lastAppliedRevisionCache = lastAppliedRevision
+            activeCanvasKey = canvasKeyForRuntime(bootstrap, session.userId)
             if (restartRuntime) {
                 canvasRuntime.start(
                     pairSessionId = pairSessionId,
-                    userId = session.userId
+                    userId = session.userId,
+                    canvasKey = activeCanvasKey ?: CanvasKeys.SHARED
                 )
             }
             _syncState.value = SyncState.Connecting
@@ -756,6 +835,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
         currentUserId = null
         activeAccessToken = null
         activePairSessionId = null
+        activeCanvasKey = null
         revisionBuffer.clear()
         isRecoveringGap = false
         resetSendTracking()

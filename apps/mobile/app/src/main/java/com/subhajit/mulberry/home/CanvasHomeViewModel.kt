@@ -11,6 +11,7 @@ import com.subhajit.mulberry.bootstrap.BootstrapRepository
 import com.subhajit.mulberry.canvas.CanvasRenderState
 import com.subhajit.mulberry.canvas.CanvasRuntime
 import com.subhajit.mulberry.canvas.CanvasRuntimeEvent
+import com.subhajit.mulberry.data.bootstrap.CanvasMode
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
@@ -37,6 +38,10 @@ import com.subhajit.mulberry.wallpaper.WallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.WallpaperStatusState
+import com.subhajit.mulberry.sync.CanvasKeys
+import com.subhajit.mulberry.sync.CanvasSyncRepository
+import com.subhajit.mulberry.sync.SyncOperationPayload
+import com.subhajit.mulberry.sync.newClientOperation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import java.text.SimpleDateFormat
@@ -148,6 +153,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val inboundInviteRepository: InboundInviteRepository,
     private val apiService: MulberryApiService,
     private val canvasRuntime: CanvasRuntime,
+    private val canvasSyncRepository: CanvasSyncRepository,
     private val backgroundImageRepository: BackgroundImageRepository,
     private val wallpaperCatalogRepository: WallpaperCatalogRepository,
     private val wallpaperCoordinator: WallpaperCoordinator,
@@ -155,6 +161,15 @@ class CanvasHomeViewModel @Inject constructor(
     private val reviewPromptCoordinator: com.subhajit.mulberry.review.ReviewPromptCoordinator,
     private val appConfig: AppConfig
 ) : ViewModel() {
+    private fun currentCanvasKey(bootstrap: SessionBootstrapState = uiState.value.bootstrapState): String {
+        val userId = bootstrap.userId
+        return if (bootstrap.canvasMode == CanvasMode.DEDICATED && !userId.isNullOrBlank()) {
+            CanvasKeys.user(userId)
+        } else {
+            CanvasKeys.SHARED
+        }
+    }
+
     private val showClearConfirmation = MutableStateFlow(false)
     private val pairingSheetMode = MutableStateFlow(HomePairingSheetMode.Hidden)
     private val inviteLoadingState = MutableStateFlow(false)
@@ -686,20 +701,25 @@ class CanvasHomeViewModel @Inject constructor(
     fun onCanvasViewportChanged(widthPx: Int, heightPx: Int) {
         viewModelScope.launch {
             canvasRuntime.submitAndAwait(CanvasRuntimeEvent.CanvasViewportChanged(widthPx, heightPx))
-            drawingRepository.setCanvasViewport(widthPx, heightPx)
+            drawingRepository.setCanvasViewport(
+                canvasKey = currentCanvasKey(),
+                widthPx = widthPx,
+                heightPx = heightPx
+            )
         }
     }
 
     fun onColorSelected(colorArgb: Long) {
         viewModelScope.launch {
-            drawingRepository.setBrushColor(colorArgb)
-            drawingRepository.setTool(DrawingTool.DRAW)
+            val canvasKey = currentCanvasKey()
+            drawingRepository.setBrushColor(canvasKey, colorArgb)
+            drawingRepository.setTool(canvasKey, DrawingTool.DRAW)
         }
     }
 
     fun onBrushWidthChanged(width: Float) {
         viewModelScope.launch {
-            drawingRepository.setBrushWidth(width)
+            drawingRepository.setBrushWidth(currentCanvasKey(), width)
         }
     }
 
@@ -710,7 +730,7 @@ class CanvasHomeViewModel @Inject constructor(
             } else {
                 DrawingTool.ERASE
             }
-            drawingRepository.setTool(nextTool)
+            drawingRepository.setTool(currentCanvasKey(), nextTool)
         }
     }
 
@@ -724,6 +744,27 @@ class CanvasHomeViewModel @Inject constructor(
 
     fun onClearConfirmed() {
         canvasRuntime.submit(CanvasRuntimeEvent.ClearCanvas)
+        showClearConfirmation.value = false
+    }
+
+    fun onClearMyWallpaperConfirmed() {
+        val partnerUserId = uiState.value.bootstrapState.partnerUserId
+        if (partnerUserId.isNullOrBlank()) {
+            showClearConfirmation.value = false
+            return
+        }
+        val canvasKey = CanvasKeys.user(partnerUserId)
+        viewModelScope.launch {
+            drawingRepository.clearCanvas(canvasKey)
+            canvasSyncRepository.queueLocalOperation(
+                newClientOperation(
+                    type = com.subhajit.mulberry.drawing.model.DrawingOperationType.CLEAR_CANVAS,
+                    canvasKey = canvasKey,
+                    strokeId = null,
+                    payload = SyncOperationPayload.ClearCanvas
+                )
+            )
+        }
         showClearConfirmation.value = false
     }
 
