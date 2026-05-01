@@ -131,7 +131,8 @@ import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.ui.WallpaperBackgroundSelectionSection
 import com.subhajit.mulberry.wallpaper.ui.WallpaperLockScreenPreview
-import com.subhajit.mulberry.wallpaper.ui.WallpaperPrimaryButton
+import com.subhajit.mulberry.wallpaper.ui.WallpaperPrimaryButtonWithStatusBadge
+import com.subhajit.mulberry.wallpaper.ui.WallpaperSetupStatusBadgeStyle
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
@@ -1209,40 +1210,25 @@ private fun LockScreenHomePane(
                         R.string.wallpaper_setup_set_both_lock_home
                     }
 
-                val statusResId = when {
-                    isSelectedOnHome -> R.string.wallpaper_setup_status_home
-                    isSelectedOnLock -> R.string.wallpaper_setup_status_lock
-                    else -> R.string.wallpaper_setup_status_none
+                val badgeResId = when {
+                    isSelectedOnHome -> R.string.wallpaper_setup_badge_home
+                    isSelectedOnLock -> R.string.wallpaper_setup_badge_lock
+                    else -> R.string.wallpaper_setup_badge_not_set
                 }
-                val statusColor = if (isSelectedOnHome || isSelectedOnLock) {
-                    com.subhajit.mulberry.ui.theme.MulberrySuccess
+                val badgeStyle = if (isSelectedOnHome || isSelectedOnLock) {
+                    WallpaperSetupStatusBadgeStyle.Success
                 } else {
-                    com.subhajit.mulberry.ui.theme.MulberryError
+                    WallpaperSetupStatusBadgeStyle.Error
                 }
 
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    WallpaperPrimaryButton(
-                        text = stringResource(setupCtaResId),
-                        onClick = onSetUpLockScreen,
-                        enabled = !uiState.isWallpaperBusy,
-                        modifier = Modifier.testTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON)
-                    )
-
-                    Text(
-                        text = stringResource(statusResId),
-                        color = statusColor,
-                        fontFamily = PoppinsFontFamily,
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                WallpaperPrimaryButtonWithStatusBadge(
+                    text = stringResource(setupCtaResId),
+                    statusText = stringResource(badgeResId),
+                    statusStyle = badgeStyle,
+                    onClick = onSetUpLockScreen,
+                    enabled = !uiState.isWallpaperBusy,
+                    buttonModifier = Modifier.testTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON)
+                )
             }
 
             uiState.wallpaperErrorMessage?.let { message ->

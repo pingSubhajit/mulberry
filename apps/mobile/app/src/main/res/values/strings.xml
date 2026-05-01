@@ -38,6 +38,9 @@
     <string name="wallpaper_setup_status_home">Set on home screen</string>
     <string name="wallpaper_setup_status_lock">Set on lock screen</string>
     <string name="wallpaper_setup_status_both">Set on lock &amp; home screen</string>
+    <string name="wallpaper_setup_badge_home">Home screen</string>
+    <string name="wallpaper_setup_badge_lock">Lock screen</string>
+    <string name="wallpaper_setup_badge_not_set">Not set</string>
     <string name="wallpaper_preview_set_action">Set as wallpaper</string>
     <string name="onboarding_wallpaper_upload">Upload from gallery</string>
     <string name="wallpaper_more_action">View more wallpapers</string>

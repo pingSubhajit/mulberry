@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,6 +47,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,7 +55,9 @@ import coil.compose.AsyncImage
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.mulberryTapScale
+import com.subhajit.mulberry.ui.theme.MulberryError
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
+import com.subhajit.mulberry.ui.theme.MulberrySuccess
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import com.subhajit.mulberry.wallpaper.RemoteWallpaper
@@ -219,6 +223,86 @@ fun WallpaperPrimaryButton(
                 fontSize = 16.sp,
                 lineHeight = 24.sp
             )
+        )
+    }
+}
+
+enum class WallpaperSetupStatusBadgeStyle {
+    Success,
+    Error
+}
+
+@Composable
+fun WallpaperSetupStatusBadge(
+    text: String,
+    style: WallpaperSetupStatusBadgeStyle,
+    modifier: Modifier = Modifier
+) {
+    val backgroundColor = when (style) {
+        WallpaperSetupStatusBadgeStyle.Success -> MulberrySuccess
+        WallpaperSetupStatusBadgeStyle.Error -> MulberryError
+    }
+    val iconText = when (style) {
+        WallpaperSetupStatusBadgeStyle.Success -> "✓"
+        WallpaperSetupStatusBadgeStyle.Error -> "×"
+    }
+
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(backgroundColor)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = iconText,
+            color = Color.White,
+            style = TextStyle(
+                fontFamily = PoppinsFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                lineHeight = 16.sp
+            )
+        )
+        Text(
+            text = text,
+            color = Color.White,
+            style = TextStyle(
+                fontFamily = PoppinsFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                lineHeight = 16.sp
+            ),
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+fun WallpaperPrimaryButtonWithStatusBadge(
+    text: String,
+    statusText: String,
+    statusStyle: WallpaperSetupStatusBadgeStyle,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    buttonModifier: Modifier = Modifier
+) {
+    Box(modifier = modifier.fillMaxWidth()) {
+        WallpaperPrimaryButton(
+            text = text,
+            onClick = onClick,
+            enabled = enabled,
+            modifier = buttonModifier
+        )
+
+        WallpaperSetupStatusBadge(
+            text = statusText,
+            style = statusStyle,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = (-10).dp, y = (-12).dp)
         )
     }
 }

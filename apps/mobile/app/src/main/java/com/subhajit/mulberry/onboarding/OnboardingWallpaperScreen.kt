@@ -76,13 +76,14 @@ import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.ui.theme.MulberryError
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
-import com.subhajit.mulberry.ui.theme.MulberrySuccess
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
 import com.subhajit.mulberry.wallpaper.ui.WallpaperBackgroundSelectionSection
 import com.subhajit.mulberry.wallpaper.ui.WallpaperLockScreenPreview
+import com.subhajit.mulberry.wallpaper.ui.WallpaperPrimaryButtonWithStatusBadge
+import com.subhajit.mulberry.wallpaper.ui.WallpaperSetupStatusBadgeStyle
 import kotlin.math.max
 
 @Composable
@@ -215,50 +216,34 @@ private fun OnboardingWallpaperScreen(
             val isSelectedOnLock = uiState.wallpaperStatus.isWallpaperSelectedOnLock
             val isSelectedOnBoth = isSelectedOnHome && isSelectedOnLock
 
-            if (!isSelectedOnBoth) {
-                val setupCtaResId =
-                    if (!isSelectedOnLock) {
-                        R.string.onboarding_wallpaper_setup_button
+                if (!isSelectedOnBoth) {
+                    val setupCtaResId =
+                        if (!isSelectedOnLock) {
+                            R.string.onboarding_wallpaper_setup_button
+                        } else {
+                            R.string.wallpaper_setup_set_both_lock_home
+                        }
+
+                    val badgeResId = when {
+                        isSelectedOnHome -> R.string.wallpaper_setup_badge_home
+                        isSelectedOnLock -> R.string.wallpaper_setup_badge_lock
+                        else -> R.string.wallpaper_setup_badge_not_set
+                    }
+                    val badgeStyle = if (isSelectedOnHome || isSelectedOnLock) {
+                        WallpaperSetupStatusBadgeStyle.Success
                     } else {
-                        R.string.wallpaper_setup_set_both_lock_home
+                        WallpaperSetupStatusBadgeStyle.Error
                     }
 
-                val statusResId = when {
-                    isSelectedOnHome -> R.string.wallpaper_setup_status_home
-                    isSelectedOnLock -> R.string.wallpaper_setup_status_lock
-                    else -> R.string.wallpaper_setup_status_none
-                }
-                val statusColor = if (isSelectedOnHome || isSelectedOnLock) {
-                    MulberrySuccess
-                } else {
-                    MulberryError
-                }
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    PrimaryOnboardingButton(
+                    WallpaperPrimaryButtonWithStatusBadge(
                         text = stringResource(setupCtaResId),
+                        statusText = stringResource(badgeResId),
+                        statusStyle = badgeStyle,
                         onClick = onSetUpLockScreen,
                         enabled = !uiState.isBusy,
-                        modifier = Modifier.testTag(TestTags.ONBOARDING_WALLPAPER_SETUP_BUTTON)
-                    )
-
-                    Text(
-                        text = stringResource(statusResId),
-                        color = statusColor,
-                        style = TextStyle(
-                            fontFamily = PoppinsFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp
-                        ),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
+                        buttonModifier = Modifier.testTag(TestTags.ONBOARDING_WALLPAPER_SETUP_BUTTON)
                     )
                 }
-            }
 
             WallpaperBackgroundSelectionSection(
                 remoteWallpapers = uiState.recentRemoteWallpapers,
