@@ -64,7 +64,7 @@ interface UploadedProfilePhoto {
 }
 
 const PARTNER_PROFILE_UPDATE_COOLDOWN_MS = 72 * 60 * 60 * 1_000
-const CANVAS_MODE_TOGGLE_COOLDOWN_MS = 24 * 60 * 60 * 1_000
+const CANVAS_MODE_TOGGLE_COOLDOWN_DEFAULT_MS = 24 * 60 * 60 * 1_000
 const DEDICATED_CANVAS_CAPABILITY_TTL_MS = 14 * 24 * 60 * 60 * 1_000
 const PARTNER_DETAILS_REQUIRED_MESSAGE = "Partner details are required before creating an invite"
 const PROFILE_PHOTO_PREFIX = "profile-photos"
@@ -87,6 +87,7 @@ export class MulberryService {
     private readonly googleVerifier: GoogleTokenVerifier,
     private readonly pushDispatchService?: PushDispatchService,
     private readonly profilePhotoStorage?: WallpaperStorage | null,
+    private readonly canvasModeToggleCooldownMs: number = CANVAS_MODE_TOGGLE_COOLDOWN_DEFAULT_MS,
   ) {}
 
   async authenticateWithGoogle(idToken: string): Promise<AuthResponse> {
@@ -900,7 +901,7 @@ export class MulberryService {
         )
       }
 
-      const nextToggleAt = new Date(Date.now() + CANVAS_MODE_TOGGLE_COOLDOWN_MS).toISOString()
+      const nextToggleAt = new Date(Date.now() + this.canvasModeToggleCooldownMs).toISOString()
       await tx.query(
         `
         UPDATE pair_sessions

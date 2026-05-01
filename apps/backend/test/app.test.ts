@@ -53,6 +53,7 @@ describe("Mulberry backend", () => {
         databaseUrl: "postgres://unused",
         googleClientId: "",
         allowDevGoogleTokens: true,
+        canvasModeToggleCooldownMs: 60_000,
         wallpaperAdminPassword: "admin-password",
       },
     })

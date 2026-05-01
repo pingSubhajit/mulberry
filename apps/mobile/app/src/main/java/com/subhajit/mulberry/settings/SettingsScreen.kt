@@ -38,6 +38,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import com.subhajit.mulberry.BuildConfig
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -215,13 +216,14 @@ fun SettingsRoute(
     )
 
     pendingCanvasModeToggle?.let { desiredMode ->
+        val cooldownPhrase = if (BuildConfig.APP_ENVIRONMENT == "dev") "once a minute" else "once a day"
         val title = if (desiredMode == CanvasMode.DEDICATED) {
             "Switch to dedicated canvas?"
         } else {
             "Switch to shared canvas?"
         }
         val body = if (desiredMode == CanvasMode.DEDICATED) {
-            "Dedicated canvas means what you draw in the app shows up on your partner’s wallpaper, and your wallpaper shows what your partner draws. You can change this once a day."
+            "Dedicated canvas means what you draw in the app shows up on your partner’s wallpaper, and your wallpaper shows what your partner draws. You can change this $cooldownPhrase."
         } else {
             "Shared canvas means you both draw on the same canvas and see the same doodles on both wallpapers. Switching back merges what you both drew."
         }

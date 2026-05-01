@@ -306,8 +306,15 @@ class SettingsViewModel @Inject constructor(
                     _effects.emit(SettingsEffect.Message("Connect to sync before changing canvas mode."))
                 state.pendingOperationCount > 0 ->
                     _effects.emit(SettingsEffect.Message("Finish syncing before changing canvas mode."))
-                cooldownActive ->
-                    _effects.emit(SettingsEffect.Message("Canvas mode can only be changed once a day. Try again later."))
+                cooldownActive -> {
+                    val cooldownPhrase =
+                        if (BuildConfig.APP_ENVIRONMENT == "dev") "once a minute" else "once a day"
+                    _effects.emit(
+                        SettingsEffect.Message(
+                            "Canvas mode can only be changed $cooldownPhrase. Try again later."
+                        )
+                    )
+                }
                 else -> _effects.emit(SettingsEffect.ConfirmCanvasModeToggle(desiredMode))
             }
         }

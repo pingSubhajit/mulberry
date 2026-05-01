@@ -3,6 +3,7 @@ export interface AppConfig {
   databaseUrl: string
   googleClientId: string
   allowDevGoogleTokens: boolean
+  canvasModeToggleCooldownMs: number
   firebaseServiceAccountPath?: string
   firebaseServiceAccountJson?: string
   canvasUpdatePushTtlMs?: number
@@ -38,6 +39,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databaseUrl,
     googleClientId,
     allowDevGoogleTokens: (env.ALLOW_DEV_GOOGLE_TOKENS ?? (isProduction ? "false" : "true")) === "true",
+    canvasModeToggleCooldownMs:
+      optionalPositiveNumber(env.CANVAS_MODE_TOGGLE_COOLDOWN_MS) ??
+      (isProduction ? 24 * 60 * 60 * 1_000 : 60 * 1_000),
     firebaseServiceAccountPath: env.FIREBASE_SERVICE_ACCOUNT_PATH,
     firebaseServiceAccountJson: env.FIREBASE_SERVICE_ACCOUNT_JSON,
     canvasUpdatePushTtlMs: optionalPositiveNumber(env.CANVAS_UPDATE_PUSH_TTL_MS),

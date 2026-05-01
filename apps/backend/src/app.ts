@@ -57,7 +57,13 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     },
   )
   const storage = options.wallpaperStorage ?? createWallpaperStorage(config)
-  const service = new MulberryService(db, googleVerifier, pushDispatchService, storage)
+  const service = new MulberryService(
+    db,
+    googleVerifier,
+    pushDispatchService,
+    storage,
+    config.canvasModeToggleCooldownMs,
+  )
   const wallpaperCatalogService = new WallpaperCatalogService(
     db,
     storage,
