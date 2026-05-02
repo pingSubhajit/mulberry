@@ -59,6 +59,9 @@ fun StickerPickerPanel(
 ) {
     val packs = uiState.stickerPacks
     val selected = uiState.selectedStickerPack
+    val titleColor = if (chrome == StickerPickerChrome.Filled) MaterialTheme.colorScheme.onSurface else Color.White
+    val secondaryTextColor =
+        if (chrome == StickerPickerChrome.Filled) MaterialTheme.mulberryAppColors.mutedText else Color.White.copy(alpha = 0.75f)
 
     val containerModifier = modifier
         .fillMaxWidth()
@@ -85,7 +88,7 @@ fun StickerPickerPanel(
                     text = selected?.title ?: "Stickers",
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = titleColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -103,7 +106,7 @@ fun StickerPickerPanel(
                 Text(
                     text = uiState.stickerCatalogErrorMessage ?: "",
                     fontFamily = PoppinsFontFamily,
-                    color = MaterialTheme.mulberryAppColors.mutedText,
+                    color = secondaryTextColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
