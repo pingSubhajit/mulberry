@@ -60,7 +60,8 @@ class BackendStickerCatalogRepository @Inject constructor(
                     height = sticker.height,
                     sortOrder = sticker.sortOrder
                 )
-            }
+            },
+            fetchedAtMs = System.currentTimeMillis()
         )
     }
 
@@ -82,4 +83,3 @@ class BackendStickerCatalogRepository @Inject constructor(
         return StickerAssetUrl(url = response.url, expiresInSeconds = response.expiresInSeconds)
     }
 }
-

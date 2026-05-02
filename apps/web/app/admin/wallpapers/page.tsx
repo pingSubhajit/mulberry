@@ -233,9 +233,14 @@ export default function WallpaperAdminPage() {
           <Link href="/" className="text-sm font-semibold tracking-[-0.03em] text-brand">
             mulberry
           </Link>
-          <Link href="/" className="text-sm font-medium text-muted-foreground transition hover:text-foreground">
-            Home
-          </Link>
+          <div className="flex items-center gap-6 text-sm font-medium text-muted-foreground">
+            <Link href="/admin/stickers" className="transition hover:text-foreground">
+              Stickers
+            </Link>
+            <Link href="/" className="transition hover:text-foreground">
+              Home
+            </Link>
+          </div>
         </header>
 
         <section className="mx-auto flex min-h-[70vh] max-w-xl flex-col items-center justify-center px-5 pb-14 text-center sm:px-8">
@@ -297,6 +302,9 @@ export default function WallpaperAdminPage() {
           >
             Lock
           </button>
+          <Link href="/admin/stickers" className="transition hover:text-foreground">
+            Stickers
+          </Link>
           <Link href="/" className="transition hover:text-foreground">
             Home
           </Link>

@@ -28,6 +28,14 @@ export interface StickerPackSummary {
   featured: boolean
 }
 
+export interface StickerPackAdminSummary extends StickerPackSummary {
+  publishedAt: string | null
+  createdAt: string
+  updatedAt: string
+  published: boolean
+  stickerCount: number
+}
+
 export interface StickerSummary {
   stickerId: string
   thumbnailUrl: string
@@ -38,6 +46,10 @@ export interface StickerSummary {
 }
 
 export interface StickerPackDetail extends StickerPackSummary {
+  stickers: StickerSummary[]
+}
+
+export interface StickerPackAdminDetail extends StickerPackAdminSummary {
   stickers: StickerSummary[]
 }
 
@@ -209,17 +221,71 @@ export class StickerCatalogService {
     return { url: await this.storage.signedUrl(path, expiresInSeconds), expiresInSeconds }
   }
 
-  async listStickerPacksForAdmin(options: { adminPassword: string }): Promise<{ items: StickerPackRow[] }> {
+  async listStickerPacksForAdmin(
+    options: { adminPassword: string },
+  ): Promise<{ items: StickerPackAdminSummary[] }> {
     this.requireAdmin(options.adminPassword)
-    const rows = await this.db.query<StickerPackRow>(
+    const rows = await this.db.query<
+      StickerPackRow & {
+        sticker_count: number
+      }
+    >(
       `
       SELECT pack_key, pack_version, title, description, cover_thumbnail_path, cover_full_path,
-        sort_order, featured, published_at, created_at, updated_at
+        sort_order, featured, published_at, created_at, updated_at,
+        (SELECT COUNT(*)::int FROM stickers WHERE stickers.pack_key = sticker_packs.pack_key AND stickers.pack_version = sticker_packs.pack_version) as sticker_count
       FROM sticker_packs
       ORDER BY pack_key ASC, pack_version DESC
       `,
     )
-    return { items: rows.rows }
+    const items = await Promise.all(rows.rows.map((row) => this.packRowToAdminSummary(row)))
+    return { items }
+  }
+
+  async getStickerPackDetailForAdmin(options: {
+    adminPassword: string
+    packKey: string
+    packVersion: number
+  }): Promise<StickerPackAdminDetail> {
+    this.requireAdmin(options.adminPassword)
+    if (!this.storage) throw new HttpError(503, "Sticker storage is not configured")
+
+    const packKey = normalizePackKey(options.packKey)
+    if (!packKey) throw new HttpError(400, "packKey is required")
+    const packVersion = Number(options.packVersion)
+    if (!Number.isFinite(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
+
+    const packRows = await this.db.query<
+      StickerPackRow & {
+        sticker_count: number
+      }
+    >(
+      `
+      SELECT pack_key, pack_version, title, description, cover_thumbnail_path, cover_full_path,
+        sort_order, featured, published_at, created_at, updated_at,
+        (SELECT COUNT(*)::int FROM stickers WHERE stickers.pack_key = sticker_packs.pack_key AND stickers.pack_version = sticker_packs.pack_version) as sticker_count
+      FROM sticker_packs
+      WHERE pack_key = $1 AND pack_version = $2
+      LIMIT 1
+      `,
+      [packKey, packVersion],
+    )
+    const pack = packRows.rows[0]
+    if (!pack) throw new HttpError(404, "Sticker pack version not found")
+
+    const stickerRows = await this.db.query<StickerRow>(
+      `
+      SELECT pack_key, pack_version, sticker_id, sort_order, thumbnail_path, full_path, width, height, created_at, updated_at
+      FROM stickers
+      WHERE pack_key = $1 AND pack_version = $2
+      ORDER BY sort_order ASC, created_at DESC, sticker_id ASC
+      `,
+      [pack.pack_key, pack.pack_version],
+    )
+
+    const base = await this.packRowToAdminSummary(pack)
+    const stickers = await Promise.all(stickerRows.rows.map((row) => this.stickerRowToSummary(row)))
+    return { ...base, stickers }
   }
 
   async createStickerPackVersion(options: {
@@ -370,6 +436,50 @@ export class StickerCatalogService {
     return this.stickerRowToSummary(rows.rows[0])
   }
 
+  async deleteStickerPackVersionForAdmin(options: {
+    adminPassword: string
+    packKey: string
+    packVersion: number
+  }): Promise<void> {
+    this.requireAdmin(options.adminPassword)
+    if (!this.storage) throw new HttpError(503, "Sticker storage is not configured")
+
+    const packKey = normalizePackKey(options.packKey)
+    if (!packKey) throw new HttpError(400, "packKey is required")
+    const packVersion = Number(options.packVersion)
+    if (!Number.isFinite(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
+
+    const packRows = await this.db.query<Pick<StickerPackRow, "cover_thumbnail_path" | "cover_full_path">>(
+      `
+      SELECT cover_thumbnail_path, cover_full_path
+      FROM sticker_packs
+      WHERE pack_key = $1 AND pack_version = $2
+      LIMIT 1
+      `,
+      [packKey, packVersion],
+    )
+    const pack = packRows.rows[0]
+    if (!pack) throw new HttpError(404, "Sticker pack version not found")
+
+    const stickerRows = await this.db.query<Pick<StickerRow, "thumbnail_path" | "full_path">>(
+      `
+      SELECT thumbnail_path, full_path
+      FROM stickers
+      WHERE pack_key = $1 AND pack_version = $2
+      `,
+      [packKey, packVersion],
+    )
+
+    const paths: string[] = [
+      pack.cover_thumbnail_path,
+      pack.cover_full_path,
+      ...stickerRows.rows.flatMap((row) => [row.thumbnail_path, row.full_path]),
+    ].filter(Boolean)
+
+    await this.storage.remove(Array.from(new Set(paths)))
+    await this.db.query("DELETE FROM sticker_packs WHERE pack_key = $1 AND pack_version = $2", [packKey, packVersion])
+  }
+
   async updateStickerPackVersionMetadata(options: {
     adminPassword: string
     packKey: string
@@ -437,6 +547,20 @@ export class StickerCatalogService {
       coverFullUrl: await this.storage.signedUrl(row.cover_full_path, expiresInSeconds),
       sortOrder: Number(row.sort_order),
       featured: Boolean(row.featured),
+    }
+  }
+
+  private async packRowToAdminSummary(
+    row: StickerPackRow & { sticker_count?: number },
+  ): Promise<StickerPackAdminSummary> {
+    const base = await this.packRowToSummary(row)
+    return {
+      ...base,
+      publishedAt: row.published_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      published: row.published_at != null,
+      stickerCount: Number(row.sticker_count ?? 0),
     }
   }
 

@@ -29,11 +29,11 @@ data class StickerPackDetail(
     val coverFullUrl: String,
     val sortOrder: Int,
     val featured: Boolean,
-    val stickers: List<StickerSummary>
+    val stickers: List<StickerSummary>,
+    val fetchedAtMs: Long
 )
 
 data class StickerAssetUrl(
     val url: String,
     val expiresInSeconds: Int
 )
-

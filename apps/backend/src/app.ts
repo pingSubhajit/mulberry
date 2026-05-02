@@ -310,6 +310,16 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     })
   })
 
+  app.get("/admin/stickers/packs/:packKey/:packVersion", async (request) => {
+    const params = request.params as { packKey?: string; packVersion?: string }
+    const packVersion = Number(params.packVersion ?? "0")
+    return stickerCatalogService.getStickerPackDetailForAdmin({
+      adminPassword: readStickerAdminPassword(request) ?? "",
+      packKey: params.packKey ?? "",
+      packVersion: Number.isFinite(packVersion) ? packVersion : 0,
+    })
+  })
+
   app.post("/admin/stickers/packs", async (request) => {
     const fields: Record<string, string> = {}
     let uploadedFile: {
@@ -412,6 +422,17 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       contentType: uploadedFile.mimetype,
       data: uploadedFile.data,
     })
+  })
+
+  app.delete("/admin/stickers/packs/:packKey/:packVersion", async (request, reply) => {
+    const params = request.params as { packKey?: string; packVersion?: string }
+    const packVersion = Number(params.packVersion ?? "0")
+    await stickerCatalogService.deleteStickerPackVersionForAdmin({
+      adminPassword: readStickerAdminPassword(request) ?? "",
+      packKey: params.packKey ?? "",
+      packVersion: Number.isFinite(packVersion) ? packVersion : 0,
+    })
+    reply.code(204).send()
   })
 
   app.post("/admin/wallpapers", async (request) => {

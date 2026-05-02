@@ -187,6 +187,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val stickerCatalogBusyState = MutableStateFlow(false)
     private val stickerCatalogErrorState = MutableStateFlow<String?>(null)
     private val lastUsedStickerState = MutableStateFlow<StickerSelection?>(null)
+    private val stickerPacksLoadedAtMs = MutableStateFlow<Long?>(null)
     private val currentTimeMillis = MutableStateFlow(System.currentTimeMillis())
     private val _effects = MutableSharedFlow<CanvasHomeEffect>()
     val effects = _effects.asSharedFlow()
@@ -834,7 +835,8 @@ class CanvasHomeViewModel @Inject constructor(
                 current != null &&
                 current.packKey == packKey &&
                 current.packVersion == packVersion &&
-                current.stickers.isNotEmpty()
+                current.stickers.isNotEmpty() &&
+                System.currentTimeMillis() - current.fetchedAtMs < 15_000
             ) {
                 // Avoid refetching the same pack detail: the backend returns short-lived signed URLs,
                 // and refreshing them causes Coil to reload images (visible flicker) despite no
@@ -858,9 +860,12 @@ class CanvasHomeViewModel @Inject constructor(
         lastUsedStickerState.value = selection
     }
 
-    private fun ensureStickerPacksLoaded() {
+    private fun ensureStickerPacksLoaded(force: Boolean = false) {
         if (stickerCatalogBusyState.value) return
-        if (stickerPacksState.value.isNotEmpty()) return
+        val now = System.currentTimeMillis()
+        val lastLoaded = stickerPacksLoadedAtMs.value
+        val isCoolingDown = lastLoaded != null && now - lastLoaded < 10_000
+        if (!force && stickerPacksState.value.isNotEmpty() && isCoolingDown) return
         viewModelScope.launch {
             stickerCatalogBusyState.value = true
             stickerCatalogErrorState.value = null
@@ -868,9 +873,20 @@ class CanvasHomeViewModel @Inject constructor(
                 stickerCatalogRepository.fetchPacks()
             }.onSuccess { packs ->
                 stickerPacksState.value = packs
+                stickerPacksLoadedAtMs.value = System.currentTimeMillis()
+
+                val selected = selectedStickerPackState.value
+                if (selected != null && packs.none { it.packKey == selected.packKey && it.packVersion == selected.packVersion }) {
+                    selectedStickerPackState.value = null
+                    lastUsedStickerState.value = null
+                    stickerCatalogErrorState.value = "Sticker pack was removed."
+                    return@onSuccess
+                }
                 // Auto-select the first featured pack for v1.
-                selectedStickerPackState.value = packs.firstOrNull()?.let { pack ->
-                    runCatching { stickerCatalogRepository.fetchPackDetail(pack.packKey, pack.packVersion) }.getOrNull()
+                if (selectedStickerPackState.value == null) {
+                    selectedStickerPackState.value = packs.firstOrNull()?.let { pack ->
+                        runCatching { stickerCatalogRepository.fetchPackDetail(pack.packKey, pack.packVersion) }.getOrNull()
+                    }
                 }
             }.onFailure { error ->
                 stickerCatalogErrorState.value = error.message ?: "Unable to load sticker packs"
