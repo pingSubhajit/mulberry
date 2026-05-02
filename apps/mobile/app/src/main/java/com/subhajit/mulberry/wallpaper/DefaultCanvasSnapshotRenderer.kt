@@ -33,6 +33,7 @@ import com.subhajit.mulberry.drawing.render.committedStrokeBitmapRenderer
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerAssetVariant
+import com.subhajit.mulberry.stickers.resolveStickerRenderSizePx
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.FileOutputStream
 import javax.inject.Inject
@@ -273,10 +274,7 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
                     offsetX = placement.offsetX,
                     offsetY = placement.offsetY
                 )
-                val sizePx = (element.scale.coerceIn(0.08f, 1.6f) * placement.viewport.width).coerceAtLeast(1f)
-                val left = -sizePx / 2f
-                val top = -sizePx / 2f
-                val rect = RectF(left, top, left + sizePx, top + sizePx)
+                val maxSizePx = (element.scale.coerceIn(0.08f, 1.6f) * placement.viewport.width).coerceAtLeast(1f)
 
                 val file = stickerAssetStore.destinationFile(
                     packKey = element.packKey,
@@ -307,6 +305,22 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
                 if (bitmap == null) {
                     missingStickerAssets = true
                 }
+
+                val renderSize = if (bitmap != null) {
+                    resolveStickerRenderSizePx(
+                        maxSizePx = maxSizePx,
+                        bitmapWidthPx = bitmap.width,
+                        bitmapHeightPx = bitmap.height
+                    )
+                } else {
+                    com.subhajit.mulberry.stickers.StickerRenderSizePx(
+                        widthPx = maxSizePx,
+                        heightPx = maxSizePx
+                    )
+                }
+                val left = -renderSize.widthPx / 2f
+                val top = -renderSize.heightPx / 2f
+                val rect = RectF(left, top, left + renderSize.widthPx, top + renderSize.heightPx)
 
                 canvas.save()
                 canvas.translate(center.x, center.y)

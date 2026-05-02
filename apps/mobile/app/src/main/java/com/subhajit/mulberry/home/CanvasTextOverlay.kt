@@ -85,6 +85,7 @@ import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerAssetVariant
+import com.subhajit.mulberry.stickers.resolveStickerRenderSizePx
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.VirgilFontFamily
 import com.subhajit.mulberry.ui.theme.DmSansFontFamily
@@ -201,6 +202,7 @@ fun CanvasTextOverlay(
 
                 val hitId = hitTest(
                     elements = hittable,
+                    stickerBitmaps = stickerBitmaps,
                     pointPx = down.position,
                     canvasSize = canvasSize,
                     textSizePx = baseTextSizePx,
@@ -384,6 +386,7 @@ fun CanvasTextOverlay(
 
                 val hitId = hitTest(
                     elements = elements,
+                    stickerBitmaps = stickerBitmaps,
                     pointPx = down.position,
                     canvasSize = canvasSize,
                     textSizePx = baseTextSizePx,
@@ -567,11 +570,23 @@ fun CanvasTextOverlay(
                             val key = "${element.packKey}:${element.packVersion}:${element.stickerId}:full"
                             val bitmap = stickerBitmaps[key]
 
-                            val sizePx = (element.scale.coerceIn(0.08f, 1.6f) * canvasSize.width.toFloat())
+                            val maxSizePx = (element.scale.coerceIn(0.08f, 1.6f) * canvasSize.width.toFloat())
                                 .coerceAtLeast(1f)
-                            val left = -sizePx / 2f
-                            val top = -sizePx / 2f
-                            val rect = RectF(left, top, left + sizePx, top + sizePx)
+                            val renderSize = if (bitmap != null) {
+                                resolveStickerRenderSizePx(
+                                    maxSizePx = maxSizePx,
+                                    bitmapWidthPx = bitmap.width,
+                                    bitmapHeightPx = bitmap.height
+                                )
+                            } else {
+                                com.subhajit.mulberry.stickers.StickerRenderSizePx(
+                                    widthPx = maxSizePx,
+                                    heightPx = maxSizePx
+                                )
+                            }
+                            val left = -renderSize.widthPx / 2f
+                            val top = -renderSize.heightPx / 2f
+                            val rect = RectF(left, top, left + renderSize.widthPx, top + renderSize.heightPx)
 
                             native.save()
                             native.translate(center.x, center.y)
@@ -1186,6 +1201,7 @@ private fun EditorIconButton(
 
 private fun hitTest(
     elements: List<CanvasElement>,
+    stickerBitmaps: Map<String, android.graphics.Bitmap>,
     pointPx: Offset,
     canvasSize: IntSize,
     textSizePx: Float,
@@ -1251,11 +1267,26 @@ private fun hitTest(
                 }
             }
             is CanvasStickerElement -> {
-                val sizePx = (element.scale.coerceIn(0.08f, 1.6f) * canvasSize.width.toFloat()).coerceAtLeast(1f)
-                val half = sizePx / 2f
+                val key = "${element.packKey}:${element.packVersion}:${element.stickerId}:full"
+                val bitmap = stickerBitmaps[key]
+                val maxSizePx = (element.scale.coerceIn(0.08f, 1.6f) * canvasSize.width.toFloat()).coerceAtLeast(1f)
+                val renderSize = if (bitmap != null) {
+                    resolveStickerRenderSizePx(
+                        maxSizePx = maxSizePx,
+                        bitmapWidthPx = bitmap.width,
+                        bitmapHeightPx = bitmap.height
+                    )
+                } else {
+                    com.subhajit.mulberry.stickers.StickerRenderSizePx(
+                        widthPx = maxSizePx,
+                        heightPx = maxSizePx
+                    )
+                }
+                val halfW = renderSize.widthPx / 2f
+                val halfH = renderSize.heightPx / 2f
                 val xLocal = xRot
                 val yLocal = yRot
-                if (xLocal in -half..half && yLocal in -half..half) {
+                if (xLocal in -halfW..halfW && yLocal in -halfH..halfH) {
                     return element.id
                 }
             }
