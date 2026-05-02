@@ -529,6 +529,66 @@ export class StickerCatalogService {
     return this.packRowToSummary(row)
   }
 
+  async updateStickerPackVersionCoverForAdmin(options: {
+    adminPassword: string
+    packKey: string
+    packVersion: number
+    filename: string
+    contentType: string
+    data: Buffer
+  }): Promise<StickerPackSummary> {
+    this.requireAdmin(options.adminPassword)
+    if (!this.storage) throw new HttpError(503, "Sticker storage is not configured")
+
+    const packKey = normalizePackKey(options.packKey)
+    if (!packKey) throw new HttpError(400, "packKey is required")
+    const packVersion = Number(options.packVersion)
+    if (!Number.isFinite(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
+
+    const existingRows = await this.db.query<Pick<StickerPackRow, "cover_thumbnail_path" | "cover_full_path">>(
+      `
+      SELECT cover_thumbnail_path, cover_full_path
+      FROM sticker_packs
+      WHERE pack_key = $1 AND pack_version = $2
+      LIMIT 1
+      `,
+      [packKey, packVersion],
+    )
+    const existing = existingRows.rows[0]
+    if (!existing) throw new HttpError(404, "Sticker pack version not found")
+
+    const { thumbnail, full, contentType, extension } = await processStickerImage(options.data)
+    const coverId = randomUUID()
+    const coverThumbPath = `sticker-packs/${packKey}/${packVersion}/cover-${coverId}-thumb.${extension}`
+    const coverFullPath = `sticker-packs/${packKey}/${packVersion}/cover-${coverId}-full.${extension}`
+    await this.storage.upload(coverThumbPath, thumbnail, contentType)
+    await this.storage.upload(coverFullPath, full, contentType)
+
+    const rows = await this.db.query<StickerPackRow>(
+      `
+      UPDATE sticker_packs
+      SET cover_thumbnail_path = $3,
+        cover_full_path = $4,
+        updated_at = NOW()
+      WHERE pack_key = $1 AND pack_version = $2
+      RETURNING pack_key, pack_version, title, description, cover_thumbnail_path, cover_full_path,
+        sort_order, featured, published_at, created_at, updated_at
+      `,
+      [packKey, packVersion, coverThumbPath, coverFullPath],
+    )
+    const row = rows.rows[0]
+    if (!row) throw new HttpError(404, "Sticker pack version not found")
+
+    const oldPaths = [existing.cover_thumbnail_path, existing.cover_full_path].filter(Boolean)
+    try {
+      await this.storage.remove(Array.from(new Set(oldPaths)))
+    } catch {
+      // Best-effort cleanup; the DB already points at the new cover paths.
+    }
+
+    return this.packRowToSummary(row)
+  }
+
   private requireAdmin(candidate: string) {
     if (!this.adminPassword || candidate !== this.adminPassword) {
       throw new HttpError(401, "Invalid admin password")

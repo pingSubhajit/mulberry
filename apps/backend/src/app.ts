@@ -385,6 +385,20 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     })
   })
 
+  app.put("/admin/stickers/packs/:packKey/:packVersion/cover", async (request) => {
+    const params = request.params as { packKey?: string; packVersion?: string }
+    const upload = await readRequiredImageUpload(request)
+    const packVersion = Number(params.packVersion ?? "0")
+    return stickerCatalogService.updateStickerPackVersionCoverForAdmin({
+      adminPassword: readStickerAdminPassword(request) ?? "",
+      packKey: params.packKey ?? "",
+      packVersion: Number.isFinite(packVersion) ? packVersion : 0,
+      filename: upload.filename,
+      contentType: upload.contentType,
+      data: upload.data,
+    })
+  })
+
   app.post("/admin/stickers/packs/:packKey/:packVersion/stickers", async (request) => {
     const params = request.params as { packKey?: string; packVersion?: string }
     const fields: Record<string, string> = {}

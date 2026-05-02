@@ -65,6 +65,9 @@ export default function StickerAdminPage() {
   const [isUploadingStickers, setIsUploadingStickers] = useState(false)
   const [stickerUploadProgress, setStickerUploadProgress] = useState<string | null>(null)
   const stickerUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const [isUpdatingCover, setIsUpdatingCover] = useState(false)
+  const [coverUpdateFileName, setCoverUpdateFileName] = useState<string | null>(null)
+  const coverUpdateInputRef = useRef<HTMLInputElement | null>(null)
   const [isDeletingPack, setIsDeletingPack] = useState(false)
 
   const isUnlocked = adminPassword.trim().length > 0
@@ -132,6 +135,9 @@ export default function StickerAdminPage() {
 
   const openPackDialog = (packKey: string, packVersion: number) => {
     setOpenPack({ packKey, packVersion })
+    setCoverUpdateFileName(null)
+    setIsUpdatingCover(false)
+    if (coverUpdateInputRef.current) coverUpdateInputRef.current.value = ""
     startTransition(() => {
       void (async () => {
         setError(null)
@@ -151,8 +157,11 @@ export default function StickerAdminPage() {
     setOpenPackDetail(null)
     setStickerUploadProgress(null)
     setIsUploadingStickers(false)
+    setCoverUpdateFileName(null)
+    setIsUpdatingCover(false)
     setIsDeletingPack(false)
     if (stickerUploadInputRef.current) stickerUploadInputRef.current.value = ""
+    if (coverUpdateInputRef.current) coverUpdateInputRef.current.value = ""
   }
 
   useEffect(() => {
@@ -219,6 +228,8 @@ export default function StickerAdminPage() {
     setCreatingCoverFileName(null)
     setStickerUploadProgress(null)
     setIsUploadingStickers(false)
+    setIsUpdatingCover(false)
+    setCoverUpdateFileName(null)
     setIsCreatingPack(false)
     setCreatingStickerFileNames(null)
     setIsDraggingStickers(false)
@@ -226,6 +237,7 @@ export default function StickerAdminPage() {
     if (createCoverInputRef.current) createCoverInputRef.current.value = ""
     if (createStickersInputRef.current) createStickersInputRef.current.value = ""
     if (stickerUploadInputRef.current) stickerUploadInputRef.current.value = ""
+    if (coverUpdateInputRef.current) coverUpdateInputRef.current.value = ""
   }
 
   const setFileInputValue = (input: HTMLInputElement | null, file: File | null) => {
@@ -249,6 +261,13 @@ export default function StickerAdminPage() {
     setStatus(null)
     setFileInputValue(createCoverInputRef.current, file)
     setCreatingCoverFileName(file?.name ?? null)
+  }
+
+  const applyCoverUpdateFile = (file: File | null) => {
+    setError(null)
+    setStatus(null)
+    setFileInputValue(coverUpdateInputRef.current, file)
+    setCoverUpdateFileName(file?.name ?? null)
   }
 
   const applyCreateStickerFiles = (files: FileList | null) => {
@@ -471,6 +490,58 @@ export default function StickerAdminPage() {
         } finally {
           setIsUploadingStickers(false)
           setStickerUploadProgress(null)
+        }
+      })()
+    })
+  }
+
+  const onUpdateCover = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!isUnlocked) return
+    if (!openPack) return
+    if (isUpdatingCover || isPending) return
+
+    const file = coverUpdateInputRef.current?.files?.[0] ?? null
+    if (!file) {
+      setError("Choose a PNG cover image.")
+      return
+    }
+
+    const ok = !file.type || ACCEPTED_IMAGE_MIME_TYPES.has(file.type)
+    if (!ok) {
+      setError("Cover must be a PNG file.")
+      return
+    }
+
+    setIsUpdatingCover(true)
+    setError(null)
+    setStatus(null)
+    startTransition(() => {
+      void (async () => {
+        try {
+          const formData = new FormData()
+          formData.set("image", file, file.name)
+          const response = await fetch(
+            `${API_BASE_URL}/admin/stickers/packs/${openPack.packKey}/${openPack.packVersion}/cover`,
+            {
+              method: "PUT",
+              headers: adminHeaders,
+              body: formData,
+            },
+          )
+          if (!response.ok) {
+            const body = await response.json().catch(() => null)
+            throw new Error(body?.message ?? "Unable to update cover image")
+          }
+          if (coverUpdateInputRef.current) coverUpdateInputRef.current.value = ""
+          setCoverUpdateFileName(null)
+          setStatus("Cover image updated.")
+          openPackDialog(openPack.packKey, openPack.packVersion)
+          loadAdminCatalog()
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Unable to update cover image")
+        } finally {
+          setIsUpdatingCover(false)
         }
       })()
     })
@@ -877,42 +948,78 @@ export default function StickerAdminPage() {
                   </form>
 
                   <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
-                    <section className="rounded-[1.6rem] border border-soft-border bg-soft-surface p-4">
-                      <h3 className="text-sm font-semibold tracking-[-0.03em]">Upload stickers</h3>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        Select multiple PNG files. Sticker IDs are derived from filenames.
-                      </p>
+                    <div className="space-y-6">
+                      <section className="rounded-[1.6rem] border border-soft-border bg-soft-surface p-4">
+                        <h3 className="text-sm font-semibold tracking-[-0.03em]">Cover image</h3>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">Upload a new PNG to replace the pack cover.</p>
 
-                      <form onSubmit={onUploadStickers} className="mt-4 space-y-3">
-                        <fieldset disabled={isUploadingStickers || isPending} className="space-y-3">
-                          <label className="space-y-2">
-                            <span className="text-[11px] font-semibold text-muted-foreground">Start sort order</span>
-                            <input
-                              name="startSortOrder"
-                              type="number"
-                              defaultValue={defaultStartSortOrder}
-                              className="h-11 w-full rounded-2xl border border-soft-border bg-elevated px-4 text-sm font-medium outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
-                            />
-                          </label>
+                        <div className="mt-4 overflow-hidden rounded-2xl border border-soft-border bg-elevated">
+                          <div className="aspect-square w-full bg-background">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={selected.coverThumbnailUrl} alt={`${selected.title} cover`} className="h-full w-full object-cover" loading="lazy" />
+                          </div>
+                        </div>
 
-                          <label className="block cursor-pointer rounded-[1.4rem] border-2 border-dashed border-soft-border bg-elevated px-4 py-6 text-center transition hover:border-brand hover:bg-soft-surface-hover focus-within:ring-4 focus-within:ring-brand/10">
-                            <input ref={stickerUploadInputRef} type="file" accept="image/png" multiple className="sr-only" />
-                            <span className="block text-sm font-semibold">
-                              {isUploadingStickers ? "Uploading..." : "Choose PNG stickers"}
-                            </span>
-                            <span className="mt-1 block text-xs font-medium text-muted-foreground">PNG only</span>
-                          </label>
+                        <form onSubmit={onUpdateCover} className="mt-4 space-y-3">
+                          <fieldset disabled={isUpdatingCover || isPending} className="space-y-3">
+                            <label className="block cursor-pointer rounded-[1.4rem] border-2 border-dashed border-soft-border bg-elevated px-4 py-5 text-center transition hover:border-brand hover:bg-soft-surface-hover focus-within:ring-4 focus-within:ring-brand/10">
+                              <input
+                                ref={coverUpdateInputRef}
+                                type="file"
+                                accept="image/png"
+                                className="sr-only"
+                                onChange={(event) => applyCoverUpdateFile(event.target.files?.[0] ?? null)}
+                              />
+                              <span className="block text-sm font-semibold">
+                                {coverUpdateFileName ? coverUpdateFileName : isUpdatingCover ? "Updating..." : "Choose PNG cover"}
+                              </span>
+                              <span className="mt-1 block text-xs font-medium text-muted-foreground">PNG only</span>
+                            </label>
 
-                          <Button type="submit" className="h-11 w-full rounded-2xl">
-                            {isUploadingStickers ? "Uploading..." : "Upload"}
-                          </Button>
-                        </fieldset>
+                            <Button type="submit" disabled={!coverUpdateFileName} className="h-11 w-full rounded-2xl">
+                              {isUpdatingCover ? "Updating..." : "Update cover"}
+                            </Button>
+                          </fieldset>
+                        </form>
+                      </section>
 
-                        {stickerUploadProgress ? (
-                          <p className="text-xs font-semibold text-muted-foreground">{stickerUploadProgress}</p>
-                        ) : null}
-                      </form>
-                    </section>
+                      <section className="rounded-[1.6rem] border border-soft-border bg-soft-surface p-4">
+                        <h3 className="text-sm font-semibold tracking-[-0.03em]">Upload stickers</h3>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          Select multiple PNG files. Sticker IDs are derived from filenames.
+                        </p>
+
+                        <form onSubmit={onUploadStickers} className="mt-4 space-y-3">
+                          <fieldset disabled={isUploadingStickers || isPending} className="space-y-3">
+                            <label className="space-y-2">
+                              <span className="text-[11px] font-semibold text-muted-foreground">Start sort order</span>
+                              <input
+                                name="startSortOrder"
+                                type="number"
+                                defaultValue={defaultStartSortOrder}
+                                className="h-11 w-full rounded-2xl border border-soft-border bg-elevated px-4 text-sm font-medium outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
+                              />
+                            </label>
+
+                            <label className="block cursor-pointer rounded-[1.4rem] border-2 border-dashed border-soft-border bg-elevated px-4 py-6 text-center transition hover:border-brand hover:bg-soft-surface-hover focus-within:ring-4 focus-within:ring-brand/10">
+                              <input ref={stickerUploadInputRef} type="file" accept="image/png" multiple className="sr-only" />
+                              <span className="block text-sm font-semibold">
+                                {isUploadingStickers ? "Uploading..." : "Choose PNG stickers"}
+                              </span>
+                              <span className="mt-1 block text-xs font-medium text-muted-foreground">PNG only</span>
+                            </label>
+
+                            <Button type="submit" className="h-11 w-full rounded-2xl">
+                              {isUploadingStickers ? "Uploading..." : "Upload"}
+                            </Button>
+                          </fieldset>
+
+                          {stickerUploadProgress ? (
+                            <p className="text-xs font-semibold text-muted-foreground">{stickerUploadProgress}</p>
+                          ) : null}
+                        </form>
+                      </section>
+                    </div>
 
                     <section className="rounded-[1.6rem] border border-soft-border bg-soft-surface p-4">
                       <h3 className="text-sm font-semibold tracking-[-0.03em]">Stickers</h3>
