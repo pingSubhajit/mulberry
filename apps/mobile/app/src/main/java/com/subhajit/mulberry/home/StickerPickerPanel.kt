@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,34 +27,49 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 
+enum class StickerPickerChrome {
+    Filled,
+    Floating
+}
+
 @Composable
 fun StickerPickerPanel(
     uiState: CanvasHomeUiState,
     onPackSelected: (String, Int) -> Unit,
     onStickerChosen: (String, Int, String) -> Unit,
+    columns: Int = 3,
+    stickerTileSize: Dp = 92.dp,
+    gridHeight: Dp = 280.dp,
+    chrome: StickerPickerChrome = StickerPickerChrome.Filled,
     modifier: Modifier = Modifier
 ) {
     val packs = uiState.stickerPacks
     val selected = uiState.selectedStickerPack
 
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 10.dp),
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.mulberryAppColors.softSurfaceStrong,
-        shadowElevation = 10.dp
+    val containerModifier = modifier
+        .fillMaxWidth()
+        .then(
+            if (chrome == StickerPickerChrome.Filled) {
+                Modifier
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(MaterialTheme.mulberryAppColors.softSurfaceStrong)
+                    .padding(12.dp)
+            } else {
+                Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
+            }
+        )
+
+    Column(
+        modifier = containerModifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -98,7 +112,14 @@ fun StickerPickerPanel(
                             modifier = Modifier
                                 .size(56.dp)
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(Color.White.copy(alpha = 0.08f))
+                                .background(
+                                    if (chrome == StickerPickerChrome.Filled) {
+                                        Color.White.copy(alpha = 0.08f)
+                                    } else {
+                                        Color.White.copy(alpha = 0.06f)
+                                    },
+                                    RoundedCornerShape(14.dp)
+                                )
                                 .border(
                                     width = if (isSelected) 2.dp else 1.dp,
                                     color = if (isSelected) MulberryPrimary else Color.White.copy(alpha = 0.08f),
@@ -115,19 +136,26 @@ fun StickerPickerPanel(
             if (stickers.isNotEmpty()) {
                 val selectedPack = selected
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(5),
+                    columns = GridCells.Fixed(columns.coerceAtLeast(1)),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.height(180.dp)
+                    modifier = Modifier.height(gridHeight)
                 ) {
                     items(stickers, key = { it.stickerId }) { sticker ->
                         AsyncImage(
                             model = sticker.thumbnailUrl,
                             contentDescription = sticker.stickerId,
                             modifier = Modifier
-                                .size(56.dp)
+                                .size(stickerTileSize)
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(Color.White.copy(alpha = 0.06f))
+                                .background(
+                                    if (chrome == StickerPickerChrome.Filled) {
+                                        Color.White.copy(alpha = 0.06f)
+                                    } else {
+                                        Color.White.copy(alpha = 0.04f)
+                                    },
+                                    RoundedCornerShape(14.dp)
+                                )
                                 .clickable {
                                     selectedPack?.let { pack ->
                                         onStickerChosen(pack.packKey, pack.packVersion, sticker.stickerId)
@@ -140,6 +168,5 @@ fun StickerPickerPanel(
             } else {
                 Spacer(modifier = Modifier.height(40.dp))
             }
-        }
     }
 }

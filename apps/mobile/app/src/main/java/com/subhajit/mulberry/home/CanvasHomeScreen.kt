@@ -217,7 +217,7 @@ fun CanvasHomeRoute(
         }
     }
 
-    CanvasHomeScreen(
+	    CanvasHomeScreen(
         uiState = uiState,
         shortcutAction = shortcutAction,
         wallpaperPresets = viewModel.wallpaperPresets,
@@ -262,12 +262,13 @@ fun CanvasHomeRoute(
         onTextElementAdded = viewModel::onTextElementAdded,
         onTextElementUpdated = viewModel::onTextElementUpdated,
         onTextElementDeleted = viewModel::onTextElementDeleted,
-        onStickerElementAdded = viewModel::onStickerElementAdded,
-        onStickerElementUpdated = viewModel::onStickerElementUpdated,
-        onStickerElementDeleted = viewModel::onStickerElementDeleted,
-        onClearRequested = viewModel::onClearRequested,
-        onClearDismissed = viewModel::onClearDismissed,
-        onClearConfirmed = viewModel::onClearConfirmed,
+	        onStickerElementAdded = viewModel::onStickerElementAdded,
+	        onStickerElementUpdated = viewModel::onStickerElementUpdated,
+	        onStickerElementDeleted = viewModel::onStickerElementDeleted,
+	        onStickerUsed = viewModel::onStickerUsed,
+	        onClearRequested = viewModel::onClearRequested,
+	        onClearDismissed = viewModel::onClearDismissed,
+	        onClearConfirmed = viewModel::onClearConfirmed,
         onUndoRequested = viewModel::onUndoRequested,
         onRedoRequested = viewModel::onRedoRequested,
         onShortcutActionHandled = onShortcutActionHandled
@@ -317,10 +318,11 @@ private fun CanvasHomeScreen(
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
-    onStickerElementAdded: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
-    onStickerElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
-    onStickerElementDeleted: (String) -> Unit,
-    onClearRequested: () -> Unit,
+	    onStickerElementAdded: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+	    onStickerElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+	    onStickerElementDeleted: (String) -> Unit,
+	    onStickerUsed: (StickerSelection) -> Unit,
+	    onClearRequested: () -> Unit,
     onClearDismissed: () -> Unit,
     onClearConfirmed: () -> Unit,
     onUndoRequested: () -> Unit,
@@ -328,9 +330,11 @@ private fun CanvasHomeScreen(
     onShortcutActionHandled: (AppShortcutAction) -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { MainAppTab.entries.size })
-    val coroutineScope = rememberCoroutineScope()
-    val selectedTab = MainAppTab.entries[pagerState.currentPage]
-    var textEditorSession by remember { mutableStateOf<CanvasTextEditorSession?>(null) }
+	    val coroutineScope = rememberCoroutineScope()
+	    val selectedTab = MainAppTab.entries[pagerState.currentPage]
+	    var textEditorSession by remember { mutableStateOf<CanvasTextEditorSession?>(null) }
+	    var stickerEditorSession by remember { mutableStateOf<CanvasStickerEditorSession?>(null) }
+	    var pendingNewStickerCenter by remember { mutableStateOf<StrokePoint?>(null) }
     val headerTitle = when (selectedTab) {
         MainAppTab.Canvas -> if (uiState.bootstrapState.pairingStatus == PairingStatus.UNPAIRED) {
             stringResource(R.string.home_unpaired_title)
@@ -426,9 +430,60 @@ private fun CanvasHomeScreen(
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        val editorOpen = textEditorSession != null
-        Column(
+	    Box(modifier = Modifier.fillMaxSize()) {
+	        val editorOpen = textEditorSession != null || stickerEditorSession != null
+
+	        LaunchedEffect(
+	            pendingNewStickerCenter,
+	            uiState.lastUsedSticker,
+	            uiState.selectedStickerPack,
+	            uiState.stickerPacks,
+	            editorOpen,
+	            uiState.toolState.activeTool
+	        ) {
+	            val center = pendingNewStickerCenter ?: return@LaunchedEffect
+	            if (editorOpen) return@LaunchedEffect
+	            if (uiState.toolState.activeTool != DrawingTool.STICKER) {
+	                pendingNewStickerCenter = null
+	                return@LaunchedEffect
+	            }
+
+	            val lastUsed = uiState.lastUsedSticker
+	            val selectedPack = uiState.selectedStickerPack
+	            val selectedFirstSticker = selectedPack?.stickers?.firstOrNull()?.let { first ->
+	                StickerSelection(selectedPack.packKey, selectedPack.packVersion, first.stickerId)
+	            }
+
+	            val selection = lastUsed ?: selectedFirstSticker
+	            if (selection != null) {
+	                onStickerPackSelected(selection.packKey, selection.packVersion)
+	                textEditorSession = null
+	                stickerEditorSession = CanvasStickerEditorSession(
+	                    element = com.subhajit.mulberry.drawing.model.CanvasStickerElement(
+	                        id = java.util.UUID.randomUUID().toString(),
+	                        createdAt = System.currentTimeMillis(),
+	                        center = center,
+	                        rotationRad = 0f,
+	                        scale = 0.22f,
+	                        packKey = selection.packKey,
+	                        packVersion = selection.packVersion,
+	                        stickerId = selection.stickerId
+	                    ),
+	                    isNew = true
+	                )
+	                pendingNewStickerCenter = null
+	                return@LaunchedEffect
+	            }
+
+	            // No last used sticker and no selected pack; pick the first pack (if present) and
+	            // wait for its detail to load, then open with its first sticker.
+	            val firstPack = uiState.stickerPacks.firstOrNull()
+	            if (firstPack != null) {
+	                onStickerPackSelected(firstPack.packKey, firstPack.packVersion)
+	            }
+	        }
+
+	        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
@@ -481,15 +536,26 @@ private fun CanvasHomeScreen(
                         onTextElementAdded = onTextElementAdded,
                         onTextElementUpdated = onTextElementUpdated,
                         onTextElementDeleted = onTextElementDeleted,
-                        onStickerElementAdded = onStickerElementAdded,
-                        onStickerElementUpdated = onStickerElementUpdated,
-                        onStickerElementDeleted = onStickerElementDeleted,
-                        onTextEditorRequested = { session -> textEditorSession = session },
-                        isTextEditorOpen = textEditorSession != null,
-                        onClearRequested = onClearRequested,
-                        onUndoRequested = onUndoRequested,
-                        onRedoRequested = onRedoRequested
-                    )
+	                        onStickerElementAdded = onStickerElementAdded,
+	                        onStickerElementUpdated = onStickerElementUpdated,
+	                        onStickerElementDeleted = onStickerElementDeleted,
+	                        onTextEditorRequested = { session ->
+	                            stickerEditorSession = null
+	                            textEditorSession = session
+	                        },
+	                        onStickerEditorRequested = { session ->
+	                            textEditorSession = null
+	                            onStickerPackSelected(session.element.packKey, session.element.packVersion)
+	                            stickerEditorSession = session
+	                        },
+	                        onNewStickerRequestedAt = { center ->
+	                            pendingNewStickerCenter = center
+	                        },
+	                        isEditorOpen = editorOpen,
+	                        onClearRequested = onClearRequested,
+	                        onUndoRequested = onUndoRequested,
+	                        onRedoRequested = onRedoRequested
+	                    )
 
                     MainAppTab.LockScreen -> LockScreenHomePane(
                         uiState = uiState,
@@ -517,8 +583,8 @@ private fun CanvasHomeScreen(
         }
 
         val session = textEditorSession
-        if (session != null) {
-            TextEditorOverlay(
+	        if (session != null) {
+	            TextEditorOverlay(
                 element = session.element,
                 palette = uiState.palette,
                 autoFocus = true,
@@ -533,9 +599,35 @@ private fun CanvasHomeScreen(
                     onTextElementDeleted(elementId)
                     textEditorSession = null
                 }
-            )
-        }
-    }
+	            )
+	        }
+
+	        val stickerSession = stickerEditorSession
+	        if (stickerSession != null) {
+	            StickerEditorOverlay(
+	                session = stickerSession,
+	                uiState = uiState,
+	                stickerAssetStore = stickerAssetStore,
+	                onPackSelected = onStickerPackSelected,
+	                onStickerPicked = onStickerUsed,
+	                onDone = { updated ->
+	                    if (stickerSession.isNew) {
+	                        onStickerElementAdded(updated)
+	                    } else {
+	                        onStickerElementUpdated(updated)
+	                    }
+	                    onStickerUsed(StickerSelection(updated.packKey, updated.packVersion, updated.stickerId))
+	                    stickerEditorSession = null
+	                },
+	                onDelete = { elementId ->
+	                    if (!stickerSession.isNew) {
+	                        onStickerElementDeleted(elementId)
+	                    }
+	                    stickerEditorSession = null
+	                }
+	            )
+	        }
+	    }
 }
 
 @Composable
@@ -613,12 +705,14 @@ private fun CanvasHomePane(
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
-    onStickerElementAdded: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
-    onStickerElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
-    onStickerElementDeleted: (String) -> Unit,
-    onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
-    isTextEditorOpen: Boolean,
-    onClearRequested: () -> Unit,
+	    onStickerElementAdded: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+	    onStickerElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+	    onStickerElementDeleted: (String) -> Unit,
+	    onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
+	    onStickerEditorRequested: (CanvasStickerEditorSession) -> Unit,
+	    onNewStickerRequestedAt: (StrokePoint) -> Unit,
+	    isEditorOpen: Boolean,
+	    onClearRequested: () -> Unit,
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit
 ) {
@@ -721,12 +815,14 @@ private fun CanvasHomePane(
             onTextElementAdded = onTextElementAdded,
             onTextElementUpdated = onTextElementUpdated,
             onTextElementDeleted = onTextElementDeleted,
-            onStickerElementAdded = onStickerElementAdded,
-            onStickerElementUpdated = onStickerElementUpdated,
-            onStickerElementDeleted = onStickerElementDeleted,
-            onTextEditorRequested = onTextEditorRequested,
-            isTextEditorOpen = isTextEditorOpen,
-            onClearRequested = onClearRequested,
+	            onStickerElementAdded = onStickerElementAdded,
+	            onStickerElementUpdated = onStickerElementUpdated,
+	            onStickerElementDeleted = onStickerElementDeleted,
+	            onTextEditorRequested = onTextEditorRequested,
+	            onStickerEditorRequested = onStickerEditorRequested,
+	            onNewStickerRequestedAt = onNewStickerRequestedAt,
+	            isEditorOpen = isEditorOpen,
+	            onClearRequested = onClearRequested,
             onUndoRequested = onUndoRequested,
             onRedoRequested = onRedoRequested,
             modifier = Modifier.testTag(TestTags.HOME_OPEN_CANVAS_BUTTON)
@@ -752,12 +848,14 @@ private fun PairedCanvasPane(
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
-    onStickerElementAdded: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
-    onStickerElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
-    onStickerElementDeleted: (String) -> Unit,
-    onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
-    isTextEditorOpen: Boolean,
-    onClearRequested: () -> Unit,
+	    onStickerElementAdded: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+	    onStickerElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+	    onStickerElementDeleted: (String) -> Unit,
+	    onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
+	    onStickerEditorRequested: (CanvasStickerEditorSession) -> Unit,
+	    onNewStickerRequestedAt: (StrokePoint) -> Unit,
+	    isEditorOpen: Boolean,
+	    onClearRequested: () -> Unit,
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit,
     modifier: Modifier = Modifier
@@ -795,48 +893,27 @@ private fun PairedCanvasPane(
                 strokeRenderMode = uiState.canvasStrokeRenderMode
             )
 
-            CanvasTextOverlay(
-                elements = uiState.canvasState.elements,
-                activeTool = uiState.toolState.activeTool,
-                palette = uiState.palette,
-                selectedColorArgb = uiState.toolState.selectedColorArgb,
-                stickerAssetStore = stickerAssetStore,
-                onEraseTap = onCanvasTap,
-                onAddTextElement = onTextElementAdded,
-                onUpdateTextElement = onTextElementUpdated,
-                onDeleteTextElement = onTextElementDeleted,
-                onAddStickerElement = onStickerElementAdded,
-                onUpdateStickerElement = onStickerElementUpdated,
-                onDeleteStickerElement = onStickerElementDeleted,
-                onRequestEdit = onTextEditorRequested,
-                isEditorOpen = isTextEditorOpen,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(8.dp)
-            )
-
-            if (uiState.toolState.activeTool == com.subhajit.mulberry.drawing.model.DrawingTool.STICKER) {
-                StickerPickerPanel(
-                    uiState = uiState,
-                    onPackSelected = onStickerPackSelected,
-                    onStickerChosen = { packKey, packVersion, stickerId ->
-                        val element = com.subhajit.mulberry.drawing.model.CanvasStickerElement(
-                            id = java.util.UUID.randomUUID().toString(),
-                            createdAt = System.currentTimeMillis(),
-                            center = com.subhajit.mulberry.drawing.model.StrokePoint(x = 0.5f, y = 0.5f),
-                            rotationRad = 0f,
-                            scale = 0.22f,
-                            packKey = packKey,
-                            packVersion = packVersion,
-                            stickerId = stickerId
-                        )
-                        onStickerElementAdded(element)
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 12.dp)
-                )
-            }
+	            CanvasTextOverlay(
+	                elements = uiState.canvasState.elements,
+	                activeTool = uiState.toolState.activeTool,
+	                palette = uiState.palette,
+	                selectedColorArgb = uiState.toolState.selectedColorArgb,
+	                stickerAssetStore = stickerAssetStore,
+	                onEraseTap = onCanvasTap,
+	                onAddTextElement = onTextElementAdded,
+	                onUpdateTextElement = onTextElementUpdated,
+	                onDeleteTextElement = onTextElementDeleted,
+	                onAddStickerElement = onStickerElementAdded,
+	                onUpdateStickerElement = onStickerElementUpdated,
+	                onDeleteStickerElement = onStickerElementDeleted,
+	                onRequestTextEdit = onTextEditorRequested,
+	                onRequestStickerEdit = onStickerEditorRequested,
+	                onRequestNewStickerAt = onNewStickerRequestedAt,
+	                isEditorOpen = isEditorOpen,
+	                modifier = Modifier
+	                    .fillMaxSize()
+	                    .padding(8.dp)
+	            )
 
             if (uiState.canvasState.isEmpty) {
                 CanvasBlankStateGuidance(
@@ -943,10 +1020,7 @@ private fun CanvasActionButton(
                 .fillMaxSize()
                 .alpha(iconAlpha),
             contentScale = ContentScale.Fit,
-            colorFilter = if (
-                drawableRes == R.drawable.canvas_action_text ||
-                drawableRes == R.drawable.canvas_action_sticker
-            ) {
+            colorFilter = if (drawableRes == R.drawable.canvas_action_text) {
                 ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
             } else {
                 null

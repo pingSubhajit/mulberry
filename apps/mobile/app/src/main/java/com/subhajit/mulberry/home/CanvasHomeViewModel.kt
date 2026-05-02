@@ -138,6 +138,7 @@ data class CanvasHomeUiState(
     val selectedStickerPack: StickerPackDetail? = null,
     val isStickerCatalogLoading: Boolean = false,
     val stickerCatalogErrorMessage: String? = null,
+    val lastUsedSticker: StickerSelection? = null,
     val showClearConfirmation: Boolean = false,
     val canvasStrokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.Hybrid,
     val palette: List<Long> = DrawingDefaults.palette
@@ -185,6 +186,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val selectedStickerPackState = MutableStateFlow<StickerPackDetail?>(null)
     private val stickerCatalogBusyState = MutableStateFlow(false)
     private val stickerCatalogErrorState = MutableStateFlow<String?>(null)
+    private val lastUsedStickerState = MutableStateFlow<StickerSelection?>(null)
     private val currentTimeMillis = MutableStateFlow(System.currentTimeMillis())
     private val _effects = MutableSharedFlow<CanvasHomeEffect>()
     val effects = _effects.asSharedFlow()
@@ -277,8 +279,9 @@ class CanvasHomeViewModel @Inject constructor(
         baseState,
         inviteControls,
         wallpaperControls,
-        stickerCatalogUi
-    ) { baseState, inviteControls, wallpaperControls, stickers ->
+        stickerCatalogUi,
+        lastUsedStickerState
+    ) { baseState, inviteControls, wallpaperControls, stickers, lastUsedSticker ->
         CanvasHomeUiState(
             environmentLabel = appConfig.environment.displayName,
             bootstrapState = baseState.bootstrapState,
@@ -309,6 +312,7 @@ class CanvasHomeViewModel @Inject constructor(
             selectedStickerPack = stickers.selected,
             isStickerCatalogLoading = stickers.isBusy,
             stickerCatalogErrorMessage = stickers.error,
+            lastUsedSticker = lastUsedSticker,
             showClearConfirmation = inviteControls.clearDialogVisible,
             canvasStrokeRenderMode = appConfig.canvasStrokeRenderMode
         )
@@ -323,6 +327,17 @@ class CanvasHomeViewModel @Inject constructor(
     private val sessionRepository = repository
 
     init {
+        viewModelScope.launch {
+            baseState.collect { state ->
+                val activeTool = state.renderState.toolState.activeTool
+                if (activeTool == DrawingTool.STICKER) {
+                    ensureStickerPacksLoaded()
+                } else {
+                    selectedStickerPackState.value = null
+                    stickerCatalogErrorState.value = null
+                }
+            }
+        }
         viewModelScope.launch {
             while (true) {
                 currentTimeMillis.value = System.currentTimeMillis()
@@ -825,6 +840,10 @@ class CanvasHomeViewModel @Inject constructor(
             }
             stickerCatalogBusyState.value = false
         }
+    }
+
+    fun onStickerUsed(selection: StickerSelection) {
+        lastUsedStickerState.value = selection
     }
 
     private fun ensureStickerPacksLoaded() {

@@ -121,7 +121,9 @@ fun CanvasTextOverlay(
     onAddStickerElement: (CanvasStickerElement) -> Unit,
     onUpdateStickerElement: (CanvasStickerElement) -> Unit,
     onDeleteStickerElement: (String) -> Unit,
-    onRequestEdit: (CanvasTextEditorSession) -> Unit,
+    onRequestTextEdit: (CanvasTextEditorSession) -> Unit,
+    onRequestStickerEdit: (CanvasStickerEditorSession) -> Unit,
+    onRequestNewStickerAt: (StrokePoint) -> Unit,
     isEditorOpen: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -319,10 +321,15 @@ fun CanvasTextOverlay(
                     )
                     onAddTextElement(element)
                     selectedElementId = null
-                    onRequestEdit(CanvasTextEditorSession(element = element, isNew = true))
+                    onRequestTextEdit(CanvasTextEditorSession(element = element, isNew = true))
+                    return@awaitEachGesture
+                } else if (hitId == null && activeTool == DrawingTool.STICKER) {
+                    // Sticker tool tap empty canvas => enter sticker edit mode.
+                    selectedElementId = null
+                    liveTransformPreview = null
+                    onRequestNewStickerAt(initialDown.toNormalizedPoint(canvasSize))
                     return@awaitEachGesture
                 } else if (hitId == null) {
-                    // Sticker tool tap on empty canvas does nothing.
                     selectedElementId = null
                     liveTransformPreview = null
                     return@awaitEachGesture
@@ -345,7 +352,9 @@ fun CanvasTextOverlay(
                     val target = base ?: return@awaitEachGesture
                     selectedElementId = null
                     if (activeTool == DrawingTool.TEXT && target is CanvasTextElement) {
-                        onRequestEdit(CanvasTextEditorSession(element = target, isNew = false))
+                        onRequestTextEdit(CanvasTextEditorSession(element = target, isNew = false))
+                    } else if (activeTool == DrawingTool.STICKER && target is CanvasStickerElement) {
+                        onRequestStickerEdit(CanvasStickerEditorSession(element = target, isNew = false))
                     }
                 }
             }
