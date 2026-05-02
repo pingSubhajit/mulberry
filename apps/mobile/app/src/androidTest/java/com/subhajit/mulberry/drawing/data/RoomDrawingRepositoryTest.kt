@@ -202,6 +202,7 @@ class RoomDrawingRepositoryTest {
         drawingDao = database.drawingDao(),
         drawingOperationsDao = database.drawingOperationsDao(),
         canvasTextElementDao = database.canvasTextElementDao(),
+        canvasStickerElementDao = database.canvasStickerElementDao(),
         canvasMetadataDao = database.canvasMetadataDao(),
         strokeBuilder = StrokeBuilder()
     )

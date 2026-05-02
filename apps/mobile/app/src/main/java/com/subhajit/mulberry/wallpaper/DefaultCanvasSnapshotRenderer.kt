@@ -156,7 +156,7 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
         )
     }
 
-    private fun drawOverlayElements(
+    private suspend fun drawOverlayElements(
         canvas: Canvas,
         textElements: List<CanvasTextElementEntity>,
         stickerElements: List<CanvasStickerElementEntity>,
@@ -272,11 +272,26 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
                     stickerId = element.stickerId,
                     variant = StickerAssetVariant.FULL
                 )
-                val bitmap = if (file.exists() && file.length() > 0) {
-                    android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+
+                // Important for background sync: if the sticker isn't cached yet, attempt to
+                // download it during snapshot rendering so the partner's wallpaper can render
+                // correctly without requiring a foreground canvas session.
+                val resolvedFile = if (file.exists() && file.length() > 0) {
+                    file
                 } else {
-                    null
+                    runCatching {
+                        stickerAssetStore.getOrDownloadStickerAsset(
+                            packKey = element.packKey,
+                            packVersion = element.packVersion,
+                            stickerId = element.stickerId,
+                            variant = StickerAssetVariant.FULL
+                        )
+                    }.getOrNull()
                 }
+
+                val bitmap = resolvedFile
+                    ?.takeIf { it.exists() && it.length() > 0 }
+                    ?.let { resolved -> android.graphics.BitmapFactory.decodeFile(resolved.absolutePath) }
                 if (bitmap == null) {
                     missingStickerAssets = true
                 }
