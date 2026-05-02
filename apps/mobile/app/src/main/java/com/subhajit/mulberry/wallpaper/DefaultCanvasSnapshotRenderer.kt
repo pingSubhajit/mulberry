@@ -175,6 +175,12 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
         val spaceMono = loadTypeface(R.font.space_mono_regular) ?: Typeface.DEFAULT
         val playfair = loadTypeface(R.font.playfair_display_regular) ?: Typeface.DEFAULT
         val bangers = loadTypeface(R.font.bangers_regular) ?: Typeface.DEFAULT
+        val permanentMarker = loadTypeface(R.font.permanent_marker_regular) ?: Typeface.DEFAULT
+        val kalam = loadTypeface(R.font.kalam_regular) ?: Typeface.DEFAULT
+        val caveat = loadTypeface(R.font.caveat_regular) ?: Typeface.DEFAULT
+        val merriweather = loadTypeface(R.font.merriweather_regular) ?: Typeface.DEFAULT
+        val oswald = loadTypeface(R.font.oswald_regular) ?: Typeface.DEFAULT
+        val baloo2 = loadTypeface(R.font.baloo2_regular) ?: Typeface.DEFAULT
 
         var missingStickerAssets = false
         var textIndex = 0
@@ -204,6 +210,12 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
                     CanvasTextFont.SPACE_MONO -> spaceMono
                     CanvasTextFont.PLAYFAIR_DISPLAY -> playfair
                     CanvasTextFont.BANGERS -> bangers
+                    CanvasTextFont.PERMANENT_MARKER -> permanentMarker
+                    CanvasTextFont.KALAM -> kalam
+                    CanvasTextFont.CAVEAT -> caveat
+                    CanvasTextFont.MERRIWEATHER -> merriweather
+                    CanvasTextFont.OSWALD -> oswald
+                    CanvasTextFont.BALOO_2 -> baloo2
                 }
                 val backgroundColor = element.colorArgb.toInt()
                 val textColor = if (element.backgroundPillEnabled) {

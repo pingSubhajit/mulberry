@@ -36,7 +36,13 @@ enum class CanvasTextFont {
     DM_SANS,
     SPACE_MONO,
     PLAYFAIR_DISPLAY,
-    BANGERS
+    BANGERS,
+    PERMANENT_MARKER,
+    KALAM,
+    CAVEAT,
+    MERRIWEATHER,
+    OSWALD,
+    BALOO_2
 }
 
 enum class CanvasTextAlign {

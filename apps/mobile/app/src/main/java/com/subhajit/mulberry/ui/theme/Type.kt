@@ -35,6 +35,30 @@ val BangersFontFamily = FontFamily(
     Font(R.font.bangers_regular, FontWeight.Normal)
 )
 
+val PermanentMarkerFontFamily = FontFamily(
+    Font(R.font.permanent_marker_regular, FontWeight.Normal)
+)
+
+val KalamFontFamily = FontFamily(
+    Font(R.font.kalam_regular, FontWeight.Normal)
+)
+
+val CaveatFontFamily = FontFamily(
+    Font(R.font.caveat_regular, FontWeight.Normal)
+)
+
+val MerriweatherFontFamily = FontFamily(
+    Font(R.font.merriweather_regular, FontWeight.Normal)
+)
+
+val OswaldFontFamily = FontFamily(
+    Font(R.font.oswald_regular, FontWeight.Normal)
+)
+
+val Baloo2FontFamily = FontFamily(
+    Font(R.font.baloo2_regular, FontWeight.Normal)
+)
+
 val MulberrySecondaryFontFamily: FontFamily = PoppinsFontFamily
 
 val MulberryTypography = Typography(

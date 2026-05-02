@@ -91,6 +91,12 @@ import com.subhajit.mulberry.ui.theme.DmSansFontFamily
 import com.subhajit.mulberry.ui.theme.SpaceMonoFontFamily
 import com.subhajit.mulberry.ui.theme.PlayfairDisplayFontFamily
 import com.subhajit.mulberry.ui.theme.BangersFontFamily
+import com.subhajit.mulberry.ui.theme.PermanentMarkerFontFamily
+import com.subhajit.mulberry.ui.theme.KalamFontFamily
+import com.subhajit.mulberry.ui.theme.CaveatFontFamily
+import com.subhajit.mulberry.ui.theme.MerriweatherFontFamily
+import com.subhajit.mulberry.ui.theme.OswaldFontFamily
+import com.subhajit.mulberry.ui.theme.Baloo2FontFamily
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import java.util.UUID
@@ -154,6 +160,12 @@ fun CanvasTextOverlay(
     val spaceMonoTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.space_mono_regular) ?: Typeface.DEFAULT }
     val playfairTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.playfair_display_regular) ?: Typeface.DEFAULT }
     val bangersTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.bangers_regular) ?: Typeface.DEFAULT }
+    val permanentMarkerTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.permanent_marker_regular) ?: Typeface.DEFAULT }
+    val kalamTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.kalam_regular) ?: Typeface.DEFAULT }
+    val caveatTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.caveat_regular) ?: Typeface.DEFAULT }
+    val merriweatherTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.merriweather_regular) ?: Typeface.DEFAULT }
+    val oswaldTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.oswald_regular) ?: Typeface.DEFAULT }
+    val baloo2Typeface = remember(context) { ResourcesCompat.getFont(context, R.font.baloo2_regular) ?: Typeface.DEFAULT }
     val baseTextSizePx = with(density) { 34.sp.toPx() }
     var isTransformInProgress by remember { mutableStateOf(false) }
 
@@ -197,7 +209,13 @@ fun CanvasTextOverlay(
                     dmSans = dmSansTypeface,
                     spaceMono = spaceMonoTypeface,
                     playfair = playfairTypeface,
-                    bangers = bangersTypeface
+                    bangers = bangersTypeface,
+                    permanentMarker = permanentMarkerTypeface,
+                    kalam = kalamTypeface,
+                    caveat = caveatTypeface,
+                    merriweather = merriweatherTypeface,
+                    oswald = oswaldTypeface,
+                    baloo2 = baloo2Typeface
                 )
                 val initialDown = down.position
                 val touchSlop = viewConfiguration.touchSlop
@@ -374,7 +392,13 @@ fun CanvasTextOverlay(
                     dmSans = dmSansTypeface,
                     spaceMono = spaceMonoTypeface,
                     playfair = playfairTypeface,
-                    bangers = bangersTypeface
+                    bangers = bangersTypeface,
+                    permanentMarker = permanentMarkerTypeface,
+                    kalam = kalamTypeface,
+                    caveat = caveatTypeface,
+                    merriweather = merriweatherTypeface,
+                    oswald = oswaldTypeface,
+                    baloo2 = baloo2Typeface
                 )
 
                 // Consume so the parent pager/tab row doesn't treat this as a swipe-to-navigate.
@@ -460,6 +484,12 @@ fun CanvasTextOverlay(
                                 CanvasTextFont.SPACE_MONO -> spaceMonoTypeface
                                 CanvasTextFont.PLAYFAIR_DISPLAY -> playfairTypeface
                                 CanvasTextFont.BANGERS -> bangersTypeface
+                                CanvasTextFont.PERMANENT_MARKER -> permanentMarkerTypeface
+                                CanvasTextFont.KALAM -> kalamTypeface
+                                CanvasTextFont.CAVEAT -> caveatTypeface
+                                CanvasTextFont.MERRIWEATHER -> merriweatherTypeface
+                                CanvasTextFont.OSWALD -> oswaldTypeface
+                                CanvasTextFont.BALOO_2 -> baloo2Typeface
                             }
                             val backgroundColor = element.colorArgb.toInt()
                             val textColor = if (element.backgroundPillEnabled) {
@@ -762,6 +792,12 @@ fun TextEditorOverlay(
                             CanvasTextFont.SPACE_MONO -> SpaceMonoFontFamily
                             CanvasTextFont.PLAYFAIR_DISPLAY -> PlayfairDisplayFontFamily
                             CanvasTextFont.BANGERS -> BangersFontFamily
+                            CanvasTextFont.PERMANENT_MARKER -> PermanentMarkerFontFamily
+                            CanvasTextFont.KALAM -> KalamFontFamily
+                            CanvasTextFont.CAVEAT -> CaveatFontFamily
+                            CanvasTextFont.MERRIWEATHER -> MerriweatherFontFamily
+                            CanvasTextFont.OSWALD -> OswaldFontFamily
+                            CanvasTextFont.BALOO_2 -> Baloo2FontFamily
                         },
                         fontSize = (34f * scale).coerceIn(12f, 160f).sp,
                         fontWeight = FontWeight.Medium,
@@ -863,6 +899,54 @@ fun TextEditorOverlay(
                             selected = font == CanvasTextFont.BANGERS
                         ) {
                             font = CanvasTextFont.BANGERS
+                            focusRequester.requestFocus()
+                        }
+                        FontOption(
+                            label = "Marker",
+                            fontFamily = PermanentMarkerFontFamily,
+                            selected = font == CanvasTextFont.PERMANENT_MARKER
+                        ) {
+                            font = CanvasTextFont.PERMANENT_MARKER
+                            focusRequester.requestFocus()
+                        }
+                        FontOption(
+                            label = "Kalam",
+                            fontFamily = KalamFontFamily,
+                            selected = font == CanvasTextFont.KALAM
+                        ) {
+                            font = CanvasTextFont.KALAM
+                            focusRequester.requestFocus()
+                        }
+                        FontOption(
+                            label = "Caveat",
+                            fontFamily = CaveatFontFamily,
+                            selected = font == CanvasTextFont.CAVEAT
+                        ) {
+                            font = CanvasTextFont.CAVEAT
+                            focusRequester.requestFocus()
+                        }
+                        FontOption(
+                            label = "Merri",
+                            fontFamily = MerriweatherFontFamily,
+                            selected = font == CanvasTextFont.MERRIWEATHER
+                        ) {
+                            font = CanvasTextFont.MERRIWEATHER
+                            focusRequester.requestFocus()
+                        }
+                        FontOption(
+                            label = "Oswald",
+                            fontFamily = OswaldFontFamily,
+                            selected = font == CanvasTextFont.OSWALD
+                        ) {
+                            font = CanvasTextFont.OSWALD
+                            focusRequester.requestFocus()
+                        }
+                        FontOption(
+                            label = "Baloo 2",
+                            fontFamily = Baloo2FontFamily,
+                            selected = font == CanvasTextFont.BALOO_2
+                        ) {
+                            font = CanvasTextFont.BALOO_2
                             focusRequester.requestFocus()
                         }
                     }
@@ -1110,7 +1194,13 @@ private fun hitTest(
     dmSans: Typeface,
     spaceMono: Typeface,
     playfair: Typeface,
-    bangers: Typeface
+    bangers: Typeface,
+    permanentMarker: Typeface,
+    kalam: Typeface,
+    caveat: Typeface,
+    merriweather: Typeface,
+    oswald: Typeface,
+    baloo2: Typeface
 ): String? {
     if (canvasSize.width <= 0 || canvasSize.height <= 0) return null
     val paint = TextPaint().apply { isAntiAlias = true }
@@ -1136,6 +1226,12 @@ private fun hitTest(
                     CanvasTextFont.SPACE_MONO -> spaceMono
                     CanvasTextFont.PLAYFAIR_DISPLAY -> playfair
                     CanvasTextFont.BANGERS -> bangers
+                    CanvasTextFont.PERMANENT_MARKER -> permanentMarker
+                    CanvasTextFont.KALAM -> kalam
+                    CanvasTextFont.CAVEAT -> caveat
+                    CanvasTextFont.MERRIWEATHER -> merriweather
+                    CanvasTextFont.OSWALD -> oswald
+                    CanvasTextFont.BALOO_2 -> baloo2
                 }
                 val alignment = when (element.alignment) {
                     CanvasTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL
