@@ -637,6 +637,7 @@ private enum class TextEditorPanel {
     NONE,
     FONT,
     SIZE,
+    ROTATION,
     COLOR,
 }
 
@@ -655,6 +656,9 @@ fun TextEditorOverlay(
     var backgroundPillEnabled by remember(element.id) { mutableStateOf(element.backgroundPillEnabled) }
     var colorArgb by remember(element.id) { mutableStateOf(element.colorArgb) }
     var scale by remember(element.id) { mutableStateOf(element.scale.coerceIn(0.3f, 6f)) }
+    var rotationDeg by remember(element.id) {
+        mutableStateOf(radToDeg(element.rotationRad).coerceIn(ROTATION_MIN_DEG, ROTATION_MAX_DEG))
+    }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     var panel by remember(element.id) { mutableStateOf(TextEditorPanel.NONE) }
@@ -697,7 +701,8 @@ fun TextEditorOverlay(
                 alignment = alignment,
                 backgroundPillEnabled = backgroundPillEnabled,
                 colorArgb = colorArgb,
-                scale = scale
+                scale = scale,
+                rotationRad = degToRad(rotationDeg)
             )
         )
     }
@@ -788,14 +793,20 @@ fun TextEditorOverlay(
                 ) {
                     focusRequester.requestFocus()
                     keyboardController?.show()
-                }.alpha(contentAlpha),
+                }
+                    .graphicsLayer {
+                        scaleX = contentScale
+                        scaleY = contentScale
+                        rotationZ = rotationDeg
+                    }
+                    .alpha(contentAlpha),
                 contentAlignment = Alignment.Center
             ) {
                 BasicTextField(
                     value = textField,
                     onValueChange = { next -> textField = next },
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .fillMaxWidth(fraction = element.boxWidth.coerceIn(0.35f, 0.95f))
                         .focusRequester(focusRequester),
                     cursorBrush = SolidColor(textColor),
                     textStyle = TextStyle(
@@ -823,14 +834,7 @@ fun TextEditorOverlay(
                         }
                     ),
                     decorationBox = { inner ->
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .graphicsLayer {
-                                    scaleX = contentScale
-                                    scaleY = contentScale
-                                }
-                        ) {
+                        Box(contentAlignment = Alignment.Center) {
                             if (textField.text.isBlank()) {
                                 Text(
                                     text = "Type something",
@@ -992,6 +996,20 @@ fun TextEditorOverlay(
                     }
                 }
 
+                TextEditorPanel.ROTATION -> {
+                    EditorTertiaryBar {
+                        androidx.compose.material3.Slider(
+                            value = rotationDeg.coerceIn(ROTATION_MIN_DEG, ROTATION_MAX_DEG),
+                            onValueChange = { value ->
+                                rotationDeg = value.coerceIn(ROTATION_MIN_DEG, ROTATION_MAX_DEG)
+                                focusRequester.requestFocus()
+                            },
+                            valueRange = ROTATION_MIN_DEG..ROTATION_MAX_DEG,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
                 TextEditorPanel.COLOR -> {
                     val scroll = rememberScrollState()
                     Row(
@@ -1111,6 +1129,11 @@ private fun EditorSecondaryBar(
             contentDescription = "Size",
             selected = panel == TextEditorPanel.SIZE
         ) { onPanelChanged(TextEditorPanel.SIZE) }
+        EditorIconButton(
+            iconRes = R.drawable.ic_sticker_toolbar_rotate,
+            contentDescription = "Rotation",
+            selected = panel == TextEditorPanel.ROTATION
+        ) { onPanelChanged(TextEditorPanel.ROTATION) }
         EditorIconButton(
             iconRes = R.drawable.ic_text_toolbar_color,
             contentDescription = "Color",
@@ -1315,3 +1338,10 @@ private fun luminance(color: Int): Float {
 }
 
 private fun Float.degreesToRadians(): Float = (this * PI.toFloat()) / 180f
+
+private const val ROTATION_MIN_DEG = -180f
+private const val ROTATION_MAX_DEG = 180f
+
+private fun radToDeg(rad: Float): Float = (rad * 180f / PI.toFloat())
+
+private fun degToRad(deg: Float): Float = (deg * PI.toFloat() / 180f)
