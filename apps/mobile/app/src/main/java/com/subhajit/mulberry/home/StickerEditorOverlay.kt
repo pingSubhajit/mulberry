@@ -181,16 +181,9 @@ fun StickerEditorOverlay(
         }
 
         // Centered sticker preview (no chrome/background).
-        val previewBottomPadding = when (panel) {
-            StickerEditorPanel.PICKER -> 320.dp
-            StickerEditorPanel.SIZE -> 220.dp
-            StickerEditorPanel.ROTATION -> 220.dp
-        }
-        val previewYOffset = when (panel) {
-            StickerEditorPanel.PICKER -> (-96).dp
-            StickerEditorPanel.SIZE -> (-72).dp
-            StickerEditorPanel.ROTATION -> (-72).dp
-        }
+        // Keep preview placement stable across panels to avoid visual jitter.
+        val previewBottomPadding = 320.dp
+        val previewYOffset = (-96).dp
         Box(
             modifier = Modifier
                 .fillMaxSize()

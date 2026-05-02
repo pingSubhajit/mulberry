@@ -829,6 +829,18 @@ class CanvasHomeViewModel @Inject constructor(
 
     fun onStickerPackSelected(packKey: String, packVersion: Int) {
         viewModelScope.launch {
+            val current = selectedStickerPackState.value
+            if (
+                current != null &&
+                current.packKey == packKey &&
+                current.packVersion == packVersion &&
+                current.stickers.isNotEmpty()
+            ) {
+                // Avoid refetching the same pack detail: the backend returns short-lived signed URLs,
+                // and refreshing them causes Coil to reload images (visible flicker) despite no
+                // real content change.
+                return@launch
+            }
             stickerCatalogBusyState.value = true
             stickerCatalogErrorState.value = null
             runCatching {
