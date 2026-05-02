@@ -22,6 +22,7 @@ import {
   type WallpaperImageProcessor,
   type WallpaperStorage,
 } from "./wallpapers.js"
+import { createStickerStorage, StickerCatalogService } from "./stickers.js"
 
 export interface CreateAppOptions {
   config?: AppConfig
@@ -64,12 +65,22 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     options.wallpaperImageProcessor ?? new SharpWallpaperImageProcessor(),
     config,
   )
+  const stickerCatalogService = new StickerCatalogService(
+    db,
+    createStickerStorage({
+      supabaseUrl: config.supabaseUrl,
+      supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+      supabaseStickerBucket: config.supabaseStickerBucket,
+      stickerAdminPassword: config.stickerAdminPassword,
+    }),
+    config.stickerAdminPassword,
+  )
   const canvasSyncHub = new CanvasSyncHub(service)
   const app = Fastify({ logger: false })
   await app.register(fastifyCors, {
     origin: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["authorization", "content-type", "x-wallpaper-admin-password"],
+    allowedHeaders: ["authorization", "content-type", "x-wallpaper-admin-password", "x-sticker-admin-password"],
   })
   await app.register(fastifyMultipart, {
     limits: {
@@ -253,9 +264,153 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     })
   })
 
+  app.get("/stickers/packs", async (request) => {
+    requireBearerToken(request)
+    return stickerCatalogService.listPublishedStickerPacks()
+  })
+
+  app.get("/stickers/packs/:packKey", async (request) => {
+    requireBearerToken(request)
+    const params = request.params as { packKey?: string }
+    const query = request.query as { version?: string }
+    const version = query.version ? Number(query.version) : undefined
+    return stickerCatalogService.getPublishedStickerPackDetail(
+      params.packKey ?? "",
+      Number.isFinite(version) ? version : undefined,
+    )
+  })
+
+  app.get("/stickers/assets/url", async (request) => {
+    requireBearerToken(request)
+    const query = request.query as {
+      packKey?: string
+      version?: string
+      stickerId?: string
+      variant?: string
+    }
+    const version = Number(query.version ?? "")
+    const variant = query.variant === "thumbnail" ? "thumbnail" : "full"
+    return stickerCatalogService.getStickerAssetSignedUrl({
+      packKey: query.packKey ?? "",
+      packVersion: Number.isFinite(version) ? version : 0,
+      stickerId: query.stickerId ?? "",
+      variant,
+    })
+  })
+
   app.get("/admin/wallpapers", async (request) => {
     return wallpaperCatalogService.listWallpapersForAdmin({
       adminPassword: readWallpaperAdminPassword(request),
+    })
+  })
+
+  app.get("/admin/stickers/packs", async (request) => {
+    return stickerCatalogService.listStickerPacksForAdmin({
+      adminPassword: readStickerAdminPassword(request) ?? "",
+    })
+  })
+
+  app.post("/admin/stickers/packs", async (request) => {
+    const fields: Record<string, string> = {}
+    let uploadedFile: {
+      filename: string
+      mimetype: string
+      data: Buffer
+    } | null = null
+
+    for await (const part of request.parts()) {
+      if (part.type === "file") {
+        uploadedFile = {
+          filename: part.filename,
+          mimetype: part.mimetype,
+          data: await part.toBuffer(),
+        }
+      } else if (typeof part.value === "string") {
+        fields[part.fieldname] = part.value
+      }
+    }
+
+    if (!uploadedFile) {
+      throw new HttpError(400, "cover image is required")
+    }
+
+    const published = fields.published === "true"
+    const featured = fields.featured === "true"
+    const sortOrder = Number(fields.sortOrder ?? "0")
+    const packVersion = Number(fields.packVersion ?? "1")
+    return stickerCatalogService.createStickerPackVersion({
+      adminPassword: readStickerAdminPassword(request) ?? "",
+      packKey: fields.packKey ?? "",
+      packVersion: Number.isFinite(packVersion) ? packVersion : 1,
+      title: fields.title ?? "",
+      description: fields.description ?? "",
+      sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
+      featured,
+      published,
+      coverFilename: uploadedFile.filename,
+      coverContentType: uploadedFile.mimetype,
+      coverData: uploadedFile.data,
+    })
+  })
+
+  app.patch("/admin/stickers/packs/:packKey/:packVersion", async (request) => {
+    const params = request.params as { packKey?: string; packVersion?: string }
+    const body = request.body as Partial<{
+      title: string
+      description: string
+      sortOrder: number
+      featured: boolean
+      published: boolean
+    }>
+    const packVersion = Number(params.packVersion ?? "0")
+    return stickerCatalogService.updateStickerPackVersionMetadata({
+      adminPassword: readStickerAdminPassword(request) ?? "",
+      packKey: params.packKey ?? "",
+      packVersion: Number.isFinite(packVersion) ? packVersion : 0,
+      title: body.title,
+      description: body.description,
+      sortOrder: body.sortOrder,
+      featured: body.featured,
+      published: body.published,
+    })
+  })
+
+  app.post("/admin/stickers/packs/:packKey/:packVersion/stickers", async (request) => {
+    const params = request.params as { packKey?: string; packVersion?: string }
+    const fields: Record<string, string> = {}
+    let uploadedFile: {
+      filename: string
+      mimetype: string
+      data: Buffer
+    } | null = null
+
+    for await (const part of request.parts()) {
+      if (part.type === "file") {
+        uploadedFile = {
+          filename: part.filename,
+          mimetype: part.mimetype,
+          data: await part.toBuffer(),
+        }
+      } else if (typeof part.value === "string") {
+        fields[part.fieldname] = part.value
+      }
+    }
+
+    if (!uploadedFile) {
+      throw new HttpError(400, "sticker image is required")
+    }
+
+    const sortOrder = Number(fields.sortOrder ?? "0")
+    const packVersion = Number(params.packVersion ?? "0")
+    return stickerCatalogService.uploadSticker({
+      adminPassword: readStickerAdminPassword(request) ?? "",
+      packKey: params.packKey ?? "",
+      packVersion: Number.isFinite(packVersion) ? packVersion : 0,
+      stickerId: fields.stickerId ?? "",
+      sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
+      filename: uploadedFile.filename,
+      contentType: uploadedFile.mimetype,
+      data: uploadedFile.data,
     })
   })
 
@@ -344,6 +499,11 @@ function requireBearerToken(request: FastifyRequest): string {
 
 function readWallpaperAdminPassword(request: FastifyRequest): string | undefined {
   const header = request.headers["x-wallpaper-admin-password"]
+  return Array.isArray(header) ? header[0] : header
+}
+
+function readStickerAdminPassword(request: FastifyRequest): string | undefined {
+  const header = request.headers["x-sticker-admin-password"]
   return Array.isArray(header) ? header[0] : header
 }
 

@@ -10,6 +10,7 @@ data class CanvasTextElementEntity(
     @PrimaryKey val id: String,
     val text: String,
     val createdAt: Long,
+    val zIndex: Long,
     val centerX: Float,
     val centerY: Float,
     val rotationRad: Float,
@@ -20,4 +21,3 @@ data class CanvasTextElementEntity(
     val font: CanvasTextFont,
     val alignment: CanvasTextAlign
 )
-

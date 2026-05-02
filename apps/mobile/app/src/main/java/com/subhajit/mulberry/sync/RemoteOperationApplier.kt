@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.sync
 
 import com.subhajit.mulberry.drawing.DrawingRepository
+import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
@@ -71,6 +72,24 @@ class DefaultRemoteOperationApplier @Inject constructor(
                     serverRevision = operation.serverRevision
                 )
             }
+            is SyncOperationPayload.AddStickerElement -> {
+                drawingRepository.applyRemoteAddOrUpdateStickerElement(
+                    element = operation.payload.toDomainElement(),
+                    serverRevision = operation.serverRevision
+                )
+            }
+            is SyncOperationPayload.UpdateStickerElement -> {
+                drawingRepository.applyRemoteAddOrUpdateStickerElement(
+                    element = operation.payload.toDomainElement(),
+                    serverRevision = operation.serverRevision
+                )
+            }
+            SyncOperationPayload.DeleteStickerElement -> {
+                drawingRepository.applyRemoteDeleteStickerElement(
+                    elementId = operation.strokeId ?: return,
+                    serverRevision = operation.serverRevision
+                )
+            }
         }
         syncMetadataRepository.setLastAppliedServerRevision(operation.serverRevision)
     }
@@ -102,4 +121,26 @@ private fun SyncOperationPayload.UpdateTextElement.toDomainElement(): CanvasText
     backgroundPillEnabled = backgroundPillEnabled,
     font = font,
     alignment = alignment
+)
+
+private fun SyncOperationPayload.AddStickerElement.toDomainElement(): CanvasStickerElement = CanvasStickerElement(
+    id = id,
+    createdAt = createdAt,
+    center = StrokePoint(x = center.x, y = center.y),
+    rotationRad = rotationRad,
+    scale = scale,
+    packKey = packKey,
+    packVersion = packVersion,
+    stickerId = stickerId
+)
+
+private fun SyncOperationPayload.UpdateStickerElement.toDomainElement(): CanvasStickerElement = CanvasStickerElement(
+    id = id,
+    createdAt = createdAt,
+    center = StrokePoint(x = center.x, y = center.y),
+    rotationRad = rotationRad,
+    scale = scale,
+    packKey = packKey,
+    packVersion = packVersion,
+    stickerId = stickerId
 )

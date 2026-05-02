@@ -9,6 +9,8 @@ import com.subhajit.mulberry.drawing.geometry.containsLegacyGeometry
 import com.subhajit.mulberry.drawing.geometry.hasLegacyGeometry
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
+import com.subhajit.mulberry.drawing.model.CanvasElement
+import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.drawing.model.CanvasTextAlign
@@ -479,7 +481,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
         canvasRuntime.submitAndAwait(
             CanvasRuntimeEvent.RecoverySnapshot(
                 strokes = emptyList(),
-                textElements = emptyList(),
+                elements = emptyList(),
                 serverRevision = 0L
             )
         )
@@ -514,7 +516,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
         val snapshot = apiService.getCanvasSnapshot()
         if (!canReplaceFromSnapshot()) return
         val strokes = snapshot.snapshot.toDomainStrokes()
-        val textElements = snapshot.snapshot.toDomainTextElements()
+        val elements = snapshot.snapshot.toDomainElements()
         if (strokes.containsLegacyGeometry()) {
             clearLegacyCanvasAndQueueReset(reason = "snapshot_legacy_geometry")
             return
@@ -522,7 +524,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
         canvasRuntime.submitAndAwait(
             CanvasRuntimeEvent.RecoverySnapshot(
                 strokes = strokes,
-                textElements = textElements,
+                elements = elements,
                 serverRevision = snapshot.snapshotRevision
             )
         )
@@ -614,7 +616,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
         canvasRuntime.submitAndAwait(
             CanvasRuntimeEvent.RecoverySnapshot(
                 strokes = emptyList(),
-                textElements = emptyList(),
+                elements = emptyList(),
                 serverRevision = lastAppliedRevisionCache
             )
         )
@@ -820,8 +822,50 @@ private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainStrokes(
         )
     }
 
-private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainTextElements(): List<CanvasTextElement> =
-    textElements.map { element ->
+private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainElements(): List<CanvasElement> {
+    val unified = elements.orEmpty()
+    if (unified.isNotEmpty()) {
+        return unified.mapNotNull { element ->
+            when (element.kind) {
+                "TEXT" -> {
+                    CanvasTextElement(
+                        id = element.id,
+                        text = element.text.orEmpty(),
+                        createdAt = element.createdAt,
+                        center = StrokePoint(x = element.center.x, y = element.center.y),
+                        rotationRad = element.rotationRad,
+                        scale = element.scale,
+                        boxWidth = element.boxWidth ?: 0.7f,
+                        colorArgb = element.colorArgb ?: 0xff111111,
+                        backgroundPillEnabled = element.backgroundPillEnabled ?: false,
+                        font = runCatching { CanvasTextFont.valueOf(element.font ?: "POPPINS") }
+                            .getOrElse { CanvasTextFont.POPPINS },
+                        alignment = runCatching { CanvasTextAlign.valueOf(element.alignment ?: "CENTER") }
+                            .getOrElse { CanvasTextAlign.CENTER }
+                    )
+                }
+                "STICKER" -> {
+                    val packKey = element.packKey?.trim().orEmpty()
+                    val stickerId = element.stickerId?.trim().orEmpty()
+                    val packVersion = element.packVersion ?: 0
+                    if (packKey.isBlank() || stickerId.isBlank() || packVersion <= 0) return@mapNotNull null
+                    CanvasStickerElement(
+                        id = element.id,
+                        createdAt = element.createdAt,
+                        center = StrokePoint(x = element.center.x, y = element.center.y),
+                        rotationRad = element.rotationRad,
+                        scale = element.scale,
+                        packKey = packKey,
+                        packVersion = packVersion,
+                        stickerId = stickerId
+                    )
+                }
+                else -> null
+            }
+        }
+    }
+
+    return textElements.map { element ->
         CanvasTextElement(
             id = element.id,
             text = element.text,
@@ -836,3 +880,4 @@ private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainTextElem
             alignment = runCatching { CanvasTextAlign.valueOf(element.alignment) }.getOrElse { CanvasTextAlign.CENTER }
         )
     }
+}

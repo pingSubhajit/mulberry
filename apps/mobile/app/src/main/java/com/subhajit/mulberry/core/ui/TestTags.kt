@@ -43,6 +43,7 @@ object TestTags {
     const val REDO_BUTTON = "redo_button"
     const val ERASER_BUTTON = "eraser_button"
     const val TEXT_BUTTON = "text_button"
+    const val STICKER_BUTTON = "sticker_button"
     const val CLEAR_BUTTON = "clear_button"
     const val CLEAR_CONFIRM_BUTTON = "clear_confirm_button"
     const val LOCKSCREEN_SCREEN = "lockscreen_screen"

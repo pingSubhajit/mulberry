@@ -256,9 +256,15 @@ fun CanvasHomeRoute(
         onBrushWidthChanged = viewModel::onBrushWidthChanged,
         onEraserToggle = viewModel::onEraserToggle,
         onTextToggle = viewModel::onTextToggle,
+        onStickerToggle = viewModel::onStickerToggle,
+        onStickerPackSelected = viewModel::onStickerPackSelected,
+        stickerAssetStore = viewModel.stickerAssetStore,
         onTextElementAdded = viewModel::onTextElementAdded,
         onTextElementUpdated = viewModel::onTextElementUpdated,
         onTextElementDeleted = viewModel::onTextElementDeleted,
+        onStickerElementAdded = viewModel::onStickerElementAdded,
+        onStickerElementUpdated = viewModel::onStickerElementUpdated,
+        onStickerElementDeleted = viewModel::onStickerElementDeleted,
         onClearRequested = viewModel::onClearRequested,
         onClearDismissed = viewModel::onClearDismissed,
         onClearConfirmed = viewModel::onClearConfirmed,
@@ -305,9 +311,15 @@ private fun CanvasHomeScreen(
     onBrushWidthChanged: (Float) -> Unit,
     onEraserToggle: () -> Unit,
     onTextToggle: () -> Unit,
+    onStickerToggle: () -> Unit,
+    onStickerPackSelected: (String, Int) -> Unit,
+    stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
+    onStickerElementAdded: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+    onStickerElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+    onStickerElementDeleted: (String) -> Unit,
     onClearRequested: () -> Unit,
     onClearDismissed: () -> Unit,
     onClearConfirmed: () -> Unit,
@@ -463,9 +475,15 @@ private fun CanvasHomeScreen(
                         onBrushWidthChanged = onBrushWidthChanged,
                         onEraserToggle = onEraserToggle,
                         onTextToggle = onTextToggle,
+                        onStickerToggle = onStickerToggle,
+                        onStickerPackSelected = onStickerPackSelected,
+                        stickerAssetStore = stickerAssetStore,
                         onTextElementAdded = onTextElementAdded,
                         onTextElementUpdated = onTextElementUpdated,
                         onTextElementDeleted = onTextElementDeleted,
+                        onStickerElementAdded = onStickerElementAdded,
+                        onStickerElementUpdated = onStickerElementUpdated,
+                        onStickerElementDeleted = onStickerElementDeleted,
                         onTextEditorRequested = { session -> textEditorSession = session },
                         isTextEditorOpen = textEditorSession != null,
                         onClearRequested = onClearRequested,
@@ -589,9 +607,15 @@ private fun CanvasHomePane(
     onBrushWidthChanged: (Float) -> Unit,
     onEraserToggle: () -> Unit,
     onTextToggle: () -> Unit,
+    onStickerToggle: () -> Unit,
+    onStickerPackSelected: (String, Int) -> Unit,
+    stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
+    onStickerElementAdded: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+    onStickerElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+    onStickerElementDeleted: (String) -> Unit,
     onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
     isTextEditorOpen: Boolean,
     onClearRequested: () -> Unit,
@@ -691,9 +715,15 @@ private fun CanvasHomePane(
             onBrushWidthChanged = onBrushWidthChanged,
             onEraserToggle = onEraserToggle,
             onTextToggle = onTextToggle,
+            onStickerToggle = onStickerToggle,
+            onStickerPackSelected = onStickerPackSelected,
+            stickerAssetStore = stickerAssetStore,
             onTextElementAdded = onTextElementAdded,
             onTextElementUpdated = onTextElementUpdated,
             onTextElementDeleted = onTextElementDeleted,
+            onStickerElementAdded = onStickerElementAdded,
+            onStickerElementUpdated = onStickerElementUpdated,
+            onStickerElementDeleted = onStickerElementDeleted,
             onTextEditorRequested = onTextEditorRequested,
             isTextEditorOpen = isTextEditorOpen,
             onClearRequested = onClearRequested,
@@ -716,9 +746,15 @@ private fun PairedCanvasPane(
     onBrushWidthChanged: (Float) -> Unit,
     onEraserToggle: () -> Unit,
     onTextToggle: () -> Unit,
+    onStickerToggle: () -> Unit,
+    onStickerPackSelected: (String, Int) -> Unit,
+    stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
+    onStickerElementAdded: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+    onStickerElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+    onStickerElementDeleted: (String) -> Unit,
     onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
     isTextEditorOpen: Boolean,
     onClearRequested: () -> Unit,
@@ -760,20 +796,47 @@ private fun PairedCanvasPane(
             )
 
             CanvasTextOverlay(
-                elements = uiState.canvasState.textElements,
+                elements = uiState.canvasState.elements,
                 activeTool = uiState.toolState.activeTool,
                 palette = uiState.palette,
                 selectedColorArgb = uiState.toolState.selectedColorArgb,
+                stickerAssetStore = stickerAssetStore,
                 onEraseTap = onCanvasTap,
-                onAddElement = onTextElementAdded,
-                onUpdateElement = onTextElementUpdated,
-                onDeleteElement = onTextElementDeleted,
+                onAddTextElement = onTextElementAdded,
+                onUpdateTextElement = onTextElementUpdated,
+                onDeleteTextElement = onTextElementDeleted,
+                onAddStickerElement = onStickerElementAdded,
+                onUpdateStickerElement = onStickerElementUpdated,
+                onDeleteStickerElement = onStickerElementDeleted,
                 onRequestEdit = onTextEditorRequested,
                 isEditorOpen = isTextEditorOpen,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(8.dp)
             )
+
+            if (uiState.toolState.activeTool == com.subhajit.mulberry.drawing.model.DrawingTool.STICKER) {
+                StickerPickerPanel(
+                    uiState = uiState,
+                    onPackSelected = onStickerPackSelected,
+                    onStickerChosen = { packKey, packVersion, stickerId ->
+                        val element = com.subhajit.mulberry.drawing.model.CanvasStickerElement(
+                            id = java.util.UUID.randomUUID().toString(),
+                            createdAt = System.currentTimeMillis(),
+                            center = com.subhajit.mulberry.drawing.model.StrokePoint(x = 0.5f, y = 0.5f),
+                            rotationRad = 0f,
+                            scale = 0.22f,
+                            packKey = packKey,
+                            packVersion = packVersion,
+                            stickerId = stickerId
+                        )
+                        onStickerElementAdded(element)
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp)
+                )
+            }
 
             if (uiState.canvasState.isEmpty) {
                 CanvasBlankStateGuidance(
@@ -790,6 +853,7 @@ private fun PairedCanvasPane(
             onRedoRequested = onRedoRequested,
             onEraserToggle = onEraserToggle,
             onTextToggle = onTextToggle,
+            onStickerToggle = onStickerToggle,
             onClearRequested = onClearRequested
         )
     }
@@ -879,7 +943,10 @@ private fun CanvasActionButton(
                 .fillMaxSize()
                 .alpha(iconAlpha),
             contentScale = ContentScale.Fit,
-            colorFilter = if (drawableRes == R.drawable.canvas_action_text) {
+            colorFilter = if (
+                drawableRes == R.drawable.canvas_action_text ||
+                drawableRes == R.drawable.canvas_action_sticker
+            ) {
                 ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
             } else {
                 null
@@ -1002,6 +1069,7 @@ private fun CanvasControlTray(
     onRedoRequested: () -> Unit,
     onEraserToggle: () -> Unit,
     onTextToggle: () -> Unit,
+    onStickerToggle: () -> Unit,
     onClearRequested: () -> Unit
 ) {
     var showWidthPicker by remember { mutableStateOf(false) }
@@ -1149,6 +1217,13 @@ private fun CanvasControlTray(
             selected = uiState.toolState.activeTool == DrawingTool.TEXT,
             onClick = onTextToggle,
             modifier = Modifier.testTag(TestTags.TEXT_BUTTON)
+        )
+        CanvasActionButton(
+            drawableRes = R.drawable.canvas_action_sticker,
+            contentDescription = stringResource(R.string.home_canvas_sticker_content_description),
+            selected = uiState.toolState.activeTool == DrawingTool.STICKER,
+            onClick = onStickerToggle,
+            modifier = Modifier.testTag(TestTags.STICKER_BUTTON)
         )
         CanvasActionButton(
             drawableRes = R.drawable.canvas_action_clear,

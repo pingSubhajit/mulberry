@@ -56,6 +56,40 @@ FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/path/to/service-account.json
 FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 ```
 
+## Sticker Packs (Catalog + Assets)
+
+Sticker packs are stored in Supabase Storage (separate from the app bundle). The backend needs:
+
+```text
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_STICKER_BUCKET=
+STICKER_ADMIN_PASSWORD=
+```
+
+For local dev, you can reuse the wallpaper bucket + password:
+
+```text
+SUPABASE_STICKER_BUCKET=SUPABASE_WALLPAPER_BUCKET
+STICKER_ADMIN_PASSWORD=WALLPAPER_ADMIN_PASSWORD
+```
+
+Admin endpoints use the `x-sticker-admin-password` header.
+
+To import a local folder of `.png` stickers as a pack version (example uses the repo-root `temp/` folder):
+
+```bash
+cd apps/backend
+npx tsx scripts/import-sticker-pack.ts \
+  --pack-key kawaii-cats \
+  --title "Kawaii Cats" \
+  --version 1 \
+  --dir "../../temp/Kawaii Cats" \
+  --published true \
+  --featured true \
+  --sort-order 0
+```
+
 ## Production Deployment On Fly.io
 
 The checked-in production deployment config lives at:

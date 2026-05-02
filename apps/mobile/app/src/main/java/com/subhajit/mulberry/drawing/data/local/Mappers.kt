@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.drawing.data.local
 
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
+import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 
@@ -30,10 +31,11 @@ fun StrokeWithPoints.toDomain(): Stroke = Stroke(
         .map { StrokePoint(x = it.x, y = it.y) }
 )
 
-fun CanvasTextElement.toEntity(): CanvasTextElementEntity = CanvasTextElementEntity(
+fun CanvasTextElement.toEntity(zIndex: Long = System.currentTimeMillis()): CanvasTextElementEntity = CanvasTextElementEntity(
     id = id,
     text = text,
     createdAt = createdAt,
+    zIndex = zIndex,
     centerX = center.x,
     centerY = center.y,
     rotationRad = rotationRad,
@@ -57,4 +59,29 @@ fun CanvasTextElementEntity.toDomain(): CanvasTextElement = CanvasTextElement(
     backgroundPillEnabled = backgroundPillEnabled,
     font = font,
     alignment = alignment
+)
+
+fun CanvasStickerElement.toEntity(zIndex: Long = System.currentTimeMillis()): CanvasStickerElementEntity =
+    CanvasStickerElementEntity(
+        id = id,
+        createdAt = createdAt,
+        zIndex = zIndex,
+        centerX = center.x,
+        centerY = center.y,
+        rotationRad = rotationRad,
+        scale = scale,
+        packKey = packKey,
+        packVersion = packVersion,
+        stickerId = stickerId
+    )
+
+fun CanvasStickerElementEntity.toDomain(): CanvasStickerElement = CanvasStickerElement(
+    id = id,
+    createdAt = createdAt,
+    center = StrokePoint(x = centerX, y = centerY),
+    rotationRad = rotationRad,
+    scale = scale,
+    packKey = packKey,
+    packVersion = packVersion,
+    stickerId = stickerId
 )

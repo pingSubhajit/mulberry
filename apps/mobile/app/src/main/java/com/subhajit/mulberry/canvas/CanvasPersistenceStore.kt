@@ -1,6 +1,8 @@
 package com.subhajit.mulberry.canvas
 
 import com.subhajit.mulberry.drawing.DrawingRepository
+import com.subhajit.mulberry.drawing.model.CanvasElement
+import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.CanvasState
 import com.subhajit.mulberry.drawing.model.Stroke
@@ -18,7 +20,7 @@ interface CanvasPersistenceStore {
     suspend fun persistClear(serverRevision: Long? = null)
     suspend fun replaceFromServerSnapshot(
         strokes: List<Stroke>,
-        textElements: List<CanvasTextElement>,
+        elements: List<CanvasElement>,
         serverRevision: Long
     )
 
@@ -26,6 +28,11 @@ interface CanvasPersistenceStore {
     suspend fun persistDeleteTextElement(elementId: String): Long
     suspend fun persistRemoteUpsertTextElement(element: CanvasTextElement, serverRevision: Long)
     suspend fun persistRemoteDeleteTextElement(elementId: String, serverRevision: Long)
+
+    suspend fun persistUpsertStickerElement(element: CanvasStickerElement): Long
+    suspend fun persistDeleteStickerElement(elementId: String): Long
+    suspend fun persistRemoteUpsertStickerElement(element: CanvasStickerElement, serverRevision: Long)
+    suspend fun persistRemoteDeleteStickerElement(elementId: String, serverRevision: Long)
 }
 
 @Singleton
@@ -63,10 +70,10 @@ class RoomCanvasPersistenceStore @Inject constructor(
 
     override suspend fun replaceFromServerSnapshot(
         strokes: List<Stroke>,
-        textElements: List<CanvasTextElement>,
+        elements: List<CanvasElement>,
         serverRevision: Long
     ) {
-        drawingRepository.replaceWithRemoteSnapshot(strokes, textElements, serverRevision)
+        drawingRepository.replaceWithRemoteSnapshot(strokes, elements, serverRevision)
     }
 
     override suspend fun persistUpsertTextElement(element: CanvasTextElement): Long =
@@ -81,5 +88,19 @@ class RoomCanvasPersistenceStore @Inject constructor(
 
     override suspend fun persistRemoteDeleteTextElement(elementId: String, serverRevision: Long) {
         drawingRepository.applyRemoteDeleteTextElement(elementId, serverRevision)
+    }
+
+    override suspend fun persistUpsertStickerElement(element: CanvasStickerElement): Long =
+        drawingRepository.upsertLocalStickerElement(element)
+
+    override suspend fun persistDeleteStickerElement(elementId: String): Long =
+        drawingRepository.deleteLocalStickerElement(elementId)
+
+    override suspend fun persistRemoteUpsertStickerElement(element: CanvasStickerElement, serverRevision: Long) {
+        drawingRepository.applyRemoteAddOrUpdateStickerElement(element, serverRevision)
+    }
+
+    override suspend fun persistRemoteDeleteStickerElement(elementId: String, serverRevision: Long) {
+        drawingRepository.applyRemoteDeleteStickerElement(elementId, serverRevision)
     }
 }

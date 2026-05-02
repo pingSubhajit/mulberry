@@ -24,6 +24,7 @@ import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.drawing.DrawingRepository
 import com.subhajit.mulberry.drawing.data.RoomDrawingRepository
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
+import com.subhajit.mulberry.drawing.data.local.CanvasStickerElementDao
 import com.subhajit.mulberry.drawing.data.local.CanvasTextElementDao
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.data.local.DrawingDao
@@ -76,6 +77,8 @@ import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import com.subhajit.mulberry.wallpaper.WallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.WallpaperStatusCalculator
 import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
+import com.subhajit.mulberry.stickers.BackendStickerCatalogRepository
+import com.subhajit.mulberry.stickers.StickerCatalogRepository
 import com.subhajit.mulberry.update.DataStoreInAppUpdatePromptStateStore
 import com.subhajit.mulberry.update.InAppUpdatePromptStateStore
 import com.google.android.play.core.appupdate.AppUpdateManager
@@ -139,6 +142,12 @@ abstract class AppBindingsModule {
     abstract fun bindWallpaperCatalogRepository(
         implementation: BackendWallpaperCatalogRepository
     ): WallpaperCatalogRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindStickerCatalogRepository(
+        implementation: BackendStickerCatalogRepository
+    ): StickerCatalogRepository
 
     @Binds
     @Singleton
@@ -303,7 +312,10 @@ object AppProvidesModule {
         context,
         DrawingDatabase::class.java,
         "drawing.db"
-    ).addMigrations(DrawingMigrations.MIGRATION_7_8).fallbackToDestructiveMigration().build()
+    ).addMigrations(
+        DrawingMigrations.MIGRATION_7_8,
+        DrawingMigrations.MIGRATION_8_9
+    ).fallbackToDestructiveMigration().build()
 
     @Provides
     fun provideDrawingDao(database: DrawingDatabase): DrawingDao = database.drawingDao()
@@ -315,6 +327,10 @@ object AppProvidesModule {
     @Provides
     fun provideCanvasTextElementDao(database: DrawingDatabase): CanvasTextElementDao =
         database.canvasTextElementDao()
+
+    @Provides
+    fun provideCanvasStickerElementDao(database: DrawingDatabase): CanvasStickerElementDao =
+        database.canvasStickerElementDao()
 
     @Provides
     fun provideCanvasMetadataDao(database: DrawingDatabase): CanvasMetadataDao =

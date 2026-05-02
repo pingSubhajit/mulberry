@@ -46,6 +46,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -76,10 +77,14 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.Image
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.drawing.model.CanvasTextAlign
+import com.subhajit.mulberry.drawing.model.CanvasElement
+import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
+import com.subhajit.mulberry.stickers.StickerAssetStore
+import com.subhajit.mulberry.stickers.StickerAssetVariant
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.VirgilFontFamily
 import com.subhajit.mulberry.ui.theme.DmSansFontFamily
@@ -104,14 +109,18 @@ data class CanvasTextEditorSession(
 
 @Composable
 fun CanvasTextOverlay(
-    elements: List<CanvasTextElement>,
+    elements: List<CanvasElement>,
     activeTool: DrawingTool,
     palette: List<Long>,
     selectedColorArgb: Long,
+    stickerAssetStore: StickerAssetStore,
     onEraseTap: (StrokePoint) -> Unit,
-    onAddElement: (CanvasTextElement) -> Unit,
-    onUpdateElement: (CanvasTextElement) -> Unit,
-    onDeleteElement: (String) -> Unit,
+    onAddTextElement: (CanvasTextElement) -> Unit,
+    onUpdateTextElement: (CanvasTextElement) -> Unit,
+    onDeleteTextElement: (String) -> Unit,
+    onAddStickerElement: (CanvasStickerElement) -> Unit,
+    onUpdateStickerElement: (CanvasStickerElement) -> Unit,
+    onDeleteStickerElement: (String) -> Unit,
     onRequestEdit: (CanvasTextEditorSession) -> Unit,
     isEditorOpen: Boolean,
     modifier: Modifier = Modifier
@@ -120,10 +129,11 @@ fun CanvasTextOverlay(
     val density = LocalDensity.current
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var selectedElementId by remember { mutableStateOf<String?>(null) }
-    var liveTransformPreview by remember { mutableStateOf<CanvasTextElement?>(null) }
+    var liveTransformPreview by remember { mutableStateOf<CanvasElement?>(null) }
+    val stickerBitmaps = remember { mutableStateMapOf<String, android.graphics.Bitmap>() }
 
     LaunchedEffect(activeTool) {
-        if (activeTool != DrawingTool.TEXT) {
+        if (activeTool != DrawingTool.TEXT && activeTool != DrawingTool.STICKER) {
             selectedElementId = null
             liveTransformPreview = null
         }
@@ -145,16 +155,38 @@ fun CanvasTextOverlay(
     val baseTextSizePx = with(density) { 34.sp.toPx() }
     var isTransformInProgress by remember { mutableStateOf(false) }
 
+    val stickerElements = remember(elements) { elements.filterIsInstance<CanvasStickerElement>() }
+    LaunchedEffect(stickerElements) {
+        stickerElements.forEach { element ->
+            val key = "${element.packKey}:${element.packVersion}:${element.stickerId}:full"
+            if (stickerBitmaps.containsKey(key)) return@forEach
+            val file = stickerAssetStore.getOrDownloadStickerAsset(
+                packKey = element.packKey,
+                packVersion = element.packVersion,
+                stickerId = element.stickerId,
+                variant = StickerAssetVariant.FULL
+            ) ?: return@forEach
+            val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return@forEach
+            stickerBitmaps[key] = bitmap
+        }
+    }
+
     // Important: only install pointer handlers when needed; this overlay sits above the
     // drawing canvas so it must not block drawing/erase gestures unless it consumes them.
     val gestureModifier = when {
-        activeTool == DrawingTool.TEXT && !isEditorOpen -> Modifier.pointerInput(elements, canvasSize, selectedColorArgb) {
+        (activeTool == DrawingTool.TEXT || activeTool == DrawingTool.STICKER) && !isEditorOpen ->
+            Modifier.pointerInput(elements, canvasSize, selectedColorArgb, activeTool) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 if (canvasSize.width <= 0 || canvasSize.height <= 0) return@awaitEachGesture
+                val hittable = when (activeTool) {
+                    DrawingTool.TEXT -> elements.filterIsInstance<CanvasTextElement>()
+                    DrawingTool.STICKER -> elements.filterIsInstance<CanvasStickerElement>()
+                    else -> elements
+                }
 
                 val hitId = hitTest(
-                    elements = elements,
+                    elements = hittable,
                     pointPx = down.position,
                     canvasSize = canvasSize,
                     textSizePx = baseTextSizePx,
@@ -177,9 +209,9 @@ fun CanvasTextOverlay(
                 var lastAngle = 0f
                 var lastSpan = 0f
 
-                fun activeElement(): CanvasTextElement? {
+                fun activeElement(): CanvasElement? {
                     val selected = selectedElementId ?: return null
-                    return liveTransformPreview ?: elements.firstOrNull { it.id == selected }
+                    return liveTransformPreview ?: hittable.firstOrNull { it.id == selected }
                 }
 
                 // Track pointers until all are up.
@@ -239,13 +271,23 @@ fun CanvasTextOverlay(
 
                         val centerPx = current.center.denormalize(canvasSize)
                         val nextCenterPx = centerPx + panDelta
-                        val nextScale = (current.scale * zoomChange).coerceIn(0.3f, 6f)
+                        val nextScale = when (current) {
+                            is CanvasTextElement -> (current.scale * zoomChange).coerceIn(0.3f, 6f)
+                            is CanvasStickerElement -> (current.scale * zoomChange).coerceIn(0.08f, 1.6f)
+                        }
                         val nextRotation = current.rotationRad + rotationDelta
-                        liveTransformPreview = current.copy(
-                            center = nextCenterPx.toNormalizedPoint(canvasSize),
-                            scale = nextScale,
-                            rotationRad = nextRotation
-                        )
+                        liveTransformPreview = when (current) {
+                            is CanvasTextElement -> current.copy(
+                                center = nextCenterPx.toNormalizedPoint(canvasSize),
+                                scale = nextScale,
+                                rotationRad = nextRotation
+                            )
+                            is CanvasStickerElement -> current.copy(
+                                center = nextCenterPx.toNormalizedPoint(canvasSize),
+                                scale = nextScale,
+                                rotationRad = nextRotation
+                            )
+                        }
 
                         pressed.forEach { it.consume() }
                         lastCentroid = centroid
@@ -259,8 +301,8 @@ fun CanvasTextOverlay(
                 // Gesture ended.
                 isTransformInProgress = false
 
-                if (hitId == null) {
-                    // Tap empty area => create + edit.
+                if (hitId == null && activeTool == DrawingTool.TEXT) {
+                    // Tap empty area => create + edit (text only).
                     val id = UUID.randomUUID().toString()
                     val element = CanvasTextElement(
                         id = id,
@@ -275,26 +317,36 @@ fun CanvasTextOverlay(
                         font = CanvasTextFont.POPPINS,
                         alignment = CanvasTextAlign.CENTER
                     )
-                    onAddElement(element)
+                    onAddTextElement(element)
                     selectedElementId = null
                     onRequestEdit(CanvasTextEditorSession(element = element, isNew = true))
                     return@awaitEachGesture
+                } else if (hitId == null) {
+                    // Sticker tool tap on empty canvas does nothing.
+                    selectedElementId = null
+                    liveTransformPreview = null
+                    return@awaitEachGesture
                 }
 
-                val base = elements.firstOrNull { it.id == hitId }
+                val base = hittable.firstOrNull { it.id == hitId }
                 val preview = liveTransformPreview
                 liveTransformPreview = null
 
                 if (beganDrag) {
                     if (preview != null && base != null && preview != base) {
-                        onUpdateElement(preview)
+                        when (preview) {
+                            is CanvasTextElement -> onUpdateTextElement(preview)
+                            is CanvasStickerElement -> onUpdateStickerElement(preview)
+                        }
                     }
                     selectedElementId = null
                 } else {
                     // It's a tap on the element -> enter edit mode.
                     val target = base ?: return@awaitEachGesture
                     selectedElementId = null
-                    onRequestEdit(CanvasTextEditorSession(element = target, isNew = false))
+                    if (activeTool == DrawingTool.TEXT && target is CanvasTextElement) {
+                        onRequestEdit(CanvasTextEditorSession(element = target, isNew = false))
+                    }
                 }
             }
         }
@@ -340,7 +392,12 @@ fun CanvasTextOverlay(
                 if (movedBeyondSlop) return@awaitEachGesture
 
                 if (hitId != null) {
-                    onDeleteElement(hitId)
+                    val target = elements.firstOrNull { it.id == hitId }
+                    when (target) {
+                        is CanvasTextElement -> onDeleteTextElement(hitId)
+                        is CanvasStickerElement -> onDeleteStickerElement(hitId)
+                        else -> onDeleteTextElement(hitId)
+                    }
                 } else {
                     onEraseTap(initialDown.toNormalizedPoint(canvasSize))
                 }
@@ -355,7 +412,7 @@ fun CanvasTextOverlay(
 
     val boundsAlpha by animateFloatAsState(
         targetValue = if (
-            activeTool == DrawingTool.TEXT &&
+            (activeTool == DrawingTool.TEXT || activeTool == DrawingTool.STICKER) &&
                 !isEditorOpen &&
                 isTransformInProgress
         ) {
@@ -383,86 +440,136 @@ fun CanvasTextOverlay(
                 }
 
                 renderList.forEach { element ->
-                    val center = element.center.denormalize(canvasSize)
-                    val wrapWidth = (element.boxWidth * canvasSize.width).toInt().coerceAtLeast(1)
-                    val typeface = when (element.font) {
-                        CanvasTextFont.POPPINS -> poppinsTypeface
-                        CanvasTextFont.VIRGIL -> virgilTypeface
-                        CanvasTextFont.DM_SANS -> dmSansTypeface
-                        CanvasTextFont.SPACE_MONO -> spaceMonoTypeface
-                        CanvasTextFont.PLAYFAIR_DISPLAY -> playfairTypeface
-                        CanvasTextFont.BANGERS -> bangersTypeface
-                    }
-                    val backgroundColor = element.colorArgb.toInt()
-                    val textColor = if (element.backgroundPillEnabled) {
-                        if (luminance(backgroundColor) > 0.55f) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
-                    } else {
-                        backgroundColor
-                    }
+                    when (element) {
+                        is CanvasTextElement -> {
+                            val center = element.center.denormalize(canvasSize)
+                            val wrapWidth = (element.boxWidth * canvasSize.width).toInt().coerceAtLeast(1)
+                            val typeface = when (element.font) {
+                                CanvasTextFont.POPPINS -> poppinsTypeface
+                                CanvasTextFont.VIRGIL -> virgilTypeface
+                                CanvasTextFont.DM_SANS -> dmSansTypeface
+                                CanvasTextFont.SPACE_MONO -> spaceMonoTypeface
+                                CanvasTextFont.PLAYFAIR_DISPLAY -> playfairTypeface
+                                CanvasTextFont.BANGERS -> bangersTypeface
+                            }
+                            val backgroundColor = element.colorArgb.toInt()
+                            val textColor = if (element.backgroundPillEnabled) {
+                                if (luminance(backgroundColor) > 0.55f) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+                            } else {
+                                backgroundColor
+                            }
 
-                    val paint = TextPaint().apply {
-                        isAntiAlias = true
-                        color = textColor
-                        textSize = baseTextSizePx
-                        this.typeface = typeface
-                    }
+                            val paint = TextPaint().apply {
+                                isAntiAlias = true
+                                color = textColor
+                                textSize = baseTextSizePx
+                                this.typeface = typeface
+                            }
 
-                    val alignment = when (element.alignment) {
-                        CanvasTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL
-                        CanvasTextAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
-                        CanvasTextAlign.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
-                    }
+                            val alignment = when (element.alignment) {
+                                CanvasTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL
+                                CanvasTextAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
+                                CanvasTextAlign.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
+                            }
 
-                    val layout = StaticLayout.Builder.obtain(element.text, 0, element.text.length, paint, wrapWidth)
-                        .setAlignment(alignment)
-                        .setIncludePad(false)
-                        .build()
+                            val layout = StaticLayout.Builder.obtain(element.text, 0, element.text.length, paint, wrapWidth)
+                                .setAlignment(alignment)
+                                .setIncludePad(false)
+                                .build()
 
-                    native.save()
-                    native.translate(center.x, center.y)
-                    native.rotate((element.rotationRad * 180f / Math.PI).toFloat())
-                    native.scale(element.scale, element.scale)
+                            native.save()
+                            native.translate(center.x, center.y)
+                            native.rotate((element.rotationRad * 180f / Math.PI).toFloat())
+                            native.scale(element.scale, element.scale)
 
-                    val left = -layout.width / 2f
-                    val top = -layout.height / 2f
-                    if (element.backgroundPillEnabled) {
-                        val pillPaint = android.graphics.Paint().apply {
-                            isAntiAlias = true
-                            color = backgroundColor
+                            val left = -layout.width / 2f
+                            val top = -layout.height / 2f
+                            if (element.backgroundPillEnabled) {
+                                val pillPaint = android.graphics.Paint().apply {
+                                    isAntiAlias = true
+                                    color = backgroundColor
+                                }
+                                val rect = RectF(
+                                    left - pillPaddingPx,
+                                    top - pillPaddingPx,
+                                    left + layout.width + pillPaddingPx,
+                                    top + layout.height + pillPaddingPx
+                                )
+                                native.drawRoundRect(rect, pillCornerPx, pillCornerPx, pillPaint)
+                            }
+                            native.translate(left, top)
+                            layout.draw(native)
+
+                            native.restore()
+
+                            if (element.id == selectedElementId && boundsAlpha > 0f) {
+                                val outlinePaint = android.graphics.Paint().apply {
+                                    isAntiAlias = true
+                                    style = android.graphics.Paint.Style.STROKE
+                                    strokeWidth = with(density) { 2.dp.toPx() }
+                                    color = android.graphics.Color.argb(
+                                        (0x66 * boundsAlpha).toInt().coerceIn(0, 255),
+                                        255,
+                                        255,
+                                        255
+                                    )
+                                }
+                                native.save()
+                                native.translate(center.x, center.y)
+                                native.rotate((element.rotationRad * 180f / Math.PI).toFloat())
+                                native.scale(element.scale, element.scale)
+                                val outline = RectF(left, top, left + layout.width, top + layout.height)
+                                native.drawRoundRect(outline, pillCornerPx, pillCornerPx, outlinePaint)
+                                native.restore()
+                            }
                         }
-                        val rect = RectF(
-                            left - pillPaddingPx,
-                            top - pillPaddingPx,
-                            left + layout.width + pillPaddingPx,
-                            top + layout.height + pillPaddingPx
-                        )
-                        native.drawRoundRect(rect, pillCornerPx, pillCornerPx, pillPaint)
-                    }
-                    native.translate(left, top)
-                    layout.draw(native)
+                        is CanvasStickerElement -> {
+                            val center = element.center.denormalize(canvasSize)
+                            val key = "${element.packKey}:${element.packVersion}:${element.stickerId}:full"
+                            val bitmap = stickerBitmaps[key]
 
-                    native.restore()
+                            val sizePx = (element.scale.coerceIn(0.08f, 1.6f) * canvasSize.width.toFloat())
+                                .coerceAtLeast(1f)
+                            val left = -sizePx / 2f
+                            val top = -sizePx / 2f
+                            val rect = RectF(left, top, left + sizePx, top + sizePx)
 
-                    // Only show bounds while the user is actively repositioning (dragging/pinching).
-                    if (element.id == selectedElementId && boundsAlpha > 0f) {
-                        val outlinePaint = android.graphics.Paint().apply {
-                            isAntiAlias = true
-                            style = android.graphics.Paint.Style.STROKE
-                            strokeWidth = with(density) { 2.dp.toPx() }
-                            color = android.graphics.Color.argb(
-                                (0x66 * boundsAlpha).toInt().coerceIn(0, 255),
-                                255,
-                                255,
-                                255
-                            )
+                            native.save()
+                            native.translate(center.x, center.y)
+                            native.rotate((element.rotationRad * 180f / Math.PI).toFloat())
+
+                            if (bitmap != null) {
+                                val src = android.graphics.Rect(0, 0, bitmap.width, bitmap.height)
+                                val paint = android.graphics.Paint().apply {
+                                    isAntiAlias = true
+                                    isFilterBitmap = true
+                                }
+                                native.drawBitmap(bitmap, src, rect, paint)
+                            } else {
+                                val placeholderPaint = android.graphics.Paint().apply {
+                                    isAntiAlias = true
+                                    color = android.graphics.Color.argb(64, 255, 255, 255)
+                                }
+                                native.drawRoundRect(rect, 18f, 18f, placeholderPaint)
+                            }
+
+                            if (element.id == selectedElementId && boundsAlpha > 0f) {
+                                val outlinePaint = android.graphics.Paint().apply {
+                                    isAntiAlias = true
+                                    style = android.graphics.Paint.Style.STROKE
+                                    strokeWidth = with(density) { 2.dp.toPx() }
+                                    color = android.graphics.Color.argb(
+                                        (0x66 * boundsAlpha).toInt().coerceIn(0, 255),
+                                        255,
+                                        255,
+                                        255
+                                    )
+                                }
+                                native.drawRoundRect(rect, pillCornerPx, pillCornerPx, outlinePaint)
+                            }
+
+                            native.restore()
                         }
-                        native.save()
-                        native.translate(center.x, center.y)
-                        native.rotate((element.rotationRad * 180f / Math.PI).toFloat())
-                        native.scale(element.scale, element.scale)
-                        val outline = RectF(left, top, left + layout.width, top + layout.height)
-                        native.drawRoundRect(outline, pillCornerPx, pillCornerPx, outlinePaint)
-                        native.restore()
                     }
                 }
             }
@@ -985,7 +1092,7 @@ private fun EditorIconButton(
 }
 
 private fun hitTest(
-    elements: List<CanvasTextElement>,
+    elements: List<CanvasElement>,
     pointPx: Offset,
     canvasSize: IntSize,
     textSizePx: Float,
@@ -1002,26 +1109,6 @@ private fun hitTest(
 
     val reversed = elements.asReversed()
     for (element in reversed) {
-        val wrapWidth = (element.boxWidth * canvasSize.width).toInt().coerceAtLeast(1)
-        paint.typeface = when (element.font) {
-            CanvasTextFont.POPPINS -> poppins
-            CanvasTextFont.VIRGIL -> virgil
-            CanvasTextFont.DM_SANS -> dmSans
-            CanvasTextFont.SPACE_MONO -> spaceMono
-            CanvasTextFont.PLAYFAIR_DISPLAY -> playfair
-            CanvasTextFont.BANGERS -> bangers
-        }
-        val alignment = when (element.alignment) {
-            CanvasTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL
-            CanvasTextAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
-            CanvasTextAlign.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
-        }
-        val layout = StaticLayout.Builder.obtain(element.text, 0, element.text.length, paint, wrapWidth)
-            .setAlignment(alignment)
-            .setIncludePad(false)
-            .build()
-        val halfW = layout.width / 2f
-        val halfH = layout.height / 2f
         val centerPx = element.center.denormalize(canvasSize)
         val dx = pointPx.x - centerPx.x
         val dy = pointPx.y - centerPx.y
@@ -1029,10 +1116,44 @@ private fun hitTest(
         val s = sin(element.rotationRad.toDouble()).toFloat()
         val xRot = (c * dx) + (s * dy)
         val yRot = (-s * dx) + (c * dy)
-        val xLocal = xRot / element.scale
-        val yLocal = yRot / element.scale
-        if (xLocal in -halfW..halfW && yLocal in -halfH..halfH) {
-            return element.id
+
+        when (element) {
+            is CanvasTextElement -> {
+                val wrapWidth = (element.boxWidth * canvasSize.width).toInt().coerceAtLeast(1)
+                paint.typeface = when (element.font) {
+                    CanvasTextFont.POPPINS -> poppins
+                    CanvasTextFont.VIRGIL -> virgil
+                    CanvasTextFont.DM_SANS -> dmSans
+                    CanvasTextFont.SPACE_MONO -> spaceMono
+                    CanvasTextFont.PLAYFAIR_DISPLAY -> playfair
+                    CanvasTextFont.BANGERS -> bangers
+                }
+                val alignment = when (element.alignment) {
+                    CanvasTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL
+                    CanvasTextAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
+                    CanvasTextAlign.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
+                }
+                val layout = StaticLayout.Builder.obtain(element.text, 0, element.text.length, paint, wrapWidth)
+                    .setAlignment(alignment)
+                    .setIncludePad(false)
+                    .build()
+                val halfW = layout.width / 2f
+                val halfH = layout.height / 2f
+                val xLocal = xRot / element.scale
+                val yLocal = yRot / element.scale
+                if (xLocal in -halfW..halfW && yLocal in -halfH..halfH) {
+                    return element.id
+                }
+            }
+            is CanvasStickerElement -> {
+                val sizePx = (element.scale.coerceIn(0.08f, 1.6f) * canvasSize.width.toFloat()).coerceAtLeast(1f)
+                val half = sizePx / 2f
+                val xLocal = xRot
+                val yLocal = yRot
+                if (xLocal in -half..half && yLocal in -half..half) {
+                    return element.id
+                }
+            }
         }
     }
     return null

@@ -94,6 +94,7 @@
     <string name="home_canvas_redo_content_description">Redo</string>
     <string name="home_canvas_erase_content_description">Erase strokes</string>
     <string name="home_canvas_text_content_description">Text</string>
+    <string name="home_canvas_sticker_content_description">Stickers</string>
     <string name="home_canvas_clear_content_description">Clear canvas</string>
     <string name="home_clear_canvas_title">Clear canvas?</string>
     <string name="home_clear_canvas_body">This removes all strokes from the shared canvas.</string>

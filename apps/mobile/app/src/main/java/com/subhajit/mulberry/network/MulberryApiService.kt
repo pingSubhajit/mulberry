@@ -82,4 +82,21 @@ interface MulberryApiService {
         @Query("cursor") cursor: String?,
         @Query("limit") limit: Int
     ): WallpaperCatalogResponse
+
+    @GET("/stickers/packs")
+    suspend fun getStickerPacks(): StickerPackListResponse
+
+    @GET("/stickers/packs/{packKey}")
+    suspend fun getStickerPackDetail(
+        @Path("packKey") packKey: String,
+        @Query("version") version: Int?
+    ): StickerPackDetailResponse
+
+    @GET("/stickers/assets/url")
+    suspend fun getStickerAssetUrl(
+        @Query("packKey") packKey: String,
+        @Query("version") version: Int,
+        @Query("stickerId") stickerId: String,
+        @Query("variant") variant: String
+    ): StickerAssetUrlResponse
 }

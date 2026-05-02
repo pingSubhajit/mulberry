@@ -20,6 +20,9 @@ export const CanvasOperationTypes = [
   "ADD_TEXT_ELEMENT",
   "UPDATE_TEXT_ELEMENT",
   "DELETE_TEXT_ELEMENT",
+  "ADD_STICKER_ELEMENT",
+  "UPDATE_STICKER_ELEMENT",
+  "DELETE_STICKER_ELEMENT",
 ] as const
 export const DevicePlatforms = ["ANDROID"] as const
 

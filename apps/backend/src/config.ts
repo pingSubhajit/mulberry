@@ -18,6 +18,8 @@ export interface AppConfig {
   supabaseServiceRoleKey?: string
   supabaseWallpaperBucket?: string
   wallpaperAdminPassword?: string
+  supabaseStickerBucket?: string
+  stickerAdminPassword?: string
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -53,6 +55,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
     supabaseWallpaperBucket: env.SUPABASE_WALLPAPER_BUCKET,
     wallpaperAdminPassword: env.WALLPAPER_ADMIN_PASSWORD,
+    supabaseStickerBucket: env.SUPABASE_STICKER_BUCKET ?? env.SUPABASE_WALLPAPER_BUCKET,
+    stickerAdminPassword: env.STICKER_ADMIN_PASSWORD ?? env.WALLPAPER_ADMIN_PASSWORD,
   }
 }
 

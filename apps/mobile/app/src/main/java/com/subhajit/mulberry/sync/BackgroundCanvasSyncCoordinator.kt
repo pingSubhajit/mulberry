@@ -7,6 +7,8 @@ import com.subhajit.mulberry.drawing.geometry.containsLegacyGeometry
 import com.subhajit.mulberry.drawing.geometry.hasLegacyGeometry
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.DrawingRepository
+import com.subhajit.mulberry.drawing.model.CanvasElement
+import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextAlign
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.CanvasTextFont
@@ -112,7 +114,7 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         }
 
         val snapshotStrokes = snapshot.snapshot.toDomainStrokes()
-        val snapshotTextElements = snapshot.snapshot.toDomainTextElements()
+        val snapshotElements = snapshot.snapshot.toDomainElements()
         if (snapshotStrokes.containsLegacyGeometry()) {
             clearLegacyCanvasAndQueueReset(reason = "background_snapshot_legacy_geometry")
             wallpaperCoordinator.ensureSnapshotCurrent()
@@ -122,7 +124,7 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
 
         drawingRepository.replaceWithRemoteSnapshot(
             strokes = snapshotStrokes,
-            textElements = snapshotTextElements,
+            elements = snapshotElements,
             serverRevision = snapshot.snapshotRevision
         )
         syncMetadataRepository.setLastAppliedServerRevision(snapshot.snapshotRevision)
@@ -144,10 +146,10 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
         Log.i(
             TAG,
-            "Background snapshot sync applied snapshotRevision=${snapshot.snapshotRevision} " +
-                "latestRevision=${snapshot.latestRevision} " +
-                "strokeCount=${snapshot.snapshot.strokes.size} " +
-                "textElementCount=${snapshot.snapshot.textElements.size}"
+                "Background snapshot sync applied snapshotRevision=${snapshot.snapshotRevision} " +
+                    "latestRevision=${snapshot.latestRevision} " +
+                    "strokeCount=${snapshot.snapshot.strokes.size} " +
+                    "elementCount=${snapshotElements.size}"
         )
         BackgroundCanvasSyncResult.Synced
     }
@@ -229,8 +231,51 @@ private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainStrokes(
         )
     }
 
-private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainTextElements(): List<CanvasTextElement> =
-    textElements.map { element ->
+private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainElements(): List<CanvasElement> {
+    val unified = elements.orEmpty()
+    if (unified.isNotEmpty()) {
+        return unified.mapNotNull { element ->
+            when (element.kind) {
+                "TEXT" -> {
+                    CanvasTextElement(
+                        id = element.id,
+                        text = element.text.orEmpty(),
+                        createdAt = element.createdAt,
+                        center = StrokePoint(x = element.center.x, y = element.center.y),
+                        rotationRad = element.rotationRad,
+                        scale = element.scale,
+                        boxWidth = element.boxWidth ?: 0.7f,
+                        colorArgb = element.colorArgb ?: 0xff111111,
+                        backgroundPillEnabled = element.backgroundPillEnabled ?: false,
+                        font = runCatching { CanvasTextFont.valueOf(element.font ?: "POPPINS") }
+                            .getOrElse { CanvasTextFont.POPPINS },
+                        alignment = runCatching { CanvasTextAlign.valueOf(element.alignment ?: "CENTER") }
+                            .getOrElse { CanvasTextAlign.CENTER }
+                    )
+                }
+                "STICKER" -> {
+                    val packKey = element.packKey?.trim().orEmpty()
+                    val stickerId = element.stickerId?.trim().orEmpty()
+                    val packVersion = element.packVersion ?: 0
+                    if (packKey.isBlank() || stickerId.isBlank() || packVersion <= 0) return@mapNotNull null
+                    CanvasStickerElement(
+                        id = element.id,
+                        createdAt = element.createdAt,
+                        center = StrokePoint(x = element.center.x, y = element.center.y),
+                        rotationRad = element.rotationRad,
+                        scale = element.scale,
+                        packKey = packKey,
+                        packVersion = packVersion,
+                        stickerId = stickerId
+                    )
+                }
+                else -> null
+            }
+        }
+    }
+
+    // Back-compat: older snapshots only include textElements.
+    return textElements.map { element ->
         CanvasTextElement(
             id = element.id,
             text = element.text,
@@ -245,3 +290,4 @@ private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainTextElem
             alignment = runCatching { CanvasTextAlign.valueOf(element.alignment) }.getOrElse { CanvasTextAlign.CENTER }
         )
     }
+}

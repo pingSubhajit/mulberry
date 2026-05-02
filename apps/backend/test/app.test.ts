@@ -1426,6 +1426,7 @@ describe("Mulberry backend", () => {
     expect(snapshot.json().snapshot.strokes.map((stroke: { id: string }) => stroke.id))
       .toEqual(["current-stroke"])
     expect(snapshot.json().snapshot.textElements ?? []).toEqual([])
+    expect(snapshot.json().snapshot.elements ?? []).toEqual([])
     expect(tail.json().operations.map((operation: { serverRevision: number }) => operation.serverRevision))
       .toEqual([6, 7])
     first.close()
@@ -1471,6 +1472,7 @@ describe("Mulberry backend", () => {
     expect(inProgressSnapshot.json().latestRevision).toBe(2)
     expect(inProgressSnapshot.json().snapshot.strokes).toEqual([])
     expect(inProgressSnapshot.json().snapshot.textElements ?? []).toEqual([])
+    expect(inProgressSnapshot.json().snapshot.elements ?? []).toEqual([])
 
     first.send(
       JSON.stringify({
@@ -1492,6 +1494,7 @@ describe("Mulberry backend", () => {
     expect(finishedSnapshot.json().latestRevision).toBe(3)
     expect(stroke.points).toEqual([{ x: 1, y: 1 }, { x: 2, y: 2 }])
     expect(finishedSnapshot.json().snapshot.textElements ?? []).toEqual([])
+    expect(finishedSnapshot.json().snapshot.elements ?? []).toEqual([])
     first.close()
   })
 
@@ -1534,6 +1537,8 @@ describe("Mulberry backend", () => {
     expect(snapshotAfterUpsert.json().snapshot.textElements.map((element: { id: string }) => element.id))
       .toEqual(["text-1"])
     expect(snapshotAfterUpsert.json().snapshot.textElements[0].text).toBe("Hello world")
+    expect(snapshotAfterUpsert.json().snapshot.elements.map((element: { kind: string; id: string }) => [element.kind, element.id]))
+      .toEqual([["TEXT", "text-1"]])
 
     first.send(
       JSON.stringify({
@@ -1552,6 +1557,70 @@ describe("Mulberry backend", () => {
     })
     expect(snapshotAfterDelete.statusCode).toBe(200)
     expect(snapshotAfterDelete.json().snapshot.textElements).toEqual([])
+    expect(snapshotAfterDelete.json().snapshot.elements).toEqual([])
+    first.close()
+  })
+
+  it("materializes sticker elements into canvas snapshots and preserves overlay ordering", async () => {
+    const { inviter } = await pairUsers()
+    const first = await app.injectWS("/canvas/sync")
+
+    first.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: inviter.accessToken,
+        pairSessionId: inviter.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    await nextWsJson(first)
+
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP_BATCH",
+        batchId: "sticker-batch-1",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          addTextElementOperation("sticker-op-1", "text-1", "Hello", 0.5, 0.5),
+          addStickerElementOperation("sticker-op-2", "sticker-1", "kawaii-cats", 1, "8", 0.6, 0.6),
+          updateTextElementOperation("sticker-op-3", "text-1", "Hello world", 0.5, 0.5),
+        ],
+      }),
+    )
+    const ack = await nextWsJson(first)
+    expect(ack.type).toBe("ACK_BATCH")
+    expect(ack.ackedThroughRevision).toBe(3)
+
+    const snapshotAfterUpsert = await app.inject({
+      method: "GET",
+      url: "/canvas/snapshot",
+      headers: bearer(inviter.accessToken),
+    })
+
+    expect(snapshotAfterUpsert.statusCode).toBe(200)
+    expect(snapshotAfterUpsert.json().snapshot.textElements.map((element: { id: string }) => element.id))
+      .toEqual(["text-1"])
+    expect(snapshotAfterUpsert.json().snapshot.elements.map((element: { kind: string; id: string }) => [element.kind, element.id]))
+      .toEqual([["STICKER", "sticker-1"], ["TEXT", "text-1"]])
+
+    first.send(
+      JSON.stringify({
+        type: "CLIENT_OP",
+        operation: deleteStickerElementOperation("sticker-op-4", "sticker-1"),
+      }),
+    )
+    const deleteAck = await nextWsJson(first)
+    expect(deleteAck.type).toBe("ACK")
+    expect(deleteAck.serverRevision).toBe(4)
+
+    const snapshotAfterDelete = await app.inject({
+      method: "GET",
+      url: "/canvas/snapshot",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(snapshotAfterDelete.statusCode).toBe(200)
+    expect(snapshotAfterDelete.json().snapshot.elements.map((element: { kind: string; id: string }) => [element.kind, element.id]))
+      .toEqual([["TEXT", "text-1"]])
     first.close()
   })
 
@@ -2057,6 +2126,70 @@ function deleteTextElementOperation(clientOperationId: string, elementId: string
   return {
     clientOperationId,
     type: "DELETE_TEXT_ELEMENT",
+    strokeId: elementId,
+    payload: {},
+    clientCreatedAt: new Date().toISOString(),
+  }
+}
+
+function addStickerElementOperation(
+  clientOperationId: string,
+  elementId: string,
+  packKey: string,
+  packVersion: number,
+  stickerId: string,
+  x: number,
+  y: number,
+) {
+  return {
+    clientOperationId,
+    type: "ADD_STICKER_ELEMENT",
+    strokeId: elementId,
+    payload: {
+      id: elementId,
+      createdAt: 123,
+      center: { x, y },
+      rotationRad: 0,
+      scale: 0.22,
+      packKey,
+      packVersion,
+      stickerId,
+    },
+    clientCreatedAt: new Date().toISOString(),
+  }
+}
+
+function updateStickerElementOperation(
+  clientOperationId: string,
+  elementId: string,
+  packKey: string,
+  packVersion: number,
+  stickerId: string,
+  x: number,
+  y: number,
+) {
+  return {
+    clientOperationId,
+    type: "UPDATE_STICKER_ELEMENT",
+    strokeId: elementId,
+    payload: {
+      id: elementId,
+      createdAt: 123,
+      center: { x, y },
+      rotationRad: 0,
+      scale: 0.22,
+      packKey,
+      packVersion,
+      stickerId,
+    },
+    clientCreatedAt: new Date().toISOString(),
+  }
+}
+
+function deleteStickerElementOperation(clientOperationId: string, elementId: string) {
+  return {
+    clientOperationId,
+    type: "DELETE_STICKER_ELEMENT",
     strokeId: elementId,
     payload: {},
     clientCreatedAt: new Date().toISOString(),

@@ -176,6 +176,45 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
     CREATE INDEX IF NOT EXISTS wallpapers_public_catalog_idx
       ON wallpapers(sort_order ASC, created_at DESC, id ASC)
       WHERE published_at IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS sticker_packs (
+      pack_key TEXT NOT NULL,
+      pack_version INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      cover_thumbnail_path TEXT NOT NULL,
+      cover_full_path TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      featured BOOLEAN NOT NULL DEFAULT FALSE,
+      published_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (pack_key, pack_version)
+    );
+
+    CREATE INDEX IF NOT EXISTS sticker_packs_public_catalog_idx
+      ON sticker_packs(sort_order ASC, created_at DESC, pack_key ASC, pack_version DESC)
+      WHERE published_at IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS stickers (
+      pack_key TEXT NOT NULL,
+      pack_version INTEGER NOT NULL,
+      sticker_id TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      thumbnail_path TEXT NOT NULL,
+      full_path TEXT NOT NULL,
+      width INTEGER NOT NULL,
+      height INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (pack_key, pack_version, sticker_id),
+      FOREIGN KEY (pack_key, pack_version)
+        REFERENCES sticker_packs(pack_key, pack_version)
+        ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS stickers_pack_sort_idx
+      ON stickers(pack_key, pack_version, sort_order ASC, created_at DESC, sticker_id ASC);
   `)
 }
 

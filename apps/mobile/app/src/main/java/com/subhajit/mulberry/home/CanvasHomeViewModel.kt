@@ -17,6 +17,7 @@ import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 import com.subhajit.mulberry.drawing.DrawingRepository
 import com.subhajit.mulberry.drawing.model.CanvasState
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
+import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
@@ -36,6 +37,10 @@ import com.subhajit.mulberry.wallpaper.DefaultWallpaperPresets
 import com.subhajit.mulberry.wallpaper.RemoteWallpaper
 import com.subhajit.mulberry.wallpaper.WallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
+import com.subhajit.mulberry.stickers.StickerAssetStore
+import com.subhajit.mulberry.stickers.StickerCatalogRepository
+import com.subhajit.mulberry.stickers.StickerPackDetail
+import com.subhajit.mulberry.stickers.StickerPackSummary
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.WallpaperStatusState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -129,6 +134,10 @@ data class CanvasHomeUiState(
     val recentRemoteWallpapers: List<RemoteWallpaper> = emptyList(),
     val isWallpaperBusy: Boolean = false,
     val wallpaperErrorMessage: String? = null,
+    val stickerPacks: List<StickerPackSummary> = emptyList(),
+    val selectedStickerPack: StickerPackDetail? = null,
+    val isStickerCatalogLoading: Boolean = false,
+    val stickerCatalogErrorMessage: String? = null,
     val showClearConfirmation: Boolean = false,
     val canvasStrokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.Hybrid,
     val palette: List<Long> = DrawingDefaults.palette
@@ -152,6 +161,8 @@ class CanvasHomeViewModel @Inject constructor(
     private val canvasRuntime: CanvasRuntime,
     private val backgroundImageRepository: BackgroundImageRepository,
     private val wallpaperCatalogRepository: WallpaperCatalogRepository,
+    private val stickerCatalogRepository: StickerCatalogRepository,
+    val stickerAssetStore: StickerAssetStore,
     private val wallpaperCoordinator: WallpaperCoordinator,
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     private val reviewPromptCoordinator: com.subhajit.mulberry.review.ReviewPromptCoordinator,
@@ -170,6 +181,10 @@ class CanvasHomeViewModel @Inject constructor(
     private val applyingRemoteWallpaperIdState = MutableStateFlow<String?>(null)
     private val wallpaperBusyState = MutableStateFlow(false)
     private val wallpaperErrorState = MutableStateFlow<String?>(null)
+    private val stickerPacksState = MutableStateFlow<List<StickerPackSummary>>(emptyList())
+    private val selectedStickerPackState = MutableStateFlow<StickerPackDetail?>(null)
+    private val stickerCatalogBusyState = MutableStateFlow(false)
+    private val stickerCatalogErrorState = MutableStateFlow<String?>(null)
     private val currentTimeMillis = MutableStateFlow(System.currentTimeMillis())
     private val _effects = MutableSharedFlow<CanvasHomeEffect>()
     val effects = _effects.asSharedFlow()
@@ -244,11 +259,26 @@ class CanvasHomeViewModel @Inject constructor(
         )
     }
 
+    private val stickerCatalogUi = combine(
+        stickerPacksState,
+        selectedStickerPackState,
+        stickerCatalogBusyState,
+        stickerCatalogErrorState
+    ) { packs, selected, isBusy, error ->
+        StickerCatalogUiState(
+            packs = packs,
+            selected = selected,
+            isBusy = isBusy,
+            error = error
+        )
+    }
+
     val uiState = combine(
         baseState,
         inviteControls,
-        wallpaperControls
-    ) { baseState, inviteControls, wallpaperControls ->
+        wallpaperControls,
+        stickerCatalogUi
+    ) { baseState, inviteControls, wallpaperControls, stickers ->
         CanvasHomeUiState(
             environmentLabel = appConfig.environment.displayName,
             bootstrapState = baseState.bootstrapState,
@@ -275,6 +305,10 @@ class CanvasHomeViewModel @Inject constructor(
             recentRemoteWallpapers = wallpaperControls.recentRemoteWallpapers,
             isWallpaperBusy = wallpaperControls.isBusy,
             wallpaperErrorMessage = wallpaperControls.error,
+            stickerPacks = stickers.packs,
+            selectedStickerPack = stickers.selected,
+            isStickerCatalogLoading = stickers.isBusy,
+            stickerCatalogErrorMessage = stickers.error,
             showClearConfirmation = inviteControls.clearDialogVisible,
             canvasStrokeRenderMode = appConfig.canvasStrokeRenderMode
         )
@@ -697,6 +731,18 @@ class CanvasHomeViewModel @Inject constructor(
         canvasRuntime.submit(CanvasRuntimeEvent.DeleteTextElement(elementId))
     }
 
+    fun onStickerElementAdded(element: CanvasStickerElement) {
+        canvasRuntime.submit(CanvasRuntimeEvent.AddStickerElement(element))
+    }
+
+    fun onStickerElementUpdated(element: CanvasStickerElement) {
+        canvasRuntime.submit(CanvasRuntimeEvent.UpdateStickerElement(element))
+    }
+
+    fun onStickerElementDeleted(elementId: String) {
+        canvasRuntime.submit(CanvasRuntimeEvent.DeleteStickerElement(elementId))
+    }
+
     fun onCanvasViewportChanged(widthPx: Int, heightPx: Int) {
         viewModelScope.launch {
             canvasRuntime.submitAndAwait(CanvasRuntimeEvent.CanvasViewportChanged(widthPx, heightPx))
@@ -712,7 +758,11 @@ class CanvasHomeViewModel @Inject constructor(
                 else -> drawingRepository.setBrushColor(colorArgb)
             }
 
-            val nextTool = if (currentTool == DrawingTool.ERASE) DrawingTool.DRAW else currentTool
+            val nextTool = when (currentTool) {
+                DrawingTool.ERASE -> DrawingTool.DRAW
+                DrawingTool.STICKER -> DrawingTool.DRAW
+                else -> currentTool
+            }
             if (nextTool != currentTool) drawingRepository.setTool(nextTool)
         }
     }
@@ -742,6 +792,59 @@ class CanvasHomeViewModel @Inject constructor(
                 DrawingTool.TEXT
             }
             drawingRepository.setTool(nextTool)
+        }
+    }
+
+    fun onStickerToggle() {
+        viewModelScope.launch {
+            val nextTool = if (uiState.value.toolState.activeTool == DrawingTool.STICKER) {
+                DrawingTool.DRAW
+            } else {
+                DrawingTool.STICKER
+            }
+            drawingRepository.setTool(nextTool)
+            if (nextTool == DrawingTool.STICKER) {
+                ensureStickerPacksLoaded()
+            } else {
+                selectedStickerPackState.value = null
+                stickerCatalogErrorState.value = null
+            }
+        }
+    }
+
+    fun onStickerPackSelected(packKey: String, packVersion: Int) {
+        viewModelScope.launch {
+            stickerCatalogBusyState.value = true
+            stickerCatalogErrorState.value = null
+            runCatching {
+                stickerCatalogRepository.fetchPackDetail(packKey = packKey, version = packVersion)
+            }.onSuccess { detail ->
+                selectedStickerPackState.value = detail
+            }.onFailure { error ->
+                stickerCatalogErrorState.value = error.message ?: "Unable to load sticker pack"
+            }
+            stickerCatalogBusyState.value = false
+        }
+    }
+
+    private fun ensureStickerPacksLoaded() {
+        if (stickerCatalogBusyState.value) return
+        if (stickerPacksState.value.isNotEmpty()) return
+        viewModelScope.launch {
+            stickerCatalogBusyState.value = true
+            stickerCatalogErrorState.value = null
+            runCatching {
+                stickerCatalogRepository.fetchPacks()
+            }.onSuccess { packs ->
+                stickerPacksState.value = packs
+                // Auto-select the first featured pack for v1.
+                selectedStickerPackState.value = packs.firstOrNull()?.let { pack ->
+                    runCatching { stickerCatalogRepository.fetchPackDetail(pack.packKey, pack.packVersion) }.getOrNull()
+                }
+            }.onFailure { error ->
+                stickerCatalogErrorState.value = error.message ?: "Unable to load sticker packs"
+            }
+            stickerCatalogBusyState.value = false
         }
     }
 
@@ -873,6 +976,13 @@ class CanvasHomeViewModel @Inject constructor(
         }
     }
 }
+
+private data class StickerCatalogUiState(
+    val packs: List<com.subhajit.mulberry.stickers.StickerPackSummary>,
+    val selected: com.subhajit.mulberry.stickers.StickerPackDetail?,
+    val isBusy: Boolean,
+    val error: String?
+)
 
 private fun CreateInviteResult?.toInviteSheetUiState(
     nowMillis: Long,

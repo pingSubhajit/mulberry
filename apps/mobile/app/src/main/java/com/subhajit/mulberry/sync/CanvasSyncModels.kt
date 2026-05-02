@@ -82,6 +82,30 @@ sealed interface SyncOperationPayload {
     ) : SyncOperationPayload
 
     data object DeleteTextElement : SyncOperationPayload
+
+    data class AddStickerElement(
+        val id: String,
+        val createdAt: Long,
+        val center: StrokePoint,
+        val rotationRad: Float,
+        val scale: Float,
+        val packKey: String,
+        val packVersion: Int,
+        val stickerId: String
+    ) : SyncOperationPayload
+
+    data class UpdateStickerElement(
+        val id: String,
+        val createdAt: Long,
+        val center: StrokePoint,
+        val rotationRad: Float,
+        val scale: Float,
+        val packKey: String,
+        val packVersion: Int,
+        val stickerId: String
+    ) : SyncOperationPayload
+
+    data object DeleteStickerElement : SyncOperationPayload
 }
 
 fun Stroke.toAddStrokePayload(): SyncOperationPayload.AddStroke =

@@ -71,6 +71,24 @@ interface MaterializedTextElement {
   alignment: string
 }
 
+interface MaterializedStickerElement {
+  kind: "STICKER"
+  id: string
+  createdAt: number
+  center: { x: number; y: number }
+  rotationRad: number
+  scale: number
+  packKey: string
+  packVersion: number
+  stickerId: string
+}
+
+interface MaterializedCanvasTextElement extends MaterializedTextElement {
+  kind: "TEXT"
+}
+
+type MaterializedCanvasElement = MaterializedCanvasTextElement | MaterializedStickerElement
+
 interface UploadedProfilePhoto {
   filename?: string
   contentType?: string
@@ -1507,7 +1525,7 @@ export class MulberryService {
     db: Pick<Database, "query">,
     pairSessionId: string,
     operation: CanvasOperationRecord,
-    snapshot: { strokes: MaterializedStroke[]; textElements: MaterializedTextElement[] },
+    snapshot: { strokes: MaterializedStroke[]; elements: MaterializedCanvasElement[]; textElements: MaterializedTextElement[] },
   ): Promise<boolean> {
     switch (operation.type) {
       case "FINISH_STROKE": {
@@ -1525,6 +1543,7 @@ export class MulberryService {
       case "CLEAR_CANVAS": {
         snapshot.strokes = []
         snapshot.textElements = []
+        snapshot.elements = []
         return true
       }
       case "ADD_TEXT_ELEMENT":
@@ -1533,11 +1552,27 @@ export class MulberryService {
         if (!payload) return false
         snapshot.textElements = snapshot.textElements.filter((element) => element.id !== payload.id)
         snapshot.textElements.push(payload)
+        snapshot.elements = snapshot.elements.filter((element) => element.id !== payload.id)
+        snapshot.elements.push({ kind: "TEXT", ...payload })
         return true
       }
       case "DELETE_TEXT_ELEMENT": {
         if (!operation.stroke_id) return false
         snapshot.textElements = snapshot.textElements.filter((element) => element.id !== operation.stroke_id)
+        snapshot.elements = snapshot.elements.filter((element) => element.id !== operation.stroke_id)
+        return true
+      }
+      case "ADD_STICKER_ELEMENT":
+      case "UPDATE_STICKER_ELEMENT": {
+        const payload = normalizeStickerElement(operation.payload_json)
+        if (!payload) return false
+        snapshot.elements = snapshot.elements.filter((element) => element.id !== payload.id)
+        snapshot.elements.push(payload)
+        return true
+      }
+      case "DELETE_STICKER_ELEMENT": {
+        if (!operation.stroke_id) return false
+        snapshot.elements = snapshot.elements.filter((element) => element.id !== operation.stroke_id)
         return true
       }
       default:
@@ -1765,6 +1800,7 @@ function normalizeTimestampString(raw: string | Date | null): string | null {
 
 function normalizeCanvasSnapshot(raw: unknown): {
   strokes: MaterializedStroke[]
+  elements: MaterializedCanvasElement[]
   textElements: MaterializedTextElement[]
 } {
   if (
@@ -1773,19 +1809,31 @@ function normalizeCanvasSnapshot(raw: unknown): {
     "strokes" in raw &&
     Array.isArray((raw as { strokes: unknown }).strokes)
   ) {
-    const candidate = raw as { strokes: unknown[]; textElements?: unknown }
+    const candidate = raw as { strokes: unknown[]; textElements?: unknown; elements?: unknown }
+    const textElements = Array.isArray(candidate.textElements)
+      ? candidate.textElements
+        .map(normalizeTextElement)
+        .filter((element): element is MaterializedTextElement => element !== null)
+      : []
+    const elements: MaterializedCanvasElement[] = Array.isArray(candidate.elements)
+      ? candidate.elements
+        .map(normalizeCanvasElement)
+        .filter((element): element is MaterializedCanvasElement => element !== null)
+      : textElements.map((element): MaterializedCanvasTextElement => ({ kind: "TEXT", ...element }))
+
     return {
       strokes: candidate.strokes
         .map(normalizeStroke)
         .filter((stroke): stroke is MaterializedStroke => stroke !== null),
-      textElements: Array.isArray(candidate.textElements)
-        ? candidate.textElements
-          .map(normalizeTextElement)
-          .filter((element): element is MaterializedTextElement => element !== null)
-        : [],
+      elements,
+      textElements: textElements.length > 0
+        ? textElements
+        : elements
+          .filter((element): element is MaterializedCanvasTextElement => element.kind === "TEXT")
+          .map(({ kind: _kind, ...rest }) => rest),
     }
   }
-  return { strokes: [], textElements: [] }
+  return { strokes: [], elements: [], textElements: [] }
 }
 
 function normalizeCanvasPoint(raw: unknown): { x: number; y: number } | null {
@@ -1852,4 +1900,51 @@ function normalizeTextElement(raw: unknown): MaterializedTextElement | null {
     font: typeof candidate.font === "string" ? candidate.font : "POPPINS",
     alignment: typeof candidate.alignment === "string" ? candidate.alignment : "CENTER",
   }
+}
+
+function normalizeStickerElement(raw: unknown): MaterializedStickerElement | null {
+  if (typeof raw !== "object" || raw === null || !("id" in raw)) return null
+  const candidate = raw as {
+    id?: unknown
+    createdAt?: unknown
+    center?: unknown
+    rotationRad?: unknown
+    scale?: unknown
+    packKey?: unknown
+    packVersion?: unknown
+    stickerId?: unknown
+  }
+  if (typeof candidate.id !== "string") return null
+  const center = normalizeCanvasPoint(candidate.center)
+  if (!center) return null
+  const packKey = typeof candidate.packKey === "string" ? candidate.packKey.trim() : ""
+  const stickerId = typeof candidate.stickerId === "string" ? candidate.stickerId.trim() : ""
+  const packVersion = Number(candidate.packVersion ?? 0)
+  if (!packKey || !stickerId || !Number.isFinite(packVersion) || packVersion <= 0) return null
+
+  return {
+    kind: "STICKER",
+    id: candidate.id,
+    createdAt: Number(candidate.createdAt ?? Date.now()),
+    center,
+    rotationRad: Number(candidate.rotationRad ?? 0),
+    scale: Number(candidate.scale ?? 0.22),
+    packKey,
+    packVersion,
+    stickerId,
+  }
+}
+
+function normalizeCanvasElement(raw: unknown): MaterializedCanvasElement | null {
+  if (typeof raw !== "object" || raw === null || !("kind" in raw)) return null
+  const candidate = raw as { kind?: unknown }
+  if (candidate.kind === "TEXT") {
+    const normalized = normalizeTextElement(raw)
+    return normalized ? { kind: "TEXT", ...normalized } : null
+  }
+  if (candidate.kind === "STICKER") {
+    // Stored sticker elements already include discriminator, so normalize the full payload.
+    return normalizeStickerElement(raw)
+  }
+  return null
 }

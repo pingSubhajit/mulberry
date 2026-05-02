@@ -1,6 +1,8 @@
 package com.subhajit.mulberry.drawing
 
 import com.subhajit.mulberry.drawing.model.CanvasState
+import com.subhajit.mulberry.drawing.model.CanvasElement
+import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.Stroke
@@ -50,9 +52,17 @@ interface DrawingRepository {
 
     suspend fun applyRemoteDeleteTextElement(elementId: String, serverRevision: Long)
 
+    suspend fun upsertLocalStickerElement(element: CanvasStickerElement): Long
+
+    suspend fun deleteLocalStickerElement(elementId: String): Long
+
+    suspend fun applyRemoteAddOrUpdateStickerElement(element: CanvasStickerElement, serverRevision: Long)
+
+    suspend fun applyRemoteDeleteStickerElement(elementId: String, serverRevision: Long)
+
     suspend fun replaceWithRemoteSnapshot(
         strokes: List<Stroke>,
-        textElements: List<CanvasTextElement>,
+        elements: List<CanvasElement>,
         serverRevision: Long
     )
 

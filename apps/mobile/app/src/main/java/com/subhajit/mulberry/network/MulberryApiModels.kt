@@ -113,7 +113,8 @@ data class CanvasSnapshotResponse(
 
 data class CanvasSnapshotPayload(
     val strokes: List<CanvasSnapshotStroke> = emptyList(),
-    val textElements: List<CanvasSnapshotTextElement> = emptyList()
+    val textElements: List<CanvasSnapshotTextElement> = emptyList(),
+    val elements: List<CanvasSnapshotElement>? = null
 )
 
 data class CanvasSnapshotStroke(
@@ -137,6 +138,26 @@ data class CanvasSnapshotTextElement(
     val backgroundPillEnabled: Boolean = false,
     val font: String = "POPPINS",
     val alignment: String = "CENTER"
+)
+
+data class CanvasSnapshotElement(
+    val kind: String,
+    val id: String,
+    val createdAt: Long,
+    val center: CanvasPointPayload,
+    val rotationRad: Float = 0f,
+    val scale: Float = 1f,
+    // TEXT
+    val text: String? = null,
+    val boxWidth: Float? = null,
+    val colorArgb: Long? = null,
+    val backgroundPillEnabled: Boolean? = null,
+    val font: String? = null,
+    val alignment: String? = null,
+    // STICKER
+    val packKey: String? = null,
+    val packVersion: Int? = null,
+    val stickerId: String? = null
 )
 
 data class CanvasOperationEnvelopeResponse(
@@ -195,4 +216,45 @@ data class RemoteWallpaperResponse(
     val width: Int,
     val height: Int,
     val dominantColor: String
+)
+
+data class StickerPackListResponse(
+    val items: List<StickerPackSummaryResponse> = emptyList()
+)
+
+data class StickerPackSummaryResponse(
+    val packKey: String,
+    val packVersion: Int,
+    val title: String,
+    val description: String,
+    val coverThumbnailUrl: String,
+    val coverFullUrl: String,
+    val sortOrder: Int,
+    val featured: Boolean
+)
+
+data class StickerPackDetailResponse(
+    val packKey: String,
+    val packVersion: Int,
+    val title: String,
+    val description: String,
+    val coverThumbnailUrl: String,
+    val coverFullUrl: String,
+    val sortOrder: Int,
+    val featured: Boolean,
+    val stickers: List<StickerSummaryResponse> = emptyList()
+)
+
+data class StickerSummaryResponse(
+    val stickerId: String,
+    val thumbnailUrl: String,
+    val fullUrl: String,
+    val width: Int,
+    val height: Int,
+    val sortOrder: Int
+)
+
+data class StickerAssetUrlResponse(
+    val url: String,
+    val expiresInSeconds: Int
 )

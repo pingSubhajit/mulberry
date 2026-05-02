@@ -235,6 +235,31 @@ fun SyncOperationPayload.toJsonObject(): JsonObject = when (this) {
         )
     ).asJsonObject
     SyncOperationPayload.DeleteTextElement -> JsonObject()
+    is SyncOperationPayload.AddStickerElement -> gson.toJsonTree(
+        mapOf(
+            "id" to id,
+            "createdAt" to createdAt,
+            "center" to mapOf("x" to center.x, "y" to center.y),
+            "rotationRad" to rotationRad,
+            "scale" to scale,
+            "packKey" to packKey,
+            "packVersion" to packVersion,
+            "stickerId" to stickerId
+        )
+    ).asJsonObject
+    is SyncOperationPayload.UpdateStickerElement -> gson.toJsonTree(
+        mapOf(
+            "id" to id,
+            "createdAt" to createdAt,
+            "center" to mapOf("x" to center.x, "y" to center.y),
+            "rotationRad" to rotationRad,
+            "scale" to scale,
+            "packKey" to packKey,
+            "packVersion" to packVersion,
+            "stickerId" to stickerId
+        )
+    ).asJsonObject
+    SyncOperationPayload.DeleteStickerElement -> JsonObject()
 }
 
 fun JsonObject?.toSyncPayload(type: DrawingOperationType): SyncOperationPayload = when (type) {
@@ -311,6 +336,39 @@ fun JsonObject?.toSyncPayload(type: DrawingOperationType): SyncOperationPayload 
         )
     }
     DrawingOperationType.DELETE_TEXT_ELEMENT -> SyncOperationPayload.DeleteTextElement
+    DrawingOperationType.ADD_STICKER_ELEMENT -> {
+        val center = this?.getAsJsonObject("center")
+        SyncOperationPayload.AddStickerElement(
+            id = this?.get("id")?.asString.orEmpty(),
+            createdAt = this?.get("createdAt")?.asLong ?: System.currentTimeMillis(),
+            center = StrokePoint(
+                x = center?.get("x")?.asFloat ?: 0f,
+                y = center?.get("y")?.asFloat ?: 0f
+            ),
+            rotationRad = this?.get("rotationRad")?.asFloat ?: 0f,
+            scale = this?.get("scale")?.asFloat ?: 0.22f,
+            packKey = this?.get("packKey")?.asString.orEmpty(),
+            packVersion = this?.get("packVersion")?.asInt ?: 1,
+            stickerId = this?.get("stickerId")?.asString.orEmpty()
+        )
+    }
+    DrawingOperationType.UPDATE_STICKER_ELEMENT -> {
+        val center = this?.getAsJsonObject("center")
+        SyncOperationPayload.UpdateStickerElement(
+            id = this?.get("id")?.asString.orEmpty(),
+            createdAt = this?.get("createdAt")?.asLong ?: System.currentTimeMillis(),
+            center = StrokePoint(
+                x = center?.get("x")?.asFloat ?: 0f,
+                y = center?.get("y")?.asFloat ?: 0f
+            ),
+            rotationRad = this?.get("rotationRad")?.asFloat ?: 0f,
+            scale = this?.get("scale")?.asFloat ?: 0.22f,
+            packKey = this?.get("packKey")?.asString.orEmpty(),
+            packVersion = this?.get("packVersion")?.asInt ?: 1,
+            stickerId = this?.get("stickerId")?.asString.orEmpty()
+        )
+    }
+    DrawingOperationType.DELETE_STICKER_ELEMENT -> SyncOperationPayload.DeleteStickerElement
 }
 
 private fun nowIsoString(): String = SimpleDateFormat(
