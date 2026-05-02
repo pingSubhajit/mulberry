@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Image from "next/image"
 import Link from "next/link"
 import coupleHugImage from "@/public/couple-hug.png"
@@ -8,6 +9,8 @@ import { GOOGLE_PLAY_DOWNLOAD_URL } from "@/lib/constants"
 import InviteCodeCopyButton from "./InviteCodeCopyButton"
 
 export const dynamic = "force-dynamic"
+
+type InviteSearchParams = { code?: string | string[] }
 
 const notes = [
   {
@@ -34,6 +37,39 @@ function normalizeInviteCode(raw?: string): string | null {
   if (!raw) return null
   const digits = raw.replaceAll(/\D/g, "").slice(0, 6)
   return digits.length === 6 ? digits : null
+}
+
+export async function generateMetadata({
+  searchParams
+}: {
+  searchParams: InviteSearchParams | Promise<InviteSearchParams>
+}): Promise<Metadata> {
+  const resolved = await Promise.resolve(searchParams)
+  const raw = Array.isArray(resolved.code) ? resolved.code[0] : resolved.code
+  const code = normalizeInviteCode(raw)
+
+  const title = code ? "You're invited to Mulberry" : "Mulberry invite link"
+  const description = code
+    ? "Continue setup on Android with your Mulberry invite code."
+    : "Open a Mulberry invite link to continue setup on Android."
+
+  return {
+    title,
+    description,
+    robots: {
+      index: false,
+      follow: false,
+      nocache: true
+    },
+    openGraph: {
+      title,
+      description,
+      images: ["/brand/banner.png"]
+    },
+    alternates: {
+      canonical: "/invite"
+    }
+  }
 }
 
 function playStoreUrlForInvite(code: string): string {
