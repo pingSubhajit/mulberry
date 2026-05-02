@@ -78,7 +78,9 @@ import com.subhajit.mulberry.wallpaper.WallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.WallpaperStatusCalculator
 import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
 import com.subhajit.mulberry.stickers.BackendStickerCatalogRepository
+import com.subhajit.mulberry.stickers.DataStoreStickerCatalogCacheStore
 import com.subhajit.mulberry.stickers.StickerCatalogRepository
+import com.subhajit.mulberry.stickers.StickerCatalogCacheStore
 import com.subhajit.mulberry.update.DataStoreInAppUpdatePromptStateStore
 import com.subhajit.mulberry.update.InAppUpdatePromptStateStore
 import com.google.android.play.core.appupdate.AppUpdateManager
@@ -148,6 +150,12 @@ abstract class AppBindingsModule {
     abstract fun bindStickerCatalogRepository(
         implementation: BackendStickerCatalogRepository
     ): StickerCatalogRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindStickerCatalogCacheStore(
+        implementation: DataStoreStickerCatalogCacheStore
+    ): StickerCatalogCacheStore
 
     @Binds
     @Singleton
@@ -296,6 +304,16 @@ object AppProvidesModule {
     ): DataStore<Preferences> = PreferenceDataStoreFactory.create(
         scope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
         produceFile = { context.preferencesDataStoreFile(APP_PREFERENCES_FILE) }
+    )
+
+    @Provides
+    @Singleton
+    @StickerCacheDataStore
+    fun provideStickerCacheDataStore(
+        @ApplicationContext context: Context
+    ): DataStore<Preferences> = PreferenceDataStoreFactory.create(
+        scope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+        produceFile = { context.preferencesDataStoreFile("sticker_cache") }
     )
 
     @Provides

@@ -34,6 +34,8 @@ import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
+import com.subhajit.mulberry.stickers.StickerAssetStore
+import com.subhajit.mulberry.stickers.StickerCatalogCacheStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -41,6 +43,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
@@ -95,6 +98,8 @@ class SettingsViewModel @Inject constructor(
     private val wallpaperCoordinator: WallpaperCoordinator,
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     private val apiService: MulberryApiService,
+    private val stickerAssetStore: StickerAssetStore,
+    private val stickerCatalogCacheStore: StickerCatalogCacheStore,
     @ApplicationContext private val appContext: Context,
     appConfig: AppConfig
 ) : ViewModel() {
@@ -223,12 +228,17 @@ class SettingsViewModel @Inject constructor(
 
     fun onResetAppState() {
         viewModelScope.launchWithBusy {
+            val userId = sessionRepository.state.first().userId
             fcmTokenRepository.unregisterRegisteredToken()
             sessionRepository.reset()
             canvasSyncRepository.reset()
             drawingRepository.resetAllDrawingState()
             canvasSnapshotRenderer.clearSnapshots()
             backgroundImageRepository.clearBackground()
+            if (!userId.isNullOrBlank()) {
+                stickerCatalogCacheStore.clearUser(userId)
+                stickerAssetStore.clearAllStickerAssets(userId)
+            }
             wallpaperCoordinator.ensureSnapshotCurrent()
             wallpaperCoordinator.notifyWallpaperUpdated()
             _effects.emit(SettingsEffect.RestartFromBootstrap)
@@ -238,8 +248,37 @@ class SettingsViewModel @Inject constructor(
     fun onLogout() {
         viewModelScope.launchWithBusy {
             canvasSyncRepository.reset()
+            val userId = sessionRepository.state.first().userId
             authRepository.logout()
+            if (!userId.isNullOrBlank()) {
+                stickerCatalogCacheStore.clearUser(userId)
+                stickerAssetStore.clearAllStickerAssets(userId)
+            }
             _effects.emit(SettingsEffect.RestartFromBootstrap)
+        }
+    }
+
+    fun onClearStickerAssets() {
+        viewModelScope.launchWithBusy {
+            val userId = sessionRepository.state.first().userId
+            if (userId.isNullOrBlank()) {
+                _effects.emit(SettingsEffect.Message("No signed-in user; nothing to clear."))
+                return@launchWithBusy
+            }
+            stickerAssetStore.clearAllStickerAssets(userId)
+            _effects.emit(SettingsEffect.Message("Cleared sticker assets for this user."))
+        }
+    }
+
+    fun onClearStickerCatalogCache() {
+        viewModelScope.launchWithBusy {
+            val userId = sessionRepository.state.first().userId
+            if (userId.isNullOrBlank()) {
+                _effects.emit(SettingsEffect.Message("No signed-in user; nothing to clear."))
+                return@launchWithBusy
+            }
+            stickerCatalogCacheStore.clearUser(userId)
+            _effects.emit(SettingsEffect.Message("Cleared sticker catalog cache for this user."))
         }
     }
 

@@ -38,6 +38,8 @@ import com.subhajit.mulberry.wallpaper.RemoteWallpaper
 import com.subhajit.mulberry.wallpaper.WallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import com.subhajit.mulberry.stickers.StickerAssetStore
+import com.subhajit.mulberry.stickers.StickerAssetVariant
+import com.subhajit.mulberry.stickers.StickerCatalogCacheStore
 import com.subhajit.mulberry.stickers.StickerCatalogRepository
 import com.subhajit.mulberry.stickers.StickerPackDetail
 import com.subhajit.mulberry.stickers.StickerPackSummary
@@ -48,12 +50,14 @@ import javax.inject.Inject
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -163,6 +167,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val backgroundImageRepository: BackgroundImageRepository,
     private val wallpaperCatalogRepository: WallpaperCatalogRepository,
     private val stickerCatalogRepository: StickerCatalogRepository,
+    private val stickerCatalogCacheStore: StickerCatalogCacheStore,
     val stickerAssetStore: StickerAssetStore,
     private val wallpaperCoordinator: WallpaperCoordinator,
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
@@ -188,6 +193,8 @@ class CanvasHomeViewModel @Inject constructor(
     private val stickerCatalogErrorState = MutableStateFlow<String?>(null)
     private val lastUsedStickerState = MutableStateFlow<StickerSelection?>(null)
     private val stickerPacksLoadedAtMs = MutableStateFlow<Long?>(null)
+    private var stickerPacksRefreshRetryJob: Job? = null
+    private var stickerPacksRefreshRetryAttempt: Int = 0
     private val currentTimeMillis = MutableStateFlow(System.currentTimeMillis())
     private val _effects = MutableSharedFlow<CanvasHomeEffect>()
     val effects = _effects.asSharedFlow()
@@ -830,25 +837,35 @@ class CanvasHomeViewModel @Inject constructor(
 
     fun onStickerPackSelected(packKey: String, packVersion: Int) {
         viewModelScope.launch {
-            val current = selectedStickerPackState.value
-            if (
-                current != null &&
-                current.packKey == packKey &&
-                current.packVersion == packVersion &&
-                current.stickers.isNotEmpty() &&
-                System.currentTimeMillis() - current.fetchedAtMs < 15_000
-            ) {
-                // Avoid refetching the same pack detail: the backend returns short-lived signed URLs,
-                // and refreshing them causes Coil to reload images (visible flicker) despite no
-                // real content change.
+            val userId = sessionRepository.state.first().userId
+                ?: return@launch
+            val normalizedKey = packKey.trim().lowercase()
+            if (normalizedKey.isBlank() || packVersion <= 0) return@launch
+
+            stickerCatalogErrorState.value = null
+
+            val cached = stickerCatalogCacheStore.getCachedPackDetail(
+                userId = userId,
+                packKey = normalizedKey,
+                packVersion = packVersion
+            )
+            if (cached != null) {
+                selectedStickerPackState.value = cached
+                stickerCatalogCacheStore.markPackAccessed(userId, normalizedKey, packVersion)
+                prefetchStickerPickerAssets(userId, cached)
+                // Cache hit: no spinner and no re-fetch (pack versions are immutable).
                 return@launch
             }
+
+            // Cold open: no cached pack detail for this version.
             stickerCatalogBusyState.value = true
-            stickerCatalogErrorState.value = null
             runCatching {
-                stickerCatalogRepository.fetchPackDetail(packKey = packKey, version = packVersion)
+                stickerCatalogRepository.fetchPackDetail(packKey = normalizedKey, version = packVersion)
             }.onSuccess { detail ->
+                stickerCatalogCacheStore.putPackDetail(userId, detail)
+                stickerCatalogCacheStore.markPackAccessed(userId, normalizedKey, packVersion)
                 selectedStickerPackState.value = detail
+                prefetchStickerPickerAssets(userId, detail)
             }.onFailure { error ->
                 stickerCatalogErrorState.value = error.message ?: "Unable to load sticker pack"
             }
@@ -867,32 +884,138 @@ class CanvasHomeViewModel @Inject constructor(
         val isCoolingDown = lastLoaded != null && now - lastLoaded < 10_000
         if (!force && stickerPacksState.value.isNotEmpty() && isCoolingDown) return
         viewModelScope.launch {
-            stickerCatalogBusyState.value = true
-            stickerCatalogErrorState.value = null
-            runCatching {
-                stickerCatalogRepository.fetchPacks()
-            }.onSuccess { packs ->
-                stickerPacksState.value = packs
-                stickerPacksLoadedAtMs.value = System.currentTimeMillis()
+            val userId = sessionRepository.state.first().userId
+                ?: return@launch
+            runCatching { stickerAssetStore.enforceBudgetNow(userId) }
 
-                val selected = selectedStickerPackState.value
-                if (selected != null && packs.none { it.packKey == selected.packKey && it.packVersion == selected.packVersion }) {
-                    selectedStickerPackState.value = null
-                    lastUsedStickerState.value = null
-                    stickerCatalogErrorState.value = "Sticker pack was removed."
-                    return@onSuccess
-                }
-                // Auto-select the first featured pack for v1.
-                if (selectedStickerPackState.value == null) {
-                    selectedStickerPackState.value = packs.firstOrNull()?.let { pack ->
-                        runCatching { stickerCatalogRepository.fetchPackDetail(pack.packKey, pack.packVersion) }.getOrNull()
+            // 1) Read cache first and render immediately.
+            val cached = stickerCatalogCacheStore.getCachedPacks(userId)
+            if (!cached?.packs.isNullOrEmpty()) {
+                stickerPacksState.value = cached?.packs.orEmpty()
+            }
+
+            // 2) Decide whether to revalidate the catalog quietly.
+            val shouldRevalidate = force ||
+                cached == null ||
+                cached.fetchedAtMs == null ||
+                now - cached.fetchedAtMs > STICKER_PACK_LIST_REVALIDATE_INTERVAL_MS
+
+            if (!shouldRevalidate && stickerPacksState.value.isNotEmpty()) return@launch
+
+            val shouldShowSpinner = stickerPacksState.value.isEmpty()
+            if (shouldShowSpinner) {
+                stickerCatalogBusyState.value = true
+                stickerCatalogErrorState.value = null
+            }
+
+            runCatching { stickerCatalogRepository.fetchPacks() }
+                .onSuccess { packs ->
+                    stickerPacksRefreshRetryJob?.cancel()
+                    stickerPacksRefreshRetryJob = null
+                    stickerPacksRefreshRetryAttempt = 0
+
+                    stickerPacksState.value = packs
+                    stickerPacksLoadedAtMs.value = System.currentTimeMillis()
+                    stickerCatalogCacheStore.putPacks(userId, packs)
+
+                    val selected = selectedStickerPackState.value
+                    val selectedStillPublished = selected == null ||
+                        packs.any { it.packKey == selected.packKey && it.packVersion == selected.packVersion }
+
+                    if (!selectedStillPublished) {
+                        // Keep showing the current selection for this session, but remove it from discovery.
+                        // (No-op here: the UI pack row already reflects `packs`.)
+                    }
+
+                    // Auto-select the first pack if nothing is selected yet.
+                    if (selectedStickerPackState.value == null) {
+                        packs.firstOrNull()?.let { pack ->
+                            val cachedDetail = stickerCatalogCacheStore.getCachedPackDetail(
+                                userId = userId,
+                                packKey = pack.packKey,
+                                packVersion = pack.packVersion
+                            )
+                            if (cachedDetail != null) {
+                                selectedStickerPackState.value = cachedDetail
+                                stickerCatalogCacheStore.markPackAccessed(userId, pack.packKey, pack.packVersion)
+                                prefetchStickerPickerAssets(userId, cachedDetail)
+                            } else {
+                                runCatching {
+                                    stickerCatalogRepository.fetchPackDetail(pack.packKey, pack.packVersion)
+                                }.onSuccess { detail ->
+                                    stickerCatalogCacheStore.putPackDetail(userId, detail)
+                                    stickerCatalogCacheStore.markPackAccessed(userId, pack.packKey, pack.packVersion)
+                                    selectedStickerPackState.value = detail
+                                    prefetchStickerPickerAssets(userId, detail)
+                                }
+                            }
+                        }
                     }
                 }
-            }.onFailure { error ->
-                stickerCatalogErrorState.value = error.message ?: "Unable to load sticker packs"
+                .onFailure { error ->
+                    stickerPacksLoadedAtMs.value = System.currentTimeMillis()
+                    if (shouldShowSpinner) {
+                        stickerCatalogErrorState.value = error.message ?: "Unable to load sticker packs"
+                    }
+                    scheduleStickerPacksRevalidateRetry()
+                }
+
+            if (shouldShowSpinner) {
+                stickerCatalogBusyState.value = false
             }
-            stickerCatalogBusyState.value = false
         }
+    }
+
+    private fun scheduleStickerPacksRevalidateRetry() {
+        if (uiState.value.toolState.activeTool != DrawingTool.STICKER) return
+        if (stickerPacksRefreshRetryJob?.isActive == true) return
+        val attempt = (stickerPacksRefreshRetryAttempt + 1).coerceAtMost(3)
+        stickerPacksRefreshRetryAttempt = attempt
+        val delayMs = when (attempt) {
+            1 -> 60_000L
+            2 -> 5 * 60_000L
+            else -> 30 * 60_000L
+        }
+        stickerPacksRefreshRetryJob = viewModelScope.launch {
+            delay(delayMs)
+            if (uiState.value.toolState.activeTool == DrawingTool.STICKER) {
+                ensureStickerPacksLoaded(force = true)
+            }
+        }
+    }
+
+    private fun prefetchStickerPickerAssets(userId: String, detail: StickerPackDetail) {
+        viewModelScope.launch {
+            runCatching {
+                stickerAssetStore.getOrDownloadStickerAsset(
+                    packKey = detail.packKey,
+                    packVersion = detail.packVersion,
+                    stickerId = StickerAssetStore.COVER_STICKER_ID,
+                    variant = StickerAssetVariant.THUMBNAIL,
+                    urlHint = detail.coverThumbnailUrl,
+                    userId = userId
+                )
+            }
+            val sorted = detail.stickers.sortedBy { it.sortOrder }
+            val prefetch = sorted.take(STICKER_PICKER_PREFETCH_COUNT)
+            for (sticker in prefetch) {
+                runCatching {
+                    stickerAssetStore.getOrDownloadStickerAsset(
+                        packKey = detail.packKey,
+                        packVersion = detail.packVersion,
+                        stickerId = sticker.stickerId,
+                        variant = StickerAssetVariant.THUMBNAIL,
+                        urlHint = sticker.thumbnailUrl,
+                        userId = userId
+                    )
+                }
+            }
+        }
+    }
+
+    private companion object {
+        const val STICKER_PACK_LIST_REVALIDATE_INTERVAL_MS: Long = 6L * 60L * 60L * 1000L
+        const val STICKER_PICKER_PREFETCH_COUNT: Int = 18
     }
 
     fun onClearRequested() {

@@ -9,12 +9,20 @@ import com.subhajit.mulberry.drawing.data.local.CanvasStickerElementEntity
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.data.local.StrokeEntity
 import com.subhajit.mulberry.drawing.data.local.StrokePointEntity
+import com.subhajit.mulberry.data.bootstrap.AppSession
+import com.subhajit.mulberry.data.bootstrap.AuthStatus
+import com.subhajit.mulberry.data.bootstrap.PairingStatus
+import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
+import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerAssetUrl
 import com.subhajit.mulberry.stickers.StickerAssetVariant
+import com.subhajit.mulberry.stickers.StickerCatalogCacheStore
 import com.subhajit.mulberry.stickers.StickerCatalogRepository
 import java.io.File
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -56,7 +64,9 @@ class DefaultCanvasSnapshotRendererTest {
                         .build()
                 }
                 .build(),
-            stickerCatalogRepository = FakeStickerCatalogRepository()
+            stickerCatalogRepository = FakeStickerCatalogRepository(),
+            stickerCatalogCacheStore = FakeStickerCatalogCacheStore(),
+            sessionBootstrapRepository = FakeSessionBootstrapRepository()
         )
         renderer = DefaultCanvasSnapshotRenderer(
             context = context,
@@ -175,6 +185,53 @@ class DefaultCanvasSnapshotRendererTest {
                 url = "https://example.invalid/sticker.png",
                 expiresInSeconds = 600
             )
+        }
+    }
+
+    private class FakeStickerCatalogCacheStore : StickerCatalogCacheStore {
+        override suspend fun getCachedPacks(userId: String) = null
+        override suspend fun putPacks(userId: String, packs: List<com.subhajit.mulberry.stickers.StickerPackSummary>, fetchedAtMs: Long) = Unit
+        override suspend fun getCachedPackDetail(userId: String, packKey: String, packVersion: Int) = null
+        override suspend fun putPackDetail(userId: String, detail: com.subhajit.mulberry.stickers.StickerPackDetail) = Unit
+        override suspend fun markPackAccessed(userId: String, packKey: String, packVersion: Int, accessedAtMs: Long) = Unit
+        override suspend fun getPackAccessMap(userId: String): Map<String, Long> = emptyMap()
+        override suspend fun evictPackVersion(userId: String, packKey: String, packVersion: Int) = Unit
+        override suspend fun clearUser(userId: String) = Unit
+        override suspend fun clearAll() = Unit
+    }
+
+    private class FakeSessionBootstrapRepository : SessionBootstrapRepository {
+        private val stateFlow = MutableStateFlow(
+            SessionBootstrapState(
+                authStatus = AuthStatus.SIGNED_IN,
+                hasCompletedOnboarding = true,
+                userId = "test-user",
+                pairingStatus = PairingStatus.PAIRED,
+                pairSessionId = "test-pair-session"
+            )
+        )
+        private val sessionFlow = MutableStateFlow<AppSession?>(
+            AppSession(accessToken = "test", refreshToken = "test", userId = "test-user")
+        )
+
+        override val state: Flow<SessionBootstrapState> = stateFlow
+        override val session: Flow<AppSession?> = sessionFlow
+
+        override suspend fun getCurrentSession(): AppSession? = sessionFlow.value
+        override suspend fun cacheBootstrap(state: SessionBootstrapState) {
+            stateFlow.value = state
+        }
+
+        override suspend fun cacheSession(session: AppSession?) {
+            sessionFlow.value = session
+        }
+
+        override suspend fun setWallpaperConfigured(configured: Boolean) = Unit
+        override suspend fun seedDemoSession() = Unit
+
+        override suspend fun reset() {
+            sessionFlow.value = null
+            stateFlow.value = SessionBootstrapState(authStatus = AuthStatus.SIGNED_OUT)
         }
     }
 

@@ -276,28 +276,17 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
                 )
                 val maxSizePx = (element.scale.coerceIn(0.08f, 1.6f) * placement.viewport.width).coerceAtLeast(1f)
 
-                val file = stickerAssetStore.destinationFile(
-                    packKey = element.packKey,
-                    packVersion = element.packVersion,
-                    stickerId = element.stickerId,
-                    variant = StickerAssetVariant.FULL
-                )
-
                 // Important for background sync: if the sticker isn't cached yet, attempt to
                 // download it during snapshot rendering so the partner's wallpaper can render
                 // correctly without requiring a foreground canvas session.
-                val resolvedFile = if (file.exists() && file.length() > 0) {
-                    file
-                } else {
-                    runCatching {
-                        stickerAssetStore.getOrDownloadStickerAsset(
-                            packKey = element.packKey,
-                            packVersion = element.packVersion,
-                            stickerId = element.stickerId,
-                            variant = StickerAssetVariant.FULL
-                        )
-                    }.getOrNull()
-                }
+                val resolvedFile = runCatching {
+                    stickerAssetStore.getOrDownloadStickerAsset(
+                        packKey = element.packKey,
+                        packVersion = element.packVersion,
+                        stickerId = element.stickerId,
+                        variant = StickerAssetVariant.FULL
+                    )
+                }.getOrNull()
 
                 val bitmap = resolvedFile
                     ?.takeIf { it.exists() && it.length() > 0 }

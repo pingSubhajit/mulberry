@@ -224,6 +224,7 @@ fun StickerEditorOverlay(
                 StickerEditorPanel.PICKER -> {
                     StickerPickerPanel(
                         uiState = uiState,
+                        stickerAssetStore = stickerAssetStore,
                         onPackSelected = onPackSelected,
                         onStickerChosen = { packKey, packVersion, stickerId ->
                             onStickerPicked(StickerSelection(packKey, packVersion, stickerId))

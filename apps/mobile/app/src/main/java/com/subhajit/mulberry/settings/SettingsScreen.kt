@@ -225,7 +225,9 @@ fun SettingsRoute(
         onSendCrashlyticsTestEvent = viewModel::onSendCrashlyticsTestEvent,
         onCrashlyticsTestCrash = viewModel::onCrashlyticsTestCrash,
         onTriggerInAppReview = viewModel::onTriggerInAppReviewClicked,
-        onTriggerInAppUpdate = viewModel::onTriggerInAppUpdateClicked
+        onTriggerInAppUpdate = viewModel::onTriggerInAppUpdateClicked,
+        onClearStickerAssets = viewModel::onClearStickerAssets,
+        onClearStickerCatalogCache = viewModel::onClearStickerCatalogCache
     )
 }
 
@@ -258,7 +260,9 @@ private fun SettingsScreen(
     onSendCrashlyticsTestEvent: () -> Unit,
     onCrashlyticsTestCrash: () -> Unit,
     onTriggerInAppReview: () -> Unit,
-    onTriggerInAppUpdate: () -> Unit
+    onTriggerInAppUpdate: () -> Unit,
+    onClearStickerAssets: () -> Unit,
+    onClearStickerCatalogCache: () -> Unit
 ) {
     Scaffold(
         modifier = Modifier
@@ -325,6 +329,8 @@ private fun SettingsScreen(
                 onCrashlyticsTestCrash = onCrashlyticsTestCrash,
                 onTriggerInAppReview = onTriggerInAppReview,
                 onTriggerInAppUpdate = onTriggerInAppUpdate,
+                onClearStickerAssets = onClearStickerAssets,
+                onClearStickerCatalogCache = onClearStickerCatalogCache,
                 modifier = Modifier.padding(padding)
             )
         } else {
@@ -1772,6 +1778,8 @@ private fun DeveloperOptionsPane(
     onCrashlyticsTestCrash: () -> Unit,
     onTriggerInAppReview: () -> Unit,
     onTriggerInAppUpdate: () -> Unit,
+    onClearStickerAssets: () -> Unit,
+    onClearStickerCatalogCache: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showResetConfirmation by remember { mutableStateOf(false) }
@@ -1924,6 +1932,26 @@ private fun DeveloperOptionsPane(
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 SettingsSecondaryButton("Seed demo session", uiState.isBusy, onSeedDemoSession)
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            DeveloperSectionCard(
+                title = "Sticker cache",
+                body = "Local sticker assets and catalog metadata used by the sticker picker."
+            ) {
+                SettingsSecondaryButton(
+                    text = "Clear sticker assets (files)",
+                    isBusy = uiState.isBusy,
+                    onClick = onClearStickerAssets,
+                    enabled = !uiState.isBusy
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                SettingsSecondaryButton(
+                    text = "Clear sticker catalog cache (metadata)",
+                    isBusy = uiState.isBusy,
+                    onClick = onClearStickerCatalogCache,
+                    enabled = !uiState.isBusy
+                )
             }
         }
 

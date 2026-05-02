@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +22,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +36,9 @@ import coil.compose.AsyncImage
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
+import com.subhajit.mulberry.stickers.StickerAssetStore
+import com.subhajit.mulberry.stickers.StickerAssetVariant
+import java.io.File
 
 enum class StickerPickerChrome {
     Filled,
@@ -42,6 +48,7 @@ enum class StickerPickerChrome {
 @Composable
 fun StickerPickerPanel(
     uiState: CanvasHomeUiState,
+    stickerAssetStore: StickerAssetStore,
     onPackSelected: (String, Int) -> Unit,
     onStickerChosen: (String, Int, String) -> Unit,
     columns: Int = 3,
@@ -106,8 +113,17 @@ fun StickerPickerPanel(
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(packs, key = { it.packKey + ":" + it.packVersion }) { pack ->
                         val isSelected = selected?.packKey == pack.packKey && selected.packVersion == pack.packVersion
-                        AsyncImage(
-                            model = pack.coverThumbnailUrl,
+                        val coverFile by produceState<File?>(initialValue = null, key1 = pack.packKey, key2 = pack.packVersion) {
+                            value = stickerAssetStore.getOrDownloadStickerAsset(
+                                packKey = pack.packKey,
+                                packVersion = pack.packVersion,
+                                stickerId = StickerAssetStore.COVER_STICKER_ID,
+                                variant = StickerAssetVariant.THUMBNAIL,
+                                urlHint = pack.coverThumbnailUrl
+                            )
+                        }
+                        StickerPackCoverThumbnail(
+                            file = coverFile,
                             contentDescription = pack.title,
                             modifier = Modifier
                                 .size(56.dp)
@@ -142,31 +158,84 @@ fun StickerPickerPanel(
                     modifier = Modifier.height(gridHeight)
                 ) {
                     items(stickers, key = { it.stickerId }) { sticker ->
-                        AsyncImage(
-                            model = sticker.thumbnailUrl,
+                        val pack = selectedPack
+                        val thumbnailFile by produceState<File?>(initialValue = null, key1 = pack?.packKey, key2 = pack?.packVersion, key3 = sticker.stickerId) {
+                            val resolved = pack ?: return@produceState
+                            value = stickerAssetStore.getOrDownloadStickerAsset(
+                                packKey = resolved.packKey,
+                                packVersion = resolved.packVersion,
+                                stickerId = sticker.stickerId,
+                                variant = StickerAssetVariant.THUMBNAIL,
+                                urlHint = sticker.thumbnailUrl
+                            )
+                        }
+                        StickerThumbnailTile(
+                            file = thumbnailFile,
                             contentDescription = sticker.stickerId,
-                            modifier = Modifier
-                                .size(stickerTileSize)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (chrome == StickerPickerChrome.Filled) {
-                                        Color.White.copy(alpha = 0.06f)
-                                    } else {
-                                        Color.White.copy(alpha = 0.04f)
-                                    },
-                                    RoundedCornerShape(14.dp)
-                                )
-                                .clickable {
-                                    selectedPack?.let { pack ->
-                                        onStickerChosen(pack.packKey, pack.packVersion, sticker.stickerId)
-                                    }
+                            chrome = chrome,
+                            size = stickerTileSize,
+                            onClick = {
+                                selectedPack?.let { pack ->
+                                    onStickerChosen(pack.packKey, pack.packVersion, sticker.stickerId)
                                 }
-                                .padding(6.dp)
+                            }
                         )
                     }
                 }
             } else {
                 Spacer(modifier = Modifier.height(40.dp))
             }
+    }
+}
+
+@Composable
+private fun StickerPackCoverThumbnail(
+    file: File?,
+    contentDescription: String,
+    modifier: Modifier = Modifier
+) {
+    if (file != null && file.exists() && file.length() > 0) {
+        AsyncImage(
+            model = file,
+            contentDescription = contentDescription,
+            modifier = modifier
+        )
+    } else {
+        // Placeholder (quietly downloads in the background via StickerAssetStore).
+        Box(modifier = modifier)
+    }
+}
+
+@Composable
+private fun StickerThumbnailTile(
+    file: File?,
+    contentDescription: String,
+    chrome: StickerPickerChrome,
+    size: Dp,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val baseModifier = modifier
+        .size(size)
+        .clip(RoundedCornerShape(14.dp))
+        .background(
+            if (chrome == StickerPickerChrome.Filled) {
+                Color.White.copy(alpha = 0.06f)
+            } else {
+                Color.White.copy(alpha = 0.04f)
+            },
+            RoundedCornerShape(14.dp)
+        )
+        .clickable(onClick = onClick)
+        .padding(6.dp)
+
+    if (file != null && file.exists() && file.length() > 0) {
+        AsyncImage(
+            model = file,
+            contentDescription = contentDescription,
+            modifier = baseModifier
+        )
+    } else {
+        Box(modifier = baseModifier)
     }
 }
