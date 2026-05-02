@@ -1,0 +1,2 @@
+- Added text elements to the canvas so you can place text directly in your drawings.
+- Added an in-app update prompt to make it easier to stay on the latest version.
