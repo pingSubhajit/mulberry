@@ -45,6 +45,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.R
+import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
+import com.subhajit.mulberry.core.ui.metadata.AppSystemBarStyle
 import com.subhajit.mulberry.network.StreakResponse
 import com.subhajit.mulberry.ui.theme.KalamFontFamily
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
@@ -69,6 +71,14 @@ private fun StreakScreen(
 ) {
     val streak = uiState.streak
     val content = streak?.toStreakContent()
+
+    ApplySystemBarStyle(
+        style = AppSystemBarStyle(
+            statusBarColorArgb = 0x00000000,
+            navigationBarColorArgb = 0x00000000,
+            useDarkIcons = false
+        )
+    )
 
     BoxWithConstraints(
         modifier = Modifier

@@ -698,7 +698,7 @@ private fun StreakPill(
                 painter = painterResource(R.drawable.ic_home_streak_bolt),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.size(width = 13.dp, height = 20.dp)
+                modifier = Modifier.size(width = 16.dp, height = 23.dp)
             )
             Text(
                 text = label,
