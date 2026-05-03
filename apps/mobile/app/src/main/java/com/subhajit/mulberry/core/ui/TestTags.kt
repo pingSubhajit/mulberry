@@ -55,4 +55,6 @@ object TestTags {
     const val SETTINGS_DEVELOPER_SECTION = "settings_developer_section"
     const val SETTINGS_RESET_BUTTON = "settings_reset_button"
     const val SETTINGS_LOGOUT_BUTTON = "settings_logout_button"
+
+    const val STREAK_HERO_IMAGE = "streak_hero_image"
 }

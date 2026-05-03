@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.R
+import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.metadata.AppSystemBarStyle
 import com.subhajit.mulberry.network.StreakResponse
@@ -58,6 +60,8 @@ private val StreakScreenAccentColor = Color(0xFFB31329)
 private val StreakScreenMutedCircleColor = Color(0xFF4B2227)
 private val StreakScreenBodyTextColor = Color.White.copy(alpha = 0.7f)
 private val StreakScreenMutedTextColor = Color.White.copy(alpha = 0.4f)
+private const val HeroSizeFraction = 0.8f
+private const val HeroBottomMarginDp = 24f
 
 @Composable
 fun StreakRoute(
@@ -95,6 +99,20 @@ private fun StreakScreen(
         StreakBackground(scale = scale)
 
         if (content != null) {
+            val heroSize = maxWidth * HeroSizeFraction
+            val heroBottomTarget = 470.dp * scale - HeroBottomMarginDp.dp * scale
+            val heroTop = (heroBottomTarget - heroSize).coerceAtLeast(0.dp)
+            StreakHeroImage(
+                hero = content.hero,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .offset(y = heroTop)
+                    .size(heroSize)
+                    .testTag(TestTags.STREAK_HERO_IMAGE)
+            )
+        }
+
+        if (content != null) {
             StreakPill(
                 currentStreakDays = content.currentStreakDays,
                 scale = scale,
@@ -112,15 +130,6 @@ private fun StreakScreen(
         )
 
         if (content != null) {
-            StreakHeroImage(
-                hero = content.hero,
-                scale = scale,
-                modifier = Modifier.offset(
-                    x = (if (content.hero == StreakHero.BrokenBolt) 126.dp else 124.5.dp) * scale,
-                    y = 175.dp * scale
-                )
-            )
-
             FigmaWeekRow(
                 streak = streak,
                 scale = scale,
@@ -259,31 +268,14 @@ private fun StreakCloseButton(
 @Composable
 private fun StreakHeroImage(
     hero: StreakHero,
-    scale: Float,
     modifier: Modifier = Modifier
 ) {
-    val spec = hero.assetSpec()
-    val renderScale = (spec.boxHeight / spec.visibleHeight) * scale
-    val visibleCenterX = spec.visibleLeft + (spec.visibleWidth / 2f)
-    val visibleCenterY = spec.visibleTop + (spec.visibleHeight / 2f)
-    val renderedWidth = spec.assetWidth * renderScale
-    val renderedHeight = spec.assetHeight * renderScale
-    val renderedOffsetX = (spec.boxWidth * scale / 2f) - (visibleCenterX * renderScale)
-    val renderedOffsetY = (spec.boxHeight * scale / 2f) - (visibleCenterY * renderScale)
-
-    Box(
+    Image(
+        painter = painterResource(hero.imageRes),
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
         modifier = modifier
-            .size(width = spec.boxWidth.dp * scale, height = spec.boxHeight.dp * scale)
-    ) {
-        Image(
-            painter = painterResource(spec.imageRes),
-            contentDescription = null,
-            contentScale = ContentScale.FillBounds,
-            modifier = Modifier
-                .offset(x = renderedOffsetX.dp, y = renderedOffsetY.dp)
-                .size(width = renderedWidth.dp, height = renderedHeight.dp)
-        )
-    }
+    )
 }
 
 @Composable
@@ -449,46 +441,9 @@ private fun dayLetterOffsetX(label: String): Int {
     }
 }
 
-private enum class StreakHero { Bolt, BrokenBolt }
-
-private data class HeroAssetSpec(
-    val imageRes: Int,
-    val assetWidth: Float,
-    val assetHeight: Float,
-    val visibleLeft: Float,
-    val visibleTop: Float,
-    val visibleWidth: Float,
-    val visibleHeight: Float,
-    val boxWidth: Float,
-    val boxHeight: Float
-)
-
-private fun StreakHero.assetSpec(): HeroAssetSpec {
-    return when (this) {
-        StreakHero.Bolt -> HeroAssetSpec(
-            imageRes = R.drawable.streak_bolt_asset,
-            assetWidth = 309f,
-            assetHeight = 403f,
-            visibleLeft = 80f,
-            visibleTop = 87f,
-            visibleWidth = 144f,
-            visibleHeight = 236f,
-            boxWidth = 153f,
-            boxHeight = 247f
-        )
-
-        StreakHero.BrokenBolt -> HeroAssetSpec(
-            imageRes = R.drawable.streak_bolt_broken_asset,
-            assetWidth = 306f,
-            assetHeight = 403f,
-            visibleLeft = 87f,
-            visibleTop = 87f,
-            visibleWidth = 137f,
-            visibleHeight = 233f,
-            boxWidth = 150f,
-            boxHeight = 247f
-        )
-    }
+private enum class StreakHero(val imageRes: Int) {
+    Bolt(R.drawable.streak_bolt_large),
+    BrokenBolt(R.drawable.streak_bolt_broken_large)
 }
 
 private data class StreakContent(
