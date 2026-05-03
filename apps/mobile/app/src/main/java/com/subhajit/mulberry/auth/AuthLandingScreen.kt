@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -48,8 +49,9 @@ import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.core.ui.metadata.AuthLandingMetadata
 import com.subhajit.mulberry.core.ui.metadata.AuthProviderId
 import com.subhajit.mulberry.core.ui.metadata.MulberryUiMetadataProvider
-import com.subhajit.mulberry.ui.theme.MulberryDarkBackground
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import com.subhajit.mulberry.ui.theme.MulberryInk
+import com.subhajit.mulberry.ui.theme.MulberryMutedInk
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 
 data class AuthLandingUiState(
@@ -110,7 +112,6 @@ private fun AuthLandingScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MulberryDarkBackground)
             .testTag(TestTags.AUTH_LANDING_SCREEN)
     ) {
         Image(
@@ -122,14 +123,20 @@ private fun AuthLandingScreen(
 
         Column(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 12.dp)
+                .padding(top = 66.dp)
                 .fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(28.dp)
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Image(
+                painter = painterResource(MulberryUiMetadataProvider.brand.iconMarkDrawableRes),
+                contentDescription = stringResource(MulberryUiMetadataProvider.brand.displayNameRes),
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(width = 48.dp, height = 72.dp)
+            )
+            Spacer(modifier = Modifier.height(32.dp))
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -137,20 +144,19 @@ private fun AuthLandingScreen(
             ) {
                 Text(
                     text = stringResource(metadata.headlineRes),
-                    color = Color.White,
+                    color = MulberryInk,
                     style = TextStyle(
                         fontFamily = PoppinsFontFamily,
                         fontSize = 41.sp,
                         lineHeight = 46.sp,
                         fontWeight = FontWeight.Bold
                     ),
-                    fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
                     text = stringResource(metadata.subtitleRes),
-                    color = Color.White,
+                    color = MulberryMutedInk,
                     style = TextStyle(
                         fontFamily = FontFamily.Default,
                         fontWeight = FontWeight.Normal,
@@ -162,7 +168,18 @@ private fun AuthLandingScreen(
                     modifier = Modifier.width(315.dp)
                 )
             }
+        }
 
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 12.dp)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             uiState.errorMessage?.let {
                 Surface(
                     color = appColors.authMessageSurface,
