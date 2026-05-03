@@ -1779,6 +1779,36 @@ describe("Mulberry backend", () => {
     expect(bootstrap.json().currentStreakDays).toBe(2)
   })
 
+  it("tracks pair streak days from text and sticker edits", async () => {
+    const { inviter } = await pairUsers()
+    const today = offsetDate(0)
+    const yesterday = offsetDate(-1)
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/canvas/ops/batch",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        batchId: "streak-text-sticker-batch",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          { ...addTextElementOperation("streak-text-yesterday", "text-1", "Hello", 0.5, 0.5), clientLocalDate: yesterday },
+          { ...addStickerElementOperation("streak-sticker-today", "sticker-1", "test-pack", 1, "sticker-a", 0.5, 0.5), clientLocalDate: today },
+          { ...updateTextElementOperation("streak-text-update-today", "text-1", "Hello again", 0.6, 0.6), clientLocalDate: today },
+        ],
+      },
+    })
+    expect(response.statusCode).toBe(200)
+
+    const bootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().currentStreakDays).toBe(2)
+  })
+
   it("resets current streak when the latest activity day is stale", async () => {
     const { inviter } = await pairUsers()
     const staleDay = offsetDate(-3)

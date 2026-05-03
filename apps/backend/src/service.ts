@@ -23,6 +23,7 @@ import type {
   RegisterFcmTokenRequest,
   RedeemInviteResponse,
   SessionRecord,
+  StreakResponse,
   UserRecord,
 } from "./domain.js"
 import type { GoogleTokenVerifier } from "./googleAuth.js"
@@ -194,6 +195,42 @@ export class MulberryService {
   async getBootstrap(accessToken: string): Promise<BootstrapResponse> {
     const context = await this.requireSessionContext(accessToken)
     return this.buildBootstrap(context.user.id)
+  }
+
+  async getStreak(accessToken: string, todayInput: string): Promise<StreakResponse> {
+    const context = await this.requireSessionContext(accessToken)
+    const today = todayInput.trim()
+    if (!isLocalDateString(today)) {
+      throw new HttpError(400, "today is required")
+    }
+
+    const pairSession = await this.getPairSession(context.user.id)
+    if (!pairSession) {
+      return {
+        today,
+        currentStreakDays: 0,
+        previousStreakDays: 0,
+        hasActivityToday: false,
+        lastActivityDay: null,
+        week: this.weekDaysFor(today).map((day) => ({ day, hasActivity: false })),
+      }
+    }
+
+    const activityDays = await this.listPairActivityDays(pairSession.id)
+    const days = new Set(activityDays)
+    const lastActivityDay = activityDays[0] ?? null
+    const currentStreakDays = this.computeCurrentStreakDays(days, today)
+    const previousStreakDays = lastActivityDay ? this.computeStreakLengthEndingAt(days, lastActivityDay) : 0
+    const week = this.weekDaysFor(today).map((day) => ({ day, hasActivity: days.has(day) }))
+
+    return {
+      today,
+      currentStreakDays,
+      previousStreakDays,
+      hasActivityToday: days.has(today),
+      lastActivityDay,
+      week,
+    }
   }
 
   async updateProfile(
@@ -888,7 +925,7 @@ export class MulberryService {
           )
           const acceptedRecord = rows.rows[0]
           acceptedRecords.push(acceptedRecord)
-          if (acceptedRecord.type === "FINISH_STROKE") {
+          if (this.shouldRecordPairActivityForOperation(acceptedRecord.type)) {
             await this.recordPairActivityDay(tx, context.pairSession.id, operation.clientLocalDate)
             shouldEnqueueCanvasNudge = true
             shouldRecordUserDrew = true
@@ -1428,6 +1465,59 @@ export class MulberryService {
       cursor = addDays(cursor, -1)
     }
     return streak
+  }
+
+  private shouldRecordPairActivityForOperation(type: string): boolean {
+    return type === "FINISH_STROKE" ||
+      type === "ADD_TEXT_ELEMENT" ||
+      type === "UPDATE_TEXT_ELEMENT" ||
+      type === "ADD_STICKER_ELEMENT" ||
+      type === "UPDATE_STICKER_ELEMENT"
+  }
+
+  private async listPairActivityDays(pairSessionId: string): Promise<string[]> {
+    const rows = await this.db.query<{ activity_day: string | Date }>(
+      `
+      SELECT activity_day
+      FROM pair_activity_days
+      WHERE pair_session_id = $1
+      ORDER BY activity_day DESC
+      `,
+      [pairSessionId],
+    )
+    return rows.rows.map((row) => normalizeDateString(row.activity_day)).filter(Boolean) as string[]
+  }
+
+  private computeCurrentStreakDays(days: Set<string>, today: string): number {
+    const yesterday = addDays(today, -1)
+    let cursor = days.has(today) ? today : days.has(yesterday) ? yesterday : null
+    if (!cursor) return 0
+
+    let streak = 0
+    while (cursor && days.has(cursor)) {
+      streak += 1
+      cursor = addDays(cursor, -1)
+    }
+    return streak
+  }
+
+  private computeStreakLengthEndingAt(days: Set<string>, endDay: string): number {
+    let cursor: string | null = endDay
+    let streak = 0
+    while (cursor && days.has(cursor)) {
+      streak += 1
+      cursor = addDays(cursor, -1)
+    }
+    return streak
+  }
+
+  private weekDaysFor(today: string): string[] {
+    const weekStart = addDays(today, -this.dayOfWeek(today))
+    return Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))
+  }
+
+  private dayOfWeek(day: string): number {
+    return new Date(`${day}T00:00:00.000Z`).getUTCDay()
   }
 
   private async getLatestCanvasRevision(pairSessionId: string): Promise<number> {

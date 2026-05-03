@@ -28,6 +28,7 @@ import com.subhajit.mulberry.pairing.inbound.InboundInviteActionController
 import com.subhajit.mulberry.pairing.inbound.InboundInviteDeepLinkCoordinatorViewModel
 import com.subhajit.mulberry.pairing.inbound.InboundInviteDeepLinkEffect
 import com.subhajit.mulberry.settings.SettingsRoute
+import com.subhajit.mulberry.streak.StreakRoute
 import com.subhajit.mulberry.wallpaper.WallpaperCatalogRoute
 import com.subhajit.mulberry.app.shortcut.AppShortcutAction
 
@@ -241,6 +242,11 @@ fun MulberryNavHost(
                 onNavigateToWallpaperCatalog = {
                     navController.navigate(AppRoute.WallpaperCatalog.route)
                 },
+                onNavigateToStreak = {
+                    navController.navigate(AppRoute.Streak.route) {
+                        launchSingleTop = true
+                    }
+                },
                 onNavigateToSettings = {
                     navController.navigate(AppRoute.Settings.route)
                 },
@@ -268,6 +274,13 @@ fun MulberryNavHost(
             ReleaseStartupGateAfterFirstFrame()
             WallpaperCatalogRoute(
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(AppRoute.Streak.route) {
+            ReleaseStartupGateAfterFirstFrame()
+            StreakRoute(
+                onClose = { navController.popBackStack() }
             )
         }
 

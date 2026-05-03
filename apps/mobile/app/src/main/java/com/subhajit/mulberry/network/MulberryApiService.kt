@@ -30,6 +30,9 @@ interface MulberryApiService {
     @GET("/bootstrap")
     suspend fun getBootstrap(): BootstrapResponse
 
+    @GET("/streak")
+    suspend fun getStreak(@Query("today") today: String): StreakResponse
+
     @PUT("/me/profile")
     suspend fun updateProfile(@Body request: ProfileRequest): BootstrapResponse
 

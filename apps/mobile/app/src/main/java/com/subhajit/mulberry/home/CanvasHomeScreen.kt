@@ -157,6 +157,7 @@ fun CanvasHomeRoute(
     onNavigateToCanvas: () -> Unit,
     onNavigateToLockScreen: () -> Unit,
     onNavigateToWallpaperCatalog: () -> Unit,
+    onNavigateToStreak: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToPairingHub: () -> Unit,
     viewModel: CanvasHomeViewModel = hiltViewModel()
@@ -220,15 +221,16 @@ fun CanvasHomeRoute(
     }
 
 	    CanvasHomeScreen(
-        uiState = uiState,
-        shortcutAction = shortcutAction,
-        wallpaperPresets = viewModel.wallpaperPresets,
-        onNavigateToLockScreen = onNavigateToLockScreen,
-        onNavigateToSettings = onNavigateToSettings,
-        onNavigateToPairingHub = onNavigateToPairingHub,
-        onInviteRequested = viewModel::onInviteRequested,
-        onPairingSheetDismissed = viewModel::onPairingSheetDismissed,
-        onShareInviteClicked = viewModel::onShareInviteClicked,
+	        uiState = uiState,
+	        shortcutAction = shortcutAction,
+	        wallpaperPresets = viewModel.wallpaperPresets,
+	        onNavigateToLockScreen = onNavigateToLockScreen,
+	        onNavigateToStreak = onNavigateToStreak,
+	        onNavigateToSettings = onNavigateToSettings,
+	        onNavigateToPairingHub = onNavigateToPairingHub,
+	        onInviteRequested = viewModel::onInviteRequested,
+	        onPairingSheetDismissed = viewModel::onPairingSheetDismissed,
+	        onShareInviteClicked = viewModel::onShareInviteClicked,
         onJoinCodeRequested = viewModel::onJoinCodeRequested,
         onPartnerDetailsRequested = viewModel::onPartnerDetailsRequested,
         onPartnerNameChanged = viewModel::onPartnerNameChanged,
@@ -279,16 +281,17 @@ fun CanvasHomeRoute(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CanvasHomeScreen(
-    uiState: CanvasHomeUiState,
-    shortcutAction: AppShortcutAction?,
-    wallpaperPresets: List<WallpaperPreset>,
-    onNavigateToLockScreen: () -> Unit,
-    onNavigateToSettings: () -> Unit,
-    onNavigateToPairingHub: () -> Unit,
-    onInviteRequested: () -> Unit,
-    onPairingSheetDismissed: () -> Unit,
-    onShareInviteClicked: () -> Unit,
+	private fun CanvasHomeScreen(
+	    uiState: CanvasHomeUiState,
+	    shortcutAction: AppShortcutAction?,
+	    wallpaperPresets: List<WallpaperPreset>,
+	    onNavigateToLockScreen: () -> Unit,
+	    onNavigateToStreak: () -> Unit,
+	    onNavigateToSettings: () -> Unit,
+	    onNavigateToPairingHub: () -> Unit,
+	    onInviteRequested: () -> Unit,
+	    onPairingSheetDismissed: () -> Unit,
+	    onShareInviteClicked: () -> Unit,
     onJoinCodeRequested: () -> Unit,
     onPartnerDetailsRequested: () -> Unit,
     onPartnerNameChanged: (String) -> Unit,
@@ -500,6 +503,7 @@ private fun CanvasHomeScreen(
                 userName = uiState.bootstrapState.userDisplayName,
                 userPhotoUrl = uiState.bootstrapState.userPhotoUrl,
                 currentStreakDays = uiState.bootstrapState.currentStreakDays,
+                onStreakClick = onNavigateToStreak,
                 onProfileClick = onNavigateToSettings
             )
 
@@ -628,6 +632,7 @@ private fun MainAppHeader(
     userName: String?,
     userPhotoUrl: String?,
     currentStreakDays: Int,
+    onStreakClick: () -> Unit,
     onProfileClick: () -> Unit
 ) {
     val displayName = userName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.home_default_user_name)
@@ -651,7 +656,10 @@ private fun MainAppHeader(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            StreakPill(currentStreakDays = currentStreakDays)
+            StreakPill(
+                currentStreakDays = currentStreakDays,
+                onClick = onStreakClick
+            )
 
             ProfileAvatar(
                 photoUrl = userPhotoUrl,
@@ -666,7 +674,10 @@ private fun MainAppHeader(
 }
 
 @Composable
-private fun StreakPill(currentStreakDays: Int) {
+private fun StreakPill(
+    currentStreakDays: Int,
+    onClick: () -> Unit
+) {
     val label = pluralStringResource(R.plurals.home_streak_days, currentStreakDays, currentStreakDays)
     val shape = RoundedCornerShape(43.dp)
 
@@ -674,7 +685,8 @@ private fun StreakPill(currentStreakDays: Int) {
         modifier = Modifier
             .size(width = 92.dp, height = 31.dp)
             .border(1.dp, MulberryPrimary, shape)
-            .background(MulberryPrimary.copy(alpha = 0.15f), shape),
+            .background(MulberryPrimary.copy(alpha = 0.15f), shape)
+            .clickable(onClick = onClick),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {

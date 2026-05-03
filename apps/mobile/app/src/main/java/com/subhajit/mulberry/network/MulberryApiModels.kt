@@ -36,6 +36,20 @@ data class BootstrapResponse(
     val invite: InviteResponse?
 )
 
+data class StreakWeekDayResponse(
+    val day: String,
+    val hasActivity: Boolean
+)
+
+data class StreakResponse(
+    val today: String,
+    val currentStreakDays: Int,
+    val previousStreakDays: Int,
+    val hasActivityToday: Boolean,
+    val lastActivityDay: String?,
+    val week: List<StreakWeekDayResponse>
+)
+
 data class InviteResponse(
     val inviteId: String,
     val code: String,

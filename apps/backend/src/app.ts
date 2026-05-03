@@ -148,6 +148,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return service.getBootstrap(requireBearerToken(request))
   })
 
+  app.get("/streak", async (request) => {
+    const query = request.query as { today?: string }
+    return service.getStreak(requireBearerToken(request), query.today ?? "")
+  })
+
   app.put("/me/profile", async (request) => {
     const body = request.body as {
       displayName?: string
