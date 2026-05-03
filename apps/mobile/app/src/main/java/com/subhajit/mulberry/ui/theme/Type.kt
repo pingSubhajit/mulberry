@@ -40,7 +40,8 @@ val PermanentMarkerFontFamily = FontFamily(
 )
 
 val KalamFontFamily = FontFamily(
-    Font(R.font.kalam_regular, FontWeight.Normal)
+    Font(R.font.kalam_regular, FontWeight.Normal),
+    Font(R.font.kalam_bold, FontWeight.Bold)
 )
 
 val CaveatFontFamily = FontFamily(

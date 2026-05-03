@@ -84,6 +84,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
@@ -123,6 +124,7 @@ import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.review.InAppReviewLauncher
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
+import com.subhajit.mulberry.ui.theme.KalamFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.VirgilFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
@@ -335,15 +337,6 @@ private fun CanvasHomeScreen(
 	    var textEditorSession by remember { mutableStateOf<CanvasTextEditorSession?>(null) }
 	    var stickerEditorSession by remember { mutableStateOf<CanvasStickerEditorSession?>(null) }
 	    var pendingNewStickerCenter by remember { mutableStateOf<StrokePoint?>(null) }
-    val headerTitle = when (selectedTab) {
-        MainAppTab.Canvas -> if (uiState.bootstrapState.pairingStatus == PairingStatus.UNPAIRED) {
-            stringResource(R.string.home_unpaired_title)
-        } else {
-            stringResource(R.string.home_paired_title)
-        }
-
-        MainAppTab.LockScreen -> stringResource(R.string.home_lockscreen_title)
-    }
     val isHomeReady =
         uiState.bootstrapState.authStatus == AuthStatus.SIGNED_IN &&
             uiState.bootstrapState.hasCompletedOnboarding
@@ -506,7 +499,7 @@ private fun CanvasHomeScreen(
             MainAppHeader(
                 userName = uiState.bootstrapState.userDisplayName,
                 userPhotoUrl = uiState.bootstrapState.userPhotoUrl,
-                title = headerTitle,
+                currentStreakDays = uiState.bootstrapState.currentStreakDays,
                 onProfileClick = onNavigateToSettings
             )
 
@@ -634,7 +627,7 @@ private fun CanvasHomeScreen(
 private fun MainAppHeader(
     userName: String?,
     userPhotoUrl: String?,
-    title: String,
+    currentStreakDays: Int,
     onProfileClick: () -> Unit
 ) {
     val displayName = userName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.home_default_user_name)
@@ -643,45 +636,68 @@ private fun MainAppHeader(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .padding(top = 34.dp),
-        verticalAlignment = Alignment.Top
+            .height(38.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = buildAnnotatedString {
-                    append(stringResource(R.string.home_header_welcome))
-                    append(" ")
-                    withStyle(SpanStyle(color = MulberryPrimary, fontWeight = FontWeight.SemiBold)) {
-                        append(displayName)
-                    }
-                },
-                color = MaterialTheme.colorScheme.onBackground,
-                fontFamily = PoppinsFontFamily,
-                fontSize = 16.sp,
-                lineHeight = 22.sp,
-                fontWeight = FontWeight.Normal
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = title,
-                color = MaterialTheme.colorScheme.onBackground,
-                fontFamily = PoppinsFontFamily,
-                fontSize = 28.sp,
-                lineHeight = 38.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = (-0.5).sp
+        Image(
+            painter = painterResource(R.drawable.home_header_wordmark),
+            contentDescription = stringResource(R.string.app_name),
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.size(width = 85.dp, height = 19.dp)
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            StreakPill(currentStreakDays = currentStreakDays)
+
+            ProfileAvatar(
+                photoUrl = userPhotoUrl,
+                displayName = displayName,
+                size = 38.dp,
+                modifier = Modifier
+                    .testTag(TestTags.HOME_SETTINGS_BUTTON)
+                    .clickable(onClick = onProfileClick)
             )
         }
+    }
+}
 
-        ProfileAvatar(
-            photoUrl = userPhotoUrl,
-            displayName = displayName,
-            size = 38.dp,
-            modifier = Modifier
-                .padding(top = 26.dp)
-                .testTag(TestTags.HOME_SETTINGS_BUTTON)
-                .clickable(onClick = onProfileClick)
-        )
+@Composable
+private fun StreakPill(currentStreakDays: Int) {
+    val label = pluralStringResource(R.plurals.home_streak_days, currentStreakDays, currentStreakDays)
+    val shape = RoundedCornerShape(43.dp)
+
+    Row(
+        modifier = Modifier
+            .size(width = 92.dp, height = 31.dp)
+            .border(1.dp, MulberryPrimary, shape)
+            .background(MulberryPrimary.copy(alpha = 0.15f), shape),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_home_streak_bolt),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(width = 13.dp, height = 20.dp)
+            )
+            Text(
+                text = label,
+                color = MulberryPrimary,
+                fontFamily = KalamFontFamily,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.25.sp
+            )
+        }
     }
 }
 
@@ -864,7 +880,7 @@ private fun PairedCanvasPane(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 20.dp)
-            .padding(top = 34.dp),
+            .padding(top = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Box(
