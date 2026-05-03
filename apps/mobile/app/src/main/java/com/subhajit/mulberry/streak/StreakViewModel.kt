@@ -9,6 +9,7 @@ import javax.inject.Inject
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 data class StreakUiState(
@@ -19,7 +20,8 @@ data class StreakUiState(
 
 @HiltViewModel
 class StreakViewModel @Inject constructor(
-    private val apiService: MulberryApiService
+    private val apiService: MulberryApiService,
+    private val streakSimulationRepository: StreakSimulationRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(StreakUiState())
     val uiState = _uiState.asStateFlow()
@@ -31,6 +33,15 @@ class StreakViewModel @Inject constructor(
 
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
+            val simulation = streakSimulationRepository.simulation.first()
+            if (simulation != null) {
+                _uiState.value = StreakUiState(
+                    isLoading = false,
+                    streak = simulation.streak,
+                    errorMessage = null
+                )
+                return@launch
+            }
             val today = LocalDate.now().toString()
             runCatching { apiService.getStreak(today) }
                 .onSuccess { streak ->

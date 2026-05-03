@@ -6,8 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,7 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -49,10 +48,16 @@ import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.metadata.AppSystemBarStyle
 import com.subhajit.mulberry.network.StreakResponse
 import com.subhajit.mulberry.ui.theme.KalamFontFamily
-import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
-import kotlin.math.absoluteValue
 import java.time.LocalDate
+import kotlin.math.absoluteValue
+
+private val StreakScreenBackgroundColor = Color(0xFF370108)
+private val StreakScreenEllipseColor = Color(0xFF52020C)
+private val StreakScreenAccentColor = Color(0xFFB31329)
+private val StreakScreenMutedCircleColor = Color(0xFF4B2227)
+private val StreakScreenBodyTextColor = Color.White.copy(alpha = 0.7f)
+private val StreakScreenMutedTextColor = Color.White.copy(alpha = 0.4f)
 
 @Composable
 fun StreakRoute(
@@ -83,7 +88,7 @@ private fun StreakScreen(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(StreakScreenBackgroundColor)
     ) {
         val scale = maxWidth.value / 402f
 
@@ -101,7 +106,7 @@ private fun StreakScreen(
             onClick = onClose,
             scale = scale,
             modifier = Modifier.offset(
-                x = maxWidth - 20.dp * scale - 31.dp * scale,
+                x = maxWidth - 20.dp * scale - 25.dp * scale,
                 y = 75.dp * scale
             )
         )
@@ -111,7 +116,7 @@ private fun StreakScreen(
                 hero = content.hero,
                 scale = scale,
                 modifier = Modifier.offset(
-                    x = (if (content.hero == StreakHero.BrokenBolt) 123.dp else 125.dp) * scale,
+                    x = (if (content.hero == StreakHero.BrokenBolt) 126.dp else 124.5.dp) * scale,
                     y = 175.dp * scale
                 )
             )
@@ -130,7 +135,7 @@ private fun StreakScreen(
             ) {
                 Text(
                     text = content.title,
-                    color = Color.Black,
+                    color = Color.White,
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 24.sp,
@@ -144,7 +149,7 @@ private fun StreakScreen(
                 Spacer(modifier = Modifier.height(16.dp * scale))
                 Text(
                     text = content.body,
-                    color = Color.Black.copy(alpha = 0.7f),
+                    color = StreakScreenBodyTextColor,
                     fontFamily = PoppinsFontFamily,
                     fontWeight = FontWeight.Medium,
                     fontSize = 14.sp,
@@ -159,7 +164,7 @@ private fun StreakScreen(
         } else if (uiState.errorMessage != null) {
             Text(
                 text = uiState.errorMessage,
-                color = Color.Black.copy(alpha = 0.7f),
+                color = StreakScreenBodyTextColor,
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Medium,
                 fontSize = 14.sp,
@@ -181,7 +186,6 @@ private fun StreakScreen(
 
 @Composable
 private fun StreakBackground(scale: Float) {
-    val fill = Color(0xFFFFEEF2)
     val density = LocalDensity.current
     Canvas(modifier = Modifier.fillMaxSize()) {
         val ovalWidth = with(density) { (733.dp * scale).toPx() }
@@ -189,7 +193,7 @@ private fun StreakBackground(scale: Float) {
         val top = with(density) { (387.dp * scale).toPx() }
         val left = with(density) { (-165.dp * scale).toPx() }
         drawOval(
-            color = fill,
+            color = StreakScreenEllipseColor,
             topLeft = Offset(left, top),
             size = Size(ovalWidth, ovalHeight)
         )
@@ -208,8 +212,8 @@ private fun StreakPill(
     Row(
         modifier = modifier
             .size(width = 92.dp * scale, height = 31.dp * scale)
-            .border(1.dp * scale, MulberryPrimary, shape)
-            .background(MulberryPrimary.copy(alpha = 0.15f), shape),
+            .border(1.dp * scale, StreakScreenAccentColor, shape)
+            .background(StreakScreenAccentColor.copy(alpha = 0.15f), shape),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -225,7 +229,7 @@ private fun StreakPill(
             )
             Text(
                 text = label,
-                color = MulberryPrimary,
+                color = Color.White,
                 fontFamily = KalamFontFamily,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
@@ -242,29 +246,14 @@ private fun StreakCloseButton(
     scale: Float,
     modifier: Modifier = Modifier
 ) {
-    Canvas(
+    Image(
+        painter = painterResource(R.drawable.ic_streak_close),
+        contentDescription = "Close",
+        contentScale = ContentScale.Fit,
         modifier = modifier
-            .size(31.dp * scale)
+            .size(25.dp * scale)
             .clickable(onClick = onClick)
-            .padding(7.dp * scale)
-    ) {
-        val strokeColor = Color.Black
-        val stroke = Stroke(width = 3.8f * scale, cap = StrokeCap.Round)
-        drawLine(
-            color = strokeColor,
-            start = Offset(3f * scale, 3f * scale),
-            end = Offset(size.width - 3f * scale, size.height - 3f * scale),
-            strokeWidth = stroke.width,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = strokeColor,
-            start = Offset(size.width - 3f * scale, 3f * scale),
-            end = Offset(3f * scale, size.height - 3f * scale),
-            strokeWidth = stroke.width,
-            cap = StrokeCap.Round
-        )
-    }
+    )
 }
 
 @Composable
@@ -273,24 +262,26 @@ private fun StreakHeroImage(
     scale: Float,
     modifier: Modifier = Modifier
 ) {
-    val boxWidth = (if (hero == StreakHero.BrokenBolt) 150.dp else 153.dp) * scale
-    val boxHeight = 247.dp * scale
-    val imageRes = if (hero == StreakHero.BrokenBolt) {
-        R.drawable.streak_bolt_broken_asset
-    } else {
-        R.drawable.streak_bolt_asset
-    }
+    val spec = hero.assetSpec()
+    val renderScale = (spec.boxHeight / spec.visibleHeight) * scale
+    val visibleCenterX = spec.visibleLeft + (spec.visibleWidth / 2f)
+    val visibleCenterY = spec.visibleTop + (spec.visibleHeight / 2f)
+    val renderedWidth = spec.assetWidth * renderScale
+    val renderedHeight = spec.assetHeight * renderScale
+    val renderedOffsetX = (spec.boxWidth * scale / 2f) - (visibleCenterX * renderScale)
+    val renderedOffsetY = (spec.boxHeight * scale / 2f) - (visibleCenterY * renderScale)
 
     Box(
         modifier = modifier
-            .size(width = boxWidth, height = boxHeight)
-            .clipToBounds()
+            .size(width = spec.boxWidth.dp * scale, height = spec.boxHeight.dp * scale)
     ) {
         Image(
-            painter = painterResource(imageRes),
+            painter = painterResource(spec.imageRes),
             contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize()
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier
+                .offset(x = renderedOffsetX.dp, y = renderedOffsetY.dp)
+                .size(width = renderedWidth.dp, height = renderedHeight.dp)
         )
     }
 }
@@ -325,9 +316,9 @@ private fun FigmaWeekRow(
             }
 
             val letterColor = if (isPast && !hasActivity) {
-                Color.Black.copy(alpha = 0.35f)
+                StreakScreenMutedTextColor
             } else {
-                Color.Black
+                Color.White
             }
 
             Box(
@@ -360,15 +351,15 @@ private fun DayMark(
     scale: Float,
     modifier: Modifier = Modifier
 ) {
-    val fillBase = Color(0xFFFCF4F5)
+    val fillBase = StreakScreenMutedCircleColor
     val ringStroke = when (style) {
         DayMarkStyle.TodayRing -> 3.dp * scale
         DayMarkStyle.Ring -> 2.dp * scale
         else -> 0.dp
     }
-    val ringColor = MulberryPrimary
+    val ringColor = StreakScreenAccentColor
     val fillColor = when (style) {
-        DayMarkStyle.Checked -> MulberryPrimary
+        DayMarkStyle.Checked -> StreakScreenAccentColor
         DayMarkStyle.Missed -> fillBase
         DayMarkStyle.Ring, DayMarkStyle.TodayRing -> fillBase
     }
@@ -431,7 +422,7 @@ private fun XMark(
         modifier = modifier.size(15.556348.dp * scale)
     ) {
         val stroke = Stroke(width = (2.dp * scale).toPx(), cap = StrokeCap.Round)
-        val color = Color.Black.copy(alpha = 0.4f)
+        val color = StreakScreenMutedTextColor
         drawLine(
             color = color,
             start = Offset(0f, 0f),
@@ -459,6 +450,46 @@ private fun dayLetterOffsetX(label: String): Int {
 }
 
 private enum class StreakHero { Bolt, BrokenBolt }
+
+private data class HeroAssetSpec(
+    val imageRes: Int,
+    val assetWidth: Float,
+    val assetHeight: Float,
+    val visibleLeft: Float,
+    val visibleTop: Float,
+    val visibleWidth: Float,
+    val visibleHeight: Float,
+    val boxWidth: Float,
+    val boxHeight: Float
+)
+
+private fun StreakHero.assetSpec(): HeroAssetSpec {
+    return when (this) {
+        StreakHero.Bolt -> HeroAssetSpec(
+            imageRes = R.drawable.streak_bolt_asset,
+            assetWidth = 309f,
+            assetHeight = 403f,
+            visibleLeft = 80f,
+            visibleTop = 87f,
+            visibleWidth = 144f,
+            visibleHeight = 236f,
+            boxWidth = 153f,
+            boxHeight = 247f
+        )
+
+        StreakHero.BrokenBolt -> HeroAssetSpec(
+            imageRes = R.drawable.streak_bolt_broken_asset,
+            assetWidth = 306f,
+            assetHeight = 403f,
+            visibleLeft = 87f,
+            visibleTop = 87f,
+            visibleWidth = 137f,
+            visibleHeight = 233f,
+            boxWidth = 150f,
+            boxHeight = 247f
+        )
+    }
+}
 
 private data class StreakContent(
     val currentStreakDays: Int,
@@ -566,7 +597,7 @@ private fun StreakContinueButton(
         modifier = modifier
             .size(width = 363.dp * scale, height = 50.dp * scale)
             .clip(RoundedCornerShape(15.38.dp * scale))
-            .background(MulberryPrimary)
+            .background(StreakScreenAccentColor)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {

@@ -31,6 +31,8 @@ import com.subhajit.mulberry.pairing.InviteRepository
 import com.subhajit.mulberry.pairing.inbound.InboundInviteRepository
 import com.subhajit.mulberry.pairing.inbound.PendingInboundInvite
 import com.subhajit.mulberry.settings.PairingDisconnectCoordinator
+import com.subhajit.mulberry.streak.StreakSimulationRepository
+import com.subhajit.mulberry.streak.withDisplayStreakSimulation
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.BackgroundImageState
 import com.subhajit.mulberry.wallpaper.DefaultWallpaperPresets
@@ -172,6 +174,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val wallpaperCoordinator: WallpaperCoordinator,
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     private val reviewPromptCoordinator: com.subhajit.mulberry.review.ReviewPromptCoordinator,
+    private val streakSimulationRepository: StreakSimulationRepository,
     private val appConfig: AppConfig
 ) : ViewModel() {
     private val showClearConfirmation = MutableStateFlow(false)
@@ -283,7 +286,7 @@ class CanvasHomeViewModel @Inject constructor(
         )
     }
 
-    val uiState = combine(
+    private val uiStateBase = combine(
         baseState,
         inviteControls,
         wallpaperControls,
@@ -323,6 +326,15 @@ class CanvasHomeViewModel @Inject constructor(
             lastUsedSticker = lastUsedSticker,
             showClearConfirmation = inviteControls.clearDialogVisible,
             canvasStrokeRenderMode = appConfig.canvasStrokeRenderMode
+        )
+    }
+
+    val uiState = combine(
+        uiStateBase,
+        streakSimulationRepository.simulation
+    ) { base, streakSimulation ->
+        base.copy(
+            bootstrapState = base.bootstrapState.withDisplayStreakSimulation(streakSimulation)
         )
     }.stateIn(
         scope = viewModelScope,
@@ -456,7 +468,7 @@ class CanvasHomeViewModel @Inject constructor(
             delay(2_500)
             if (pairingSheetMode.value != HomePairingSheetMode.Hidden) return@launch
 
-            val streakDays = uiState.value.bootstrapState.currentStreakDays
+            val streakDays = sessionRepository.state.first().currentStreakDays
             val shouldLaunch = reviewPromptCoordinator.reserveIfEligible(
                 nowMs = System.currentTimeMillis(),
                 currentStreakDays = streakDays,

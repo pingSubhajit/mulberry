@@ -81,6 +81,8 @@ import com.subhajit.mulberry.stickers.BackendStickerCatalogRepository
 import com.subhajit.mulberry.stickers.DataStoreStickerCatalogCacheStore
 import com.subhajit.mulberry.stickers.StickerCatalogRepository
 import com.subhajit.mulberry.stickers.StickerCatalogCacheStore
+import com.subhajit.mulberry.streak.InMemoryStreakSimulationRepository
+import com.subhajit.mulberry.streak.StreakSimulationRepository
 import com.subhajit.mulberry.update.DataStoreInAppUpdatePromptStateStore
 import com.subhajit.mulberry.update.InAppUpdatePromptStateStore
 import com.google.android.play.core.appupdate.AppUpdateManager
@@ -276,6 +278,12 @@ abstract class AppBindingsModule {
     abstract fun bindDeveloperOptionsRepository(
         implementation: DataStoreDeveloperOptionsRepository
     ): DeveloperOptionsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindStreakSimulationRepository(
+        implementation: InMemoryStreakSimulationRepository
+    ): StreakSimulationRepository
 
     @Binds
     @Singleton

@@ -93,6 +93,7 @@ import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.review.InAppReviewLauncher
+import com.subhajit.mulberry.streak.StreakSimulationPreset
 import com.subhajit.mulberry.sync.SyncState
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.MulberryPrimaryLight
@@ -227,7 +228,8 @@ fun SettingsRoute(
         onTriggerInAppReview = viewModel::onTriggerInAppReviewClicked,
         onTriggerInAppUpdate = viewModel::onTriggerInAppUpdateClicked,
         onClearStickerAssets = viewModel::onClearStickerAssets,
-        onClearStickerCatalogCache = viewModel::onClearStickerCatalogCache
+        onClearStickerCatalogCache = viewModel::onClearStickerCatalogCache,
+        onSetStreakSimulation = viewModel::onSetStreakSimulation
     )
 }
 
@@ -262,7 +264,8 @@ private fun SettingsScreen(
     onTriggerInAppReview: () -> Unit,
     onTriggerInAppUpdate: () -> Unit,
     onClearStickerAssets: () -> Unit,
-    onClearStickerCatalogCache: () -> Unit
+    onClearStickerCatalogCache: () -> Unit,
+    onSetStreakSimulation: (StreakSimulationPreset?) -> Unit
 ) {
     Scaffold(
         modifier = Modifier
@@ -331,6 +334,7 @@ private fun SettingsScreen(
                 onTriggerInAppUpdate = onTriggerInAppUpdate,
                 onClearStickerAssets = onClearStickerAssets,
                 onClearStickerCatalogCache = onClearStickerCatalogCache,
+                onSetStreakSimulation = onSetStreakSimulation,
                 modifier = Modifier.padding(padding)
             )
         } else {
@@ -1780,6 +1784,7 @@ private fun DeveloperOptionsPane(
     onTriggerInAppUpdate: () -> Unit,
     onClearStickerAssets: () -> Unit,
     onClearStickerCatalogCache: () -> Unit,
+    onSetStreakSimulation: (StreakSimulationPreset?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showResetConfirmation by remember { mutableStateOf(false) }
@@ -1952,6 +1957,34 @@ private fun DeveloperOptionsPane(
                     onClick = onClearStickerCatalogCache,
                     enabled = !uiState.isBusy
                 )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            DeveloperSectionCard(
+                title = "Streak simulation",
+                body = "Display-only mock streak states for the header, settings summary, and streak page. Clears on app restart."
+            ) {
+                DeveloperValueList(
+                    rows = listOf(
+                        "Current state" to (uiState.streakSimulationPreset?.title ?: "None")
+                    )
+                )
+                Spacer(modifier = Modifier.height(18.dp))
+                SettingsSecondaryButton(
+                    text = "Use real streak data",
+                    isBusy = uiState.isBusy,
+                    onClick = { onSetStreakSimulation(null) },
+                    enabled = !uiState.isBusy
+                )
+                StreakSimulationPreset.entries.forEach { preset ->
+                    Spacer(modifier = Modifier.height(10.dp))
+                    SettingsSecondaryButton(
+                        text = preset.title,
+                        isBusy = uiState.isBusy,
+                        onClick = { onSetStreakSimulation(preset) },
+                        enabled = !uiState.isBusy
+                    )
+                }
             }
         }
 

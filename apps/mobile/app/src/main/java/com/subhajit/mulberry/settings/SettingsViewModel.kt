@@ -26,10 +26,13 @@ import com.subhajit.mulberry.sync.DrawReminderNotificationHandler
 import com.subhajit.mulberry.sync.DrawReminderNotificationPresenter
 import com.subhajit.mulberry.sync.DrawReminderPushPayload
 import com.subhajit.mulberry.sync.FcmTokenRepository
+import com.subhajit.mulberry.sync.PartnerDoodleNotificationPresenter
 import com.subhajit.mulberry.sync.SyncMetadata
 import com.subhajit.mulberry.sync.SyncMetadataRepository
 import com.subhajit.mulberry.sync.SyncState
-import com.subhajit.mulberry.sync.PartnerDoodleNotificationPresenter
+import com.subhajit.mulberry.streak.StreakSimulationPreset
+import com.subhajit.mulberry.streak.StreakSimulationRepository
+import com.subhajit.mulberry.streak.withDisplayStreakSimulation
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
@@ -61,6 +64,7 @@ data class SettingsUiState(
     val developerOptionsEnabled: Boolean = false,
     val featureFlags: FeatureFlags = FeatureFlags(),
     val bootstrapState: SessionBootstrapState = SessionBootstrapState(),
+    val streakSimulationPreset: StreakSimulationPreset? = null,
     val syncState: SyncState = SyncState.Disconnected,
     val syncMetadata: SyncMetadata = SyncMetadata(),
     val fcmRegistered: Boolean = false,
@@ -84,6 +88,7 @@ class SettingsViewModel @Inject constructor(
     repository: SessionBootstrapRepository,
     featureFlagProvider: FeatureFlagProvider,
     private val developerOptionsRepository: DeveloperOptionsRepository,
+    private val streakSimulationRepository: StreakSimulationRepository,
     private val wallpaperSyncSettingsRepository: WallpaperSyncSettingsRepository,
     private val canvasNudgeNotificationHandler: CanvasNudgeNotificationHandler,
     private val drawReminderNotificationHandler: DrawReminderNotificationHandler,
@@ -109,13 +114,12 @@ class SettingsViewModel @Inject constructor(
     private val busyState = kotlinx.coroutines.flow.MutableStateFlow(false)
     private val versionTapCount = kotlinx.coroutines.flow.MutableStateFlow(0)
 
-    private val baseUiState = combine(
+    private val baseUiStateCore = combine(
         repository.state,
         featureFlagProvider.flags,
         developerOptionsRepository.enabled,
-        syncMetadataRepository.metadata,
-        fcmTokenRepository.isRegistered
-    ) { state, flags, developerOptionsEnabled, metadata, fcmRegistered ->
+        streakSimulationRepository.simulation
+    ) { state, flags, developerOptionsEnabled, streakSimulation ->
         SettingsUiState(
             environmentLabel = appConfig.environment.displayName,
             apiBaseUrl = appConfig.apiBaseUrl,
@@ -126,7 +130,17 @@ class SettingsViewModel @Inject constructor(
             enableDebugMenu = appConfig.enableDebugMenu,
             developerOptionsEnabled = developerOptionsEnabled,
             featureFlags = flags,
-            bootstrapState = state,
+            bootstrapState = state.withDisplayStreakSimulation(streakSimulation),
+            streakSimulationPreset = streakSimulation?.preset
+        )
+    }
+
+    private val baseUiState = combine(
+        baseUiStateCore,
+        syncMetadataRepository.metadata,
+        fcmTokenRepository.isRegistered
+    ) { base, metadata, fcmRegistered ->
+        base.copy(
             syncMetadata = metadata,
             fcmRegistered = fcmRegistered
         )
@@ -194,6 +208,18 @@ class SettingsViewModel @Inject constructor(
     fun onTriggerInAppUpdateClicked() {
         viewModelScope.launch {
             _effects.emit(SettingsEffect.LaunchInAppUpdateManual)
+        }
+    }
+
+    fun onSetStreakSimulation(preset: StreakSimulationPreset?) {
+        viewModelScope.launch {
+            streakSimulationRepository.setSimulation(preset)
+            _effects.emit(
+                SettingsEffect.Message(
+                    preset?.let { "${it.title} simulation active until app restart." }
+                        ?: "Streak simulation cleared."
+                )
+            )
         }
     }
 
