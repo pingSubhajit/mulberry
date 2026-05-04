@@ -39,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.draw.clip
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -759,6 +760,7 @@ fun TextEditorOverlay(
     val keyboardController = LocalSoftwareKeyboardController.current
     var panel by remember(element.id) { mutableStateOf(TextEditorPanel.NONE) }
     var enter by remember(element.id) { mutableStateOf(false) }
+    var showCustomColorPicker by remember(element.id) { mutableStateOf(false) }
 
     LaunchedEffect(element.id) {
         enter = true
@@ -1108,6 +1110,7 @@ fun TextEditorOverlay(
 
                 TextEditorPanel.COLOR -> {
                     val scroll = rememberScrollState()
+                    val customSelected = colorArgb !in palette
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1134,6 +1137,33 @@ fun TextEditorOverlay(
                                         colorArgb = candidate
                                         focusRequester.requestFocus()
                                     }
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .then(
+                                    if (customSelected) {
+                                        Modifier.border(2.dp, MulberryPrimary, CircleShape)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    showCustomColorPicker = true
+                                    focusRequester.requestFocus()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(R.drawable.ic_text_toolbar_color),
+                                contentDescription = "Custom color",
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
                     }
@@ -1166,6 +1196,17 @@ fun TextEditorOverlay(
             )
         }
     }
+
+    RgbColorPickerSheet(
+        visible = showCustomColorPicker,
+        initialColorArgb = colorArgb,
+        onDismissRequest = { showCustomColorPicker = false },
+        onApply = { picked ->
+            colorArgb = picked
+            showCustomColorPicker = false
+            focusRequester.requestFocus()
+        }
+    )
 }
 
 @Composable

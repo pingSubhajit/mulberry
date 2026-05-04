@@ -25,6 +25,7 @@ object DrawingDefaults {
         0xFF3A3A3AL,
         0xFF7A4A32L,
         0xFFB56A43L,
-        0xFFD8A0A8L
+        0xFFD8A0A8L,
+        0xFF00A53CL
     )
 }

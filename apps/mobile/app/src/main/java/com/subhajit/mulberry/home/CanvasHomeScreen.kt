@@ -1185,6 +1185,7 @@ private fun CanvasControlTray(
 ) {
     var showWidthPicker by remember { mutableStateOf(false) }
     var showColorPicker by remember { mutableStateOf(false) }
+    var showCustomColorPicker by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -1271,29 +1272,57 @@ private fun CanvasControlTray(
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    uiState.palette
-                        .take(16)
-                        .chunked(4)
-                        .forEach { rowColors ->
+                    val customSelected = uiState.toolState.selectedColorArgb !in uiState.palette
+                    val gridItems = buildList {
+                        uiState.palette.forEach { add(it) }
+                        add(Long.MIN_VALUE) // Custom color sentinel (always last slot).
+                    }
+
+                    gridItems
+                        .chunked(5)
+                        .forEach { rowItems ->
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                rowColors.forEach { color ->
-                                    ColorSwatch(
-                                        colorArgb = color,
-                                        isSelected = color == uiState.toolState.selectedColorArgb &&
-                                            (uiState.toolState.activeTool == DrawingTool.DRAW ||
-                                                uiState.toolState.activeTool == DrawingTool.TEXT),
-                                        onClick = {
-                                            onColorSelected(color)
-                                            showColorPicker = false
-                                        },
-                                        size = 44.dp
-                                    )
+                                rowItems.forEach { item ->
+                                    if (item == Long.MIN_VALUE) {
+                                        CustomColorSwatch(
+                                            isSelected = customSelected &&
+                                                (uiState.toolState.activeTool == DrawingTool.DRAW ||
+                                                    uiState.toolState.activeTool == DrawingTool.TEXT),
+                                            onClick = {
+                                                showColorPicker = false
+                                                showCustomColorPicker = true
+                                            },
+                                            size = 44.dp
+                                        )
+                                    } else {
+                                        ColorSwatch(
+                                            colorArgb = item,
+                                            isSelected = item == uiState.toolState.selectedColorArgb &&
+                                                (uiState.toolState.activeTool == DrawingTool.DRAW ||
+                                                    uiState.toolState.activeTool == DrawingTool.TEXT),
+                                            onClick = {
+                                                onColorSelected(item)
+                                                showColorPicker = false
+                                            },
+                                            size = 44.dp
+                                        )
+                                    }
                                 }
                             }
                         }
                 }
             }
         }
+
+        RgbColorPickerSheet(
+            visible = showCustomColorPicker,
+            initialColorArgb = uiState.toolState.selectedColorArgb,
+            onDismissRequest = { showCustomColorPicker = false },
+            onApply = { colorArgb ->
+                onColorSelected(colorArgb)
+                showCustomColorPicker = false
+            }
+        )
 
         CanvasActionButton(
             drawableRes = R.drawable.canvas_action_undo,
@@ -2801,4 +2830,33 @@ private fun ColorSwatch(
         color = Color(colorArgb),
         shape = CircleShape
     ) {}
+}
+
+@Composable
+private fun CustomColorSwatch(
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    size: Dp
+) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .then(
+                if (isSelected) {
+                    Modifier.border(3.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                } else {
+                    Modifier
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_text_toolbar_color),
+            contentDescription = "Custom color",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit
+        )
+    }
 }
