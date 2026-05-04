@@ -1,5 +1,11 @@
 package com.subhajit.mulberry.streak
 
+import android.provider.Settings
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -24,6 +30,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,7 +44,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -62,6 +74,47 @@ private val StreakScreenBodyTextColor = Color.White.copy(alpha = 0.7f)
 private val StreakScreenMutedTextColor = Color.White.copy(alpha = 0.4f)
 private const val HeroSizeFraction = 0.8f
 private const val HeroBottomMarginDp = 24f
+private const val EntryBackgroundDurationMs = 220
+private const val EntryContentOverlapDelayMs = 165
+private const val EntryCloseDurationMs = 90
+private const val EntryContentDurationMs = 140
+private const val EntryStaggerMs = 55
+private val EntryBackgroundStartOffsetDp = 24.dp
+private val EntryContentStartOffsetDp = 8.dp
+private const val EntryContentMinAlpha = 0.9f
+
+private data class SystemAnimationSettings(
+    val enabled: Boolean,
+    val durationScale: Float
+)
+
+@Composable
+private fun rememberSystemAnimationSettings(): SystemAnimationSettings {
+    val context = LocalContext.current
+    return remember(context) {
+        runCatching {
+            val windowScale = Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.WINDOW_ANIMATION_SCALE,
+                1f
+            )
+            val transitionScale = Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.TRANSITION_ANIMATION_SCALE,
+                1f
+            )
+            val animatorScale = Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            )
+            SystemAnimationSettings(
+                enabled = windowScale != 0f && transitionScale != 0f && animatorScale != 0f,
+                durationScale = animatorScale
+            )
+        }.getOrDefault(SystemAnimationSettings(enabled = true, durationScale = 1f))
+    }
+}
 
 @Composable
 fun StreakRoute(
@@ -80,6 +133,31 @@ private fun StreakScreen(
 ) {
     val streak = uiState.streak
     val content = streak?.toStreakContent()
+    val hasForegroundContent = content != null || uiState.errorMessage != null
+    val systemAnimationSettings = rememberSystemAnimationSettings()
+    val systemAnimationsEnabled = systemAnimationSettings.enabled
+    val durationScaleNormalizationFactor = systemAnimationSettings.durationScale
+        .takeIf { it > 1f }
+        ?: 1f
+
+    fun tweenDurationMs(ms: Int): Int =
+        (ms / durationScaleNormalizationFactor).toInt().coerceAtLeast(1)
+
+    fun delayDurationMs(ms: Int): Long =
+        (ms / durationScaleNormalizationFactor).toLong().coerceAtLeast(0L)
+
+    val showHero = content != null
+    val showPill = content != null
+    val showWeekRow = content != null
+
+    var backgroundEntered by remember { mutableStateOf(!systemAnimationsEnabled) }
+    var closeEntered by remember { mutableStateOf(!systemAnimationsEnabled) }
+    var heroEntered by remember { mutableStateOf(!systemAnimationsEnabled) }
+    var pillEntered by remember { mutableStateOf(!systemAnimationsEnabled) }
+    var weekRowEntered by remember { mutableStateOf(!systemAnimationsEnabled) }
+    var copyEntered by remember { mutableStateOf(!systemAnimationsEnabled) }
+    var continueEntered by remember { mutableStateOf(!systemAnimationsEnabled) }
+    var backgroundStartNanos by remember { mutableLongStateOf(0L) }
 
     ApplySystemBarStyle(
         style = AppSystemBarStyle(
@@ -89,6 +167,123 @@ private fun StreakScreen(
         )
     )
 
+    LaunchedEffect(systemAnimationsEnabled) {
+        if (!systemAnimationsEnabled) return@LaunchedEffect
+        backgroundStartNanos = 0L
+        closeEntered = false
+        backgroundEntered = false
+        heroEntered = false
+        pillEntered = false
+        weekRowEntered = false
+        copyEntered = false
+        continueEntered = false
+
+        closeEntered = true
+        backgroundStartNanos = androidx.compose.runtime.withFrameNanos { it }
+        backgroundEntered = true
+    }
+
+    LaunchedEffect(hasForegroundContent, showHero, showPill, showWeekRow, systemAnimationsEnabled, backgroundStartNanos) {
+        if (!systemAnimationsEnabled) return@LaunchedEffect
+        if (!hasForegroundContent) return@LaunchedEffect
+        if (continueEntered) return@LaunchedEffect
+
+        val now = androidx.compose.runtime.withFrameNanos { it }
+        val elapsedMs = if (backgroundStartNanos == 0L) {
+            0L
+        } else {
+            (now - backgroundStartNanos) / 1_000_000L
+        }
+        val remainingDelayMs = (EntryContentOverlapDelayMs - elapsedMs).coerceAtLeast(0L)
+        if (remainingDelayMs > 0L) kotlinx.coroutines.delay(delayDurationMs(remainingDelayMs.toInt()))
+
+        if (showHero) {
+            heroEntered = true
+            kotlinx.coroutines.delay(delayDurationMs(EntryStaggerMs))
+        }
+        if (showPill) {
+            pillEntered = true
+            kotlinx.coroutines.delay(delayDurationMs(EntryStaggerMs))
+        }
+        if (showWeekRow) {
+            weekRowEntered = true
+            kotlinx.coroutines.delay(delayDurationMs(EntryStaggerMs))
+        }
+        copyEntered = true
+        kotlinx.coroutines.delay(delayDurationMs(EntryStaggerMs))
+        continueEntered = true
+    }
+
+    val closeAlpha by animateFloatAsState(
+        targetValue = if (closeEntered) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = tweenDurationMs(EntryCloseDurationMs),
+            easing = FastOutLinearInEasing
+        ),
+        label = "streakEntryCloseAlpha"
+    )
+
+    val backgroundOffsetFactor by animateFloatAsState(
+        targetValue = if (backgroundEntered) 0f else 1f,
+        animationSpec = tween(
+            durationMillis = tweenDurationMs(EntryBackgroundDurationMs),
+            easing = FastOutSlowInEasing
+        ),
+        label = "streakEntryBackgroundOffsetFactor"
+    )
+
+    val heroAlpha by animateFloatAsState(
+        targetValue = if (heroEntered) 1f else EntryContentMinAlpha,
+        animationSpec = tween(durationMillis = tweenDurationMs(EntryContentDurationMs), easing = LinearOutSlowInEasing),
+        label = "streakEntryHeroAlpha"
+    )
+    val pillAlpha by animateFloatAsState(
+        targetValue = if (pillEntered) 1f else EntryContentMinAlpha,
+        animationSpec = tween(durationMillis = tweenDurationMs(EntryContentDurationMs), easing = LinearOutSlowInEasing),
+        label = "streakEntryPillAlpha"
+    )
+    val weekRowAlpha by animateFloatAsState(
+        targetValue = if (weekRowEntered) 1f else EntryContentMinAlpha,
+        animationSpec = tween(durationMillis = tweenDurationMs(EntryContentDurationMs), easing = LinearOutSlowInEasing),
+        label = "streakEntryWeekRowAlpha"
+    )
+    val copyAlpha by animateFloatAsState(
+        targetValue = if (copyEntered) 1f else EntryContentMinAlpha,
+        animationSpec = tween(durationMillis = tweenDurationMs(EntryContentDurationMs), easing = LinearOutSlowInEasing),
+        label = "streakEntryCopyAlpha"
+    )
+    val continueAlpha by animateFloatAsState(
+        targetValue = if (continueEntered) 1f else EntryContentMinAlpha,
+        animationSpec = tween(durationMillis = tweenDurationMs(EntryContentDurationMs), easing = LinearOutSlowInEasing),
+        label = "streakEntryContinueAlpha"
+    )
+
+    val heroOffsetFactor by animateFloatAsState(
+        targetValue = if (heroEntered) 0f else 1f,
+        animationSpec = tween(durationMillis = tweenDurationMs(EntryContentDurationMs), easing = FastOutSlowInEasing),
+        label = "streakEntryHeroOffsetFactor"
+    )
+    val pillOffsetFactor by animateFloatAsState(
+        targetValue = if (pillEntered) 0f else 1f,
+        animationSpec = tween(durationMillis = tweenDurationMs(EntryContentDurationMs), easing = FastOutSlowInEasing),
+        label = "streakEntryPillOffsetFactor"
+    )
+    val weekRowOffsetFactor by animateFloatAsState(
+        targetValue = if (weekRowEntered) 0f else 1f,
+        animationSpec = tween(durationMillis = tweenDurationMs(EntryContentDurationMs), easing = FastOutSlowInEasing),
+        label = "streakEntryWeekRowOffsetFactor"
+    )
+    val copyOffsetFactor by animateFloatAsState(
+        targetValue = if (copyEntered) 0f else 1f,
+        animationSpec = tween(durationMillis = tweenDurationMs(EntryContentDurationMs), easing = FastOutSlowInEasing),
+        label = "streakEntryCopyOffsetFactor"
+    )
+    val continueOffsetFactor by animateFloatAsState(
+        targetValue = if (continueEntered) 0f else 1f,
+        animationSpec = tween(durationMillis = tweenDurationMs(EntryContentDurationMs), easing = FastOutSlowInEasing),
+        label = "streakEntryContinueOffsetFactor"
+    )
+
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -96,49 +291,63 @@ private fun StreakScreen(
     ) {
         val scale = maxWidth.value / 402f
 
-        StreakBackground(scale = scale)
+        StreakBackground(
+            scale = scale,
+            entryOffsetDp = EntryBackgroundStartOffsetDp * scale * backgroundOffsetFactor
+        )
 
         if (content != null) {
             val heroSize = maxWidth * HeroSizeFraction
             val heroBottomTarget = 470.dp * scale - HeroBottomMarginDp.dp * scale
             val heroTop = (heroBottomTarget - heroSize).coerceAtLeast(0.dp)
+            val drift = EntryContentStartOffsetDp * scale * heroOffsetFactor
             StreakHeroImage(
                 hero = content.hero,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .offset(y = heroTop)
+                    .offset(y = heroTop + drift)
                     .size(heroSize)
+                    .graphicsLayer { alpha = if (heroEntered) heroAlpha else 0f }
                     .testTag(TestTags.STREAK_HERO_IMAGE)
             )
         }
 
         if (content != null) {
+            val drift = EntryContentStartOffsetDp * scale * pillOffsetFactor
             StreakPill(
                 currentStreakDays = content.currentStreakDays,
                 scale = scale,
-                modifier = Modifier.offset(x = 243.dp * scale, y = 72.dp * scale)
+                modifier = Modifier
+                    .offset(x = 243.dp * scale, y = 72.dp * scale + drift)
+                    .graphicsLayer { alpha = if (pillEntered) pillAlpha else 0f }
             )
         }
 
         StreakCloseButton(
             onClick = onClose,
             scale = scale,
-            modifier = Modifier.offset(
-                x = maxWidth - 20.dp * scale - 25.dp * scale,
-                y = 75.dp * scale
-            )
+            modifier = Modifier
+                .offset(
+                    x = maxWidth - 20.dp * scale - 25.dp * scale,
+                    y = 75.dp * scale
+                )
+                .graphicsLayer { alpha = closeAlpha }
         )
 
         if (content != null) {
+            val driftWeekRow = EntryContentStartOffsetDp * scale * weekRowOffsetFactor
             FigmaWeekRow(
                 streak = streak,
                 scale = scale,
-                modifier = Modifier.offset(x = 45.dp * scale, y = 470.dp * scale)
+                modifier = Modifier
+                    .offset(x = 45.dp * scale, y = 470.dp * scale + driftWeekRow)
+                    .graphicsLayer { alpha = if (weekRowEntered) weekRowAlpha else 0f }
             )
 
+            val driftCopy = EntryContentStartOffsetDp * scale * copyOffsetFactor
             Column(
                 modifier = Modifier
-                    .offset(x = 65.dp * scale, y = 565.dp * scale)
+                    .offset(x = 65.dp * scale, y = 565.dp * scale + driftCopy)
                     .width(273.dp * scale),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -154,6 +363,7 @@ private fun StreakScreen(
                     maxLines = 1,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .graphicsLayer { alpha = if (copyEntered) copyAlpha else 0f }
                 )
                 Spacer(modifier = Modifier.height(16.dp * scale))
                 Text(
@@ -168,9 +378,11 @@ private fun StreakScreen(
                     maxLines = 2,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .graphicsLayer { alpha = if (copyEntered) copyAlpha else 0f }
                 )
             }
         } else if (uiState.errorMessage != null) {
+            val driftCopy = EntryContentStartOffsetDp * scale * copyOffsetFactor
             Text(
                 text = uiState.errorMessage,
                 color = StreakScreenBodyTextColor,
@@ -180,26 +392,33 @@ private fun StreakScreen(
                 lineHeight = 20.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
-                    .offset(x = 65.dp * scale, y = 565.dp * scale)
+                    .offset(x = 65.dp * scale, y = 565.dp * scale + driftCopy)
                     .width(273.dp * scale)
+                    .graphicsLayer { alpha = if (copyEntered) copyAlpha else 0f }
             )
         }
 
+        val driftContinue = EntryContentStartOffsetDp * scale * continueOffsetFactor
         StreakContinueButton(
             onClick = onClose,
             scale = scale,
-            modifier = Modifier.offset(x = 20.dp * scale, y = 782.dp * scale)
+            modifier = Modifier
+                .offset(x = 20.dp * scale, y = 782.dp * scale + driftContinue)
+                .graphicsLayer { alpha = if (continueEntered) continueAlpha else 0f }
         )
     }
 }
 
 @Composable
-private fun StreakBackground(scale: Float) {
+private fun StreakBackground(
+    scale: Float,
+    entryOffsetDp: androidx.compose.ui.unit.Dp
+) {
     val density = LocalDensity.current
     Canvas(modifier = Modifier.fillMaxSize()) {
         val ovalWidth = with(density) { (733.dp * scale).toPx() }
         val ovalHeight = with(density) { (635.dp * scale).toPx() }
-        val top = with(density) { (387.dp * scale).toPx() }
+        val top = with(density) { (387.dp * scale + entryOffsetDp).toPx() }
         val left = with(density) { (-165.dp * scale).toPx() }
         drawOval(
             color = StreakScreenEllipseColor,
