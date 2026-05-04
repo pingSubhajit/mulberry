@@ -4,15 +4,20 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Rect
 import android.service.wallpaper.WallpaperService
+import android.util.DisplayMetrics
 import android.util.Log
 import android.view.SurfaceHolder
+import android.view.WindowInsets
+import android.view.WindowManager
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import javax.inject.Inject
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -35,6 +40,11 @@ class MulberryWallpaperService : WallpaperService() {
         private var isSurfaceAvailable: Boolean = false
         private var pendingRedraw: Boolean = false
         private var wallpaperSyncEnabled: Boolean = true
+        private var lastKnownSurfaceWidthPx: Int = 0
+        private var lastKnownSurfaceHeightPx: Int = 0
+        private var lastKnownViewportWidthPx: Int = 0
+        private var lastKnownViewportHeightPx: Int = 0
+        private var stabilityRedrawJob: Job? = null
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
@@ -59,6 +69,7 @@ class MulberryWallpaperService : WallpaperService() {
             isEngineVisible = visible
             if (visible) {
                 requestDraw("visibility_changed")
+                scheduleStabilityRedraw("visibility_changed")
             }
         }
 
@@ -66,6 +77,7 @@ class MulberryWallpaperService : WallpaperService() {
             super.onSurfaceCreated(holder)
             isSurfaceAvailable = true
             requestDraw("surface_created")
+            scheduleStabilityRedraw("surface_created")
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
@@ -76,6 +88,7 @@ class MulberryWallpaperService : WallpaperService() {
         override fun onSurfaceRedrawNeeded(holder: SurfaceHolder) {
             super.onSurfaceRedrawNeeded(holder)
             requestDraw("surface_redraw_needed")
+            scheduleStabilityRedraw("surface_redraw_needed")
         }
 
         override fun onSurfaceChanged(
@@ -85,13 +98,37 @@ class MulberryWallpaperService : WallpaperService() {
             height: Int
         ) {
             super.onSurfaceChanged(holder, format, width, height)
+            lastKnownSurfaceWidthPx = width
+            lastKnownSurfaceHeightPx = height
             isSurfaceAvailable = holder.surface?.isValid == true
             requestDraw("surface_changed")
+            scheduleStabilityRedraw("surface_changed")
+        }
+
+        override fun onApplyWindowInsets(insets: WindowInsets) {
+            super.onApplyWindowInsets(insets)
+            // System bars / cutout insets can change without a surface resize (e.g. returning
+            // from an immersive fullscreen app). Request a redraw so our viewport sizing stays correct.
+            requestDraw("window_insets_changed")
+            scheduleStabilityRedraw("window_insets_changed")
         }
 
         override fun onDestroy() {
             engineScope.cancel()
             super.onDestroy()
+        }
+
+        private fun scheduleStabilityRedraw(reason: String) {
+            stabilityRedrawJob?.cancel()
+            stabilityRedrawJob = engineScope.launch {
+                // Some OEM launchers report intermediate/incorrect surface sizes after leaving a
+                // fullscreen (immersive) app. A follow-up redraw helps ensure we render again once
+                // the wallpaper surface stabilizes.
+                delay(250)
+                requestDraw("stability_250ms:$reason")
+                delay(750)
+                requestDraw("stability_1000ms:$reason")
+            }
         }
 
         private fun requestDraw(reason: String) {
@@ -186,6 +223,10 @@ class MulberryWallpaperService : WallpaperService() {
             }
 
             try {
+                val (viewportWidthPx, viewportHeightPx) = resolveViewportSizePx(
+                    surfaceWidthPx = canvas.width,
+                    surfaceHeightPx = canvas.height
+                )
                 val sourceRect = when (scaleMode) {
                     BitmapScaleMode.CENTER_CROP_TO_CANVAS -> centerCropSourceRect(
                         bitmapWidth = bitmap.width,
@@ -196,8 +237,8 @@ class MulberryWallpaperService : WallpaperService() {
                     BitmapScaleMode.CENTERED_SCREEN_VIEWPORT -> centeredScreenSourceRect(
                         bitmapWidth = bitmap.width,
                         bitmapHeight = bitmap.height,
-                        screenWidth = resources.displayMetrics.widthPixels,
-                        screenHeight = resources.displayMetrics.heightPixels
+                        screenWidth = viewportWidthPx,
+                        screenHeight = viewportHeightPx
                     ).toAndroidRect()
                 }
                 val destinationRect = when (scaleMode) {
@@ -205,8 +246,8 @@ class MulberryWallpaperService : WallpaperService() {
                     BitmapScaleMode.CENTERED_SCREEN_VIEWPORT -> centeredScreenSourceRect(
                         bitmapWidth = canvas.width,
                         bitmapHeight = canvas.height,
-                        screenWidth = resources.displayMetrics.widthPixels,
-                        screenHeight = resources.displayMetrics.heightPixels
+                        screenWidth = viewportWidthPx,
+                        screenHeight = viewportHeightPx
                     ).toAndroidRect()
                 }
                 canvas.drawBitmap(
@@ -218,6 +259,64 @@ class MulberryWallpaperService : WallpaperService() {
             } finally {
                 bitmap.recycle()
             }
+        }
+
+        private fun resolveViewportSizePx(
+            surfaceWidthPx: Int,
+            surfaceHeightPx: Int
+        ): Pair<Int, Int> {
+            val safeSurfaceWidth = surfaceWidthPx.takeIf { it > 0 } ?: lastKnownSurfaceWidthPx
+            val safeSurfaceHeight = surfaceHeightPx.takeIf { it > 0 } ?: lastKnownSurfaceHeightPx
+
+            // `lockCanvas()` can occasionally give transient/incorrect sizes immediately after
+            // returning from an immersive fullscreen app. The only size we can trust for the draw
+            // we are about to perform is the canvas/surface size passed into this method.
+            // Treat the surface size as the viewport to avoid accidental cropping.
+            if (safeSurfaceWidth > 0 && safeSurfaceHeight > 0) {
+                lastKnownViewportWidthPx = safeSurfaceWidth
+                lastKnownViewportHeightPx = safeSurfaceHeight
+                return Pair(safeSurfaceWidth, safeSurfaceHeight)
+            }
+
+            // `resources.displayMetrics` can reflect the *available* size (and may change based on
+            // system bar visibility). For a wallpaper we want stable physical metrics, so prefer
+            // real display metrics when available.
+            val (realWidth, realHeight) = resolveRealDisplaySizePx()
+            val available = resources.displayMetrics
+            val requestedWidth = realWidth.takeIf { it > 0 } ?: available.widthPixels
+            val requestedHeight = realHeight.takeIf { it > 0 } ?: available.heightPixels
+
+            val resolvedWidth = when {
+                safeSurfaceWidth > 0 && requestedWidth > 0 -> requestedWidth.coerceAtMost(safeSurfaceWidth)
+                requestedWidth > 0 -> requestedWidth
+                else -> safeSurfaceWidth.coerceAtLeast(1)
+            }
+            val resolvedHeight = when {
+                safeSurfaceHeight > 0 && requestedHeight > 0 -> requestedHeight.coerceAtMost(safeSurfaceHeight)
+                requestedHeight > 0 -> requestedHeight
+                else -> safeSurfaceHeight.coerceAtLeast(1)
+            }
+
+            if (resolvedWidth > 0) lastKnownViewportWidthPx = resolvedWidth
+            if (resolvedHeight > 0) lastKnownViewportHeightPx = resolvedHeight
+
+            return Pair(
+                lastKnownViewportWidthPx.coerceAtLeast(1),
+                lastKnownViewportHeightPx.coerceAtLeast(1)
+            )
+        }
+
+        private fun resolveRealDisplaySizePx(): Pair<Int, Int> {
+            val windowManager = getSystemService(WindowManager::class.java)
+            @Suppress("DEPRECATION")
+            val display = windowManager?.defaultDisplay
+            if (display != null) {
+                val metrics = DisplayMetrics()
+                @Suppress("DEPRECATION")
+                display.getRealMetrics(metrics)
+                return Pair(metrics.widthPixels, metrics.heightPixels)
+            }
+            return Pair(0, 0)
         }
 
         private fun decodeBitmapForCanvas(
