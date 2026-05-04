@@ -296,22 +296,22 @@ fun CanvasTextOverlay(
                     val baselineSpanMove = kotlin.math.abs(span - baselineSpan)
                     val baselineRotationMove = kotlin.math.abs(angle - baselineAngle) * baselineSpan
 
-                    if (
-                        !beganTransform &&
-                        positions.size >= 2 &&
-                        (baselineCentroidMove > touchSlop || baselineSpanMove > touchSlop || baselineRotationMove > touchSlop)
-                    ) {
-                        sawMultiTouch = true
-                        consumeGesture = true
+	                    if (
+	                        !beganTransform &&
+	                        positions.size >= 2 &&
+	                        (baselineCentroidMove > touchSlop || baselineSpanMove > touchSlop || baselineRotationMove > touchSlop)
+	                    ) {
+	                        sawMultiTouch = true
+	                        consumeGesture = true
 
-                        // Sticker tool: allow direct 2-finger transform without a prior tap
-                        // selection by picking the topmost sticker under the gesture centroid.
-                        if (lockedElementId == null && activeTool == DrawingTool.STICKER) {
-                            lockedElementId = hitTest(
-                                elements = hittable,
-                                stickerBitmaps = stickerBitmaps,
-                                pointPx = centroid,
-                                canvasSize = canvasSize,
+	                        // Allow direct 2-finger transform without a prior tap selection by
+	                        // picking the topmost element under the gesture centroid.
+	                        if (lockedElementId == null) {
+	                            lockedElementId = hitTest(
+	                                elements = hittable,
+	                                stickerBitmaps = stickerBitmaps,
+	                                pointPx = centroid,
+	                                canvasSize = canvasSize,
                                 textSizePx = baseTextSizePx,
                                 poppins = poppinsTypeface,
                                 virgil = virgilTypeface,
@@ -326,11 +326,11 @@ fun CanvasTextOverlay(
                                 oswald = oswaldTypeface,
                                 baloo2 = baloo2Typeface
                             )
-                            selectedElementId = lockedElementId
-                            lastCentroid = centroid
-                            lastAngle = angle
-                            lastSpan = span.coerceAtLeast(1f)
-                        }
+	                            selectedElementId = lockedElementId
+	                            lastCentroid = centroid
+	                            lastAngle = angle
+	                            lastSpan = span.coerceAtLeast(1f)
+	                        }
 
                         // If we still don't have a target element, we can't transform; ignore.
                         if (lockedElementId == null) {
@@ -404,16 +404,22 @@ fun CanvasTextOverlay(
                     }
                 }
 
-                // Gesture ended.
-                isTransformInProgress = false
+	                // Gesture ended.
+	                isTransformInProgress = false
 
-                if (lockedElementId == null && activeTool == DrawingTool.TEXT) {
-                    // Tap empty area => create + edit (text only).
-                    val id = UUID.randomUUID().toString()
-                    val element = CanvasTextElement(
-                        id = id,
-                        text = "",
-                        createdAt = System.currentTimeMillis(),
+	                if (lockedElementId == null && activeTool == DrawingTool.TEXT) {
+	                    // Tap empty area => create + edit (text only).
+	                    // If the user attempted a multi-touch gesture, never create a text element.
+	                    if (sawMultiTouch) {
+	                        selectedElementId = null
+	                        liveTransformPreview = null
+	                        return@awaitEachGesture
+	                    }
+	                    val id = UUID.randomUUID().toString()
+	                    val element = CanvasTextElement(
+	                        id = id,
+	                        text = "",
+	                        createdAt = System.currentTimeMillis(),
                         center = initialDown.toNormalizedPoint(canvasSize),
                         rotationRad = 0f,
                         scale = 1f,
