@@ -84,12 +84,14 @@ import com.subhajit.mulberry.wallpaper.ui.WallpaperBackgroundSelectionSection
 import com.subhajit.mulberry.wallpaper.ui.WallpaperLockScreenPreview
 import com.subhajit.mulberry.wallpaper.ui.WallpaperPrimaryButtonWithStatusBadge
 import com.subhajit.mulberry.wallpaper.ui.WallpaperSetupStatusBadgeStyle
+import com.subhajit.mulberry.wallpaper.ui.WallpaperWhyDoIDoThisLink
 import kotlin.math.max
 
 @Composable
 fun OnboardingWallpaperRoute(
     onNavigateHome: () -> Unit,
     onNavigateToWallpaperCatalog: () -> Unit,
+    onNavigateToWallpaperHelp: () -> Unit,
     viewModel: OnboardingWallpaperViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -132,6 +134,7 @@ fun OnboardingWallpaperRoute(
         presets = viewModel.presets,
         onHelp = {},
         onSetUpLockScreen = viewModel::onSetUpLockScreenClicked,
+        onNavigateToWallpaperHelp = onNavigateToWallpaperHelp,
         onViewMoreWallpapers = onNavigateToWallpaperCatalog,
         onUploadFromGallery = {
             backgroundPicker.launch(
@@ -152,6 +155,7 @@ private fun OnboardingWallpaperScreen(
     presets: List<WallpaperPreset>,
     onHelp: () -> Unit,
     onSetUpLockScreen: () -> Unit,
+    onNavigateToWallpaperHelp: () -> Unit,
     onViewMoreWallpapers: () -> Unit,
     onUploadFromGallery: () -> Unit,
     onPresetSelected: (Int) -> Unit,
@@ -216,6 +220,11 @@ private fun OnboardingWallpaperScreen(
             val isSelectedOnLock = uiState.wallpaperStatus.isWallpaperSelectedOnLock
             val isSelectedOnBoth = isSelectedOnHome && isSelectedOnLock
 
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 if (!isSelectedOnBoth) {
                     val setupCtaResId =
                         if (!isSelectedOnLock) {
@@ -235,27 +244,38 @@ private fun OnboardingWallpaperScreen(
                         WallpaperSetupStatusBadgeStyle.Error
                     }
 
-                    WallpaperPrimaryButtonWithStatusBadge(
-                        text = stringResource(setupCtaResId),
-                        statusText = stringResource(badgeResId),
-                        statusStyle = badgeStyle,
-                        onClick = onSetUpLockScreen,
-                        enabled = !uiState.isBusy,
-                        buttonModifier = Modifier.testTag(TestTags.ONBOARDING_WALLPAPER_SETUP_BUTTON)
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        WallpaperPrimaryButtonWithStatusBadge(
+                            text = stringResource(setupCtaResId),
+                            statusText = stringResource(badgeResId),
+                            statusStyle = badgeStyle,
+                            onClick = onSetUpLockScreen,
+                            enabled = !uiState.isBusy,
+                            buttonModifier = Modifier.testTag(TestTags.ONBOARDING_WALLPAPER_SETUP_BUTTON)
+                        )
+                        WallpaperWhyDoIDoThisLink(
+                            onClick = onNavigateToWallpaperHelp,
+                            modifier = Modifier.testTag(TestTags.ONBOARDING_WALLPAPER_HELP_LINK)
+                        )
+                    }
                 }
 
-            WallpaperBackgroundSelectionSection(
-                remoteWallpapers = uiState.recentRemoteWallpapers,
-                presets = presets,
-                selectedPresetResId = uiState.selectedPresetResId,
-                selectedRemoteWallpaperId = uiState.selectedRemoteWallpaperId,
-                applyingRemoteWallpaperId = uiState.applyingRemoteWallpaperId,
-                onUploadFromGallery = onUploadFromGallery,
-                onPresetSelected = onPresetSelected,
-                onRemoteWallpaperSelected = onRemoteWallpaperSelected,
-                onViewMoreWallpapers = onViewMoreWallpapers
-            )
+                WallpaperBackgroundSelectionSection(
+                    remoteWallpapers = uiState.recentRemoteWallpapers,
+                    presets = presets,
+                    selectedPresetResId = uiState.selectedPresetResId,
+                    selectedRemoteWallpaperId = uiState.selectedRemoteWallpaperId,
+                    applyingRemoteWallpaperId = uiState.applyingRemoteWallpaperId,
+                    onUploadFromGallery = onUploadFromGallery,
+                    onPresetSelected = onPresetSelected,
+                    onRemoteWallpaperSelected = onRemoteWallpaperSelected,
+                    onViewMoreWallpapers = onViewMoreWallpapers
+                )
+            }
 
             WallpaperCompletionSection(
                 isWallpaperSelected = uiState.wallpaperStatus.isWallpaperSelected,

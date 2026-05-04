@@ -30,6 +30,7 @@ import com.subhajit.mulberry.pairing.inbound.InboundInviteDeepLinkEffect
 import com.subhajit.mulberry.settings.SettingsRoute
 import com.subhajit.mulberry.streak.StreakRoute
 import com.subhajit.mulberry.wallpaper.WallpaperCatalogRoute
+import com.subhajit.mulberry.wallpaper.WallpaperHelpRoute
 import com.subhajit.mulberry.app.shortcut.AppShortcutAction
 
 @Composable
@@ -183,6 +184,9 @@ fun MulberryNavHost(
                 onNavigateToWallpaperCatalog = {
                     navController.navigate(AppRoute.WallpaperCatalog.route)
                 },
+                onNavigateToWallpaperHelp = {
+                    navController.navigate(AppRoute.WallpaperHelp.route)
+                },
                 onNavigateHome = {
                     navController.navigate(AppRoute.CanvasHome.route) {
                         popUpTo(AppRoute.OnboardingWallpaper.route) {
@@ -242,6 +246,9 @@ fun MulberryNavHost(
                 onNavigateToWallpaperCatalog = {
                     navController.navigate(AppRoute.WallpaperCatalog.route)
                 },
+                onNavigateToWallpaperHelp = {
+                    navController.navigate(AppRoute.WallpaperHelp.route)
+                },
                 onNavigateToStreak = {
                     navController.navigate(AppRoute.Streak.route) {
                         launchSingleTop = true
@@ -274,6 +281,16 @@ fun MulberryNavHost(
             ReleaseStartupGateAfterFirstFrame()
             WallpaperCatalogRoute(
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(AppRoute.WallpaperHelp.route) {
+            ReleaseStartupGateAfterFirstFrame()
+            WallpaperHelpRoute(
+                onClose = { navController.popBackStack() },
+                onExitToMain = {
+                    navController.navigateToCanvasHomeClearingTransientRoutes()
+                }
             )
         }
 
@@ -324,4 +341,22 @@ private fun NavHostController.hasBackStackEntry(route: AppRoute): Boolean = try 
     true
 } catch (_: IllegalArgumentException) {
     false
+}
+
+private fun NavHostController.navigateToCanvasHomeClearingTransientRoutes() {
+    val popRoute = when {
+        hasBackStackEntry(AppRoute.OnboardingName) -> AppRoute.OnboardingName
+        hasBackStackEntry(AppRoute.OnboardingDetails) -> AppRoute.OnboardingDetails
+        hasBackStackEntry(AppRoute.OnboardingWallpaper) -> AppRoute.OnboardingWallpaper
+        hasBackStackEntry(AppRoute.WallpaperHelp) -> AppRoute.WallpaperHelp
+        hasBackStackEntry(AppRoute.CanvasHome) -> AppRoute.CanvasHome
+        else -> AppRoute.WallpaperHelp
+    }
+
+    navigate(AppRoute.CanvasHome.route) {
+        popUpTo(popRoute.route) {
+            inclusive = true
+        }
+        launchSingleTop = true
+    }
 }

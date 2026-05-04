@@ -135,6 +135,7 @@ import com.subhajit.mulberry.wallpaper.ui.WallpaperBackgroundSelectionSection
 import com.subhajit.mulberry.wallpaper.ui.WallpaperLockScreenPreview
 import com.subhajit.mulberry.wallpaper.ui.WallpaperPrimaryButtonWithStatusBadge
 import com.subhajit.mulberry.wallpaper.ui.WallpaperSetupStatusBadgeStyle
+import com.subhajit.mulberry.wallpaper.ui.WallpaperWhyDoIDoThisLink
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
@@ -157,6 +158,7 @@ fun CanvasHomeRoute(
     onNavigateToCanvas: () -> Unit,
     onNavigateToLockScreen: () -> Unit,
     onNavigateToWallpaperCatalog: () -> Unit,
+    onNavigateToWallpaperHelp: () -> Unit,
     onNavigateToStreak: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToPairingHub: () -> Unit,
@@ -225,6 +227,7 @@ fun CanvasHomeRoute(
 	        shortcutAction = shortcutAction,
 	        wallpaperPresets = viewModel.wallpaperPresets,
 	        onNavigateToLockScreen = onNavigateToLockScreen,
+            onNavigateToWallpaperHelp = onNavigateToWallpaperHelp,
 	        onNavigateToStreak = onNavigateToStreak,
 	        onNavigateToSettings = onNavigateToSettings,
 	        onNavigateToPairingHub = onNavigateToPairingHub,
@@ -286,6 +289,7 @@ fun CanvasHomeRoute(
 	    shortcutAction: AppShortcutAction?,
 	    wallpaperPresets: List<WallpaperPreset>,
 	    onNavigateToLockScreen: () -> Unit,
+        onNavigateToWallpaperHelp: () -> Unit,
 	    onNavigateToStreak: () -> Unit,
 	    onNavigateToSettings: () -> Unit,
 	    onNavigateToPairingHub: () -> Unit,
@@ -554,15 +558,16 @@ fun CanvasHomeRoute(
 	                        onRedoRequested = onRedoRequested
 	                    )
 
-                    MainAppTab.LockScreen -> LockScreenHomePane(
-                        uiState = uiState,
-                        presets = wallpaperPresets,
-                        onSetUpLockScreen = onSetUpLockScreen,
-                        onViewMoreWallpapers = onViewMoreWallpapers,
-                        onUploadFromGallery = onUploadWallpaperBackground,
-                        onPresetSelected = onWallpaperPresetSelected,
-                        onRemoteWallpaperSelected = onRemoteWallpaperSelected
-                    )
+	                    MainAppTab.LockScreen -> LockScreenHomePane(
+	                        uiState = uiState,
+	                        presets = wallpaperPresets,
+	                        onSetUpLockScreen = onSetUpLockScreen,
+                            onNavigateToWallpaperHelp = onNavigateToWallpaperHelp,
+	                        onViewMoreWallpapers = onViewMoreWallpapers,
+	                        onUploadFromGallery = onUploadWallpaperBackground,
+	                        onPresetSelected = onWallpaperPresetSelected,
+	                        onRemoteWallpaperSelected = onRemoteWallpaperSelected
+	                    )
                 }
             }
 
@@ -1344,6 +1349,7 @@ private fun LockScreenHomePane(
     uiState: CanvasHomeUiState,
     presets: List<WallpaperPreset>,
     onSetUpLockScreen: () -> Unit,
+    onNavigateToWallpaperHelp: () -> Unit,
     onViewMoreWallpapers: () -> Unit,
     onUploadFromGallery: () -> Unit,
     onPresetSelected: (Int) -> Unit,
@@ -1379,59 +1385,75 @@ private fun LockScreenHomePane(
             val isSelectedOnLock = uiState.wallpaperStatus.isWallpaperSelectedOnLock
             val isSelectedOnBoth = isSelectedOnHome && isSelectedOnLock
 
-            if (!isSelectedOnBoth) {
-                val setupCtaResId =
-                    if (!isSelectedOnLock) {
-                        R.string.onboarding_wallpaper_setup_button
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (!isSelectedOnBoth) {
+                    val setupCtaResId =
+                        if (!isSelectedOnLock) {
+                            R.string.onboarding_wallpaper_setup_button
+                        } else {
+                            R.string.wallpaper_setup_set_both_lock_home
+                        }
+
+                    val badgeResId = when {
+                        isSelectedOnHome -> R.string.wallpaper_setup_badge_home
+                        isSelectedOnLock -> R.string.wallpaper_setup_badge_lock
+                        else -> R.string.wallpaper_setup_badge_not_set
+                    }
+                    val badgeStyle = if (isSelectedOnHome || isSelectedOnLock) {
+                        WallpaperSetupStatusBadgeStyle.Success
                     } else {
-                        R.string.wallpaper_setup_set_both_lock_home
+                        WallpaperSetupStatusBadgeStyle.Error
                     }
 
-                val badgeResId = when {
-                    isSelectedOnHome -> R.string.wallpaper_setup_badge_home
-                    isSelectedOnLock -> R.string.wallpaper_setup_badge_lock
-                    else -> R.string.wallpaper_setup_badge_not_set
-                }
-                val badgeStyle = if (isSelectedOnHome || isSelectedOnLock) {
-                    WallpaperSetupStatusBadgeStyle.Success
-                } else {
-                    WallpaperSetupStatusBadgeStyle.Error
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        WallpaperPrimaryButtonWithStatusBadge(
+                            text = stringResource(setupCtaResId),
+                            statusText = stringResource(badgeResId),
+                            statusStyle = badgeStyle,
+                            onClick = onSetUpLockScreen,
+                            enabled = !uiState.isWallpaperBusy,
+                            buttonModifier = Modifier.testTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON)
+                        )
+                        WallpaperWhyDoIDoThisLink(
+                            onClick = onNavigateToWallpaperHelp,
+                            modifier = Modifier.testTag(TestTags.HOME_WALLPAPER_HELP_LINK)
+                        )
+                    }
                 }
 
-                WallpaperPrimaryButtonWithStatusBadge(
-                    text = stringResource(setupCtaResId),
-                    statusText = stringResource(badgeResId),
-                    statusStyle = badgeStyle,
-                    onClick = onSetUpLockScreen,
-                    enabled = !uiState.isWallpaperBusy,
-                    buttonModifier = Modifier.testTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON)
+                uiState.wallpaperErrorMessage?.let { message ->
+                    Text(
+                        text = message,
+                        color = MaterialTheme.colorScheme.error,
+                        fontFamily = PoppinsFontFamily,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                WallpaperBackgroundSelectionSection(
+                    remoteWallpapers = uiState.recentRemoteWallpapers,
+                    presets = presets,
+                    selectedPresetResId = uiState.selectedWallpaperPresetResId,
+                    selectedRemoteWallpaperId = uiState.selectedRemoteWallpaperId,
+                    applyingRemoteWallpaperId = uiState.applyingRemoteWallpaperId,
+                    onUploadFromGallery = onUploadFromGallery,
+                    onPresetSelected = onPresetSelected,
+                    onRemoteWallpaperSelected = onRemoteWallpaperSelected,
+                    onViewMoreWallpapers = onViewMoreWallpapers
                 )
             }
-
-            uiState.wallpaperErrorMessage?.let { message ->
-                Text(
-                    text = message,
-                    color = MaterialTheme.colorScheme.error,
-                    fontFamily = PoppinsFontFamily,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            WallpaperBackgroundSelectionSection(
-                remoteWallpapers = uiState.recentRemoteWallpapers,
-                presets = presets,
-                selectedPresetResId = uiState.selectedWallpaperPresetResId,
-                selectedRemoteWallpaperId = uiState.selectedRemoteWallpaperId,
-                applyingRemoteWallpaperId = uiState.applyingRemoteWallpaperId,
-                onUploadFromGallery = onUploadFromGallery,
-                onPresetSelected = onPresetSelected,
-                onRemoteWallpaperSelected = onRemoteWallpaperSelected,
-                onViewMoreWallpapers = onViewMoreWallpapers
-            )
         }
 
         if (uiState.isWallpaperBusy) {

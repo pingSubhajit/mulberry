@@ -34,6 +34,16 @@
     <string name="onboarding_wallpaper_preview_date">Monday, January 16</string>
     <string name="onboarding_wallpaper_setup_button">Set up lock screen</string>
     <string name="wallpaper_setup_set_both_lock_home">Set up both lock &amp; home screen</string>
+    <string name="wallpaper_help_why_link">Why do i do this?</string>
+    <string name="wallpaper_help_pill">KNOW HOW IT WORKS</string>
+    <string name="wallpaper_help_title">Why do we need to set up as wallpaper?</string>
+    <string name="wallpaper_help_body">To stay on your screen, without opening anything, this needs to live in your wallpaper. Mulberry does that by becoming your live wallpaper of choice</string>
+    <string name="wallpaper_help_bullet_one">Your background stays yours, your partner’s theirs</string>
+    <string name="wallpaper_help_bullet_two">Mulberry shows you your partner’s drawing as part of your live wallpaper</string>
+    <string name="wallpaper_help_bullet_three">You see it the moment you wake your phone without opening the app</string>
+    <string name="wallpaper_help_note">You can set your existing wallpaper by simply choosing a custom background</string>
+    <string name="wallpaper_help_cta">Set up as wallpaper</string>
+    <string name="wallpaper_help_close">Close</string>
     <string name="wallpaper_setup_status_none">Not set up yet</string>
     <string name="wallpaper_setup_status_home">Set on home screen</string>
     <string name="wallpaper_setup_status_lock">Set on lock screen</string>
