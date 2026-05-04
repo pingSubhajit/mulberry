@@ -44,6 +44,13 @@
     <string name="wallpaper_help_note">You can set your existing wallpaper by simply choosing a custom background</string>
     <string name="wallpaper_help_cta">Set up as wallpaper</string>
     <string name="wallpaper_help_close">Close</string>
+    <string name="pairing_help_title">What happens after i enter the code?</string>
+    <string name="pairing_help_body">The code connects you to one person. Once connected, you’ll share a private space where you can send drawings that appear on each other’s screen.</string>
+    <string name="pairing_help_bullet_one">After you join, you’ll both be connected instantly</string>
+    <string name="pairing_help_bullet_two">You can start drawing right away, what you send appears on their screen</string>
+    <string name="pairing_help_bullet_three">This is just between the two of you. No one else can see it</string>
+    <string name="pairing_help_note">You can disconnect any time you want, no question will be asked</string>
+    <string name="pairing_help_cta">Alright, sounds great</string>
     <string name="wallpaper_setup_status_none">Not set up yet</string>
     <string name="wallpaper_setup_status_home">Set on home screen</string>
     <string name="wallpaper_setup_status_lock">Set on lock screen</string>
@@ -64,7 +71,7 @@
     <string name="onboarding_wallpaper_done">All done</string>
     <string name="onboarding_wallpaper_skip_without_setup">Skip without setup</string>
     <string name="invite_code_title">Let’s get you set up</string>
-    <string name="invite_code_help">Help</string>
+    <string name="invite_code_help">What is this code?</string>
     <string name="invite_code_continue">Let’s get going</string>
     <string name="invite_code_back_content_description">Go back</string>
     <string name="invite_acceptance_welcome">Welcome %1$s</string>

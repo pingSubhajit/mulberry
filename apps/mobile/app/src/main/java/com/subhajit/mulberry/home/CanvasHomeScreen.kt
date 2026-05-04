@@ -159,6 +159,7 @@ fun CanvasHomeRoute(
     onNavigateToLockScreen: () -> Unit,
     onNavigateToWallpaperCatalog: () -> Unit,
     onNavigateToWallpaperHelp: () -> Unit,
+    onNavigateToPairingHelp: () -> Unit,
     onNavigateToStreak: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToPairingHub: () -> Unit,
@@ -228,6 +229,7 @@ fun CanvasHomeRoute(
 	        wallpaperPresets = viewModel.wallpaperPresets,
 	        onNavigateToLockScreen = onNavigateToLockScreen,
             onNavigateToWallpaperHelp = onNavigateToWallpaperHelp,
+            onNavigateToPairingHelp = onNavigateToPairingHelp,
 	        onNavigateToStreak = onNavigateToStreak,
 	        onNavigateToSettings = onNavigateToSettings,
 	        onNavigateToPairingHub = onNavigateToPairingHub,
@@ -290,6 +292,7 @@ fun CanvasHomeRoute(
 	    wallpaperPresets: List<WallpaperPreset>,
 	    onNavigateToLockScreen: () -> Unit,
         onNavigateToWallpaperHelp: () -> Unit,
+        onNavigateToPairingHelp: () -> Unit,
 	    onNavigateToStreak: () -> Unit,
 	    onNavigateToSettings: () -> Unit,
 	    onNavigateToPairingHub: () -> Unit,
@@ -396,6 +399,7 @@ fun CanvasHomeRoute(
             joinCode = uiState.joinCode,
             onCodeChanged = onJoinCodeChanged,
             onSubmit = onJoinCodeSubmitted,
+            onHelpRequested = onNavigateToPairingHelp,
             onDismiss = onPairingSheetDismissed
         )
 
@@ -2048,6 +2052,7 @@ private fun JoinCodeBottomSheet(
     joinCode: JoinCodeUiState,
     onCodeChanged: (String) -> Unit,
     onSubmit: () -> Unit,
+    onHelpRequested: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -2097,6 +2102,18 @@ private fun JoinCodeBottomSheet(
                         onSubmit()
                     }
                 }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.invite_code_help),
+                color = MulberryPrimary,
+                fontFamily = PoppinsFontFamily,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .mulberryTapScale()
+                    .clickable(onClick = onHelpRequested)
             )
             joinCode.errorMessage?.let { error ->
                 Spacer(modifier = Modifier.height(14.dp))

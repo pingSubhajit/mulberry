@@ -14,6 +14,7 @@ sealed class AppRoute(val route: String) {
     data object LockScreenPlaceholder : AppRoute("lockscreen_placeholder")
     data object WallpaperCatalog : AppRoute("wallpaper_catalog")
     data object WallpaperHelp : AppRoute("wallpaper_help")
+    data object PairingHelp : AppRoute("pairing_help")
     data object Streak : AppRoute("streak")
     data object Settings : AppRoute("settings")
 }

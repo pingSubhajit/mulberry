@@ -55,6 +55,8 @@ object TestTags {
     const val ONBOARDING_WALLPAPER_HELP_LINK = "onboarding_wallpaper_help_link"
     const val WALLPAPER_HELP_SCREEN = "wallpaper_help_screen"
     const val WALLPAPER_HELP_SETUP_BUTTON = "wallpaper_help_setup_button"
+    const val PAIRING_HELP_SCREEN = "pairing_help_screen"
+    const val PAIRING_HELP_CTA_BUTTON = "pairing_help_cta_button"
     const val SETTINGS_SCREEN = "settings_screen"
     const val SETTINGS_DEVELOPER_SECTION = "settings_developer_section"
     const val SETTINGS_RESET_BUTTON = "settings_reset_button"

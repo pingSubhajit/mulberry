@@ -77,6 +77,7 @@ sealed interface InviteCodeEntryEffect {
 fun InviteCodeEntryRoute(
     onNavigateToBootstrap: () -> Unit,
     onNavigateBack: () -> Unit,
+    onNavigateToPairingHelp: () -> Unit,
     viewModel: InviteCodeEntryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -95,7 +96,8 @@ fun InviteCodeEntryRoute(
         uiState = uiState,
         onCodeChanged = viewModel::onCodeChanged,
         onSubmit = viewModel::onSubmitClicked,
-        onNavigateBack = onNavigateBack
+        onNavigateBack = onNavigateBack,
+        onHelpRequested = onNavigateToPairingHelp
     )
 }
 
@@ -104,7 +106,8 @@ private fun InviteCodeEntryScreen(
     uiState: InviteCodeEntryUiState,
     onCodeChanged: (String) -> Unit,
     onSubmit: () -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onHelpRequested: () -> Unit
 ) {
     val appColors = MaterialTheme.mulberryAppColors
     Box(
@@ -118,6 +121,7 @@ private fun InviteCodeEntryScreen(
     ) {
         InviteCodeTopBar(
             onNavigateBack = onNavigateBack,
+            onHelpRequested = onHelpRequested,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 11.dp)
@@ -229,6 +233,7 @@ private fun InviteCodeEntryScreen(
 @Composable
 private fun InviteCodeTopBar(
     onNavigateBack: () -> Unit,
+    onHelpRequested: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val appColors = MaterialTheme.mulberryAppColors
@@ -249,7 +254,14 @@ private fun InviteCodeTopBar(
                 fontWeight = FontWeight.Medium,
                 fontSize = 14.sp,
                 lineHeight = 24.sp
-            )
+            ),
+            modifier = Modifier
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onHelpRequested
+                )
+                .padding(vertical = 8.dp)
         )
     }
 }

@@ -72,6 +72,7 @@ sealed interface InviteAcceptanceEffect {
 @Composable
 fun InviteAcceptanceRoute(
     onNavigateToBootstrap: () -> Unit,
+    onNavigateToPairingHelp: () -> Unit,
     viewModel: InviteAcceptanceViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -89,7 +90,8 @@ fun InviteAcceptanceRoute(
     InviteAcceptanceScreen(
         uiState = uiState,
         onAccept = viewModel::onAcceptClicked,
-        onDecline = viewModel::onDeclineClicked
+        onDecline = viewModel::onDeclineClicked,
+        onHelpRequested = onNavigateToPairingHelp
     )
 }
 
@@ -97,7 +99,8 @@ fun InviteAcceptanceRoute(
 private fun InviteAcceptanceScreen(
     uiState: InviteAcceptanceUiState,
     onAccept: () -> Unit,
-    onDecline: () -> Unit
+    onDecline: () -> Unit,
+    onHelpRequested: () -> Unit
 ) {
     val appColors = MaterialTheme.mulberryAppColors
     val invite = uiState.pendingInvite
@@ -119,6 +122,7 @@ private fun InviteAcceptanceScreen(
     ) {
         InviteAcceptanceTopBar(
             onNavigateBack = onDecline,
+            onHelpRequested = onHelpRequested,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 11.dp)
@@ -173,6 +177,7 @@ private fun InviteAcceptanceScreen(
 @Composable
 private fun InviteAcceptanceTopBar(
     onNavigateBack: () -> Unit,
+    onHelpRequested: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val appColors = MaterialTheme.mulberryAppColors
@@ -193,7 +198,14 @@ private fun InviteAcceptanceTopBar(
                 fontWeight = FontWeight.Medium,
                 fontSize = 14.sp,
                 lineHeight = 24.sp
-            )
+            ),
+            modifier = Modifier
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onHelpRequested
+                )
+                .padding(vertical = 8.dp)
         )
     }
 }

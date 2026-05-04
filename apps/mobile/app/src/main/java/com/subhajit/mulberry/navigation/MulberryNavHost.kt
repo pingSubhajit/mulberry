@@ -24,6 +24,7 @@ import com.subhajit.mulberry.onboarding.OnboardingWallpaperRoute
 import com.subhajit.mulberry.pairing.InviteAcceptanceRoute
 import com.subhajit.mulberry.pairing.InviteCodeEntryRoute
 import com.subhajit.mulberry.pairing.PairingHubRoute
+import com.subhajit.mulberry.pairing.PairingHelpRoute
 import com.subhajit.mulberry.pairing.inbound.InboundInviteActionController
 import com.subhajit.mulberry.pairing.inbound.InboundInviteDeepLinkCoordinatorViewModel
 import com.subhajit.mulberry.pairing.inbound.InboundInviteDeepLinkEffect
@@ -217,6 +218,9 @@ fun MulberryNavHost(
                     navController.navigateToBootstrapClearingOnboarding(
                         fallbackPopRoute = AppRoute.InviteCodeEntry
                     )
+                },
+                onNavigateToPairingHelp = {
+                    navController.navigate(AppRoute.PairingHelp.route)
                 }
             )
         }
@@ -228,6 +232,9 @@ fun MulberryNavHost(
                     navController.navigateToBootstrapClearingOnboarding(
                         fallbackPopRoute = AppRoute.InviteAcceptance
                     )
+                },
+                onNavigateToPairingHelp = {
+                    navController.navigate(AppRoute.PairingHelp.route)
                 }
             )
         }
@@ -248,6 +255,9 @@ fun MulberryNavHost(
                 },
                 onNavigateToWallpaperHelp = {
                     navController.navigate(AppRoute.WallpaperHelp.route)
+                },
+                onNavigateToPairingHelp = {
+                    navController.navigate(AppRoute.PairingHelp.route)
                 },
                 onNavigateToStreak = {
                     navController.navigate(AppRoute.Streak.route) {
@@ -291,6 +301,13 @@ fun MulberryNavHost(
                 onExitToMain = {
                     navController.navigateToCanvasHomeClearingTransientRoutes()
                 }
+            )
+        }
+
+        composable(AppRoute.PairingHelp.route) {
+            ReleaseStartupGateAfterFirstFrame()
+            PairingHelpRoute(
+                onClose = { navController.popBackStack() }
             )
         }
 
