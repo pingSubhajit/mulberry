@@ -200,7 +200,7 @@ fun CanvasTextOverlay(
                     else -> elements
                 }
 
-                val hitId = hitTest(
+                val initialHitId = hitTest(
                     elements = hittable,
                     stickerBitmaps = stickerBitmaps,
                     pointPx = down.position,
@@ -222,39 +222,40 @@ fun CanvasTextOverlay(
                 val initialDown = down.position
                 val touchSlop = viewConfiguration.touchSlop
 
-                selectedElementId = hitId
+                var lockedElementId: String? = initialHitId
+                selectedElementId = lockedElementId
                 liveTransformPreview = null
 
                 var beganTransform = false
                 var beganDrag = false
+                var sawMultiTouch = false
+                var consumeGesture = false
                 var lastCentroid = initialDown
                 var lastAngle = 0f
                 var lastSpan = 0f
+                var lastPointerCount = 1
+                var transformBaselineSet = false
+                var baselineCentroid = initialDown
+                var baselineAngle = 0f
+                var baselineSpan = 0f
 
                 fun activeElement(): CanvasElement? {
-                    val selected = selectedElementId ?: return null
+                    val selected = lockedElementId ?: return null
                     return liveTransformPreview ?: hittable.firstOrNull { it.id == selected }
                 }
 
-                // Track pointers until all are up.
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val pressed = event.changes.filter { it.pressed }
-                    if (pressed.isEmpty()) break
+	                // Track pointers until all are up.
+	                while (true) {
+	                    val event = awaitPointerEvent()
+	                    val pressed = event.changes.filter { it.pressed }
+	                    if (pressed.isEmpty()) break
 
-                    if (hitId == null) {
-                        // Not on a text element; let the user complete the tap to create.
-                        continue
-                    }
+	                    val positions = pressed.map { it.position }
+	                    val centroid = positions.reduce { acc, offset -> acc + offset } / positions.size.toFloat()
 
-                    val current = activeElement() ?: break
-                    val positions = pressed.map { it.position }
-                    val centroid = positions.reduce { acc, offset -> acc + offset } / positions.size.toFloat()
-                    val panDelta = centroid - lastCentroid
-
-                    val span = if (positions.size >= 2) {
-                        (positions[1] - positions[0]).getDistance()
-                    } else {
+	                    val span = if (positions.size >= 2) {
+	                        (positions[1] - positions[0]).getDistance()
+	                    } else {
                         0f
                     }
                     val angle = if (positions.size >= 2) {
@@ -266,19 +267,97 @@ fun CanvasTextOverlay(
                         0f
                     }
 
+	                    // If the pointer count changes mid-gesture, rebase deltas to avoid jumps
+	                    // (especially 2 pointers -> 1 pointer).
+	                    if (positions.size != lastPointerCount) {
+	                        lastCentroid = centroid
+	                        if (positions.size >= 2) {
+	                            lastAngle = angle
+	                            lastSpan = span.coerceAtLeast(1f)
+	                            transformBaselineSet = false
+	                        }
+	                        if (positions.size == 1) {
+	                            beganTransform = false
+	                        }
+	                        lastPointerCount = positions.size
+	                    }
+
+	                    val panDelta = centroid - lastCentroid
+
+	                    if (!beganTransform && positions.size >= 2 && !transformBaselineSet) {
+	                        transformBaselineSet = true
+	                        baselineCentroid = centroid
+	                        baselineAngle = angle
+                        baselineSpan = span.coerceAtLeast(1f)
+                    }
+
                     val totalMove = (centroid - initialDown).getDistance()
-                    if (!beganTransform && positions.size >= 2 && totalMove > touchSlop) {
+                    val baselineCentroidMove = (centroid - baselineCentroid).getDistance()
+                    val baselineSpanMove = kotlin.math.abs(span - baselineSpan)
+                    val baselineRotationMove = kotlin.math.abs(angle - baselineAngle) * baselineSpan
+
+                    if (
+                        !beganTransform &&
+                        positions.size >= 2 &&
+                        (baselineCentroidMove > touchSlop || baselineSpanMove > touchSlop || baselineRotationMove > touchSlop)
+                    ) {
+                        sawMultiTouch = true
+                        consumeGesture = true
+
+                        // Sticker tool: allow direct 2-finger transform without a prior tap
+                        // selection by picking the topmost sticker under the gesture centroid.
+                        if (lockedElementId == null && activeTool == DrawingTool.STICKER) {
+                            lockedElementId = hitTest(
+                                elements = hittable,
+                                stickerBitmaps = stickerBitmaps,
+                                pointPx = centroid,
+                                canvasSize = canvasSize,
+                                textSizePx = baseTextSizePx,
+                                poppins = poppinsTypeface,
+                                virgil = virgilTypeface,
+                                dmSans = dmSansTypeface,
+                                spaceMono = spaceMonoTypeface,
+                                playfair = playfairTypeface,
+                                bangers = bangersTypeface,
+                                permanentMarker = permanentMarkerTypeface,
+                                kalam = kalamTypeface,
+                                caveat = caveatTypeface,
+                                merriweather = merriweatherTypeface,
+                                oswald = oswaldTypeface,
+                                baloo2 = baloo2Typeface
+                            )
+                            selectedElementId = lockedElementId
+                            lastCentroid = centroid
+                            lastAngle = angle
+                            lastSpan = span.coerceAtLeast(1f)
+                        }
+
+                        // If we still don't have a target element, we can't transform; ignore.
+                        if (lockedElementId == null) {
+                            pressed.forEach { it.consume() }
+                            lastCentroid = centroid
+                            continue
+                        }
                         beganTransform = true
                         beganDrag = true
                         isTransformInProgress = true
                         lastAngle = angle
                         lastSpan = span.coerceAtLeast(1f)
                     } else if (!beganDrag && positions.size == 1 && totalMove > touchSlop) {
+                        // Single-finger drag only makes sense when we have a target element.
+                        if (lockedElementId == null) {
+                            if (consumeGesture) {
+                                pressed.forEach { it.consume() }
+                                lastCentroid = centroid
+                            }
+                            continue
+                        }
                         beganDrag = true
                         isTransformInProgress = true
                     }
 
                     if (beganDrag) {
+                        val current = activeElement() ?: break
                         val zoomChange = if (beganTransform) {
                             val safeSpan = span.coerceAtLeast(1f)
                             safeSpan / lastSpan.coerceAtLeast(1f)
@@ -318,12 +397,17 @@ fun CanvasTextOverlay(
                             lastSpan = span.coerceAtLeast(1f)
                         }
                     }
+
+                    if (consumeGesture && !beganDrag) {
+                        pressed.forEach { it.consume() }
+                        lastCentroid = centroid
+                    }
                 }
 
                 // Gesture ended.
                 isTransformInProgress = false
 
-                if (hitId == null && activeTool == DrawingTool.TEXT) {
+                if (lockedElementId == null && activeTool == DrawingTool.TEXT) {
                     // Tap empty area => create + edit (text only).
                     val id = UUID.randomUUID().toString()
                     val element = CanvasTextElement(
@@ -343,19 +427,25 @@ fun CanvasTextOverlay(
                     selectedElementId = null
                     onRequestTextEdit(CanvasTextEditorSession(element = element, isNew = true))
                     return@awaitEachGesture
-                } else if (hitId == null && activeTool == DrawingTool.STICKER) {
+                } else if (lockedElementId == null && activeTool == DrawingTool.STICKER) {
                     // Sticker tool tap empty canvas => enter sticker edit mode.
+                    // If the user attempted a multi-touch gesture, never open the picker.
+                    if (sawMultiTouch) {
+                        selectedElementId = null
+                        liveTransformPreview = null
+                        return@awaitEachGesture
+                    }
                     selectedElementId = null
                     liveTransformPreview = null
                     onRequestNewStickerAt(initialDown.toNormalizedPoint(canvasSize))
                     return@awaitEachGesture
-                } else if (hitId == null) {
+                } else if (lockedElementId == null) {
                     selectedElementId = null
                     liveTransformPreview = null
                     return@awaitEachGesture
                 }
 
-                val base = hittable.firstOrNull { it.id == hitId }
+                val base = hittable.firstOrNull { it.id == lockedElementId }
                 val preview = liveTransformPreview
                 liveTransformPreview = null
 
