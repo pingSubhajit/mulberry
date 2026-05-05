@@ -138,6 +138,7 @@ import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.review.InAppReviewLauncher
 import com.subhajit.mulberry.reactions.ReactionType
+import com.subhajit.mulberry.reactions.ReactionGif
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.KalamFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
@@ -1276,10 +1277,10 @@ private fun ReactionRail(
                 )
             }
 
-            Text(
-                text = reaction.emoji,
-                fontSize = 30.sp,
+            ReactionGif(
+                type = reaction,
                 modifier = Modifier
+                    .size(34.dp)
                     .graphicsLayer {
                         alpha = emojiAlpha.value
                         scaleX = emojiScale.value
@@ -1294,7 +1295,6 @@ private fun ReactionRail(
                         onReactionSelected(reaction)
                         onDismiss()
                     }
-                    .padding(horizontal = 2.dp, vertical = 2.dp)
             )
         }
     }
@@ -1397,17 +1397,18 @@ private fun ReactionSentOverlay(
         wiggleJob.cancel()
     }
 
-    Text(
-        text = reactionType.emoji,
-        fontSize = 90.sp,
-        modifier = modifier.graphicsLayer {
-            scaleX = scale.value
-            scaleY = scale.value
-            this.alpha = alpha.value
-            translationY = offsetYDp.value.dp.toPx()
-            translationX = offsetXDp.value.dp.toPx()
-            rotationZ = rotationZAnim.value
-        }
+    ReactionGif(
+        type = reactionType,
+        modifier = modifier
+            .size(128.dp)
+            .graphicsLayer {
+                scaleX = scale.value
+                scaleY = scale.value
+                this.alpha = alpha.value
+                translationY = offsetYDp.value.dp.toPx()
+                translationX = offsetXDp.value.dp.toPx()
+                rotationZ = rotationZAnim.value
+            }
     )
 }
 

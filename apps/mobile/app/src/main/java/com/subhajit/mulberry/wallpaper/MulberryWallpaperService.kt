@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Movie
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -20,6 +21,7 @@ import androidx.core.content.res.ResourcesCompat
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.reactions.PendingReactionBatch
 import com.subhajit.mulberry.reactions.PendingReactionStore
+import com.subhajit.mulberry.reactions.ReactionGifAssets
 import com.subhajit.mulberry.reactions.ReactionLocalStore
 import com.subhajit.mulberry.reactions.ReactionRepository
 import com.subhajit.mulberry.reactions.ReactionType
@@ -75,6 +77,9 @@ class MulberryWallpaperService : WallpaperService() {
         private val emojiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
         }
+
+        private val reactionGifLayerPaint = Paint()
+        private val reactionMovieCache = mutableMapOf<ReactionType, Movie?>()
 
         private val spamTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
@@ -347,7 +352,7 @@ class MulberryWallpaperService : WallpaperService() {
 
             if (uniqueTypes <= 1) {
                 val type = types.firstOrNull() ?: ReactionType.HEART
-                glyphs.add(ReactionGlyph(type.emoji, 0.5f, 0.52f, 1.40f))
+                glyphs.add(ReactionGlyph(type, 0.5f, 0.52f, 1.40f))
                 val smallCount = (batch.totalCount.coerceAtMost(4) - 1).coerceAtLeast(0)
                 val anchors = listOf(
                     Anchor(0.38f, 0.46f),
@@ -357,7 +362,7 @@ class MulberryWallpaperService : WallpaperService() {
                 )
                 repeat(smallCount) { idx ->
                     val a = anchors[idx.coerceIn(0, anchors.lastIndex)]
-                    glyphs.add(ReactionGlyph(type.emoji, a.x, a.y, 0.92f))
+                    glyphs.add(ReactionGlyph(type, a.x, a.y, 0.92f))
                 }
             } else {
                 val anchors = listOf(
@@ -371,7 +376,7 @@ class MulberryWallpaperService : WallpaperService() {
                 val capped = types.distinctBy { it.apiValue }.take(6)
                 capped.forEachIndexed { idx, type ->
                     val a = anchors[idx % anchors.size]
-                    glyphs.add(ReactionGlyph(type.emoji, a.x, a.y, 1.15f))
+                    glyphs.add(ReactionGlyph(type, a.x, a.y, 1.15f))
                 }
             }
 
@@ -385,6 +390,13 @@ class MulberryWallpaperService : WallpaperService() {
                 glyphs = glyphs,
                 spamText = spamText
             )
+        }
+
+        private fun getReactionMovie(type: ReactionType): Movie? {
+            if (reactionMovieCache.containsKey(type)) return reactionMovieCache[type]
+            val movie = ReactionGifAssets.decodeMovie(this@MulberryWallpaperService, type)
+            reactionMovieCache[type] = movie
+            return movie
         }
 
         private fun drawReactionOverlayIfNeeded(canvas: Canvas) {
@@ -453,19 +465,58 @@ class MulberryWallpaperService : WallpaperService() {
 
             emojiPaint.alpha = alpha
             animation.glyphs.forEachIndexed { idx, glyph ->
-                emojiPaint.textSize = baseSize * glyph.scale
                 val x = (canvas.width * glyph.x) + xDriftPx
                 val y = canvas.height * glyph.y + yOffsetPx
-                val baseline = y - (emojiPaint.ascent() + emojiPaint.descent()) / 2f
                 val baseAmp = 7.5f
                 val slideRamp = (tMs / slideMs).coerceIn(0f, 1f)
                 val fallDamp = if (tMs < slideMs + wiggleMs) 1f else (1f - fallProgress * 0.55f).coerceIn(0f, 1f)
                 val wiggleAmp = baseAmp * slideRamp * fallDamp
                 val rotationDeg =
                     sin((2f * PI.toFloat() * 3.2f) * wigglePhaseSeconds + idx * 0.7f) * wiggleAmp
+
+                val movie = getReactionMovie(glyph.type)
+                if (movie == null) {
+                    // Fallback to emoji text if we fail to decode the GIF.
+                    emojiPaint.textSize = baseSize * glyph.scale
+                    val baseline = y - (emojiPaint.ascent() + emojiPaint.descent()) / 2f
+                    canvas.save()
+                    canvas.rotate(rotationDeg, x, baseline)
+                    canvas.drawText(glyph.type.emoji, x, baseline, emojiPaint)
+                    canvas.restore()
+                    return@forEachIndexed
+                }
+
+                val movieWidth = movie.width().coerceAtLeast(1)
+                val movieHeight = movie.height().coerceAtLeast(1)
+                val targetSizePx = (baseSize * glyph.scale).coerceAtLeast(1f)
+                val scale = (targetSizePx / maxOf(movieWidth, movieHeight).toFloat()).coerceAtLeast(0.01f)
+
+                val drawnWidth = movieWidth * scale
+                val drawnHeight = movieHeight * scale
+                val left = x - drawnWidth / 2f
+                val top = y - drawnHeight / 2f
+
+                val movieDuration = movie.duration().takeIf { it > 0 } ?: 1_000
+                movie.setTime((elapsed % movieDuration).toInt())
+
+                reactionGifLayerPaint.alpha = alpha
                 canvas.save()
-                canvas.rotate(rotationDeg, x, baseline)
-                canvas.drawText(glyph.emoji, x, baseline, emojiPaint)
+                // Apply rotation about the center of the GIF.
+                canvas.rotate(rotationDeg, x, y)
+                // Layer bounds are in the current canvas coordinate space; pad them slightly to
+                // avoid edge clipping when rotated.
+                val pad = targetSizePx * 0.35f
+                val layerId = canvas.saveLayer(
+                    (left - pad),
+                    (top - pad),
+                    (left + drawnWidth + pad),
+                    (top + drawnHeight + pad),
+                    reactionGifLayerPaint
+                )
+                canvas.translate(left, top)
+                canvas.scale(scale, scale)
+                movie.draw(canvas, 0f, 0f)
+                canvas.restoreToCount(layerId)
                 canvas.restore()
             }
 
@@ -680,7 +731,7 @@ private const val TAG = "MulberryWallpaper"
 
 private data class Anchor(val x: Float, val y: Float)
 
-private data class ReactionGlyph(val emoji: String, val x: Float, val y: Float, val scale: Float)
+private data class ReactionGlyph(val type: ReactionType, val x: Float, val y: Float, val scale: Float)
 
 private data class ReactionAnimationState(
     val generation: Long,
