@@ -2110,7 +2110,7 @@ private fun MainAppBottomNavItem(
             fontFamily = PoppinsFontFamily,
             fontSize = 15.sp,
             lineHeight = 18.sp,
-            fontWeight = if (selected) FontWeight.Normal else FontWeight.Medium
+            fontWeight = FontWeight.Medium
         )
     }
 }
