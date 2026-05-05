@@ -69,4 +69,12 @@ class MulberryWallpaperServiceRectTest {
             reactionAnimationShouldEnd(firstRenderedAtMs = 1_000L, nowMs = 3_350L, durationMs = 2_350L)
         )
     }
+
+    @Test
+    fun reactionPlaybackSurfaceEligibleOnlyOnUnlockedNonPreviewWallpaper() {
+        assertEquals(true, reactionPlaybackSurfaceEligible(isLocked = false, isPreview = false))
+        assertEquals(false, reactionPlaybackSurfaceEligible(isLocked = true, isPreview = false))
+        assertEquals(false, reactionPlaybackSurfaceEligible(isLocked = false, isPreview = true))
+        assertEquals(false, reactionPlaybackSurfaceEligible(isLocked = true, isPreview = true))
+    }
 }

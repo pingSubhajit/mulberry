@@ -933,31 +933,33 @@ private fun PairedCanvasPane(
 ) {
         val viewConfig = LocalViewConfiguration.current
         val coroutineScope = rememberCoroutineScope()
-        var reactionRailOpen by remember { mutableStateOf(false) }
-        var lastTapUpAtMs by remember { mutableStateOf<Long?>(null) }
-        var sentReactionOverlay by remember { mutableStateOf<ReactionType?>(null) }
-        var pendingDotJob by remember { mutableStateOf<Job?>(null) }
+	    var reactionRailOpen by remember { mutableStateOf(false) }
+	    var lastTapUpAtMs by remember { mutableStateOf<Long?>(null) }
+	    var sentReactionOverlay by remember { mutableStateOf<SentReactionOverlayState?>(null) }
+	    var sentReactionToken by remember { mutableStateOf(0L) }
+	    var pendingDotJob by remember { mutableStateOf<Job?>(null) }
 
-        LaunchedEffect(sentReactionOverlay) {
-            if (sentReactionOverlay == null) return@LaunchedEffect
-            delay(2_650)
-            sentReactionOverlay = null
-        }
+	    LaunchedEffect(sentReactionOverlay) {
+	        if (sentReactionOverlay == null) return@LaunchedEffect
+	        delay(1_050)
+	        sentReactionOverlay = null
+	    }
 
         val cancelPendingDot: () -> Unit = {
             pendingDotJob?.cancel()
             pendingDotJob = null
         }
 
-        val sendAndAnimate: (ReactionType) -> Unit = { type ->
-            if (BuildConfig.DEBUG) {
-                Log.d("MulberryReactions", "sendReaction type=${type.apiValue}")
-            }
-            cancelPendingDot()
-            onSendReaction(type)
-            sentReactionOverlay = type
-            reactionRailOpen = false
-        }
+	    val sendAndAnimate: (ReactionType) -> Unit = { type ->
+	        if (BuildConfig.DEBUG) {
+	            Log.d("MulberryReactions", "sendReaction type=${type.apiValue}")
+	        }
+	        cancelPendingDot()
+	        onSendReaction(type)
+	        sentReactionToken += 1
+	        sentReactionOverlay = SentReactionOverlayState(type = type, token = sentReactionToken)
+	        reactionRailOpen = false
+	    }
 
         val reactionGestureModifier = Modifier.pointerInput(isEditorOpen, uiState.toolState.activeTool, reactionRailOpen) {
             if (isEditorOpen || uiState.toolState.activeTool != DrawingTool.DRAW) return@pointerInput
@@ -1125,12 +1127,13 @@ private fun PairedCanvasPane(
 	                )
 	            }
 
-            sentReactionOverlay?.let { reactionType ->
-                ReactionSentOverlay(
-                    reactionType = reactionType,
-                    modifier = Modifier.align(Alignment.Center)
-                )
-            }
+	            sentReactionOverlay?.let { overlay ->
+	                ReactionSentOverlay(
+	                    reactionType = overlay.type,
+	                    token = overlay.token,
+	                    modifier = Modifier.align(Alignment.Center)
+	                )
+	            }
         }
 
         CanvasControlTray(
@@ -1220,6 +1223,7 @@ private fun ReactionRail(
 @Composable
 private fun ReactionSentOverlay(
     reactionType: ReactionType,
+    token: Long,
     modifier: Modifier = Modifier
 ) {
     val scale = remember { Animatable(0.92f) }
@@ -1228,7 +1232,7 @@ private fun ReactionSentOverlay(
     val offsetXDp = remember { Animatable(0f) }
     val rotationZAnim = remember { Animatable(0f) }
 
-    LaunchedEffect(reactionType) {
+    LaunchedEffect(token) {
         scale.snapTo(0.92f)
         alpha.snapTo(0f)
         offsetYDp.snapTo(18f)
@@ -1238,22 +1242,24 @@ private fun ReactionSentOverlay(
         launch {
             alpha.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)
+                animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing)
             )
         }
-        val slideMs = 260f
-        val holdMs = 1_200f
-        val fallMs = 820f
+        val slideMs = 170f
+        val holdMs = 380f
+        val fallMs = 260f
         val startAtMs = SystemClock.uptimeMillis()
-        val wiggleHz = 3.2f
+        val wiggleHz = 3.5f
 
         val wiggleJob = launch {
             while (true) {
                 val tMs = (SystemClock.uptimeMillis() - startAtMs).toFloat().coerceAtLeast(0f)
                 val slideRamp = (tMs / slideMs).coerceIn(0f, 1f)
                 val fallProgress = ((tMs - slideMs - holdMs) / fallMs).coerceIn(0f, 1f)
-                val fallDamp = if (tMs < slideMs + holdMs) 1f else (1f - fallProgress * 0.65f).coerceIn(0f, 1f)
-                val amplitudeDeg = 7.5f * slideRamp * fallDamp
+                val fallDamp =
+                    if (tMs < slideMs + holdMs) 1f
+                    else (1f - fallProgress * 0.75f).coerceIn(0f, 1f)
+                val amplitudeDeg = 5.0f * slideRamp * fallDamp
                 val tSec = tMs / 1000f
                 val rotation = sin(2f * PI.toFloat() * wiggleHz * tSec) * amplitudeDeg
                 rotationZAnim.snapTo(rotation)
@@ -1262,7 +1268,7 @@ private fun ReactionSentOverlay(
         }
         launch {
             scale.animateTo(
-                targetValue = 1.10f,
+                targetValue = 1.06f,
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioMediumBouncy,
                     stiffness = Spring.StiffnessMedium
@@ -1270,44 +1276,42 @@ private fun ReactionSentOverlay(
             )
         }
         offsetYDp.animateTo(
-            targetValue = -14f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioLowBouncy,
-                stiffness = Spring.StiffnessLow
-            )
+            targetValue = -12f,
+            animationSpec = tween(durationMillis = slideMs.toInt(), easing = FastOutSlowInEasing)
         )
 
         delay(holdMs.toLong())
 
         launch {
             offsetXDp.animateTo(
-                targetValue = 16f,
-                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+                targetValue = 10f,
+                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
             )
             offsetXDp.animateTo(
-                targetValue = -10f,
-                animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing)
+                targetValue = -6f,
+                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
             )
             offsetXDp.animateTo(
                 targetValue = 0f,
-                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing)
             )
         }
         launch {
             alpha.animateTo(
                 targetValue = 0f,
-                animationSpec = tween(durationMillis = 700, delayMillis = 120, easing = FastOutSlowInEasing)
+                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
             )
         }
         launch {
             scale.animateTo(
                 targetValue = 0.95f,
-                animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing)
+                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
             )
         }
+        // Faster fall-down.
         offsetYDp.animateTo(
-            targetValue = 28f,
-            animationSpec = tween(durationMillis = 820, easing = FastOutSlowInEasing)
+            targetValue = 22f,
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
         )
 
         wiggleJob.cancel()
@@ -1315,7 +1319,7 @@ private fun ReactionSentOverlay(
 
     Text(
         text = reactionType.emoji,
-        fontSize = 84.sp,
+        fontSize = 90.sp,
         modifier = modifier.graphicsLayer {
             scaleX = scale.value
             scaleY = scale.value
@@ -1326,6 +1330,11 @@ private fun ReactionSentOverlay(
         }
     )
 }
+
+private data class SentReactionOverlayState(
+    val type: ReactionType,
+    val token: Long
+)
 
 @Composable
 private fun rememberMulberryGuidanceFontFamily(): FontFamily {

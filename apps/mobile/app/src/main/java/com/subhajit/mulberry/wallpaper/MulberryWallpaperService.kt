@@ -239,11 +239,12 @@ class MulberryWallpaperService : WallpaperService() {
             if (reactionAnimation != null) return
 
             val locked = isWallpaperOnLockScreen()
+            val preview = isPreview
 
             // Simplified policy: never play reactions on the lock screen (even if the wallpaper is
             // selected there). If a user uses Mulberry only on lock screen, we can support that
             // later with a separate, privacy-reviewed policy.
-            if (locked) return
+            if (!reactionPlaybackSurfaceEligible(isLocked = locked, isPreview = preview)) return
 
             maybeStartReactionPlayback("eligible_unlocked:$reason")
         }
@@ -387,6 +388,7 @@ class MulberryWallpaperService : WallpaperService() {
         }
 
         private fun drawReactionOverlayIfNeeded(canvas: Canvas) {
+            if (isPreview) return
             val animation = reactionAnimation ?: return
             val now = System.currentTimeMillis()
             if (animation.firstRenderedAtMs == null) {
@@ -696,6 +698,9 @@ internal fun reactionAnimationShouldEnd(
     nowMs: Long,
     durationMs: Long
 ): Boolean = firstRenderedAtMs != null && reactionAnimationElapsedMs(firstRenderedAtMs, nowMs) >= durationMs
+
+internal fun reactionPlaybackSurfaceEligible(isLocked: Boolean, isPreview: Boolean): Boolean =
+    !isLocked && !isPreview
 
 private fun lerp(start: Float, end: Float, t: Float): Float = start + (end - start) * t
 
