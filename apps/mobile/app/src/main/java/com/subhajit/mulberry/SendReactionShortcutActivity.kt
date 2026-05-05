@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import com.subhajit.mulberry.app.shortcut.ReactionShortcutPublisher
@@ -27,6 +30,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.PI
+import kotlin.math.sin
 
 @AndroidEntryPoint
 class SendReactionShortcutActivity : ComponentActivity() {
@@ -47,7 +52,7 @@ class SendReactionShortcutActivity : ComponentActivity() {
             launch(Dispatchers.IO) {
                 reactionRepository.sendReaction(reactionType)
             }
-            delay(650)
+            delay(2_700)
             finish()
         }
     }
@@ -60,30 +65,108 @@ class SendReactionShortcutActivity : ComponentActivity() {
 
 @Composable
 private fun ReactionShortcutOverlay(reactionType: ReactionType) {
-    val scale = remember { Animatable(0.85f) }
-    val alpha = remember { Animatable(1f) }
+    val scale = remember { Animatable(0.92f) }
+    val alpha = remember { Animatable(0f) }
+    val offsetYDp = remember { Animatable(18f) }
+    val offsetXDp = remember { Animatable(0f) }
+    val rotationZAnim = remember { Animatable(0f) }
 
     LaunchedEffect(reactionType) {
-        scale.snapTo(0.85f)
-        alpha.snapTo(1f)
-        scale.animateTo(
-            targetValue = 1.0f,
-            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+        scale.snapTo(0.92f)
+        alpha.snapTo(0f)
+        offsetYDp.snapTo(18f)
+        offsetXDp.snapTo(0f)
+        rotationZAnim.snapTo(0f)
+
+        launch {
+            alpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)
+            )
+        }
+        val slideMs = 260f
+        val holdMs = 1_200f
+        val fallMs = 820f
+        val startAtMs = android.os.SystemClock.uptimeMillis()
+        val wiggleHz = 3.2f
+
+        val wiggleJob = launch {
+            while (true) {
+                val tMs = (android.os.SystemClock.uptimeMillis() - startAtMs).toFloat().coerceAtLeast(0f)
+                val slideRamp = (tMs / slideMs).coerceIn(0f, 1f)
+                val fallProgress = ((tMs - slideMs - holdMs) / fallMs).coerceIn(0f, 1f)
+                val fallDamp =
+                    if (tMs < slideMs + holdMs) 1f
+                    else (1f - fallProgress * 0.65f).coerceIn(0f, 1f)
+                val amplitudeDeg = 7.5f * slideRamp * fallDamp
+                val tSec = tMs / 1000f
+                rotationZAnim.snapTo(sin(2f * PI.toFloat() * wiggleHz * tSec) * amplitudeDeg)
+                delay(16)
+            }
+        }
+        launch {
+            scale.animateTo(
+                targetValue = 1.10f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
+        }
+        offsetYDp.animateTo(
+            targetValue = -14f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessLow
+            )
         )
-        alpha.animateTo(
-            targetValue = 0f,
-            animationSpec = tween(durationMillis = 480, delayMillis = 120)
+
+        delay(holdMs.toLong())
+        launch {
+            offsetXDp.animateTo(
+                targetValue = 16f,
+                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+            )
+            offsetXDp.animateTo(
+                targetValue = -10f,
+                animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing)
+            )
+            offsetXDp.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+            )
+        }
+        launch {
+            alpha.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 700, delayMillis = 120, easing = FastOutSlowInEasing)
+            )
+        }
+        launch {
+            scale.animateTo(
+                targetValue = 0.95f,
+                animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing)
+            )
+        }
+        offsetYDp.animateTo(
+            targetValue = 28f,
+            animationSpec = tween(durationMillis = 820, easing = FastOutSlowInEasing)
         )
+
+        wiggleJob.cancel()
     }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
             text = reactionType.emoji,
-            fontSize = 72.sp,
+            fontSize = 92.sp,
             modifier = Modifier.graphicsLayer {
                 scaleX = scale.value
                 scaleY = scale.value
                 this.alpha = alpha.value
+                translationY = offsetYDp.value.dp.toPx()
+                translationX = offsetXDp.value.dp.toPx()
+                rotationZ = rotationZAnim.value
             }
         )
     }

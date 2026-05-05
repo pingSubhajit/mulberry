@@ -36,6 +36,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.collectLatest
+import kotlin.math.PI
+import kotlin.math.sin
 
 @AndroidEntryPoint
 class MulberryWallpaperService : WallpaperService() {
@@ -64,7 +66,6 @@ class MulberryWallpaperService : WallpaperService() {
         private var stabilityRedrawJob: Job? = null
         private var latestWallpaperStatus: WallpaperStatusState = WallpaperStatusState()
         private var pendingReaction: PendingReactionBatch? = null
-        private var reactionIdleDelayJob: Job? = null
         private var reactionLeaseJob: Job? = null
         private var reactionFrameJob: Job? = null
         private var reactionAnimation: ReactionAnimationState? = null
@@ -90,6 +91,11 @@ class MulberryWallpaperService : WallpaperService() {
             super.onCreate(surfaceHolder)
             setTouchEventsEnabled(false)
             isSurfaceAvailable = surfaceHolder.surface?.isValid == true
+            engineScope.launch(Dispatchers.IO) {
+                // Ensure wallpaper selection status is refreshed even if no drawing updates have
+                // occurred yet (reactions rely on this for lock-screen eligibility decisions).
+                wallpaperCoordinator.notifyWallpaperUpdated()
+            }
             engineScope.launch {
                 WallpaperRenderBus.updates().collect {
                     requestDraw("render_bus")
@@ -224,42 +230,18 @@ class MulberryWallpaperService : WallpaperService() {
 
         private fun evaluateReactionPlayback(reason: String) {
             if (!isEngineVisible || !isSurfaceAvailable || surfaceHolder.surface?.isValid != true) return
-            if (reactionIdleDelayJob?.isActive != true) {
-                reactionIdleDelayJob = null
-            }
             val batch = pendingReaction ?: return
             if (batch.totalCount <= 0) return
             if (reactionAnimation != null) return
 
-            val selectedOnHome = latestWallpaperStatus.isWallpaperSelectedOnHome
-            val selectedOnLock = latestWallpaperStatus.isWallpaperSelectedOnLock
-            val lockOnly = selectedOnLock && !selectedOnHome
             val locked = isDeviceLocked()
 
-            if (selectedOnHome) {
-                if (locked) return
-                reactionIdleDelayJob?.cancel()
-                reactionIdleDelayJob = null
-                maybeStartReactionPlayback("eligible_home:$reason")
-                return
-            }
+            // Simplified policy: never play reactions on the lock screen (even if the wallpaper is
+            // selected there). If a user uses Mulberry only on lock screen, we can support that
+            // later with a separate, privacy-reviewed policy.
+            if (locked) return
 
-            if (lockOnly) {
-                if (!locked) return
-
-                if (reactionIdleDelayJob != null) return
-                reactionIdleDelayJob = engineScope.launch {
-                    try {
-                        delay(1_500)
-                        // If we became invisible or unlocked during the idle delay, keep pending.
-                        if (!isEngineVisible || !isSurfaceAvailable || surfaceHolder.surface?.isValid != true) return@launch
-                        if (!isDeviceLocked()) return@launch
-                        maybeStartReactionPlayback("eligible_lock_idle:$reason")
-                    } finally {
-                        reactionIdleDelayJob = null
-                    }
-                }
-            }
+            maybeStartReactionPlayback("eligible_unlocked:$reason")
         }
 
         private fun maybeStartReactionPlayback(reason: String) {
@@ -316,7 +298,7 @@ class MulberryWallpaperService : WallpaperService() {
 
         private fun buildReactionAnimation(batch: PendingReactionBatch): ReactionAnimationState {
             val now = System.currentTimeMillis()
-            val durationMs = 1_050L
+            val durationMs = 2_350L
 
             val types = mutableListOf<ReactionType>()
             repeat(batch.heartCount.coerceAtMost(6)) { types.add(ReactionType.HEART) }
@@ -329,7 +311,7 @@ class MulberryWallpaperService : WallpaperService() {
 
             if (uniqueTypes <= 1) {
                 val type = types.firstOrNull() ?: ReactionType.HEART
-                glyphs.add(ReactionGlyph(type.emoji, 0.5f, 0.52f, 1.25f))
+                glyphs.add(ReactionGlyph(type.emoji, 0.5f, 0.52f, 1.40f))
                 val smallCount = (batch.totalCount.coerceAtMost(4) - 1).coerceAtLeast(0)
                 val anchors = listOf(
                     Anchor(0.38f, 0.46f),
@@ -339,7 +321,7 @@ class MulberryWallpaperService : WallpaperService() {
                 )
                 repeat(smallCount) { idx ->
                     val a = anchors[idx.coerceIn(0, anchors.lastIndex)]
-                    glyphs.add(ReactionGlyph(type.emoji, a.x, a.y, 0.78f))
+                    glyphs.add(ReactionGlyph(type.emoji, a.x, a.y, 0.92f))
                 }
             } else {
                 val anchors = listOf(
@@ -353,7 +335,7 @@ class MulberryWallpaperService : WallpaperService() {
                 val capped = types.distinctBy { it.apiValue }.take(6)
                 capped.forEachIndexed { idx, type ->
                     val a = anchors[idx % anchors.size]
-                    glyphs.add(ReactionGlyph(type.emoji, a.x, a.y, 1.0f))
+                    glyphs.add(ReactionGlyph(type.emoji, a.x, a.y, 1.15f))
                 }
             }
 
@@ -376,17 +358,72 @@ class MulberryWallpaperService : WallpaperService() {
             if (elapsed < 0 || elapsed > animation.durationMs) return
             animation.hasRendered = true
 
-            val progress = (elapsed.toFloat() / animation.durationMs.toFloat()).coerceIn(0f, 1f)
-            val alpha = ((1f - progress) * 255).toInt().coerceIn(0, 255)
-            val baseSize = (minOf(canvas.width, canvas.height) * 0.18f).coerceAtLeast(24f)
+            val tMs = elapsed.toFloat()
+            val slideMs = 260f
+            val wiggleMs = 1_200f
+            val fallMs = 850f
+            val fadeInMs = 160f
+            val fadeOutMs = 650f
+
+            val enterProgress = (tMs / fadeInMs).coerceIn(0f, 1f)
+            val fallProgress = ((tMs - slideMs - wiggleMs) / fallMs).coerceIn(0f, 1f)
+            val fadeOutProgress = ((tMs - (slideMs + wiggleMs + (fallMs - fadeOutMs))) / fadeOutMs)
+                .coerceIn(0f, 1f)
+
+            val alphaFloat = when {
+                tMs < fadeInMs -> enterProgress
+                tMs < slideMs + wiggleMs + (fallMs - fadeOutMs) -> 1f
+                else -> 1f - (fadeOutProgress * fadeOutProgress)
+            }
+            val alpha = (alphaFloat * 255f).toInt().coerceIn(0, 255)
+
+            val startOffsetPx = canvas.height * 0.06f
+            val endUpOffsetPx = -canvas.height * 0.035f
+            val fallEndOffsetPx = canvas.height * 0.09f
+            val yOffsetPx = when {
+                tMs < slideMs -> lerp(
+                    startOffsetPx,
+                    endUpOffsetPx,
+                    easeOutBack((tMs / slideMs).coerceIn(0f, 1f))
+                )
+                tMs < slideMs + wiggleMs -> {
+                    val seconds = (tMs - slideMs) / 1000f
+                    val bob = sin((2f * PI.toFloat() * 3.2f) * seconds) * (canvas.height * 0.006f)
+                    endUpOffsetPx + bob
+                }
+                else -> lerp(
+                    endUpOffsetPx,
+                    fallEndOffsetPx,
+                    (fallProgress * fallProgress).coerceIn(0f, 1f)
+                )
+            }
+
+            val wigglePhaseSeconds = (tMs / 1000f).coerceAtLeast(0f)
+            val baseSize = (minOf(canvas.width, canvas.height) * 0.24f).coerceAtLeast(28f)
+
+            // Leaf-like drift during fall.
+            val xDriftPx = if (tMs < slideMs + wiggleMs) 0f else run {
+                val fallSeconds = (tMs - slideMs - wiggleMs) / 1000f
+                val amplitude = canvas.width * 0.035f
+                sin((2f * PI.toFloat() * 1.15f) * fallSeconds) * amplitude * (1f - fallProgress * 0.35f)
+            }
 
             emojiPaint.alpha = alpha
-            animation.glyphs.forEach { glyph ->
+            animation.glyphs.forEachIndexed { idx, glyph ->
                 emojiPaint.textSize = baseSize * glyph.scale
-                val x = canvas.width * glyph.x
-                val y = canvas.height * glyph.y
+                val x = (canvas.width * glyph.x) + xDriftPx
+                val y = canvas.height * glyph.y + yOffsetPx
                 val baseline = y - (emojiPaint.ascent() + emojiPaint.descent()) / 2f
+                val baseAmp = 7.5f
+                val slideRamp = (tMs / slideMs).coerceIn(0f, 1f)
+                val fallDamp = if (tMs < slideMs + wiggleMs) 1f else (1f - fallProgress * 0.55f).coerceIn(0f, 1f)
+                val wiggleAmp = baseAmp * slideRamp * fallDamp
+                val rotationDeg =
+                    sin((2f * PI.toFloat() * 3.2f) * wigglePhaseSeconds + idx * 0.7f) * wiggleAmp
+                canvas.save()
+                canvas.rotate(rotationDeg, x, baseline)
                 canvas.drawText(glyph.emoji, x, baseline, emojiPaint)
+                canvas.restore()
             }
 
             val spam = animation.spamText ?: return
@@ -397,7 +434,7 @@ class MulberryWallpaperService : WallpaperService() {
                 R.font.virgil_regular
             ) ?: Typeface.DEFAULT
             val x = canvas.width * 0.5f
-            val y = canvas.height * 0.76f
+            val y = canvas.height * 0.76f + (yOffsetPx * 0.45f)
             val baseline = y - (spamTextPaint.ascent() + spamTextPaint.descent()) / 2f
             canvas.drawText(spam, x, baseline, spamTextPaint)
         }
@@ -609,6 +646,15 @@ private data class ReactionAnimationState(
     val spamText: String?,
     var hasRendered: Boolean = false
 )
+
+private fun lerp(start: Float, end: Float, t: Float): Float = start + (end - start) * t
+
+private fun easeOutBack(t: Float): Float {
+    val c1 = 1.70158f
+    val c3 = c1 + 1f
+    val p = t - 1f
+    return 1f + c3 * p * p * p + c1 * p * p
+}
 
 internal fun centerCropSourceRect(
     bitmapWidth: Int,

@@ -11,6 +11,8 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -156,7 +158,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.launch
 import nl.dionsegijn.konfetti.compose.KonfettiView
 import nl.dionsegijn.konfetti.core.Angle
 import nl.dionsegijn.konfetti.core.Party
@@ -166,6 +167,8 @@ import nl.dionsegijn.konfetti.core.emitter.Emitter
 import nl.dionsegijn.konfetti.core.models.Shape
 import nl.dionsegijn.konfetti.core.models.Size as KonfettiSize
 import java.util.concurrent.TimeUnit
+import kotlin.math.PI
+import kotlin.math.sin
 
 @Composable
 fun CanvasHomeRoute(
@@ -937,7 +940,7 @@ private fun StreakPill(
 
 	    LaunchedEffect(sentReactionOverlay) {
 	        if (sentReactionOverlay == null) return@LaunchedEffect
-	        delay(520)
+	        delay(2_650)
 	        sentReactionOverlay = null
 	    }
 
@@ -1219,31 +1222,114 @@ private fun ReactionSentOverlay(
     reactionType: ReactionType,
     modifier: Modifier = Modifier
 ) {
-    val scale = remember { Animatable(0.85f) }
-    val alpha = remember { Animatable(1f) }
+    val scale = remember { Animatable(0.92f) }
+    val alpha = remember { Animatable(0f) }
+    val offsetYDp = remember { Animatable(18f) }
+    val offsetXDp = remember { Animatable(0f) }
+    val rotationZAnim = remember { Animatable(0f) }
 
     LaunchedEffect(reactionType) {
-        scale.snapTo(0.85f)
-        alpha.snapTo(1f)
+        scale.snapTo(0.92f)
+        alpha.snapTo(0f)
+        offsetYDp.snapTo(18f)
+        offsetXDp.snapTo(0f)
+        rotationZAnim.snapTo(0f)
+
+        // Slide up + pop in, while wiggling immediately.
         launch {
-            scale.animateTo(
-                targetValue = 1.0f,
-                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+            alpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)
             )
         }
-        alpha.animateTo(
-            targetValue = 0f,
-            animationSpec = tween(durationMillis = 520)
+        val slideMs = 260f
+        val holdMs = 1_200f
+        val fallMs = 820f
+        val startAtMs = SystemClock.uptimeMillis()
+        val wiggleHz = 3.2f
+
+        // Continuous wiggle coroutine with an amplitude envelope (no reset-to-zero "pause").
+        val wiggleJob = launch {
+            while (true) {
+                val tMs = (SystemClock.uptimeMillis() - startAtMs).toFloat().coerceAtLeast(0f)
+                val slideRamp = (tMs / slideMs).coerceIn(0f, 1f)
+                val fallProgress = ((tMs - slideMs - holdMs) / fallMs).coerceIn(0f, 1f)
+                val fallDamp = if (tMs < slideMs + holdMs) 1f else (1f - fallProgress * 0.65f).coerceIn(0f, 1f)
+                val amplitudeDeg = 7.5f * slideRamp * fallDamp
+                val tSec = tMs / 1000f
+                val rotation = sin(2f * PI.toFloat() * wiggleHz * tSec) * amplitudeDeg
+                rotationZAnim.snapTo(rotation)
+                delay(16)
+            }
+        }
+        launch {
+            scale.animateTo(
+                targetValue = 1.10f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
+        }
+        offsetYDp.animateTo(
+            targetValue = -14f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessLow
+            )
         )
+
+        // Hold (~1.2s).
+        delay(holdMs.toLong())
+
+        // Fall like a leaf: drift sideways while dropping + fade out near the end.
+        // Keep wiggle running; it will naturally damp during fall via the amplitude envelope.
+        launch {
+            // Leaf drift.
+            offsetXDp.animateTo(
+                targetValue = 16f,
+                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+            )
+            offsetXDp.animateTo(
+                targetValue = -10f,
+                animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing)
+            )
+            offsetXDp.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+            )
+        }
+        // Let wiggleJob drive rotation (no separate rotation animation here).
+        launch {
+            alpha.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 700, delayMillis = 120, easing = FastOutSlowInEasing)
+            )
+        }
+        launch {
+            scale.animateTo(
+                targetValue = 0.95f,
+                animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing)
+            )
+        }
+        offsetYDp.animateTo(
+            targetValue = 28f,
+            animationSpec = tween(durationMillis = 820, easing = FastOutSlowInEasing)
+        )
+
+        wiggleJob.cancel()
     }
 
     Text(
         text = reactionType.emoji,
-        fontSize = 64.sp,
+        fontSize = 84.sp,
         modifier = modifier.graphicsLayer {
             scaleX = scale.value
             scaleY = scale.value
             this.alpha = alpha.value
+            translationY = offsetYDp.value.dp.toPx()
+            translationX = offsetXDp.value.dp.toPx()
+            rotationZ = rotationZAnim.value
         }
     )
 }
