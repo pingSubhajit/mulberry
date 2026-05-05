@@ -453,10 +453,14 @@ private fun SettingsRootPage(
 
         Spacer(modifier = Modifier.height(if (isPaired) 40.dp else 46.dp))
 
-        if (isPaired && partnerVisibility != PartnerDrawingVisibility.CanSee) {
+        if (
+            isPaired &&
+            (
+                partnerVisibility == PartnerDrawingVisibility.CannotSeeLatestSyncOff ||
+                    partnerVisibility == PartnerDrawingVisibility.CannotSeeWallpaperNotSet
+                )
+        ) {
             PartnerDrawingVisibilityBanner(
-                partnerName = partnerName ?: "your partner",
-                visibility = partnerVisibility,
                 onClick = { onPartnerVisibilitySheetOpenChanged(true) }
             )
             Spacer(modifier = Modifier.height(20.dp))
@@ -757,69 +761,42 @@ private fun resolvePartnerDrawingVisibility(
 
 @Composable
 private fun PartnerDrawingVisibilityBanner(
-    partnerName: String,
-    visibility: PartnerDrawingVisibility,
     onClick: () -> Unit
 ) {
-    val title = when (visibility) {
-        PartnerDrawingVisibility.Unknown ->
-            "Can’t confirm if $partnerName can see your latest drawings"
-        PartnerDrawingVisibility.CannotSeeLatestSyncOff,
-        PartnerDrawingVisibility.CannotSeeWallpaperNotSet ->
-            "$partnerName can’t see your latest drawings"
-        PartnerDrawingVisibility.CanSee ->
-            "$partnerName can see your latest drawings"
-    }
-    val body = when (visibility) {
-        PartnerDrawingVisibility.Unknown ->
-            "Ask them to open Mulberry so we can check their wallpaper setup."
-        PartnerDrawingVisibility.CannotSeeLatestSyncOff ->
-            "Wallpaper sync is off on their device."
-        PartnerDrawingVisibility.CannotSeeWallpaperNotSet ->
-            "Mulberry isn’t set as wallpaper on their lock or home screen."
-        PartnerDrawingVisibility.CanSee ->
-            "All set."
-    }
-
-    SoftCard(
-        modifier = Modifier.clickable(onClick = onClick)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(58.dp)
+            .clip(RoundedCornerShape(15.38.dp))
+            .background(Color(0xFFB31329))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            RootLineIcon(
-                icon = SettingsRootIcon.Partner,
-                color = MulberryPrimary,
-                modifier = Modifier.size(22.dp)
+            Image(
+                painter = painterResource(id = R.drawable.partner_visibility_sync),
+                contentDescription = null,
+                modifier = Modifier.size(21.dp)
             )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontFamily = PoppinsFontFamily,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                    lineHeight = 20.sp
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = body,
-                    color = MaterialTheme.mulberryAppColors.mutedText,
-                    fontFamily = PoppinsFontFamily,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp
-                )
-            }
             Text(
-                text = "›",
-                color = MulberryPrimary,
+                text = "Can’t see your latest drawings",
+                color = Color.White,
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 24.sp
+                fontSize = 16.sp,
+                lineHeight = 20.sp
             )
         }
+        Image(
+            painter = painterResource(id = R.drawable.partner_visibility_chevron),
+            contentDescription = null,
+            modifier = Modifier.size(14.dp)
+        )
     }
 }
 
