@@ -132,6 +132,8 @@ fun CanvasTextOverlay(
     onRequestTextEdit: (CanvasTextEditorSession) -> Unit,
     onRequestStickerEdit: (CanvasStickerEditorSession) -> Unit,
     onRequestNewStickerAt: (StrokePoint) -> Unit,
+    allowCreateOnEmptyTap: Boolean,
+    onEmptyTapCreationHandled: () -> Unit,
     isEditorOpen: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -416,8 +418,13 @@ fun CanvasTextOverlay(
 	                        liveTransformPreview = null
 	                        return@awaitEachGesture
 	                    }
+                        if (!allowCreateOnEmptyTap) {
+                            selectedElementId = null
+                            liveTransformPreview = null
+                            return@awaitEachGesture
+                        }
 	                    val id = UUID.randomUUID().toString()
-	                    val element = CanvasTextElement(
+                    val element = CanvasTextElement(
 	                        id = id,
 	                        text = "",
 	                        createdAt = System.currentTimeMillis(),
@@ -430,7 +437,7 @@ fun CanvasTextOverlay(
                         font = CanvasTextFont.POPPINS,
                         alignment = CanvasTextAlign.CENTER
                     )
-                    onAddTextElement(element)
+                    onEmptyTapCreationHandled()
                     selectedElementId = null
                     onRequestTextEdit(CanvasTextEditorSession(element = element, isNew = true))
                     return@awaitEachGesture
@@ -442,9 +449,15 @@ fun CanvasTextOverlay(
                         liveTransformPreview = null
                         return@awaitEachGesture
                     }
+                    if (!allowCreateOnEmptyTap) {
+                        selectedElementId = null
+                        liveTransformPreview = null
+                        return@awaitEachGesture
+                    }
                     selectedElementId = null
                     liveTransformPreview = null
                     onRequestNewStickerAt(initialDown.toNormalizedPoint(canvasSize))
+                    onEmptyTapCreationHandled()
                     return@awaitEachGesture
                 } else if (lockedElementId == null) {
                     selectedElementId = null

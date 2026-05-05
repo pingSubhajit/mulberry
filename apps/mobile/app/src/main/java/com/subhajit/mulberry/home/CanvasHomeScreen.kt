@@ -370,6 +370,10 @@ fun CanvasHomeRoute(
 	    var textEditorSession by remember { mutableStateOf<CanvasTextEditorSession?>(null) }
 	    var stickerEditorSession by remember { mutableStateOf<CanvasStickerEditorSession?>(null) }
 	    var pendingNewStickerCenter by remember { mutableStateOf<StrokePoint?>(null) }
+        var allowToolTapPlacement by remember { mutableStateOf(false) }
+        var autoOpenOnNextToolSelect by remember { mutableStateOf<DrawingTool?>(null) }
+        var awaitingInitialDismissForTool by remember { mutableStateOf<DrawingTool?>(null) }
+        var openedInitialEditorForTool by remember { mutableStateOf<DrawingTool?>(null) }
     val isHomeReady =
         uiState.bootstrapState.authStatus == AuthStatus.SIGNED_IN &&
             uiState.bootstrapState.hasCompletedOnboarding
@@ -468,6 +472,26 @@ fun CanvasHomeRoute(
 
 	    Box(modifier = Modifier.fillMaxSize()) {
 	        val editorOpen = textEditorSession != null || stickerEditorSession != null
+            val toolSelectText: () -> Unit = {
+                if (!editorOpen && uiState.toolState.activeTool == DrawingTool.TEXT) {
+                    onTextToggle()
+                } else if (!editorOpen) {
+                    allowToolTapPlacement = false
+                    autoOpenOnNextToolSelect = DrawingTool.TEXT
+                    awaitingInitialDismissForTool = DrawingTool.TEXT
+                    onTextToggle()
+                }
+            }
+            val toolSelectSticker: () -> Unit = {
+                if (!editorOpen && uiState.toolState.activeTool == DrawingTool.STICKER) {
+                    onStickerToggle()
+                } else if (!editorOpen) {
+                    allowToolTapPlacement = false
+                    autoOpenOnNextToolSelect = DrawingTool.STICKER
+                    awaitingInitialDismissForTool = DrawingTool.STICKER
+                    onStickerToggle()
+                }
+            }
 
 	        LaunchedEffect(
 	            pendingNewStickerCenter,
@@ -507,6 +531,7 @@ fun CanvasHomeRoute(
 	                    ),
 	                    isNew = true
 	                )
+                    openedInitialEditorForTool = DrawingTool.STICKER
 	                pendingNewStickerCenter = null
 	                return@LaunchedEffect
 	            }
@@ -518,6 +543,68 @@ fun CanvasHomeRoute(
 	                onStickerPackSelected(firstPack.packKey, firstPack.packVersion)
 	            }
 	        }
+
+            LaunchedEffect(
+                uiState.toolState.activeTool,
+                autoOpenOnNextToolSelect,
+                editorOpen,
+                uiState.toolState.selectedColorArgb
+            ) {
+                if (editorOpen) return@LaunchedEffect
+                val pending = autoOpenOnNextToolSelect ?: return@LaunchedEffect
+                if (pending != uiState.toolState.activeTool) return@LaunchedEffect
+
+                autoOpenOnNextToolSelect = null
+
+                val center = StrokePoint(x = 0.5f, y = 0.5f)
+                when (pending) {
+                    DrawingTool.TEXT -> {
+                        val id = java.util.UUID.randomUUID().toString()
+                        textEditorSession = CanvasTextEditorSession(
+                            element = com.subhajit.mulberry.drawing.model.CanvasTextElement(
+                                id = id,
+                                text = "",
+                                createdAt = System.currentTimeMillis(),
+                                center = center,
+                                rotationRad = 0f,
+                                scale = 1f,
+                                boxWidth = 0.7f,
+                                colorArgb = uiState.toolState.selectedColorArgb,
+                                backgroundPillEnabled = false,
+                                font = com.subhajit.mulberry.drawing.model.CanvasTextFont.POPPINS,
+                                alignment = com.subhajit.mulberry.drawing.model.CanvasTextAlign.CENTER
+                            ),
+                            isNew = true
+                        )
+                        openedInitialEditorForTool = DrawingTool.TEXT
+                    }
+                    DrawingTool.STICKER -> {
+                        pendingNewStickerCenter = center
+                    }
+                    else -> Unit
+                }
+            }
+
+            LaunchedEffect(uiState.toolState.activeTool, editorOpen, awaitingInitialDismissForTool) {
+                if (editorOpen) return@LaunchedEffect
+                val active = uiState.toolState.activeTool
+                val awaiting = awaitingInitialDismissForTool
+                if (awaiting != null) {
+                    if (active == awaiting && openedInitialEditorForTool == awaiting) {
+                        // Initial editor for this tool has been handled (even if "cancelled") and dismissed.
+                        allowToolTapPlacement = true
+                        awaitingInitialDismissForTool = null
+                        openedInitialEditorForTool = null
+                    } else if (active != DrawingTool.TEXT && active != DrawingTool.STICKER) {
+                        // User exited the tool before dismissal; reset.
+                        allowToolTapPlacement = false
+                        awaitingInitialDismissForTool = null
+                        openedInitialEditorForTool = null
+                    }
+                    return@LaunchedEffect
+                }
+                allowToolTapPlacement = active == DrawingTool.TEXT || active == DrawingTool.STICKER
+            }
 
 	        Column(
             modifier = Modifier
@@ -566,8 +653,8 @@ fun CanvasHomeRoute(
                         onColorSelected = onColorSelected,
                         onBrushWidthChanged = onBrushWidthChanged,
                         onEraserToggle = onEraserToggle,
-                        onTextToggle = onTextToggle,
-                        onStickerToggle = onStickerToggle,
+                        onTextToggle = toolSelectText,
+                        onStickerToggle = toolSelectSticker,
                         onStickerPackSelected = onStickerPackSelected,
                         stickerAssetStore = stickerAssetStore,
                         onTextElementAdded = onTextElementAdded,
@@ -588,6 +675,8 @@ fun CanvasHomeRoute(
 	                        onNewStickerRequestedAt = { center ->
 	                            pendingNewStickerCenter = center
 	                        },
+                            allowToolTapPlacement = allowToolTapPlacement,
+                            onEmptyTapCreationHandled = { allowToolTapPlacement = true },
 		                        isEditorOpen = editorOpen,
 		                        onClearRequested = onClearRequested,
 		                        onUndoRequested = onUndoRequested,
@@ -631,11 +720,15 @@ fun CanvasHomeRoute(
                     textEditorSession = null
                 },
                 onDone = { updated ->
-                    if (updated.text.isBlank()) onTextElementDeleted(updated.id) else onTextElementUpdated(updated)
+                    if (session.isNew) {
+                        if (updated.text.isNotBlank()) onTextElementAdded(updated)
+                    } else {
+                        if (updated.text.isBlank()) onTextElementDeleted(updated.id) else onTextElementUpdated(updated)
+                    }
                     textEditorSession = null
                 },
                 onDelete = { elementId ->
-                    onTextElementDeleted(elementId)
+                    if (!session.isNew) onTextElementDeleted(elementId)
                     textEditorSession = null
                 }
 	            )
@@ -781,6 +874,8 @@ private fun StreakPill(
 	    onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
 	    onStickerEditorRequested: (CanvasStickerEditorSession) -> Unit,
 	    onNewStickerRequestedAt: (StrokePoint) -> Unit,
+        allowToolTapPlacement: Boolean,
+        onEmptyTapCreationHandled: () -> Unit,
 		    isEditorOpen: Boolean,
 		    onClearRequested: () -> Unit,
 		    onUndoRequested: () -> Unit,
@@ -869,9 +964,9 @@ private fun StreakPill(
             )
         }
     } else {
-	        PairedCanvasPane(
-	            uiState = uiState,
-	            onCanvasPress = onCanvasPress,
+            PairedCanvasPane(
+                uiState = uiState,
+                onCanvasPress = onCanvasPress,
 	            onCanvasDrag = onCanvasDrag,
             onCanvasRelease = onCanvasRelease,
             onCanvasTap = onCanvasTap,
@@ -892,6 +987,8 @@ private fun StreakPill(
 	            onTextEditorRequested = onTextEditorRequested,
 	            onStickerEditorRequested = onStickerEditorRequested,
 	            onNewStickerRequestedAt = onNewStickerRequestedAt,
+                allowToolTapPlacement = allowToolTapPlacement,
+                onEmptyTapCreationHandled = onEmptyTapCreationHandled,
 	            isEditorOpen = isEditorOpen,
 	            onClearRequested = onClearRequested,
 	            onUndoRequested = onUndoRequested,
@@ -926,6 +1023,8 @@ private fun PairedCanvasPane(
 	    onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
 	    onStickerEditorRequested: (CanvasStickerEditorSession) -> Unit,
 	    onNewStickerRequestedAt: (StrokePoint) -> Unit,
+        allowToolTapPlacement: Boolean,
+        onEmptyTapCreationHandled: () -> Unit,
 	    isEditorOpen: Boolean,
     onClearRequested: () -> Unit,
     onUndoRequested: () -> Unit,
@@ -1091,6 +1190,8 @@ private fun PairedCanvasPane(
 	                onRequestTextEdit = onTextEditorRequested,
 	                onRequestStickerEdit = onStickerEditorRequested,
 	                onRequestNewStickerAt = onNewStickerRequestedAt,
+                    allowCreateOnEmptyTap = allowToolTapPlacement,
+                    onEmptyTapCreationHandled = onEmptyTapCreationHandled,
 	                isEditorOpen = isEditorOpen,
 	                modifier = Modifier
 	                    .fillMaxSize()
