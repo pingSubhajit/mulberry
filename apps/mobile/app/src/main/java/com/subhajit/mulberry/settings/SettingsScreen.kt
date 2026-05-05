@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -288,7 +289,9 @@ private fun SettingsScreen(
             .background(MaterialTheme.colorScheme.background)
             .testTag(TestTags.SETTINGS_SCREEN),
         containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        // All settings panes apply their own status/navigation bar padding; avoid double-applying insets.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { padding ->
 	        if (pane == SettingsPane.Home) {
 	            SettingsRootPage(
