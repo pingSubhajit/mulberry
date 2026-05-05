@@ -6,7 +6,7 @@ import {CONTACT_MAILTO, GITHUB_URL, GOOGLE_PLAY_DOWNLOAD_URL} from "@/lib/consta
 
 const notes = [
   {
-    title: "Send little notes, right on their lock screen",
+    title: "Send little notes, right on their wallpaper",
     description: "Finished drawings appear quietly over your wallpaper. It is the quietest way to stay connected to each other.",
     image: "/bento/card-1.jpg"
   },
@@ -34,7 +34,7 @@ export default function LandingPage() {
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-white/80 sm:text-lg">
             Mulberry is a minimal Android app for couples to share small drawings
-            on each other&apos;s lock screen. No feed. No noise. Just one shared
+            on each other&apos;s wallpaper. No feed. No noise. Just one shared
             canvas.
           </p>
 
@@ -69,7 +69,7 @@ export default function LandingPage() {
           <div className="absolute bottom-0 h-28 w-[38rem] rounded-full bg-brand/12 blur-3xl" />
           <Image
             src="/hero.jpg"
-            alt="Mulberry app showing a shared canvas and lock-screen wallpaper setup"
+            alt="Mulberry app showing a shared canvas and live wallpaper setup"
             width={1344}
             height={2674}
             priority

@@ -33,7 +33,7 @@ object BackgroundCanvasSyncForegroundNotification {
         MulberryNotificationChannels.CHANNEL_ID_CANVAS_SYNC
     )
         .setSmallIcon(R.drawable.brand_iconmark_white)
-        .setContentTitle("Syncing lock-screen canvas…")
+        .setContentTitle("Syncing wallpaper canvas…")
         .setContentText("Updating your Mulberry live wallpaper.")
         .setContentIntent(createLaunchIntent(context))
         .setOngoing(true)

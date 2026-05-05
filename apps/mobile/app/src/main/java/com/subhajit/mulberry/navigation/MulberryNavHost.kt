@@ -17,7 +17,7 @@ import com.subhajit.mulberry.app.bootstrap.ReleaseStartupGateAfterFirstFrame
 import com.subhajit.mulberry.auth.AuthLandingRoute
 import com.subhajit.mulberry.home.CanvasHomeRoute
 import com.subhajit.mulberry.home.CanvasSurfaceRoute
-import com.subhajit.mulberry.home.LockScreenPlaceholderRoute
+import com.subhajit.mulberry.home.WallpaperStatusRoute
 import com.subhajit.mulberry.onboarding.OnboardingDetailsRoute
 import com.subhajit.mulberry.onboarding.OnboardingNameRoute
 import com.subhajit.mulberry.onboarding.OnboardingWallpaperRoute
@@ -74,7 +74,7 @@ fun MulberryNavHost(
         }
         when (currentRoute) {
             AppRoute.CanvasSurface.route,
-            AppRoute.LockScreenPlaceholder.route,
+            AppRoute.WallpaperStatus.route,
             AppRoute.Settings.route -> navController.navigate(AppRoute.CanvasHome.route) {
                 launchSingleTop = true
                 popUpTo(AppRoute.CanvasHome.route) {
@@ -113,7 +113,7 @@ fun MulberryNavHost(
         if (!hasPendingInboundInvite) return@LaunchedEffect
         when (currentRoute) {
             AppRoute.CanvasSurface.route,
-            AppRoute.LockScreenPlaceholder.route,
+            AppRoute.WallpaperStatus.route,
             AppRoute.Settings.route -> navController.navigate(AppRoute.CanvasHome.route) {
                 launchSingleTop = true
                 popUpTo(AppRoute.CanvasHome.route) {
@@ -258,8 +258,8 @@ fun MulberryNavHost(
                 onNavigateToCanvas = {
                     navController.navigate(AppRoute.CanvasSurface.route)
                 },
-                onNavigateToLockScreen = {
-                    navController.navigate(AppRoute.LockScreenPlaceholder.route)
+                onNavigateToWallpaperStatus = {
+                    navController.navigate(AppRoute.WallpaperStatus.route)
                 },
                 onNavigateToWallpaperCatalog = {
                     navController.navigate(AppRoute.WallpaperCatalog.route)
@@ -291,9 +291,9 @@ fun MulberryNavHost(
             CanvasSurfaceRoute()
         }
 
-        composable(AppRoute.LockScreenPlaceholder.route) {
+        composable(AppRoute.WallpaperStatus.route) {
             ReleaseStartupGateAfterFirstFrame()
-            LockScreenPlaceholderRoute(
+            WallpaperStatusRoute(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

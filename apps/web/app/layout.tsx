@@ -11,14 +11,14 @@ const poppins = Poppins({
 })
 
 export const metadata: Metadata = {
-  title: "Mulberry | A shared canvas for your lock screen",
+  title: "Mulberry | A shared canvas for your wallpaper",
   description:
-    "Mulberry lets couples share a private canvas that appears on each other's Android lock screen.",
+    "Mulberry lets couples share a private canvas that appears on each other's Android wallpaper.",
   metadataBase: new URL("https://mulberry.my"),
   openGraph: {
     title: "Mulberry",
     description:
-      "Draw something small. Let it appear on your partner's lock screen.",
+      "Draw something small. Let it appear on your partner's wallpaper.",
     images: ["/brand/banner.png"]
   },
   icons: {

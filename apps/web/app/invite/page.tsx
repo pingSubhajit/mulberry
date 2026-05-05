@@ -14,7 +14,7 @@ type InviteSearchParams = { code?: string | string[] }
 
 const notes = [
   {
-    title: "Send little notes, right on their lock screen",
+    title: "Send little notes, right on their wallpaper",
     description:
       "Finished drawings appear quietly over your wallpaper. It is the quietest way to stay connected to each other.",
     image: "/bento/card-1.jpg"
@@ -131,7 +131,7 @@ export default async function InvitePage({
             </h1>
             <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-muted-foreground sm:text-base lg:mx-0">
               Mulberry is a minimal Android app for couples to share small drawings on each
-              other&apos;s lock screen.
+              other&apos;s wallpaper.
             </p>
           </div>
 

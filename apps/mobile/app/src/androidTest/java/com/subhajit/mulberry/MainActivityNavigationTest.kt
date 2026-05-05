@@ -79,12 +79,12 @@ class MainActivityNavigationTest {
     }
 
     @Test
-    fun lockScreenReachableFromHome() {
+    fun wallpaperReachableFromHome() {
         seedDemoSession()
-        composeRule.onNodeWithTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON).performClick()
+        composeRule.onNodeWithTag(TestTags.HOME_OPEN_WALLPAPER_BUTTON).performClick()
 
-        assertTagExists(TestTags.LOCKSCREEN_SCREEN)
-        assertTagExists(TestTags.LOCKSCREEN_OPEN_WALLPAPER_BUTTON)
+        assertTagExists(TestTags.WALLPAPER_SCREEN)
+        assertTagExists(TestTags.WALLPAPER_OPEN_WALLPAPER_BUTTON)
     }
 
     @Test

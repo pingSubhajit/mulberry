@@ -846,7 +846,7 @@ private fun PartnerDrawingVisibilitySheetContent(
         PartnerDrawingVisibility.CannotSeeLatestSyncOff ->
             "“Show doodles on wallpaper” is off on your partner’s device. They may still see an older snapshot, but they won’t see anything new you draw."
         PartnerDrawingVisibility.CannotSeeWallpaperNotSet ->
-            "Mulberry isn’t set as wallpaper on your partner’s lock screen or home screen, so they won’t see your canvas there."
+            "Mulberry isn’t set as your partner’s wallpaper (lock screen or home screen), so they won’t see your canvas there."
         PartnerDrawingVisibility.CanSee ->
             "Everything looks good — your partner should see new drawings on their device."
     }

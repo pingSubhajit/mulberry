@@ -71,7 +71,7 @@ import kotlinx.coroutines.launch
 
 enum class MainAppTab {
     Canvas,
-    LockScreen
+    Wallpaper
 }
 
 enum class HomePairingSheetMode {
@@ -214,9 +214,7 @@ class CanvasHomeViewModel @Inject constructor(
 
     fun sendReaction(type: ReactionType) {
         viewModelScope.launch {
-            reactionLocalStore.setLastUsedReaction(type)
-            ReactionShortcutPublisher.publish(appContext, type)
-            reactionRepository.sendReaction(type)
+            trySendReaction(type)
         }
     }
 
@@ -1102,7 +1100,7 @@ class CanvasHomeViewModel @Inject constructor(
         }
     }
 
-    fun onSetUpLockScreenClicked() {
+    fun onSetUpWallpaperClicked() {
         viewModelScope.launch {
             wallpaperBusyState.value = true
             wallpaperErrorState.value = null

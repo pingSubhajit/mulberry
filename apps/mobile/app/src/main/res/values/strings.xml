@@ -1,8 +1,8 @@
 <resources>
     <string name="app_name">Mulberry</string>
-    <string name="app_tagline">A shared lock screen canvas for two.</string>
+    <string name="app_tagline">A shared wallpaper canvas for two.</string>
     <string name="auth_headline">Connect with your significant other</string>
-    <string name="auth_subtitle">Share a canvas with your partner that lives on your lock-screen</string>
+    <string name="auth_subtitle">Share a canvas with your partner that lives on your wallpaper</string>
     <string name="auth_provider_google">Continue with Google</string>
     <string name="auth_signing_in">Signing in...</string>
     <string name="onboarding_name_title">Welcome to Mulberry!\nLet’s get you set up</string>
@@ -101,12 +101,12 @@
     <string name="home_enter_code_prompt">Have a code?</string>
     <string name="home_enter_code_action">Enter code</string>
     <string name="home_tab_canvas">Canvas</string>
-    <string name="home_tab_lockscreen">Lock screen</string>
+    <string name="home_tab_wallpaper">Wallpaper</string>
     <string name="home_open_canvas">Open canvas</string>
     <string name="home_open_lockscreen">Open lock screen</string>
     <string name="home_canvas_paired_body">Local strokes: %1$d</string>
     <string name="home_paired_canvas_guidance_title">Draw them something cute</string>
-    <string name="home_paired_canvas_guidance_body">Whatever you draw will appear at the lockscreen of their phone</string>
+    <string name="home_paired_canvas_guidance_body">Whatever you draw will appear at the wallpaper of their phone</string>
     <string name="home_canvas_undo_content_description">Undo</string>
     <string name="home_canvas_redo_content_description">Redo</string>
     <string name="home_canvas_erase_content_description">Erase strokes</string>
@@ -149,7 +149,7 @@
     <string name="notification_channel_pairing_updates_description">When you connect or disconnect with your partner.</string>
 
     <string name="notification_channel_partner_doodles_name">New doodles</string>
-    <string name="notification_channel_partner_doodles_description">When your partner adds a doodle that isn’t on your lock screen yet.</string>
+    <string name="notification_channel_partner_doodles_description">When your partner adds a doodle that isn’t on your wallpaper yet.</string>
 
     <string name="notification_channel_partner_visibility_name">Partner visibility</string>
     <string name="notification_channel_partner_visibility_description">When your partner can or can’t see your latest drawings.</string>
@@ -158,8 +158,8 @@
     <string name="notification_channel_draw_reminders_description">Gentle reminders to draw something for your partner.</string>
 
     <string name="notification_channel_wallpaper_sync_name">Doodles on wallpaper</string>
-    <string name="notification_channel_wallpaper_sync_description">Reminders to turn on doodles on wallpaper for your lock screen.</string>
+    <string name="notification_channel_wallpaper_sync_description">Reminders to turn on doodles on wallpaper so drawings show on your wallpaper.</string>
 
     <string name="notification_channel_canvas_sync_name">Wallpaper doodles syncing</string>
-    <string name="notification_channel_canvas_sync_description">Persistent notification while Mulberry updates your lock-screen wallpaper doodles.</string>
+    <string name="notification_channel_canvas_sync_description">Persistent notification while Mulberry updates your wallpaper doodles.</string>
 </resources>

@@ -87,6 +87,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -176,7 +177,7 @@ fun CanvasHomeRoute(
     shortcutAction: AppShortcutAction? = null,
     onShortcutActionHandled: (AppShortcutAction) -> Unit = {},
     onNavigateToCanvas: () -> Unit,
-    onNavigateToLockScreen: () -> Unit,
+    onNavigateToWallpaperStatus: () -> Unit,
     onNavigateToWallpaperCatalog: () -> Unit,
     onNavigateToWallpaperHelp: () -> Unit,
     onNavigateToPairingHelp: () -> Unit,
@@ -247,7 +248,7 @@ fun CanvasHomeRoute(
 	        uiState = uiState,
 	        shortcutAction = shortcutAction,
 	        wallpaperPresets = viewModel.wallpaperPresets,
-	        onNavigateToLockScreen = onNavigateToLockScreen,
+		        onNavigateToWallpaperStatus = onNavigateToWallpaperStatus,
             onNavigateToWallpaperHelp = onNavigateToWallpaperHelp,
             onNavigateToPairingHelp = onNavigateToPairingHelp,
 	        onNavigateToStreak = onNavigateToStreak,
@@ -267,7 +268,7 @@ fun CanvasHomeRoute(
         onDisconnectFromConfirmation = viewModel::onDisconnectFromConfirmation,
         onKeepCurrentPairing = viewModel::onKeepCurrentPairingClicked,
         onDisconnectAndSwitchFromInboundInvite = viewModel::onDisconnectAndSwitchFromInboundInvite,
-        onSetUpLockScreen = viewModel::onSetUpLockScreenClicked,
+	        onSetUpWallpaper = viewModel::onSetUpWallpaperClicked,
         onViewMoreWallpapers = onNavigateToWallpaperCatalog,
         onUploadWallpaperBackground = {
             backgroundPicker.launch(
@@ -296,11 +297,11 @@ fun CanvasHomeRoute(
 	        onStickerElementDeleted = viewModel::onStickerElementDeleted,
 	        onStickerUsed = viewModel::onStickerUsed,
 	        onClearRequested = viewModel::onClearRequested,
-	        onClearDismissed = viewModel::onClearDismissed,
+        onClearDismissed = viewModel::onClearDismissed,
         onClearConfirmed = viewModel::onClearConfirmed,
         onUndoRequested = viewModel::onUndoRequested,
         onRedoRequested = viewModel::onRedoRequested,
-        onSendReaction = viewModel::sendReaction,
+        onSendReaction = viewModel::trySendReaction,
         onShortcutActionHandled = onShortcutActionHandled
     )
 }
@@ -311,7 +312,7 @@ fun CanvasHomeRoute(
 		    uiState: CanvasHomeUiState,
 		    shortcutAction: AppShortcutAction?,
 		    wallpaperPresets: List<WallpaperPreset>,
-		    onNavigateToLockScreen: () -> Unit,
+			    onNavigateToWallpaperStatus: () -> Unit,
         onNavigateToWallpaperHelp: () -> Unit,
         onNavigateToPairingHelp: () -> Unit,
 	    onNavigateToStreak: () -> Unit,
@@ -331,7 +332,7 @@ fun CanvasHomeRoute(
     onDisconnectFromConfirmation: () -> Unit,
     onKeepCurrentPairing: () -> Unit,
     onDisconnectAndSwitchFromInboundInvite: () -> Unit,
-    onSetUpLockScreen: () -> Unit,
+	    onSetUpWallpaper: () -> Unit,
     onViewMoreWallpapers: () -> Unit,
     onUploadWallpaperBackground: () -> Unit,
     onWallpaperPresetSelected: (Int) -> Unit,
@@ -360,7 +361,7 @@ fun CanvasHomeRoute(
 	    onClearConfirmed: () -> Unit,
 	    onUndoRequested: () -> Unit,
 	    onRedoRequested: () -> Unit,
-	    onSendReaction: (ReactionType) -> Unit,
+	    onSendReaction: suspend (ReactionType) -> Boolean,
 	    onShortcutActionHandled: (AppShortcutAction) -> Unit
 		) {
     val pagerState = rememberPagerState(pageCount = { MainAppTab.entries.size })
@@ -386,7 +387,7 @@ fun CanvasHomeRoute(
 	            }
 
             AppShortcutAction.ChangeWallpaper -> {
-                pagerState.animateScrollToPage(MainAppTab.entries.indexOf(MainAppTab.LockScreen))
+                pagerState.animateScrollToPage(MainAppTab.entries.indexOf(MainAppTab.Wallpaper))
                 onShortcutActionHandled(action)
             }
 
@@ -594,10 +595,10 @@ fun CanvasHomeRoute(
                             onSendReaction = onSendReaction
 		                    )
 
-	                    MainAppTab.LockScreen -> LockScreenHomePane(
+	                    MainAppTab.Wallpaper -> WallpaperHomePane(
 	                        uiState = uiState,
 	                        presets = wallpaperPresets,
-	                        onSetUpLockScreen = onSetUpLockScreen,
+	                        onSetUpWallpaper = onSetUpWallpaper,
                             onNavigateToWallpaperHelp = onNavigateToWallpaperHelp,
 	                        onViewMoreWallpapers = onViewMoreWallpapers,
 	                        onUploadFromGallery = onUploadWallpaperBackground,
@@ -926,10 +927,10 @@ private fun PairedCanvasPane(
 	    onStickerEditorRequested: (CanvasStickerEditorSession) -> Unit,
 	    onNewStickerRequestedAt: (StrokePoint) -> Unit,
 	    isEditorOpen: Boolean,
-	    onClearRequested: () -> Unit,
+    onClearRequested: () -> Unit,
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit,
-    onSendReaction: (ReactionType) -> Unit,
+    onSendReaction: suspend (ReactionType) -> Boolean,
     modifier: Modifier = Modifier
 ) {
         val viewConfig = LocalViewConfiguration.current
@@ -956,10 +957,13 @@ private fun PairedCanvasPane(
 	            Log.d("MulberryReactions", "sendReaction type=${type.apiValue}")
 	        }
 	        cancelPendingDot()
-	        onSendReaction(type)
-	        sentReactionToken += 1
-	        sentReactionOverlay = SentReactionOverlayState(type = type, token = sentReactionToken)
-	        reactionRailOpen = false
+            coroutineScope.launch {
+                val didSend = onSendReaction(type)
+                if (!didSend) return@launch
+                sentReactionToken += 1
+                sentReactionOverlay = SentReactionOverlayState(type = type, token = sentReactionToken)
+                reactionRailOpen = false
+            }
 	    }
 
         val reactionGestureModifier = Modifier.pointerInput(isEditorOpen, uiState.toolState.activeTool, reactionRailOpen) {
@@ -1791,10 +1795,10 @@ private fun CanvasControlTray(
 }
 
 @Composable
-private fun LockScreenHomePane(
+private fun WallpaperHomePane(
     uiState: CanvasHomeUiState,
     presets: List<WallpaperPreset>,
-    onSetUpLockScreen: () -> Unit,
+    onSetUpWallpaper: () -> Unit,
     onNavigateToWallpaperHelp: () -> Unit,
     onViewMoreWallpapers: () -> Unit,
     onUploadFromGallery: () -> Unit,
@@ -1864,9 +1868,9 @@ private fun LockScreenHomePane(
                             text = stringResource(setupCtaResId),
                             statusText = stringResource(badgeResId),
                             statusStyle = badgeStyle,
-                            onClick = onSetUpLockScreen,
+	                            onClick = onSetUpWallpaper,
                             enabled = !uiState.isWallpaperBusy,
-                            buttonModifier = Modifier.testTag(TestTags.HOME_OPEN_LOCKSCREEN_BUTTON)
+	                            buttonModifier = Modifier.testTag(TestTags.HOME_OPEN_WALLPAPER_BUTTON)
                         )
                         WallpaperWhyDoIDoThisLink(
                             onClick = onNavigateToWallpaperHelp,
@@ -2061,9 +2065,9 @@ private fun MainAppBottomNavigation(
             modifier = Modifier.weight(1f)
         )
         MainAppBottomNavItem(
-            tab = MainAppTab.LockScreen,
-            selected = selectedTab == MainAppTab.LockScreen,
-            onClick = { onTabSelected(MainAppTab.LockScreen) },
+            tab = MainAppTab.Wallpaper,
+            selected = selectedTab == MainAppTab.Wallpaper,
+            onClick = { onTabSelected(MainAppTab.Wallpaper) },
             modifier = Modifier.weight(1f)
         )
     }
@@ -2081,7 +2085,7 @@ private fun MainAppBottomNavItem(
     val itemColor = if (selected) activeColor else inactiveColor
     val label = when (tab) {
         MainAppTab.Canvas -> stringResource(R.string.home_tab_canvas)
-        MainAppTab.LockScreen -> stringResource(R.string.home_tab_lockscreen)
+        MainAppTab.Wallpaper -> stringResource(R.string.home_tab_wallpaper)
     }
 
     Column(
@@ -2097,7 +2101,7 @@ private fun MainAppBottomNavItem(
     ) {
         when (tab) {
             MainAppTab.Canvas -> BrushNavIcon(color = itemColor)
-            MainAppTab.LockScreen -> LockNavIcon(color = itemColor)
+            MainAppTab.Wallpaper -> WallpaperNavIcon(color = itemColor)
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -2135,22 +2139,38 @@ private fun BrushNavIcon(color: Color) {
 }
 
 @Composable
-private fun LockNavIcon(color: Color) {
+private fun WallpaperNavIcon(color: Color) {
     Canvas(modifier = Modifier.size(20.dp)) {
+        val stroke = Stroke(
+            width = size.width * 0.12f,
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round
+        )
         drawRoundRect(
             color = color,
-            topLeft = Offset(size.width * 0.2f, size.height * 0.46f),
-            size = Size(size.width * 0.6f, size.height * 0.42f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * 0.08f)
+            topLeft = Offset(size.width * 0.14f, size.height * 0.18f),
+            size = Size(size.width * 0.72f, size.height * 0.68f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * 0.12f),
+            style = stroke
         )
-        drawArc(
+        drawCircle(
             color = color,
-            startAngle = 180f,
-            sweepAngle = 180f,
-            useCenter = false,
-            topLeft = Offset(size.width * 0.32f, size.height * 0.14f),
-            size = Size(size.width * 0.36f, size.height * 0.52f),
-            style = Stroke(width = size.width * 0.12f, cap = StrokeCap.Round)
+            radius = size.width * 0.07f,
+            center = Offset(size.width * 0.68f, size.height * 0.38f)
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.28f, size.height * 0.74f),
+            end = Offset(size.width * 0.46f, size.height * 0.56f),
+            strokeWidth = size.width * 0.12f,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.46f, size.height * 0.56f),
+            end = Offset(size.width * 0.72f, size.height * 0.76f),
+            strokeWidth = size.width * 0.12f,
+            cap = StrokeCap.Round
         )
     }
 }

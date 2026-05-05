@@ -32,7 +32,7 @@ const terms = {
   address: "ITI Crossing, Kalyani, West Bengal, India, 741235",
   contact: "subha60kundu@gmail.com",
   intro:
-    "These Terms of Use explain the rules for using Mulberry, a private Android app for two people to share a drawing canvas that can appear on each other's lock screen.",
+    "These Terms of Use explain the rules for using Mulberry, a private Android app for two people to share a drawing canvas that can appear on each other's wallpaper.",
   sections: [
     {
       id: "acceptance",

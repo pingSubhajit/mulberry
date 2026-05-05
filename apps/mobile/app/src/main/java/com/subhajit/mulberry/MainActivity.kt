@@ -211,7 +211,7 @@ class MainActivity : ComponentActivity() {
         AppRoute.CanvasSurface.route,
         AppRoute.Settings.route,
         AppRoute.WallpaperCatalog.route,
-        AppRoute.LockScreenPlaceholder.route -> true
+        AppRoute.WallpaperStatus.route -> true
         else -> false
     }
 

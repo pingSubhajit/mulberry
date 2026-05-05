@@ -37,7 +37,7 @@ import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
 
 @Composable
-fun LockScreenPlaceholderRoute(
+fun WallpaperStatusRoute(
     onNavigateBack: () -> Unit,
     viewModel: CanvasHomeViewModel = hiltViewModel()
 ) {
@@ -68,7 +68,7 @@ fun LockScreenPlaceholderRoute(
         }
     }
 
-    LockScreenStatusContent(
+    WallpaperStatusContent(
         uiState = uiState,
         onNavigateBack = onNavigateBack,
         onOpenWallpaperPicker = {
@@ -86,7 +86,7 @@ fun LockScreenPlaceholderRoute(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun LockScreenStatusContent(
+private fun WallpaperStatusContent(
     uiState: CanvasHomeUiState,
     onNavigateBack: () -> Unit,
     onOpenWallpaperPicker: () -> Unit,
@@ -97,10 +97,10 @@ private fun LockScreenStatusContent(
     val backgroundAssetPath = uiState.backgroundImageState.assetPath ?: "None"
 
     Scaffold(
-        modifier = Modifier.testTag(TestTags.LOCKSCREEN_SCREEN),
+        modifier = Modifier.testTag(TestTags.WALLPAPER_SCREEN),
         topBar = {
             TopAppBar(
-                title = { Text("Lock screen") },
+                title = { Text("Wallpaper") },
                 navigationIcon = {
                     TextButton(onClick = onNavigateBack, modifier = Modifier.mulberryTapScale()) {
                         Text("Back")
@@ -153,7 +153,7 @@ private fun LockScreenStatusContent(
                     onClick = onOpenWallpaperPicker,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag(TestTags.LOCKSCREEN_OPEN_WALLPAPER_BUTTON)
+                        .testTag(TestTags.WALLPAPER_OPEN_WALLPAPER_BUTTON)
                         .mulberryTapScale()
                 ) {
                     val setupLabelResId = if (!isSelectedOnHome && !isSelectedOnLock) {
@@ -169,7 +169,7 @@ private fun LockScreenStatusContent(
                 onClick = onSelectBackground,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag(TestTags.LOCKSCREEN_SELECT_BACKGROUND_BUTTON)
+                    .testTag(TestTags.WALLPAPER_SELECT_BACKGROUND_BUTTON)
                     .mulberryTapScale()
             ) {
                 Text(
@@ -186,7 +186,7 @@ private fun LockScreenStatusContent(
                 enabled = uiState.backgroundImageState.isConfigured,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag(TestTags.LOCKSCREEN_CLEAR_BACKGROUND_BUTTON)
+                    .testTag(TestTags.WALLPAPER_CLEAR_BACKGROUND_BUTTON)
                     .mulberryTapScale(enabled = uiState.backgroundImageState.isConfigured)
             ) {
                 Text("Remove Background Image")
@@ -197,7 +197,7 @@ private fun LockScreenStatusContent(
                     onClick = onRefreshSnapshot,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag(TestTags.LOCKSCREEN_REFRESH_SNAPSHOT_BUTTON)
+                        .testTag(TestTags.WALLPAPER_REFRESH_SNAPSHOT_BUTTON)
                         .mulberryTapScale()
                 ) {
                     Text("Refresh Snapshot")

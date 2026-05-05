@@ -10,7 +10,7 @@
 ![Turborepo](https://img.shields.io/badge/Turborepo-2.x-EF4444?style=flat-square&logo=turborepo&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 
-Mulberry is a paired-device Android app for two people who share a persistent drawing canvas, with a Next.js landing site in the same Turborepo workspace. The foreground app is where users draw, pair, and manage settings; the lock screen shows the latest local canvas snapshot through an Android live wallpaper.
+Mulberry is a paired-device Android app for two people who share a persistent drawing canvas, with a Next.js landing site in the same Turborepo workspace. The foreground app is where users draw, pair, and manage settings; your wallpaper shows the latest local canvas snapshot through an Android live wallpaper.
 
 The product is built for ambient connection, not group collaboration. Active devices synchronize quickly over WebSocket, while sleeping or backgrounded devices converge later through push-triggered recovery and revision reconciliation.
 
@@ -60,7 +60,7 @@ flowchart LR
 The backend owns authentication, pairing, operation ordering, replay, and snapshots. Android owns touch capture, optimistic rendering, local Room/DataStore persistence, wallpaper rendering, and opportunistic recovery.
 
 > [!IMPORTANT]
-> The lock screen is display-only. Android does not allow this app to provide reliable interactive drawing from the lock screen or unrestricted background networking while the device is asleep.
+> The wallpaper surface is display-only. Android does not allow this app to provide reliable interactive drawing from the wallpaper surface or unrestricted background networking while the device is asleep.
 
 ## Repository layout
 

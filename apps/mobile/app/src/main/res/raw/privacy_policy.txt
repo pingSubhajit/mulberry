@@ -9,7 +9,7 @@ Operator: Subhajit Kundu
 Address: ITI Crossing, Kalyani, West Bengal, India, 741235
 Privacy contact: subha60kundu@gmail.com
 
-Mulberry is a paired-device app for two people who share a private drawing canvas that can appear on the Android lock screen as a live wallpaper. This policy is written for an India-only launch. If Mulberry later becomes available outside India, this policy will be updated before that expansion.
+Mulberry is a paired-device app for two people who share a private drawing canvas that can appear on your device wallpaper (lock screen or home screen) as a live wallpaper. This policy is written for an India-only launch. If Mulberry later becomes available outside India, this policy will be updated before that expansion.
 
 1. Who this policy applies to
 

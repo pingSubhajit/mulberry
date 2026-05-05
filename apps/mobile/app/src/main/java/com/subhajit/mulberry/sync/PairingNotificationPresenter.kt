@@ -44,10 +44,10 @@ object PairingNotificationPresenter {
         )
             .setSmallIcon(R.drawable.brand_iconmark_white)
             .setContentTitle(title)
-            .setContentText("Open Mulberry to start sharing your lock-screen canvas.")
+            .setContentText("Open Mulberry to start sharing your wallpaper canvas.")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("Open Mulberry to start sharing your lock-screen canvas.")
+                    .bigText("Open Mulberry to start sharing your wallpaper canvas.")
             )
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
