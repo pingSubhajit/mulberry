@@ -477,7 +477,8 @@ class MulberryWallpaperService : WallpaperService() {
                 R.font.virgil_regular
             ) ?: Typeface.DEFAULT
             val x = canvas.width * 0.5f
-            val y = canvas.height * 0.76f + (yOffsetPx * 0.45f)
+            // Spam caption should not "wiggle" with the glyph motion; keep it fixed in place.
+            val y = canvas.height * 0.76f
             val baseline = y - (spamTextPaint.ascent() + spamTextPaint.descent()) / 2f
             canvas.drawText(spam, x, baseline, spamTextPaint)
         }

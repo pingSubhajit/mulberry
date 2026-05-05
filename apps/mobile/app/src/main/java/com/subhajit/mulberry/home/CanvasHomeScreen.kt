@@ -1187,9 +1187,48 @@ private fun ReactionRail(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val containerAlpha = remember { Animatable(0f) }
+    val containerOffsetYDp = remember { Animatable(26f) }
+    val containerScale = remember { Animatable(0.94f) }
+
+    LaunchedEffect(Unit) {
+        containerAlpha.snapTo(0f)
+        containerOffsetYDp.snapTo(26f)
+        containerScale.snapTo(0.94f)
+
+        launch {
+            containerAlpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)
+            )
+        }
+        launch {
+            containerScale.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
+        }
+        containerOffsetYDp.animateTo(
+            targetValue = 0f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            )
+        )
+    }
+
     Row(
         modifier = modifier
             .padding(bottom = 14.dp)
+            .graphicsLayer {
+                alpha = containerAlpha.value
+                scaleX = containerScale.value
+                scaleY = containerScale.value
+                translationY = containerOffsetYDp.value.dp.toPx()
+            }
             .clip(RoundedCornerShape(999.dp))
             .background(MaterialTheme.mulberryAppColors.softSurfaceAlt)
             .border(
@@ -1197,15 +1236,56 @@ private fun ReactionRail(
                 color = MulberryPrimary.copy(alpha = 0.25f),
                 shape = RoundedCornerShape(999.dp)
             )
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 9.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ReactionType.entries.forEach { reaction ->
+        ReactionType.entries.forEachIndexed { idx, reaction ->
+            val emojiAlpha = remember(reaction) { Animatable(0f) }
+            val emojiOffsetYDp = remember(reaction) { Animatable(24f) }
+            val emojiScale = remember(reaction) { Animatable(0.72f) }
+
+            LaunchedEffect(reaction) {
+                emojiAlpha.snapTo(0f)
+                emojiOffsetYDp.snapTo(24f)
+                emojiScale.snapTo(0.72f)
+
+                // Stagger in quickly, container first.
+                delay(70L + (idx * 45L))
+                launch {
+                    emojiAlpha.animateTo(
+                        targetValue = 1f,
+                        animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing)
+                    )
+                }
+                launch {
+                    emojiScale.animateTo(
+                        targetValue = 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    )
+                }
+                emojiOffsetYDp.animateTo(
+                    targetValue = 0f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessLow
+                    )
+                )
+            }
+
             Text(
                 text = reaction.emoji,
-                fontSize = 28.sp,
+                fontSize = 30.sp,
                 modifier = Modifier
+                    .graphicsLayer {
+                        alpha = emojiAlpha.value
+                        scaleX = emojiScale.value
+                        scaleY = emojiScale.value
+                        translationY = emojiOffsetYDp.value.dp.toPx()
+                    }
                     .mulberryTapScale()
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
