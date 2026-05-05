@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Movie
@@ -81,6 +82,9 @@ class MulberryWallpaperService : WallpaperService() {
         private val reactionGifLayerPaint = Paint()
         private val reactionMovieCache = mutableMapOf<ReactionType, Movie?>()
 
+        private var cachedBackgroundBitmap: CachedBitmap? = null
+        private var cachedSnapshotBitmap: CachedBitmap? = null
+
         private val spamTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
             color = 0xFFFFFFFF.toInt()
@@ -153,6 +157,7 @@ class MulberryWallpaperService : WallpaperService() {
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
             isSurfaceAvailable = false
             resetUnrenderedReactionAnimation()
+            clearBitmapCaches()
             super.onSurfaceDestroyed(holder)
         }
 
@@ -186,6 +191,7 @@ class MulberryWallpaperService : WallpaperService() {
 
         override fun onDestroy() {
             unregisterUserPresentReceiverIfNeeded()
+            clearBitmapCaches()
             engineScope.cancel()
             super.onDestroy()
         }
@@ -535,14 +541,18 @@ class MulberryWallpaperService : WallpaperService() {
         }
 
         private fun drawFrame() {
-            engineScope.launch {
+            // Drawing/bitmap decode can be expensive; keep it off the main thread so reaction
+            // playback can sustain a smooth frame cadence.
+            engineScope.launch(Dispatchers.Default) {
                 drawMutex.withLock {
                     if (!isEngineVisible || !isSurfaceAvailable || surfaceHolder.surface?.isValid != true) {
                         pendingRedraw = true
                         return@withLock
                     }
                     runCatching {
-                        if (wallpaperSyncEnabled) {
+                        // During reaction animation playback we redraw at ~60fps. Avoid any work
+                        // that may touch disk/network or regenerate the snapshot in this hot loop.
+                        if (wallpaperSyncEnabled && reactionAnimation == null) {
                             wallpaperCoordinator.ensureSnapshotCurrent()
                         }
                         val renderState = wallpaperRenderStateLoader.loadCurrentState(
@@ -566,10 +576,21 @@ class MulberryWallpaperService : WallpaperService() {
                 ?: return
             try {
                 canvas.drawColor(renderState.fallbackColorArgb)
+
+                if (renderState.backgroundImagePath == null) {
+                    cachedBackgroundBitmap?.bitmap?.recycle()
+                    cachedBackgroundBitmap = null
+                }
+                if (renderState.snapshotPath == null) {
+                    cachedSnapshotBitmap?.bitmap?.recycle()
+                    cachedSnapshotBitmap = null
+                }
+
                 drawBitmapIfValid(
                     canvas = canvas,
                     filePath = renderState.backgroundImagePath,
                     scaleMode = BitmapScaleMode.CENTER_CROP_TO_CANVAS,
+                    cacheSlot = BitmapCacheSlot.BACKGROUND,
                     onCorruptFile = {
                         backgroundImageRepository.clearBackground()
                     }
@@ -578,6 +599,7 @@ class MulberryWallpaperService : WallpaperService() {
                     canvas = canvas,
                     filePath = renderState.snapshotPath,
                     scaleMode = BitmapScaleMode.CENTERED_SCREEN_VIEWPORT,
+                    cacheSlot = BitmapCacheSlot.SNAPSHOT,
                     onCorruptFile = {
                         File(it).delete()
                         wallpaperCoordinator.ensureSnapshotCurrent()
@@ -600,10 +622,12 @@ class MulberryWallpaperService : WallpaperService() {
             canvas: Canvas,
             filePath: String?,
             scaleMode: BitmapScaleMode,
+            cacheSlot: BitmapCacheSlot,
             onCorruptFile: suspend (String) -> Unit
         ) {
             val path = filePath ?: return
             val bitmap = decodeBitmapForCanvas(
+                cacheSlot = cacheSlot,
                 path = path,
                 canvasWidth = canvas.width,
                 canvasHeight = canvas.height
@@ -613,43 +637,46 @@ class MulberryWallpaperService : WallpaperService() {
                 return
             }
 
-            try {
-                val (viewportWidthPx, viewportHeightPx) = resolveViewportSizePx(
-                    surfaceWidthPx = canvas.width,
-                    surfaceHeightPx = canvas.height
-                )
-                val sourceRect = when (scaleMode) {
-                    BitmapScaleMode.CENTER_CROP_TO_CANVAS -> centerCropSourceRect(
-                        bitmapWidth = bitmap.width,
-                        bitmapHeight = bitmap.height,
-                        targetWidth = canvas.width,
-                        targetHeight = canvas.height
-                    ).toAndroidRect()
-                    BitmapScaleMode.CENTERED_SCREEN_VIEWPORT -> centeredScreenSourceRect(
-                        bitmapWidth = bitmap.width,
-                        bitmapHeight = bitmap.height,
-                        screenWidth = viewportWidthPx,
-                        screenHeight = viewportHeightPx
-                    ).toAndroidRect()
-                }
-                val destinationRect = when (scaleMode) {
-                    BitmapScaleMode.CENTER_CROP_TO_CANVAS -> Rect(0, 0, canvas.width, canvas.height)
-                    BitmapScaleMode.CENTERED_SCREEN_VIEWPORT -> centeredScreenSourceRect(
-                        bitmapWidth = canvas.width,
-                        bitmapHeight = canvas.height,
-                        screenWidth = viewportWidthPx,
-                        screenHeight = viewportHeightPx
-                    ).toAndroidRect()
-                }
-                canvas.drawBitmap(
-                    bitmap,
-                    sourceRect,
-                    destinationRect,
-                    null
-                )
-            } finally {
-                bitmap.recycle()
+            val (viewportWidthPx, viewportHeightPx) = resolveViewportSizePx(
+                surfaceWidthPx = canvas.width,
+                surfaceHeightPx = canvas.height
+            )
+            val sourceRect = when (scaleMode) {
+                BitmapScaleMode.CENTER_CROP_TO_CANVAS -> centerCropSourceRect(
+                    bitmapWidth = bitmap.width,
+                    bitmapHeight = bitmap.height,
+                    targetWidth = canvas.width,
+                    targetHeight = canvas.height
+                ).toAndroidRect()
+                BitmapScaleMode.CENTERED_SCREEN_VIEWPORT -> centeredScreenSourceRect(
+                    bitmapWidth = bitmap.width,
+                    bitmapHeight = bitmap.height,
+                    screenWidth = viewportWidthPx,
+                    screenHeight = viewportHeightPx
+                ).toAndroidRect()
             }
+            val destinationRect = when (scaleMode) {
+                BitmapScaleMode.CENTER_CROP_TO_CANVAS -> Rect(0, 0, canvas.width, canvas.height)
+                BitmapScaleMode.CENTERED_SCREEN_VIEWPORT -> centeredScreenSourceRect(
+                    bitmapWidth = canvas.width,
+                    bitmapHeight = canvas.height,
+                    screenWidth = viewportWidthPx,
+                    screenHeight = viewportHeightPx
+                ).toAndroidRect()
+            }
+            canvas.drawBitmap(
+                bitmap,
+                sourceRect,
+                destinationRect,
+                null
+            )
+        }
+
+        private fun clearBitmapCaches() {
+            cachedBackgroundBitmap?.bitmap?.recycle()
+            cachedBackgroundBitmap = null
+            cachedSnapshotBitmap?.bitmap?.recycle()
+            cachedSnapshotBitmap = null
         }
 
         private fun resolveViewportSizePx(
@@ -711,15 +738,58 @@ class MulberryWallpaperService : WallpaperService() {
         }
 
         private fun decodeBitmapForCanvas(
+            cacheSlot: BitmapCacheSlot,
             path: String,
             canvasWidth: Int,
             canvasHeight: Int
-        ) = decodeSampledBitmapFromFile(
-            path = path,
-            targetWidth = canvasWidth.coerceAtLeast(resources.displayMetrics.widthPixels),
-            targetHeight = canvasHeight.coerceAtLeast(resources.displayMetrics.heightPixels)
-        )
+        ): Bitmap? {
+            val targetWidth = canvasWidth.coerceAtLeast(resources.displayMetrics.widthPixels)
+            val targetHeight = canvasHeight.coerceAtLeast(resources.displayMetrics.heightPixels)
+
+            val file = File(path)
+            if (!file.exists()) return null
+            val lastModified = file.lastModified()
+            val currentCache = when (cacheSlot) {
+                BitmapCacheSlot.BACKGROUND -> cachedBackgroundBitmap
+                BitmapCacheSlot.SNAPSHOT -> cachedSnapshotBitmap
+            }
+
+            if (currentCache != null &&
+                currentCache.path == path &&
+                currentCache.lastModifiedMs == lastModified &&
+                currentCache.targetWidth == targetWidth &&
+                currentCache.targetHeight == targetHeight &&
+                !currentCache.bitmap.isRecycled
+            ) {
+                return currentCache.bitmap
+            }
+
+            val decoded = decodeSampledBitmapFromFile(
+                path = path,
+                targetWidth = targetWidth,
+                targetHeight = targetHeight
+            ) ?: return null
+
+            currentCache?.bitmap?.takeIf { !it.isRecycled }?.recycle()
+            val updated = CachedBitmap(
+                path = path,
+                lastModifiedMs = lastModified,
+                targetWidth = targetWidth,
+                targetHeight = targetHeight,
+                bitmap = decoded
+            )
+            when (cacheSlot) {
+                BitmapCacheSlot.BACKGROUND -> cachedBackgroundBitmap = updated
+                BitmapCacheSlot.SNAPSHOT -> cachedSnapshotBitmap = updated
+            }
+            return decoded
+        }
     }
+}
+
+private enum class BitmapCacheSlot {
+    BACKGROUND,
+    SNAPSHOT
 }
 
 private enum class BitmapScaleMode {
@@ -732,6 +802,14 @@ private const val TAG = "MulberryWallpaper"
 private data class Anchor(val x: Float, val y: Float)
 
 private data class ReactionGlyph(val type: ReactionType, val x: Float, val y: Float, val scale: Float)
+
+private data class CachedBitmap(
+    val path: String,
+    val lastModifiedMs: Long,
+    val targetWidth: Int,
+    val targetHeight: Int,
+    val bitmap: Bitmap
+)
 
 private data class ReactionAnimationState(
     val generation: Long,
