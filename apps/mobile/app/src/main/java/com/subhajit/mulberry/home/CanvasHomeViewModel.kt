@@ -30,6 +30,10 @@ import com.subhajit.mulberry.pairing.CreateInviteResult
 import com.subhajit.mulberry.pairing.InviteRepository
 import com.subhajit.mulberry.pairing.inbound.InboundInviteRepository
 import com.subhajit.mulberry.pairing.inbound.PendingInboundInvite
+import com.subhajit.mulberry.app.shortcut.ReactionShortcutPublisher
+import com.subhajit.mulberry.reactions.ReactionLocalStore
+import com.subhajit.mulberry.reactions.ReactionRepository
+import com.subhajit.mulberry.reactions.ReactionType
 import com.subhajit.mulberry.settings.PairingDisconnectCoordinator
 import com.subhajit.mulberry.streak.StreakSimulationRepository
 import com.subhajit.mulberry.streak.withDisplayStreakSimulation
@@ -47,7 +51,9 @@ import com.subhajit.mulberry.stickers.StickerPackDetail
 import com.subhajit.mulberry.stickers.StickerPackSummary
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.WallpaperStatusState
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
+import android.content.Context
 import javax.inject.Inject
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -175,7 +181,10 @@ class CanvasHomeViewModel @Inject constructor(
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     private val reviewPromptCoordinator: com.subhajit.mulberry.review.ReviewPromptCoordinator,
     private val streakSimulationRepository: StreakSimulationRepository,
-    private val appConfig: AppConfig
+    private val appConfig: AppConfig,
+    private val reactionRepository: ReactionRepository,
+    private val reactionLocalStore: ReactionLocalStore,
+    @ApplicationContext private val appContext: Context
 ) : ViewModel() {
     private val showClearConfirmation = MutableStateFlow(false)
     private val pairingSheetMode = MutableStateFlow(HomePairingSheetMode.Hidden)
@@ -202,6 +211,14 @@ class CanvasHomeViewModel @Inject constructor(
     private val _effects = MutableSharedFlow<CanvasHomeEffect>()
     val effects = _effects.asSharedFlow()
     val wallpaperPresets: List<WallpaperPreset> = DefaultWallpaperPresets
+
+    fun sendReaction(type: ReactionType) {
+        viewModelScope.launch {
+            reactionLocalStore.setLastUsedReaction(type)
+            ReactionShortcutPublisher.publish(appContext, type)
+            reactionRepository.sendReaction(type)
+        }
+    }
 
     private val baseState = combine(
         combine(

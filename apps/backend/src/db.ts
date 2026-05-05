@@ -226,6 +226,24 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
 
     CREATE INDEX IF NOT EXISTS stickers_pack_sort_idx
       ON stickers(pack_key, pack_version, sort_order ASC, created_at DESC, sticker_id ASC);
+
+    CREATE TABLE IF NOT EXISTS reaction_inboxes (
+      recipient_user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      pair_session_id TEXT REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      generation BIGINT NOT NULL DEFAULT 1,
+      heart_count INTEGER NOT NULL DEFAULT 0,
+      kiss_count INTEGER NOT NULL DEFAULT 0,
+      laugh_count INTEGER NOT NULL DEFAULT 0,
+      sparkle_count INTEGER NOT NULL DEFAULT 0,
+      leased_by_device_id TEXT,
+      lease_expires_at TIMESTAMPTZ,
+      lease_generation BIGINT,
+      consumed_generation BIGINT NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS reaction_inboxes_pair_idx
+      ON reaction_inboxes(pair_session_id);
   `)
 }
 

@@ -40,6 +40,15 @@ data class PartnerVisibilityChangedPushPayload(
     val wallpaperSelectedOnLock: Boolean
 )
 
+data class ReactionPushPayload(
+    val pairSessionId: String?,
+    val generation: Long,
+    val heartCount: Int,
+    val kissCount: Int,
+    val laughCount: Int,
+    val sparkleCount: Int
+)
+
 object BackgroundCanvasSyncPayloadParser {
     private const val TYPE_CANVAS_UPDATED = "CANVAS_UPDATED"
 
@@ -122,6 +131,24 @@ object PartnerVisibilityChangedPushPayloadParser {
             wallpaperSyncEnabled = data["wallpaperSyncEnabled"]?.toBooleanStrictOrNull() ?: true,
             wallpaperSelectedOnHome = data["wallpaperSelectedOnHome"]?.toBooleanStrictOrNull() ?: false,
             wallpaperSelectedOnLock = data["wallpaperSelectedOnLock"]?.toBooleanStrictOrNull() ?: false
+        )
+    }
+}
+
+object ReactionPushPayloadParser {
+    private const val TYPE_REACTION = "REACTION"
+
+    fun parse(data: Map<String, String>): ReactionPushPayload? {
+        if (data["type"] != TYPE_REACTION) return null
+        val generation = data["generation"]?.toLongOrNull() ?: 0L
+        if (generation <= 0L) return null
+        return ReactionPushPayload(
+            pairSessionId = data["pairSessionId"]?.takeIf { it.isNotBlank() },
+            generation = generation,
+            heartCount = data["heartCount"]?.toIntOrNull() ?: 0,
+            kissCount = data["kissCount"]?.toIntOrNull() ?: 0,
+            laughCount = data["laughCount"]?.toIntOrNull() ?: 0,
+            sparkleCount = data["sparkleCount"]?.toIntOrNull() ?: 0
         )
     }
 }

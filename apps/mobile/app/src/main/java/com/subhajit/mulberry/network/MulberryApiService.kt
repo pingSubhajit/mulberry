@@ -105,4 +105,13 @@ interface MulberryApiService {
         @Query("stickerId") stickerId: String,
         @Query("variant") variant: String
     ): StickerAssetUrlResponse
+
+    @POST("/reactions/send")
+    suspend fun sendReaction(@Body request: SendReactionRequest): ReactionSendResponse
+
+    @POST("/reactions/lease")
+    suspend fun leaseReactionPlayback(@Body request: ReactionLeaseRequest): ReactionLeaseResponse
+
+    @POST("/reactions/confirm")
+    suspend fun confirmReactionPlayback(@Body request: ReactionConfirmRequest): ReactionConfirmResponse
 }

@@ -244,6 +244,21 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return service.disconnectPairing(requireBearerToken(request))
   })
 
+  app.post("/reactions/send", async (request) => {
+    const body = request.body as { reactionType?: string }
+    return service.sendReaction(requireBearerToken(request), body?.reactionType ?? "")
+  })
+
+  app.post("/reactions/lease", async (request) => {
+    const body = request.body as { generation?: unknown; deviceId?: unknown }
+    return service.leaseReactionPlayback(requireBearerToken(request), body)
+  })
+
+  app.post("/reactions/confirm", async (request) => {
+    const body = request.body as { generation?: unknown; deviceId?: unknown }
+    return service.confirmReactionPlayback(requireBearerToken(request), body)
+  })
+
   app.post("/debug/pairing-confirmation-push", async (request) => {
     return service.sendDebugPairingConfirmed(requireBearerToken(request))
   })

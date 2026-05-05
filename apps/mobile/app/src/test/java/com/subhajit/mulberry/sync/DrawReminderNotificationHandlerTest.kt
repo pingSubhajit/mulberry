@@ -3,6 +3,7 @@ package com.subhajit.mulberry.sync
 import com.subhajit.mulberry.app.AppForegroundState
 import com.subhajit.mulberry.data.bootstrap.AppSession
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
+import com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 import kotlinx.coroutines.flow.Flow
@@ -88,6 +89,7 @@ private class TestSessionBootstrapRepository(initial: SessionBootstrapState) : S
     }
 
     override suspend fun setWallpaperConfigured(configured: Boolean) = Unit
+    override suspend fun setPartnerWallpaperStatus(status: PartnerWallpaperStatus?) = Unit
     override suspend fun seedDemoSession() = Unit
     override suspend fun reset() = Unit
 }

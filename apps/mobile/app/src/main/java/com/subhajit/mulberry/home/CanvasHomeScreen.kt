@@ -1,15 +1,25 @@
 package com.subhajit.mulberry.home
 
 import android.content.Intent
+import android.os.SystemClock
+import android.util.Log
+import com.subhajit.mulberry.BuildConfig
+import com.subhajit.mulberry.drawing.geometry.normalizeToSurface
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -81,8 +91,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.painterResource
@@ -123,6 +135,7 @@ import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.review.InAppReviewLauncher
+import com.subhajit.mulberry.reactions.ReactionType
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.KalamFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
@@ -140,6 +153,9 @@ import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import nl.dionsegijn.konfetti.compose.KonfettiView
 import nl.dionsegijn.konfetti.core.Angle
@@ -277,9 +293,10 @@ fun CanvasHomeRoute(
 	        onStickerUsed = viewModel::onStickerUsed,
 	        onClearRequested = viewModel::onClearRequested,
 	        onClearDismissed = viewModel::onClearDismissed,
-	        onClearConfirmed = viewModel::onClearConfirmed,
+        onClearConfirmed = viewModel::onClearConfirmed,
         onUndoRequested = viewModel::onUndoRequested,
         onRedoRequested = viewModel::onRedoRequested,
+        onSendReaction = viewModel::sendReaction,
         onShortcutActionHandled = onShortcutActionHandled
     )
 }
@@ -287,10 +304,10 @@ fun CanvasHomeRoute(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 	private fun CanvasHomeScreen(
-	    uiState: CanvasHomeUiState,
-	    shortcutAction: AppShortcutAction?,
-	    wallpaperPresets: List<WallpaperPreset>,
-	    onNavigateToLockScreen: () -> Unit,
+		    uiState: CanvasHomeUiState,
+		    shortcutAction: AppShortcutAction?,
+		    wallpaperPresets: List<WallpaperPreset>,
+		    onNavigateToLockScreen: () -> Unit,
         onNavigateToWallpaperHelp: () -> Unit,
         onNavigateToPairingHelp: () -> Unit,
 	    onNavigateToStreak: () -> Unit,
@@ -336,11 +353,12 @@ fun CanvasHomeRoute(
 	    onStickerUsed: (StickerSelection) -> Unit,
 	    onClearRequested: () -> Unit,
     onClearDismissed: () -> Unit,
-    onClearConfirmed: () -> Unit,
-    onUndoRequested: () -> Unit,
-    onRedoRequested: () -> Unit,
-    onShortcutActionHandled: (AppShortcutAction) -> Unit
-) {
+	    onClearConfirmed: () -> Unit,
+	    onUndoRequested: () -> Unit,
+	    onRedoRequested: () -> Unit,
+	    onSendReaction: (ReactionType) -> Unit,
+	    onShortcutActionHandled: (AppShortcutAction) -> Unit
+		) {
     val pagerState = rememberPagerState(pageCount = { MainAppTab.entries.size })
 	    val coroutineScope = rememberCoroutineScope()
 	    val selectedTab = MainAppTab.entries[pagerState.currentPage]
@@ -530,11 +548,11 @@ fun CanvasHomeRoute(
                     .fillMaxWidth()
                     .weight(1f)
             ) { page ->
-                when (MainAppTab.entries[page]) {
-                    MainAppTab.Canvas -> CanvasHomePane(
-                        uiState = uiState,
-                        onInviteRequested = onInviteRequested,
-                        onJoinCodeRequested = onJoinCodeRequested,
+	                when (MainAppTab.entries[page]) {
+	                    MainAppTab.Canvas -> CanvasHomePane(
+	                        uiState = uiState,
+	                        onInviteRequested = onInviteRequested,
+	                        onJoinCodeRequested = onJoinCodeRequested,
                         onCanvasPress = onCanvasPress,
                         onCanvasDrag = onCanvasDrag,
                         onCanvasRelease = onCanvasRelease,
@@ -565,11 +583,12 @@ fun CanvasHomeRoute(
 	                        onNewStickerRequestedAt = { center ->
 	                            pendingNewStickerCenter = center
 	                        },
-	                        isEditorOpen = editorOpen,
-	                        onClearRequested = onClearRequested,
-	                        onUndoRequested = onUndoRequested,
-	                        onRedoRequested = onRedoRequested
-	                    )
+		                        isEditorOpen = editorOpen,
+		                        onClearRequested = onClearRequested,
+		                        onUndoRequested = onUndoRequested,
+		                        onRedoRequested = onRedoRequested,
+                            onSendReaction = onSendReaction
+		                    )
 
 	                    MainAppTab.LockScreen -> LockScreenHomePane(
 	                        uiState = uiState,
@@ -732,11 +751,11 @@ private fun StreakPill(
 }
 
 @Composable
-private fun CanvasHomePane(
-    uiState: CanvasHomeUiState,
-    onInviteRequested: () -> Unit,
-    onJoinCodeRequested: () -> Unit,
-    onCanvasPress: (StrokePoint) -> Unit,
+	private fun CanvasHomePane(
+	    uiState: CanvasHomeUiState,
+	    onInviteRequested: () -> Unit,
+	    onJoinCodeRequested: () -> Unit,
+	    onCanvasPress: (StrokePoint) -> Unit,
     onCanvasDrag: (StrokePoint) -> Unit,
     onCanvasRelease: () -> Unit,
     onCanvasTap: (StrokePoint) -> Unit,
@@ -757,11 +776,12 @@ private fun CanvasHomePane(
 	    onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
 	    onStickerEditorRequested: (CanvasStickerEditorSession) -> Unit,
 	    onNewStickerRequestedAt: (StrokePoint) -> Unit,
-	    isEditorOpen: Boolean,
-	    onClearRequested: () -> Unit,
-    onUndoRequested: () -> Unit,
-    onRedoRequested: () -> Unit
-) {
+		    isEditorOpen: Boolean,
+		    onClearRequested: () -> Unit,
+	    onUndoRequested: () -> Unit,
+	    onRedoRequested: () -> Unit,
+        onSendReaction: (ReactionType) -> Unit
+	) {
     val userName = uiState.bootstrapState.userDisplayName
         ?.takeIf { it.isNotBlank() }
         ?: stringResource(R.string.home_default_user_name)
@@ -844,10 +864,10 @@ private fun CanvasHomePane(
             )
         }
     } else {
-        PairedCanvasPane(
-            uiState = uiState,
-            onCanvasPress = onCanvasPress,
-            onCanvasDrag = onCanvasDrag,
+	        PairedCanvasPane(
+	            uiState = uiState,
+	            onCanvasPress = onCanvasPress,
+	            onCanvasDrag = onCanvasDrag,
             onCanvasRelease = onCanvasRelease,
             onCanvasTap = onCanvasTap,
             onCanvasViewportChanged = onCanvasViewportChanged,
@@ -869,15 +889,16 @@ private fun CanvasHomePane(
 	            onNewStickerRequestedAt = onNewStickerRequestedAt,
 	            isEditorOpen = isEditorOpen,
 	            onClearRequested = onClearRequested,
-            onUndoRequested = onUndoRequested,
-            onRedoRequested = onRedoRequested,
-            modifier = Modifier.testTag(TestTags.HOME_OPEN_CANVAS_BUTTON)
-        )
-    }
-}
+	            onUndoRequested = onUndoRequested,
+	            onRedoRequested = onRedoRequested,
+	            onSendReaction = onSendReaction,
+	            modifier = Modifier.testTag(TestTags.HOME_OPEN_CANVAS_BUTTON)
+	        )
+	    }
+	}
 
 @Composable
-private fun PairedCanvasPane(
+	private fun PairedCanvasPane(
     uiState: CanvasHomeUiState,
     onCanvasPress: (StrokePoint) -> Unit,
     onCanvasDrag: (StrokePoint) -> Unit,
@@ -904,40 +925,145 @@ private fun PairedCanvasPane(
 	    onClearRequested: () -> Unit,
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit,
+    onSendReaction: (ReactionType) -> Unit,
     modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp)
-            .padding(top = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.mulberryAppColors.softSurface)
-                .border(
-                    width = 2.dp,
-                    color = MulberryPrimary.copy(alpha = 0.30f),
-                    shape = RoundedCornerShape(24.dp)
-                )
-        ) {
-            DrawingCanvas(
-                canvasState = uiState.canvasState,
-                activeTool = uiState.toolState.activeTool,
-                onDrawStart = onCanvasPress,
+	) {
+	    val viewConfig = LocalViewConfiguration.current
+        val coroutineScope = rememberCoroutineScope()
+	    var reactionRailOpen by remember { mutableStateOf(false) }
+	    var lastTapUpAtMs by remember { mutableStateOf<Long?>(null) }
+	    var sentReactionOverlay by remember { mutableStateOf<ReactionType?>(null) }
+        var pendingDotJob by remember { mutableStateOf<Job?>(null) }
+
+	    LaunchedEffect(sentReactionOverlay) {
+	        if (sentReactionOverlay == null) return@LaunchedEffect
+	        delay(520)
+	        sentReactionOverlay = null
+	    }
+
+        val cancelPendingDot: () -> Unit = {
+            pendingDotJob?.cancel()
+            pendingDotJob = null
+        }
+
+		    val sendAndAnimate: (ReactionType) -> Unit = { type ->
+		        if (BuildConfig.DEBUG) {
+		            Log.d("MulberryReactions", "sendReaction type=${type.apiValue}")
+		        }
+                cancelPendingDot()
+		        onSendReaction(type)
+		        sentReactionOverlay = type
+		        reactionRailOpen = false
+		    }
+
+		    val reactionGestureModifier = Modifier.pointerInput(isEditorOpen, uiState.toolState.activeTool, reactionRailOpen) {
+		        if (isEditorOpen || uiState.toolState.activeTool != DrawingTool.DRAW) return@pointerInput
+		        awaitEachGesture {
+		            val down = awaitFirstDown(requireUnconsumed = false)
+                    val downAtMs = down.uptimeMillis
+                    // If this could be the second tap in a double-tap, cancel any pending dot now
+                    // (don't wait for the second tap "up").
+                    val lastTapAt = lastTapUpAtMs
+                    if (lastTapAt != null && downAtMs - lastTapAt <= viewConfig.doubleTapTimeoutMillis) {
+                        cancelPendingDot()
+                    }
+		            val up = withTimeoutOrNull(viewConfig.longPressTimeoutMillis.toLong()) {
+		                waitForUpOrCancellation()
+		            }
+
+		            // Timeout => treat as long-press (and keep the rail open until the user taps again).
+		            if (up == null) {
+                        val elapsedMs = SystemClock.uptimeMillis() - downAtMs
+                        if (elapsedMs < viewConfig.longPressTimeoutMillis) {
+                            // Gesture cancelled (e.g. drag); ignore.
+                            return@awaitEachGesture
+                        }
+		                if (BuildConfig.DEBUG) {
+		                    Log.d("MulberryReactions", "longPress -> open rail")
+		                }
+                        cancelPendingDot()
+		                reactionRailOpen = true
+		                lastTapUpAtMs = null
+		                // Drain the rest of the gesture.
+		                waitForUpOrCancellation()
+		                return@awaitEachGesture
+		            }
+
+		            // If the rail is already open, any tap closes it (and we don't treat it as a reaction).
+		            if (reactionRailOpen) {
+		                if (BuildConfig.DEBUG) {
+		                    Log.d("MulberryReactions", "tap -> close rail")
+		                }
+                        cancelPendingDot()
+		                reactionRailOpen = false
+		                lastTapUpAtMs = null
+		                return@awaitEachGesture
+		            }
+
+		            val now = up.uptimeMillis
+		            val lastTap = lastTapUpAtMs
+		            if (lastTap != null && now - lastTap <= viewConfig.doubleTapTimeoutMillis) {
+		                lastTapUpAtMs = null
+		                if (BuildConfig.DEBUG) {
+		                    Log.d("MulberryReactions", "doubleTap -> heart")
+		                }
+                        cancelPendingDot()
+		                sendAndAnimate(ReactionType.HEART)
+		                return@awaitEachGesture
+		            }
+		            lastTapUpAtMs = now
+
+                    // Single-tap: delay committing the dot until the double-tap window passes.
+                    cancelPendingDot()
+                    val tapPoint = StrokePoint(
+                        x = up.position.x,
+                        y = up.position.y
+                    ).normalizeToSurface(size.width, size.height)
+                    pendingDotJob = coroutineScope.launch {
+                        delay(viewConfig.doubleTapTimeoutMillis.toLong())
+                        if (reactionRailOpen || isEditorOpen || uiState.toolState.activeTool != DrawingTool.DRAW) return@launch
+                        if (BuildConfig.DEBUG) {
+                            Log.d("MulberryReactions", "singleTap -> dot")
+                        }
+                        onCanvasPress(tapPoint)
+                        onCanvasRelease()
+                    }
+		        }
+		    }
+
+	    Column(
+	        modifier = modifier
+	            .fillMaxSize()
+	            .padding(horizontal = 20.dp)
+	            .padding(top = 12.dp),
+	        verticalArrangement = Arrangement.spacedBy(8.dp)
+	    ) {
+	        Box(
+	            modifier = Modifier
+	                .fillMaxWidth()
+	                .weight(1f)
+	                .clip(RoundedCornerShape(24.dp))
+	                .background(MaterialTheme.mulberryAppColors.softSurface)
+	                .border(
+	                    width = 2.dp,
+	                    color = MulberryPrimary.copy(alpha = 0.30f),
+	                    shape = RoundedCornerShape(24.dp)
+	                )
+	        ) {
+	            DrawingCanvas(
+	                canvasState = uiState.canvasState,
+	                activeTool = uiState.toolState.activeTool,
+	                onDrawStart = onCanvasPress,
                 onDrawPoint = onCanvasDrag,
                 onDrawEnd = onCanvasRelease,
-                onEraseTap = onCanvasTap,
-                onCanvasSizeChanged = onCanvasViewportChanged,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(8.dp),
-                strokeRenderMode = uiState.canvasStrokeRenderMode
-            )
+	                onEraseTap = onCanvasTap,
+	                onCanvasSizeChanged = onCanvasViewportChanged,
+	                modifier = Modifier
+	                    .fillMaxSize()
+	                    .padding(8.dp)
+                        .then(reactionGestureModifier),
+	                strokeRenderMode = uiState.canvasStrokeRenderMode
+	            )
 
 	            CanvasTextOverlay(
 	                elements = uiState.canvasState.elements,
@@ -963,6 +1089,42 @@ private fun PairedCanvasPane(
 
             if (uiState.canvasState.isEmpty) {
                 CanvasBlankStateGuidance(
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+
+                if (reactionRailOpen) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .pointerInput(Unit) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    val up = waitForUpOrCancellation()
+                                    if (up != null) {
+                                        cancelPendingDot()
+                                        reactionRailOpen = false
+                                        lastTapUpAtMs = null
+                                    }
+                                }
+                            }
+                    )
+                }
+
+	            if (reactionRailOpen) {
+	                ReactionRail(
+	                    onReactionSelected = sendAndAnimate,
+	                    onDismiss = {
+                            cancelPendingDot()
+                            reactionRailOpen = false
+                        },
+	                    modifier = Modifier.align(Alignment.BottomCenter)
+	                )
+	            }
+
+            sentReactionOverlay?.let { reactionType ->
+                ReactionSentOverlay(
+                    reactionType = reactionType,
                     modifier = Modifier.align(Alignment.Center)
                 )
             }
@@ -1011,6 +1173,79 @@ private fun CanvasBlankStateGuidance(modifier: Modifier = Modifier) {
             modifier = Modifier.width(252.dp)
         )
     }
+}
+
+@Composable
+private fun ReactionRail(
+    onReactionSelected: (ReactionType) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .padding(bottom = 14.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(MaterialTheme.mulberryAppColors.softSurfaceAlt)
+            .border(
+                width = 1.dp,
+                color = MulberryPrimary.copy(alpha = 0.25f),
+                shape = RoundedCornerShape(999.dp)
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ReactionType.entries.forEach { reaction ->
+            Text(
+                text = reaction.emoji,
+                fontSize = 28.sp,
+                modifier = Modifier
+                    .mulberryTapScale()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        onReactionSelected(reaction)
+                        onDismiss()
+                    }
+                    .padding(horizontal = 2.dp, vertical = 2.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReactionSentOverlay(
+    reactionType: ReactionType,
+    modifier: Modifier = Modifier
+) {
+    val scale = remember { Animatable(0.85f) }
+    val alpha = remember { Animatable(1f) }
+
+    LaunchedEffect(reactionType) {
+        scale.snapTo(0.85f)
+        alpha.snapTo(1f)
+        launch {
+            scale.animateTo(
+                targetValue = 1.0f,
+                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+            )
+        }
+        alpha.animateTo(
+            targetValue = 0f,
+            animationSpec = tween(durationMillis = 520)
+        )
+    }
+
+    Text(
+        text = reactionType.emoji,
+        fontSize = 64.sp,
+        modifier = modifier.graphicsLayer {
+            scaleX = scale.value
+            scaleY = scale.value
+            this.alpha = alpha.value
+        }
+    )
 }
 
 @Composable

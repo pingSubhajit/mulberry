@@ -74,6 +74,15 @@
             android:taskAffinity=""
             android:theme="@style/Theme.Mulberry.ShortcutNoUi" />
 
+        <activity
+            android:name=".SendReactionShortcutActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Mulberry.ShortcutNoUi" />
+
         <service
             android:name=".wallpaper.MulberryWallpaperService"
             android:exported="true"

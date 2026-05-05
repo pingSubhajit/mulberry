@@ -288,3 +288,35 @@ data class StickerAssetUrlResponse(
     val url: String,
     val expiresInSeconds: Int
 )
+
+data class SendReactionRequest(
+    val reactionType: String
+)
+
+data class ReactionSendResponse(
+    val ok: Boolean,
+    val generation: Long,
+    val heartCount: Int,
+    val kissCount: Int,
+    val laughCount: Int,
+    val sparkleCount: Int
+)
+
+data class ReactionLeaseRequest(
+    val generation: Long,
+    val deviceId: String
+)
+
+data class ReactionLeaseResponse(
+    val status: String,
+    val leaseExpiresAt: String? = null
+)
+
+data class ReactionConfirmRequest(
+    val generation: Long,
+    val deviceId: String
+)
+
+data class ReactionConfirmResponse(
+    val ok: Boolean
+)

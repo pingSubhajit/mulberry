@@ -5,6 +5,8 @@ import android.graphics.Canvas as AndroidCanvas
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.layout.fillMaxSize
@@ -115,19 +117,27 @@ fun DrawingCanvas(
                 // Claim the gesture immediately so parent horizontal pagers/tabs
                 // don't treat this as a swipe-to-navigate.
                 down.consume()
-                onDrawStart(down.position.toStrokePoint(canvasSize))
-                var pointer = down
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val dragChange = event.changes.firstOrNull { it.id == pointer.id }
-                        ?: event.changes.firstOrNull()
-                        ?: break
-                    pointer = dragChange
-                    if (!dragChange.pressed) break
-                    if (dragChange.positionChanged()) {
-                        onDrawPoint(dragChange.position.toStrokePoint(canvasSize))
-                        dragChange.consume()
+
+                var started = false
+                val slopChange = awaitTouchSlopOrCancellation(down.id) { change, _ ->
+                    if (!started) {
+                        started = true
+                        onDrawStart(down.position.toStrokePoint(canvasSize))
                     }
+                    onDrawPoint(change.position.toStrokePoint(canvasSize))
+                    change.consume()
+                }
+
+                // If the pointer never crossed touch slop, treat this as a tap (no stroke).
+                // Tap-based dot strokes and reactions are handled at a higher level where we
+                // can arbitrate between single-tap vs double-tap vs long-press.
+                if (slopChange == null || !started) return@awaitEachGesture
+
+                drag(down.id) { change ->
+                    if (change.positionChanged()) {
+                        onDrawPoint(change.position.toStrokePoint(canvasSize))
+                    }
+                    change.consume()
                 }
                 onDrawEnd()
             }

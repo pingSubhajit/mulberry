@@ -6,6 +6,8 @@ import com.google.firebase.messaging.RemoteMessage
 import com.subhajit.mulberry.app.AppForegroundState
 import com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
+import com.subhajit.mulberry.reactions.PendingReactionStore
+import com.subhajit.mulberry.wallpaper.WallpaperRenderBus
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +24,7 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
     @Inject lateinit var canvasNudgeNotificationHandler: CanvasNudgeNotificationHandler
     @Inject lateinit var drawReminderNotificationHandler: DrawReminderNotificationHandler
     @Inject lateinit var sessionBootstrapRepository: SessionBootstrapRepository
+    @Inject lateinit var pendingReactionStore: PendingReactionStore
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -125,6 +128,24 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
                     this@MulberryFirebaseMessagingService,
                     drawReminderPayload
                 )
+            }
+            return
+        }
+
+        val reactionPayload = ReactionPushPayloadParser.parse(message.data)
+        if (reactionPayload != null) {
+            Log.i(
+                TAG,
+                "Received reaction push pairSessionId=${reactionPayload.pairSessionId} " +
+                    "generation=${reactionPayload.generation}"
+            )
+            serviceScope.launch(Dispatchers.IO) {
+                runCatching {
+                    pendingReactionStore.setFromPush(reactionPayload)
+                    WallpaperRenderBus.requestRedraw()
+                }.onFailure { error ->
+                    Log.w(TAG, "Failed to persist reaction payload", error)
+                }
             }
             return
         }

@@ -4,7 +4,9 @@ import com.subhajit.mulberry.drawing.DrawingRepository
 import com.subhajit.mulberry.drawing.engine.StrokeBuilder
 import com.subhajit.mulberry.drawing.engine.StrokeHitTester
 import com.subhajit.mulberry.drawing.geometry.normalizeStrokeWidth
+import com.subhajit.mulberry.drawing.model.CanvasElement
 import com.subhajit.mulberry.drawing.model.CanvasState
+import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.DrawingDefaults
@@ -257,7 +259,10 @@ class DefaultCanvasRuntimeTest {
         runtime.submitAndAwait(CanvasRuntimeEvent.AddTextElement(element))
         advanceUntilIdle()
 
-        assertEquals(listOf(element), runtime.renderState.value.committedTextElements)
+        assertEquals(
+            listOf(element),
+            runtime.renderState.value.committedElements.filterIsInstance<CanvasTextElement>()
+        )
         val add = outbound.lastOrNull { it.type == DrawingOperationType.ADD_TEXT_ELEMENT }
         requireNotNull(add)
         assertEquals("text-1", add.strokeId)
@@ -265,7 +270,7 @@ class DefaultCanvasRuntimeTest {
         runtime.submitAndAwait(CanvasRuntimeEvent.Undo)
         advanceUntilIdle()
 
-        assertTrue(runtime.renderState.value.committedTextElements.isEmpty())
+        assertTrue(runtime.renderState.value.committedElements.filterIsInstance<CanvasTextElement>().isEmpty())
         val delete = outbound.lastOrNull { it.type == DrawingOperationType.DELETE_TEXT_ELEMENT }
         requireNotNull(delete)
         assertEquals("text-1", delete.strokeId)
@@ -304,12 +309,15 @@ class DefaultCanvasRuntimeTest {
         runtime.submitAndAwait(CanvasRuntimeEvent.UpdateTextElement(updated))
         advanceUntilIdle()
 
-        assertEquals("Hello world", runtime.renderState.value.committedTextElements.single().text)
+        assertEquals(
+            "Hello world",
+            runtime.renderState.value.committedElements.filterIsInstance<CanvasTextElement>().single().text
+        )
 
         runtime.submitAndAwait(CanvasRuntimeEvent.Undo)
         advanceUntilIdle()
 
-        val reverted = runtime.renderState.value.committedTextElements.single()
+        val reverted = runtime.renderState.value.committedElements.filterIsInstance<CanvasTextElement>().single()
         assertEquals("Hello", reverted.text)
         assertEquals(0f, reverted.rotationRad, 0.0001f)
     }
@@ -348,12 +356,12 @@ class DefaultCanvasRuntimeTest {
             )
         )
         advanceUntilIdle()
-        assertTrue(runtime.renderState.value.committedTextElements.isNotEmpty())
+        assertTrue(runtime.renderState.value.committedElements.filterIsInstance<CanvasTextElement>().isNotEmpty())
 
         runtime.submitAndAwait(CanvasRuntimeEvent.ClearCanvas)
         advanceUntilIdle()
 
-        assertTrue(runtime.renderState.value.committedTextElements.isEmpty())
+        assertTrue(runtime.renderState.value.committedElements.filterIsInstance<CanvasTextElement>().isEmpty())
         val clear = outbound.lastOrNull { it.type == DrawingOperationType.CLEAR_CANVAS }
         requireNotNull(clear)
 
@@ -580,7 +588,7 @@ private class FakeCanvasPersistenceStore(
 
     override suspend fun replaceFromServerSnapshot(
         strokes: List<Stroke>,
-        textElements: List<CanvasTextElement>,
+        elements: List<CanvasElement>,
         serverRevision: Long
     ) = Unit
 
@@ -591,6 +599,14 @@ private class FakeCanvasPersistenceStore(
     override suspend fun persistRemoteUpsertTextElement(element: CanvasTextElement, serverRevision: Long) = Unit
 
     override suspend fun persistRemoteDeleteTextElement(elementId: String, serverRevision: Long) = Unit
+
+    override suspend fun persistUpsertStickerElement(element: CanvasStickerElement): Long = 1L
+
+    override suspend fun persistDeleteStickerElement(elementId: String): Long = 1L
+
+    override suspend fun persistRemoteUpsertStickerElement(element: CanvasStickerElement, serverRevision: Long) = Unit
+
+    override suspend fun persistRemoteDeleteStickerElement(elementId: String, serverRevision: Long) = Unit
 }
 
 private class FakeDrawingRepository(
@@ -651,9 +667,17 @@ private class FakeDrawingRepository(
 
     override suspend fun applyRemoteDeleteTextElement(elementId: String, serverRevision: Long) = Unit
 
+    override suspend fun upsertLocalStickerElement(element: CanvasStickerElement): Long = 1L
+
+    override suspend fun deleteLocalStickerElement(elementId: String): Long = 1L
+
+    override suspend fun applyRemoteAddOrUpdateStickerElement(element: CanvasStickerElement, serverRevision: Long) = Unit
+
+    override suspend fun applyRemoteDeleteStickerElement(elementId: String, serverRevision: Long) = Unit
+
     override suspend fun replaceWithRemoteSnapshot(
         strokes: List<Stroke>,
-        textElements: List<CanvasTextElement>,
+        elements: List<CanvasElement>,
         serverRevision: Long
     ) = Unit
 

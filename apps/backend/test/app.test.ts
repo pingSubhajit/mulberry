@@ -199,6 +199,101 @@ describe("Mulberry backend", () => {
     expect(bootstrap.json().currentStreakDays).toBe(0)
   })
 
+  it("sends reaction pushes and coalesces counts per recipient", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-token")
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/reactions/send",
+      headers: bearer(inviter.accessToken),
+      payload: { reactionType: "HEART" },
+    })
+    expect(first.statusCode).toBe(200)
+    expect(first.json().heartCount).toBe(1)
+    expect(first.json().kissCount).toBe(0)
+
+    await eventually(() => pushSender.sentMessages.at(-1) != null)
+    const firstPush = pushSender.sentMessages.at(-1)
+    expect(firstPush?.data.type).toBe("REACTION")
+    expect((firstPush?.data as any).heartCount).toBe("1")
+    expect((firstPush?.data as any).kissCount).toBe("0")
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/reactions/send",
+      headers: bearer(inviter.accessToken),
+      payload: { reactionType: "KISS" },
+    })
+    expect(second.statusCode).toBe(200)
+    expect(second.json().heartCount).toBe(1)
+    expect(second.json().kissCount).toBe(1)
+
+    await eventually(() => pushSender.sentMessages.length >= 2)
+    const secondPush = pushSender.sentMessages.at(-1)
+    expect(secondPush?.data.type).toBe("REACTION")
+    expect((secondPush?.data as any).heartCount).toBe("1")
+    expect((secondPush?.data as any).kissCount).toBe("1")
+  })
+
+  it("leases and confirms reaction playback exactly once across devices", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-token")
+
+    const sent = await app.inject({
+      method: "POST",
+      url: "/reactions/send",
+      headers: bearer(inviter.accessToken),
+      payload: { reactionType: "HEART" },
+    })
+    expect(sent.statusCode).toBe(200)
+    const generation = Number(sent.json().generation)
+    expect(Number.isFinite(generation)).toBe(true)
+
+    const leaseA = await app.inject({
+      method: "POST",
+      url: "/reactions/lease",
+      headers: bearer(recipient.accessToken),
+      payload: { generation, deviceId: "device-a" },
+    })
+    expect(leaseA.statusCode).toBe(200)
+    expect(leaseA.json().status).toBe("CLAIMED")
+
+    const leaseB = await app.inject({
+      method: "POST",
+      url: "/reactions/lease",
+      headers: bearer(recipient.accessToken),
+      payload: { generation, deviceId: "device-b" },
+    })
+    expect(leaseB.statusCode).toBe(200)
+    expect(leaseB.json().status).toBe("LEASED_BY_OTHER")
+
+    const confirmWrong = await app.inject({
+      method: "POST",
+      url: "/reactions/confirm",
+      headers: bearer(recipient.accessToken),
+      payload: { generation, deviceId: "device-b" },
+    })
+    expect(confirmWrong.statusCode).toBe(200)
+
+    const confirmRight = await app.inject({
+      method: "POST",
+      url: "/reactions/confirm",
+      headers: bearer(recipient.accessToken),
+      payload: { generation, deviceId: "device-a" },
+    })
+    expect(confirmRight.statusCode).toBe(200)
+
+    const leaseAfterConfirm = await app.inject({
+      method: "POST",
+      url: "/reactions/lease",
+      headers: bearer(recipient.accessToken),
+      payload: { generation, deviceId: "device-a" },
+    })
+    expect(leaseAfterConfirm.statusCode).toBe(200)
+    expect(leaseAfterConfirm.json().status).toBe("NO_PENDING")
+  })
+
   it("uses custom profile photos before Google photo fallback", async () => {
     const { inviter, recipient } = await pairUsers()
     const upload = createImageUploadPayload()

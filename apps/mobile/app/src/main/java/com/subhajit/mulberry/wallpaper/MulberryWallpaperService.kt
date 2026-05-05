@@ -1,14 +1,28 @@
 package com.subhajit.mulberry.wallpaper
 
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.Typeface
 import android.service.wallpaper.WallpaperService
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.SurfaceHolder
 import android.view.WindowInsets
 import android.view.WindowManager
+import androidx.core.content.res.ResourcesCompat
+import com.subhajit.mulberry.R
+import com.subhajit.mulberry.reactions.PendingReactionBatch
+import com.subhajit.mulberry.reactions.PendingReactionStore
+import com.subhajit.mulberry.reactions.ReactionLocalStore
+import com.subhajit.mulberry.reactions.ReactionRepository
+import com.subhajit.mulberry.reactions.ReactionType
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import javax.inject.Inject
@@ -30,6 +44,9 @@ class MulberryWallpaperService : WallpaperService() {
     @Inject lateinit var wallpaperRenderStateLoader: WallpaperRenderStateLoader
     @Inject lateinit var backgroundImageRepository: BackgroundImageRepository
     @Inject lateinit var wallpaperSyncSettingsRepository: WallpaperSyncSettingsRepository
+    @Inject lateinit var pendingReactionStore: PendingReactionStore
+    @Inject lateinit var reactionRepository: ReactionRepository
+    @Inject lateinit var reactionLocalStore: ReactionLocalStore
 
     override fun onCreateEngine(): Engine = MulberryWallpaperEngine()
 
@@ -45,6 +62,29 @@ class MulberryWallpaperService : WallpaperService() {
         private var lastKnownViewportWidthPx: Int = 0
         private var lastKnownViewportHeightPx: Int = 0
         private var stabilityRedrawJob: Job? = null
+        private var latestWallpaperStatus: WallpaperStatusState = WallpaperStatusState()
+        private var pendingReaction: PendingReactionBatch? = null
+        private var reactionIdleDelayJob: Job? = null
+        private var reactionLeaseJob: Job? = null
+        private var reactionFrameJob: Job? = null
+        private var reactionAnimation: ReactionAnimationState? = null
+        private var receiverRegistered: Boolean = false
+
+        private val emojiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+        }
+
+        private val spamTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            color = 0xFFFFFFFF.toInt()
+        }
+
+        private val userPresentReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action != Intent.ACTION_USER_PRESENT) return
+                evaluateReactionPlayback("user_present")
+            }
+        }
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
@@ -61,6 +101,20 @@ class MulberryWallpaperService : WallpaperService() {
                     requestDraw("wallpaper_sync_changed")
                 }
             }
+            engineScope.launch {
+                wallpaperCoordinator.wallpaperStatus().collectLatest { status ->
+                    latestWallpaperStatus = status
+                    evaluateReactionPlayback("wallpaper_status")
+                }
+            }
+            engineScope.launch {
+                pendingReactionStore.pending.collectLatest { batch ->
+                    pendingReaction = batch
+                    evaluateReactionPlayback("reaction_pending_changed")
+                    requestDraw("reaction_pending_changed")
+                }
+            }
+            registerUserPresentReceiverIfNeeded()
             requestDraw("engine_create")
         }
 
@@ -70,6 +124,7 @@ class MulberryWallpaperService : WallpaperService() {
             if (visible) {
                 requestDraw("visibility_changed")
                 scheduleStabilityRedraw("visibility_changed")
+                evaluateReactionPlayback("visibility_changed")
             }
         }
 
@@ -78,6 +133,7 @@ class MulberryWallpaperService : WallpaperService() {
             isSurfaceAvailable = true
             requestDraw("surface_created")
             scheduleStabilityRedraw("surface_created")
+            evaluateReactionPlayback("surface_created")
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
@@ -114,6 +170,7 @@ class MulberryWallpaperService : WallpaperService() {
         }
 
         override fun onDestroy() {
+            unregisterUserPresentReceiverIfNeeded()
             engineScope.cancel()
             super.onDestroy()
         }
@@ -142,6 +199,207 @@ class MulberryWallpaperService : WallpaperService() {
             }
             pendingRedraw = false
             drawFrame()
+        }
+
+        private fun registerUserPresentReceiverIfNeeded() {
+            if (receiverRegistered) return
+            receiverRegistered = true
+            runCatching {
+                registerReceiver(userPresentReceiver, IntentFilter(Intent.ACTION_USER_PRESENT))
+            }.onFailure { error ->
+                Log.w(TAG, "Unable to register ACTION_USER_PRESENT receiver", error)
+            }
+        }
+
+        private fun unregisterUserPresentReceiverIfNeeded() {
+            if (!receiverRegistered) return
+            receiverRegistered = false
+            runCatching { unregisterReceiver(userPresentReceiver) }
+        }
+
+        private fun isDeviceLocked(): Boolean {
+            val manager = getSystemService(KeyguardManager::class.java) ?: return false
+            return manager.isDeviceLocked
+        }
+
+        private fun evaluateReactionPlayback(reason: String) {
+            if (!isEngineVisible || !isSurfaceAvailable || surfaceHolder.surface?.isValid != true) return
+            if (reactionIdleDelayJob?.isActive != true) {
+                reactionIdleDelayJob = null
+            }
+            val batch = pendingReaction ?: return
+            if (batch.totalCount <= 0) return
+            if (reactionAnimation != null) return
+
+            val selectedOnHome = latestWallpaperStatus.isWallpaperSelectedOnHome
+            val selectedOnLock = latestWallpaperStatus.isWallpaperSelectedOnLock
+            val lockOnly = selectedOnLock && !selectedOnHome
+            val locked = isDeviceLocked()
+
+            if (selectedOnHome) {
+                if (locked) return
+                reactionIdleDelayJob?.cancel()
+                reactionIdleDelayJob = null
+                maybeStartReactionPlayback("eligible_home:$reason")
+                return
+            }
+
+            if (lockOnly) {
+                if (!locked) return
+
+                if (reactionIdleDelayJob != null) return
+                reactionIdleDelayJob = engineScope.launch {
+                    try {
+                        delay(1_500)
+                        // If we became invisible or unlocked during the idle delay, keep pending.
+                        if (!isEngineVisible || !isSurfaceAvailable || surfaceHolder.surface?.isValid != true) return@launch
+                        if (!isDeviceLocked()) return@launch
+                        maybeStartReactionPlayback("eligible_lock_idle:$reason")
+                    } finally {
+                        reactionIdleDelayJob = null
+                    }
+                }
+            }
+        }
+
+        private fun maybeStartReactionPlayback(reason: String) {
+            val batch = pendingReaction ?: return
+            if (reactionAnimation != null) return
+
+            reactionLeaseJob?.cancel()
+            reactionLeaseJob = engineScope.launch(Dispatchers.IO) {
+                val deviceId = reactionLocalStore.getOrCreateDeviceId()
+                val leaseStatus = reactionRepository.leasePlayback(
+                    generation = batch.generation,
+                    deviceId = deviceId
+                ).getOrNull()
+
+                if (leaseStatus != "CLAIMED") {
+                    if (leaseStatus == "NO_PENDING") {
+                        pendingReactionStore.clear()
+                        WallpaperRenderBus.requestRedraw()
+                    }
+                    return@launch
+                }
+
+                val animation = buildReactionAnimation(batch)
+                engineScope.launch {
+                    reactionAnimation = animation
+                    scheduleReactionAnimationFrames()
+                }
+            }
+        }
+
+        private fun scheduleReactionAnimationFrames() {
+            val animation = reactionAnimation ?: return
+            reactionFrameJob?.cancel()
+            reactionFrameJob = engineScope.launch {
+                while (true) {
+                    val elapsed = System.currentTimeMillis() - animation.startedAtMs
+                    if (elapsed >= animation.durationMs) break
+                    requestDraw("reaction_anim")
+                    delay(16)
+                }
+                requestDraw("reaction_anim_end")
+                val generationToConfirm = animation.generation
+                val shouldConfirm = animation.hasRendered
+                reactionAnimation = null
+                if (!shouldConfirm) return@launch
+                engineScope.launch(Dispatchers.IO) {
+                    val deviceId = reactionLocalStore.getOrCreateDeviceId()
+                    reactionRepository.confirmPlayed(generationToConfirm, deviceId)
+                    pendingReactionStore.clearIfGeneration(generationToConfirm)
+                    WallpaperRenderBus.requestRedraw()
+                }
+            }
+        }
+
+        private fun buildReactionAnimation(batch: PendingReactionBatch): ReactionAnimationState {
+            val now = System.currentTimeMillis()
+            val durationMs = 1_050L
+
+            val types = mutableListOf<ReactionType>()
+            repeat(batch.heartCount.coerceAtMost(6)) { types.add(ReactionType.HEART) }
+            repeat(batch.kissCount.coerceAtMost(6)) { types.add(ReactionType.KISS) }
+            repeat(batch.laughCount.coerceAtMost(6)) { types.add(ReactionType.LAUGH) }
+            repeat(batch.sparkleCount.coerceAtMost(6)) { types.add(ReactionType.SPARKLE) }
+
+            val uniqueTypes = types.map { it.apiValue }.toSet().size
+            val glyphs = mutableListOf<ReactionGlyph>()
+
+            if (uniqueTypes <= 1) {
+                val type = types.firstOrNull() ?: ReactionType.HEART
+                glyphs.add(ReactionGlyph(type.emoji, 0.5f, 0.52f, 1.25f))
+                val smallCount = (batch.totalCount.coerceAtMost(4) - 1).coerceAtLeast(0)
+                val anchors = listOf(
+                    Anchor(0.38f, 0.46f),
+                    Anchor(0.62f, 0.46f),
+                    Anchor(0.42f, 0.62f),
+                    Anchor(0.58f, 0.62f),
+                )
+                repeat(smallCount) { idx ->
+                    val a = anchors[idx.coerceIn(0, anchors.lastIndex)]
+                    glyphs.add(ReactionGlyph(type.emoji, a.x, a.y, 0.78f))
+                }
+            } else {
+                val anchors = listOf(
+                    Anchor(0.5f, 0.42f),
+                    Anchor(0.35f, 0.50f),
+                    Anchor(0.65f, 0.50f),
+                    Anchor(0.42f, 0.62f),
+                    Anchor(0.58f, 0.62f),
+                    Anchor(0.5f, 0.70f),
+                )
+                val capped = types.distinctBy { it.apiValue }.take(6)
+                capped.forEachIndexed { idx, type ->
+                    val a = anchors[idx % anchors.size]
+                    glyphs.add(ReactionGlyph(type.emoji, a.x, a.y, 1.0f))
+                }
+            }
+
+            val spamText = if (uniqueTypes <= 1 && batch.totalCount >= 6) {
+                "You have been spammed with love."
+            } else null
+
+            return ReactionAnimationState(
+                generation = batch.generation,
+                startedAtMs = now,
+                durationMs = durationMs,
+                glyphs = glyphs,
+                spamText = spamText
+            )
+        }
+
+        private fun drawReactionOverlayIfNeeded(canvas: Canvas) {
+            val animation = reactionAnimation ?: return
+            val elapsed = System.currentTimeMillis() - animation.startedAtMs
+            if (elapsed < 0 || elapsed > animation.durationMs) return
+            animation.hasRendered = true
+
+            val progress = (elapsed.toFloat() / animation.durationMs.toFloat()).coerceIn(0f, 1f)
+            val alpha = ((1f - progress) * 255).toInt().coerceIn(0, 255)
+            val baseSize = (minOf(canvas.width, canvas.height) * 0.18f).coerceAtLeast(24f)
+
+            emojiPaint.alpha = alpha
+            animation.glyphs.forEach { glyph ->
+                emojiPaint.textSize = baseSize * glyph.scale
+                val x = canvas.width * glyph.x
+                val y = canvas.height * glyph.y
+                val baseline = y - (emojiPaint.ascent() + emojiPaint.descent()) / 2f
+                canvas.drawText(glyph.emoji, x, baseline, emojiPaint)
+            }
+
+            val spam = animation.spamText ?: return
+            spamTextPaint.alpha = (alpha * 0.92f).toInt().coerceIn(0, 255)
+            spamTextPaint.textSize = (minOf(canvas.width, canvas.height) * 0.045f).coerceAtLeast(18f)
+            spamTextPaint.typeface = ResourcesCompat.getFont(
+                this@MulberryWallpaperService,
+                R.font.virgil_regular
+            ) ?: Typeface.DEFAULT
+            val x = canvas.width * 0.5f
+            val y = canvas.height * 0.76f
+            val baseline = y - (spamTextPaint.ascent() + spamTextPaint.descent()) / 2f
+            canvas.drawText(spam, x, baseline, spamTextPaint)
         }
 
         private fun drawFrame() {
@@ -194,6 +452,7 @@ class MulberryWallpaperService : WallpaperService() {
                         wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
                     }
                 )
+                drawReactionOverlayIfNeeded(canvas)
             } finally {
                 try {
                     surfaceHolder.unlockCanvasAndPost(canvas)
@@ -337,6 +596,19 @@ private enum class BitmapScaleMode {
 }
 
 private const val TAG = "MulberryWallpaper"
+
+private data class Anchor(val x: Float, val y: Float)
+
+private data class ReactionGlyph(val emoji: String, val x: Float, val y: Float, val scale: Float)
+
+private data class ReactionAnimationState(
+    val generation: Long,
+    val startedAtMs: Long,
+    val durationMs: Long,
+    val glyphs: List<ReactionGlyph>,
+    val spamText: String?,
+    var hasRendered: Boolean = false
+)
 
 internal fun centerCropSourceRect(
     bitmapWidth: Int,

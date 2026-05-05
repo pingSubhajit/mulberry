@@ -8,6 +8,7 @@ import com.subhajit.mulberry.canvas.CanvasRuntimeEvent
 import com.subhajit.mulberry.data.bootstrap.AppSession
 import com.subhajit.mulberry.data.bootstrap.AuthStatus
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
+import com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 import com.subhajit.mulberry.network.AcceptInviteResponse
@@ -30,7 +31,18 @@ import com.subhajit.mulberry.network.RefreshRequest
 import com.subhajit.mulberry.network.RedeemInviteRequest
 import com.subhajit.mulberry.network.RedeemInviteResponse
 import com.subhajit.mulberry.network.RegisterFcmTokenRequest
+import com.subhajit.mulberry.network.ReactionConfirmRequest
+import com.subhajit.mulberry.network.ReactionConfirmResponse
+import com.subhajit.mulberry.network.ReactionLeaseRequest
+import com.subhajit.mulberry.network.ReactionLeaseResponse
+import com.subhajit.mulberry.network.ReactionSendResponse
+import com.subhajit.mulberry.network.SendReactionRequest
+import com.subhajit.mulberry.network.StickerAssetUrlResponse
+import com.subhajit.mulberry.network.StickerPackDetailResponse
+import com.subhajit.mulberry.network.StickerPackListResponse
+import com.subhajit.mulberry.network.StreakResponse
 import com.subhajit.mulberry.network.UnregisterFcmTokenRequest
+import com.subhajit.mulberry.network.UpdateWallpaperStatusRequest
 import com.subhajit.mulberry.network.WallpaperCatalogResponse
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -501,6 +513,10 @@ private class FakeSessionBootstrapRepository : SessionBootstrapRepository {
         state.update { it.copy(hasWallpaperConfigured = configured) }
     }
 
+    override suspend fun setPartnerWallpaperStatus(status: PartnerWallpaperStatus?) {
+        state.update { it.copy(partnerWallpaperStatus = status) }
+    }
+
     override suspend fun seedDemoSession() = Unit
 
     override suspend fun reset() {
@@ -575,6 +591,8 @@ private class FakeMulberryApiService : MulberryApiService {
 
     override suspend fun getBootstrap(): BootstrapResponse = error("unused")
 
+    override suspend fun getStreak(today: String): StreakResponse = error("unused")
+
     override suspend fun updateProfile(request: ProfileRequest): BootstrapResponse = error("unused")
 
     override suspend fun updateDisplayName(request: DisplayNameRequest): BootstrapResponse =
@@ -587,6 +605,9 @@ private class FakeMulberryApiService : MulberryApiService {
         error("unused")
 
     override suspend fun updatePartnerProfilePhoto(image: MultipartBody.Part): BootstrapResponse =
+        error("unused")
+
+    override suspend fun updateWallpaperStatus(request: UpdateWallpaperStatusRequest): DebugActionResponse =
         error("unused")
 
     override suspend fun createInvite(): CreateInviteResponse = error("unused")
@@ -631,4 +652,23 @@ private class FakeMulberryApiService : MulberryApiService {
 
     override suspend fun getWallpapers(cursor: String?, limit: Int): WallpaperCatalogResponse =
         WallpaperCatalogResponse(items = emptyList(), nextCursor = null)
+
+    override suspend fun getStickerPacks(): StickerPackListResponse = error("unused")
+
+    override suspend fun getStickerPackDetail(packKey: String, version: Int?): StickerPackDetailResponse =
+        error("unused")
+
+    override suspend fun getStickerAssetUrl(
+        packKey: String,
+        version: Int,
+        stickerId: String,
+        variant: String
+    ): StickerAssetUrlResponse = error("unused")
+
+    override suspend fun sendReaction(request: SendReactionRequest): ReactionSendResponse = error("unused")
+
+    override suspend fun leaseReactionPlayback(request: ReactionLeaseRequest): ReactionLeaseResponse = error("unused")
+
+    override suspend fun confirmReactionPlayback(request: ReactionConfirmRequest): ReactionConfirmResponse =
+        error("unused")
 }

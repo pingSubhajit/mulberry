@@ -40,6 +40,16 @@ export interface DrawReminderPushPayload {
   reminderCount: string
 }
 
+export interface ReactionPushPayload {
+  type: "REACTION"
+  pairSessionId: string
+  generation: string
+  heartCount: string
+  kissCount: string
+  laughCount: string
+  sparkleCount: string
+}
+
 export interface PartnerVisibilityChangedPushPayload {
   type: "PARTNER_VISIBILITY_CHANGED"
   pairSessionId: string
@@ -57,6 +67,7 @@ export type MulberryPushPayload =
   | PairingConfirmedPushPayload
   | PairingDisconnectedPushPayload
   | DrawReminderPushPayload
+  | ReactionPushPayload
   | PartnerVisibilityChangedPushPayload
 
 export interface MulberryPushMessage {
@@ -159,6 +170,7 @@ const DEFAULT_DRAW_REMINDER_POLL_INTERVAL_MS = 30_000
 const DEFAULT_DRAW_REMINDER_TTL_MS = 24 * 60 * 60 * 1_000
 const DEFAULT_DRAW_REMINDER_MAX_BACKOFF_DAYS = 7
 const DEFAULT_PARTNER_VISIBILITY_TTL_MS = 24 * 60 * 60 * 1_000
+const DEFAULT_REACTION_TTL_MS = 24 * 60 * 60 * 1_000
 
 export class PushDispatchService {
   private readonly pendingByPairSession = new Map<string, PendingCanvasUpdate>()
@@ -258,6 +270,20 @@ export class PushDispatchService {
     actorDisplayName: string,
   ): void {
     void this.sendPairingDisconnected(pairSessionId, recipientUserId, actorUserId, actorDisplayName)
+  }
+
+  enqueueReaction(
+    pairSessionId: string,
+    actorUserId: string,
+    generation: number,
+    counts: {
+      heartCount: number
+      kissCount: number
+      laughCount: number
+      sparkleCount: number
+    },
+  ): void {
+    void this.sendReaction(pairSessionId, actorUserId, generation, counts)
   }
 
   enqueueCanvasNudge(
@@ -565,6 +591,71 @@ export class PushDispatchService {
     }
 
     console.info("[push] partner visibility sent", {
+      pairSessionId,
+      invalidTokenCount: result.invalidTokens.length,
+    })
+
+    if (result.invalidTokens.length > 0) {
+      await this.revokeTokens(result.invalidTokens)
+    }
+  }
+
+  private async sendReaction(
+    pairSessionId: string,
+    actorUserId: string,
+    generation: number,
+    counts: {
+      heartCount: number
+      kissCount: number
+      laughCount: number
+      sparkleCount: number
+    },
+  ): Promise<void> {
+    const tokens = await this.activePeerTokens(pairSessionId, actorUserId)
+    if (tokens.length === 0) {
+      console.info("[push] no active peer tokens for reaction", {
+        pairSessionId,
+        actorUserId,
+      })
+      return
+    }
+
+    console.info("[push] sending reaction", {
+      pairSessionId,
+      actorUserId,
+      generation,
+      tokenCount: tokens.length,
+    })
+
+    let result: PushSendResult
+    try {
+      result = await this.sender.send({
+        tokens,
+        data: {
+          type: "REACTION",
+          pairSessionId,
+          generation: String(generation),
+          heartCount: String(counts.heartCount),
+          kissCount: String(counts.kissCount),
+          laughCount: String(counts.laughCount),
+          sparkleCount: String(counts.sparkleCount),
+        },
+        android: {
+          priority: "high",
+          collapseKey: `reaction-${pairSessionId}`,
+          ttlMs: DEFAULT_REACTION_TTL_MS,
+        },
+      })
+    } catch (error) {
+      console.error("[push] reaction send failed", {
+        pairSessionId,
+        actorUserId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+
+    console.info("[push] reaction sent", {
       pairSessionId,
       invalidTokenCount: result.invalidTokens.length,
     })

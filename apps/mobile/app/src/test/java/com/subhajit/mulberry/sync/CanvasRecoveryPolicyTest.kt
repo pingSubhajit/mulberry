@@ -106,6 +106,9 @@ class CanvasRecoveryPolicyTest {
             DrawingOperationType.ADD_TEXT_ELEMENT -> sampleTextPayload()
             DrawingOperationType.UPDATE_TEXT_ELEMENT -> sampleTextPayload()
             DrawingOperationType.DELETE_TEXT_ELEMENT -> SyncOperationPayload.DeleteTextElement
+            DrawingOperationType.ADD_STICKER_ELEMENT -> sampleStickerPayload()
+            DrawingOperationType.UPDATE_STICKER_ELEMENT -> sampleStickerPayload()
+            DrawingOperationType.DELETE_STICKER_ELEMENT -> SyncOperationPayload.DeleteStickerElement
         },
         clientCreatedAt = "2026-01-01T00:00:00.000Z",
         serverRevision = revision,
@@ -125,5 +128,17 @@ class CanvasRecoveryPolicyTest {
             backgroundPillEnabled = false,
             font = CanvasTextFont.POPPINS,
             alignment = CanvasTextAlign.CENTER
+        )
+
+    private fun sampleStickerPayload(): SyncOperationPayload.AddStickerElement =
+        SyncOperationPayload.AddStickerElement(
+            id = "sticker-1",
+            createdAt = 1L,
+            center = StrokePoint(x = 0.5f, y = 0.5f),
+            rotationRad = 0f,
+            scale = 1f,
+            packKey = "pack-1",
+            packVersion = 1,
+            stickerId = "sticker-a"
         )
 }
