@@ -201,6 +201,7 @@ describe("Mulberry backend", () => {
 
   it("sends reaction pushes and coalesces counts per recipient", async () => {
     const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(inviter.accessToken, "actor-token")
     await registerFcmToken(recipient.accessToken, "recipient-token")
 
     const first = await app.inject({
@@ -216,6 +217,8 @@ describe("Mulberry backend", () => {
     await eventually(() => pushSender.sentMessages.at(-1) != null)
     const firstPush = pushSender.sentMessages.at(-1)
     expect(firstPush?.data.type).toBe("REACTION")
+    expect(firstPush?.tokens).toEqual(["recipient-token"])
+    expect(firstPush?.android.collapseKey).toBe(`reaction-${inviter.pairSessionId}-${first.json().generation}-1`)
     expect((firstPush?.data as any).heartCount).toBe("1")
     expect((firstPush?.data as any).kissCount).toBe("0")
 
@@ -232,6 +235,8 @@ describe("Mulberry backend", () => {
     await eventually(() => pushSender.sentMessages.length >= 2)
     const secondPush = pushSender.sentMessages.at(-1)
     expect(secondPush?.data.type).toBe("REACTION")
+    expect(secondPush?.tokens).toEqual(["recipient-token"])
+    expect(secondPush?.android.collapseKey).toBe(`reaction-${inviter.pairSessionId}-${second.json().generation}-2`)
     expect((secondPush?.data as any).heartCount).toBe("1")
     expect((secondPush?.data as any).kissCount).toBe("1")
   })
@@ -292,6 +297,57 @@ describe("Mulberry backend", () => {
     })
     expect(leaseAfterConfirm.statusCode).toBe(200)
     expect(leaseAfterConfirm.json().status).toBe("NO_PENDING")
+  })
+
+  it("starts a new reaction generation when a new reaction arrives during an active lease", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-token")
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/reactions/send",
+      headers: bearer(inviter.accessToken),
+      payload: { reactionType: "HEART" },
+    })
+    expect(first.statusCode).toBe(200)
+    const firstGeneration = Number(first.json().generation)
+
+    const lease = await app.inject({
+      method: "POST",
+      url: "/reactions/lease",
+      headers: bearer(recipient.accessToken),
+      payload: { generation: firstGeneration, deviceId: "device-a" },
+    })
+    expect(lease.statusCode).toBe(200)
+    expect(lease.json().status).toBe("CLAIMED")
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/reactions/send",
+      headers: bearer(inviter.accessToken),
+      payload: { reactionType: "KISS" },
+    })
+    expect(second.statusCode).toBe(200)
+    expect(second.json().generation).toBe(firstGeneration + 1)
+    expect(second.json().heartCount).toBe(0)
+    expect(second.json().kissCount).toBe(1)
+
+    const oldConfirm = await app.inject({
+      method: "POST",
+      url: "/reactions/confirm",
+      headers: bearer(recipient.accessToken),
+      payload: { generation: firstGeneration, deviceId: "device-a" },
+    })
+    expect(oldConfirm.statusCode).toBe(200)
+
+    const nextLease = await app.inject({
+      method: "POST",
+      url: "/reactions/lease",
+      headers: bearer(recipient.accessToken),
+      payload: { generation: firstGeneration + 1, deviceId: "device-a" },
+    })
+    expect(nextLease.statusCode).toBe(200)
+    expect(nextLease.json().status).toBe("CLAIMED")
   })
 
   it("uses custom profile photos before Google photo fallback", async () => {

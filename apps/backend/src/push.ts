@@ -612,6 +612,7 @@ export class PushDispatchService {
     },
   ): Promise<void> {
     const tokens = await this.activePeerTokens(pairSessionId, actorUserId)
+    const totalCount = counts.heartCount + counts.kissCount + counts.laughCount + counts.sparkleCount
     if (tokens.length === 0) {
       console.info("[push] no active peer tokens for reaction", {
         pairSessionId,
@@ -642,7 +643,7 @@ export class PushDispatchService {
         },
         android: {
           priority: "high",
-          collapseKey: `reaction-${pairSessionId}`,
+          collapseKey: `reaction-${pairSessionId}-${generation}-${totalCount}`,
           ttlMs: DEFAULT_REACTION_TTL_MS,
         },
       })

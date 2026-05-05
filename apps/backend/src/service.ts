@@ -1620,9 +1620,17 @@ export class MulberryService {
       kiss_count: number
       laugh_count: number
       sparkle_count: number
+      lease_expires_at: string | null
     }>(
       `
-      SELECT pair_session_id, generation, heart_count, kiss_count, laugh_count, sparkle_count
+      SELECT
+        pair_session_id,
+        generation,
+        heart_count,
+        kiss_count,
+        laugh_count,
+        sparkle_count,
+        lease_expires_at
       FROM reaction_inboxes
       WHERE recipient_user_id = $1
       FOR UPDATE
@@ -1672,6 +1680,8 @@ export class MulberryService {
 
     const totalBefore = heart + kiss + laugh + sparkle
     const pairChanged = (existing.pair_session_id ?? "") !== input.pairSessionId
+    const leaseExpiresAt = existing.lease_expires_at ? new Date(existing.lease_expires_at) : null
+    const leaseActive = leaseExpiresAt !== null && leaseExpiresAt.getTime() > Date.now()
     if (pairChanged) {
       generation += 1
       heart = 0
@@ -1688,8 +1698,12 @@ export class MulberryService {
         `,
         [input.recipientUserId],
       )
-    } else if (totalBefore === 0) {
+    } else if (totalBefore === 0 || leaseActive) {
       generation += 1
+      heart = 0
+      kiss = 0
+      laugh = 0
+      sparkle = 0
       await tx.query(
         `
         UPDATE reaction_inboxes

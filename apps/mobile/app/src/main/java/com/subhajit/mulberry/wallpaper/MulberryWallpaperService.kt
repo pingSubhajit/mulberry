@@ -69,6 +69,7 @@ class MulberryWallpaperService : WallpaperService() {
         private var reactionLeaseJob: Job? = null
         private var reactionFrameJob: Job? = null
         private var reactionAnimation: ReactionAnimationState? = null
+        private var reactionRetryJob: Job? = null
         private var receiverRegistered: Boolean = false
 
         private val emojiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -131,6 +132,8 @@ class MulberryWallpaperService : WallpaperService() {
                 requestDraw("visibility_changed")
                 scheduleStabilityRedraw("visibility_changed")
                 evaluateReactionPlayback("visibility_changed")
+            } else {
+                resetUnrenderedReactionAnimation()
             }
         }
 
@@ -144,6 +147,7 @@ class MulberryWallpaperService : WallpaperService() {
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
             isSurfaceAvailable = false
+            resetUnrenderedReactionAnimation()
             super.onSurfaceDestroyed(holder)
         }
 
@@ -223,9 +227,9 @@ class MulberryWallpaperService : WallpaperService() {
             runCatching { unregisterReceiver(userPresentReceiver) }
         }
 
-        private fun isDeviceLocked(): Boolean {
+        private fun isWallpaperOnLockScreen(): Boolean {
             val manager = getSystemService(KeyguardManager::class.java) ?: return false
-            return manager.isDeviceLocked
+            return manager.isKeyguardLocked || manager.isDeviceLocked
         }
 
         private fun evaluateReactionPlayback(reason: String) {
@@ -234,7 +238,7 @@ class MulberryWallpaperService : WallpaperService() {
             if (batch.totalCount <= 0) return
             if (reactionAnimation != null) return
 
-            val locked = isDeviceLocked()
+            val locked = isWallpaperOnLockScreen()
 
             // Simplified policy: never play reactions on the lock screen (even if the wallpaper is
             // selected there). If a user uses Mulberry only on lock screen, we can support that
@@ -247,19 +251,24 @@ class MulberryWallpaperService : WallpaperService() {
         private fun maybeStartReactionPlayback(reason: String) {
             val batch = pendingReaction ?: return
             if (reactionAnimation != null) return
+            if (reactionLeaseJob?.isActive == true) return
 
-            reactionLeaseJob?.cancel()
+            reactionRetryJob?.cancel()
             reactionLeaseJob = engineScope.launch(Dispatchers.IO) {
                 val deviceId = reactionLocalStore.getOrCreateDeviceId()
-                val leaseStatus = reactionRepository.leasePlayback(
+                val leaseResult = reactionRepository.leasePlayback(
                     generation = batch.generation,
                     deviceId = deviceId
-                ).getOrNull()
+                )
+                val leaseStatus = leaseResult.getOrNull()
 
                 if (leaseStatus != "CLAIMED") {
                     if (leaseStatus == "NO_PENDING") {
                         pendingReactionStore.clear()
                         WallpaperRenderBus.requestRedraw()
+                    } else {
+                        Log.i(TAG, "Reaction playback deferred reason=$reason status=${leaseStatus ?: "FAILED"}")
+                        scheduleReactionRetry()
                     }
                     return@launch
                 }
@@ -277,8 +286,14 @@ class MulberryWallpaperService : WallpaperService() {
             reactionFrameJob?.cancel()
             reactionFrameJob = engineScope.launch {
                 while (true) {
-                    val elapsed = System.currentTimeMillis() - animation.startedAtMs
-                    if (elapsed >= animation.durationMs) break
+                    if (reactionAnimationShouldEnd(
+                            firstRenderedAtMs = animation.firstRenderedAtMs,
+                            nowMs = System.currentTimeMillis(),
+                            durationMs = animation.durationMs
+                        )
+                    ) {
+                        break
+                    }
                     requestDraw("reaction_anim")
                     delay(16)
                 }
@@ -286,18 +301,38 @@ class MulberryWallpaperService : WallpaperService() {
                 val generationToConfirm = animation.generation
                 val shouldConfirm = animation.hasRendered
                 reactionAnimation = null
-                if (!shouldConfirm) return@launch
+                if (!shouldConfirm) {
+                    evaluateReactionPlayback("reaction_anim_not_rendered")
+                    return@launch
+                }
                 engineScope.launch(Dispatchers.IO) {
                     val deviceId = reactionLocalStore.getOrCreateDeviceId()
                     reactionRepository.confirmPlayed(generationToConfirm, deviceId)
                     pendingReactionStore.clearIfGeneration(generationToConfirm)
                     WallpaperRenderBus.requestRedraw()
+                    engineScope.launch {
+                        evaluateReactionPlayback("reaction_confirmed")
+                    }
                 }
             }
         }
 
+        private fun scheduleReactionRetry() {
+            reactionRetryJob?.cancel()
+            reactionRetryJob = engineScope.launch {
+                delay(2_000)
+                evaluateReactionPlayback("reaction_retry")
+            }
+        }
+
+        private fun resetUnrenderedReactionAnimation() {
+            val animation = reactionAnimation ?: return
+            if (animation.hasRendered) return
+            reactionFrameJob?.cancel()
+            reactionAnimation = null
+        }
+
         private fun buildReactionAnimation(batch: PendingReactionBatch): ReactionAnimationState {
-            val now = System.currentTimeMillis()
             val durationMs = 2_350L
 
             val types = mutableListOf<ReactionType>()
@@ -345,7 +380,6 @@ class MulberryWallpaperService : WallpaperService() {
 
             return ReactionAnimationState(
                 generation = batch.generation,
-                startedAtMs = now,
                 durationMs = durationMs,
                 glyphs = glyphs,
                 spamText = spamText
@@ -354,7 +388,14 @@ class MulberryWallpaperService : WallpaperService() {
 
         private fun drawReactionOverlayIfNeeded(canvas: Canvas) {
             val animation = reactionAnimation ?: return
-            val elapsed = System.currentTimeMillis() - animation.startedAtMs
+            val now = System.currentTimeMillis()
+            if (animation.firstRenderedAtMs == null) {
+                animation.firstRenderedAtMs = now
+            }
+            val elapsed = reactionAnimationElapsedMs(
+                firstRenderedAtMs = animation.firstRenderedAtMs,
+                nowMs = now
+            )
             if (elapsed < 0 || elapsed > animation.durationMs) return
             animation.hasRendered = true
 
@@ -640,12 +681,21 @@ private data class ReactionGlyph(val emoji: String, val x: Float, val y: Float, 
 
 private data class ReactionAnimationState(
     val generation: Long,
-    val startedAtMs: Long,
     val durationMs: Long,
     val glyphs: List<ReactionGlyph>,
     val spamText: String?,
+    var firstRenderedAtMs: Long? = null,
     var hasRendered: Boolean = false
 )
+
+internal fun reactionAnimationElapsedMs(firstRenderedAtMs: Long?, nowMs: Long): Long =
+    firstRenderedAtMs?.let { (nowMs - it).coerceAtLeast(0L) } ?: 0L
+
+internal fun reactionAnimationShouldEnd(
+    firstRenderedAtMs: Long?,
+    nowMs: Long,
+    durationMs: Long
+): Boolean = firstRenderedAtMs != null && reactionAnimationElapsedMs(firstRenderedAtMs, nowMs) >= durationMs
 
 private fun lerp(start: Float, end: Float, t: Float): Float = start + (end - start) * t
 

@@ -901,7 +901,7 @@ private fun StreakPill(
 	}
 
 @Composable
-	private fun PairedCanvasPane(
+private fun PairedCanvasPane(
     uiState: CanvasHomeUiState,
     onCanvasPress: (StrokePoint) -> Unit,
     onCanvasDrag: (StrokePoint) -> Unit,
@@ -930,46 +930,46 @@ private fun StreakPill(
     onRedoRequested: () -> Unit,
     onSendReaction: (ReactionType) -> Unit,
     modifier: Modifier = Modifier
-	) {
-	    val viewConfig = LocalViewConfiguration.current
+) {
+        val viewConfig = LocalViewConfiguration.current
         val coroutineScope = rememberCoroutineScope()
-	    var reactionRailOpen by remember { mutableStateOf(false) }
-	    var lastTapUpAtMs by remember { mutableStateOf<Long?>(null) }
-	    var sentReactionOverlay by remember { mutableStateOf<ReactionType?>(null) }
+        var reactionRailOpen by remember { mutableStateOf(false) }
+        var lastTapUpAtMs by remember { mutableStateOf<Long?>(null) }
+        var sentReactionOverlay by remember { mutableStateOf<ReactionType?>(null) }
         var pendingDotJob by remember { mutableStateOf<Job?>(null) }
 
-	    LaunchedEffect(sentReactionOverlay) {
-	        if (sentReactionOverlay == null) return@LaunchedEffect
-	        delay(2_650)
-	        sentReactionOverlay = null
-	    }
+        LaunchedEffect(sentReactionOverlay) {
+            if (sentReactionOverlay == null) return@LaunchedEffect
+            delay(2_650)
+            sentReactionOverlay = null
+        }
 
         val cancelPendingDot: () -> Unit = {
             pendingDotJob?.cancel()
             pendingDotJob = null
         }
 
-		    val sendAndAnimate: (ReactionType) -> Unit = { type ->
-		        if (BuildConfig.DEBUG) {
-		            Log.d("MulberryReactions", "sendReaction type=${type.apiValue}")
-		        }
-                cancelPendingDot()
-		        onSendReaction(type)
-		        sentReactionOverlay = type
-		        reactionRailOpen = false
-		    }
+        val sendAndAnimate: (ReactionType) -> Unit = { type ->
+            if (BuildConfig.DEBUG) {
+                Log.d("MulberryReactions", "sendReaction type=${type.apiValue}")
+            }
+            cancelPendingDot()
+            onSendReaction(type)
+            sentReactionOverlay = type
+            reactionRailOpen = false
+        }
 
-		    val reactionGestureModifier = Modifier.pointerInput(isEditorOpen, uiState.toolState.activeTool, reactionRailOpen) {
-		        if (isEditorOpen || uiState.toolState.activeTool != DrawingTool.DRAW) return@pointerInput
-		        awaitEachGesture {
-		            val down = awaitFirstDown(requireUnconsumed = false)
-                    val downAtMs = down.uptimeMillis
-                    // If this could be the second tap in a double-tap, cancel any pending dot now
-                    // (don't wait for the second tap "up").
-                    val lastTapAt = lastTapUpAtMs
-                    if (lastTapAt != null && downAtMs - lastTapAt <= viewConfig.doubleTapTimeoutMillis) {
-                        cancelPendingDot()
-                    }
+        val reactionGestureModifier = Modifier.pointerInput(isEditorOpen, uiState.toolState.activeTool, reactionRailOpen) {
+            if (isEditorOpen || uiState.toolState.activeTool != DrawingTool.DRAW) return@pointerInput
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val downAtMs = down.uptimeMillis
+                // If this could be the second tap in a double-tap, cancel any pending dot now
+                // (don't wait for the second tap "up").
+                val lastTapAt = lastTapUpAtMs
+                if (lastTapAt != null && downAtMs - lastTapAt <= viewConfig.doubleTapTimeoutMillis) {
+                    cancelPendingDot()
+                }
 		            val up = withTimeoutOrNull(viewConfig.longPressTimeoutMillis.toLong()) {
 		                waitForUpOrCancellation()
 		            }
@@ -1235,7 +1235,6 @@ private fun ReactionSentOverlay(
         offsetXDp.snapTo(0f)
         rotationZAnim.snapTo(0f)
 
-        // Slide up + pop in, while wiggling immediately.
         launch {
             alpha.animateTo(
                 targetValue = 1f,
@@ -1248,7 +1247,6 @@ private fun ReactionSentOverlay(
         val startAtMs = SystemClock.uptimeMillis()
         val wiggleHz = 3.2f
 
-        // Continuous wiggle coroutine with an amplitude envelope (no reset-to-zero "pause").
         val wiggleJob = launch {
             while (true) {
                 val tMs = (SystemClock.uptimeMillis() - startAtMs).toFloat().coerceAtLeast(0f)
@@ -1279,13 +1277,9 @@ private fun ReactionSentOverlay(
             )
         )
 
-        // Hold (~1.2s).
         delay(holdMs.toLong())
 
-        // Fall like a leaf: drift sideways while dropping + fade out near the end.
-        // Keep wiggle running; it will naturally damp during fall via the amplitude envelope.
         launch {
-            // Leaf drift.
             offsetXDp.animateTo(
                 targetValue = 16f,
                 animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
@@ -1299,7 +1293,6 @@ private fun ReactionSentOverlay(
                 animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
             )
         }
-        // Let wiggleJob drive rotation (no separate rotation animation here).
         launch {
             alpha.animateTo(
                 targetValue = 0f,

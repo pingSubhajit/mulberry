@@ -51,4 +51,22 @@ class MulberryWallpaperServiceRectTest {
 
         assertEquals(ScreenSourceRect(0, 0, 1080, 2400), rect)
     }
+
+    @Test
+    fun reactionAnimationDoesNotExpireBeforeFirstRenderedFrame() {
+        assertEquals(0L, reactionAnimationElapsedMs(firstRenderedAtMs = null, nowMs = 10_000L))
+        assertEquals(
+            false,
+            reactionAnimationShouldEnd(firstRenderedAtMs = null, nowMs = 10_000L, durationMs = 2_350L)
+        )
+    }
+
+    @Test
+    fun reactionAnimationExpiresRelativeToFirstRenderedFrame() {
+        assertEquals(1_500L, reactionAnimationElapsedMs(firstRenderedAtMs = 1_000L, nowMs = 2_500L))
+        assertEquals(
+            true,
+            reactionAnimationShouldEnd(firstRenderedAtMs = 1_000L, nowMs = 3_350L, durationMs = 2_350L)
+        )
+    }
 }

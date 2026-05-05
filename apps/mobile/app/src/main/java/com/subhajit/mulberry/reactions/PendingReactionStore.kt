@@ -52,6 +52,24 @@ class PendingReactionStore @Inject constructor(
     }.distinctUntilChanged()
 
     suspend fun setFromPush(payload: ReactionPushPayload) {
+        setPending(
+            pairSessionId = payload.pairSessionId,
+            generation = payload.generation,
+            heartCount = payload.heartCount,
+            kissCount = payload.kissCount,
+            laughCount = payload.laughCount,
+            sparkleCount = payload.sparkleCount
+        )
+    }
+
+    private suspend fun setPending(
+        pairSessionId: String?,
+        generation: Long,
+        heartCount: Int,
+        kissCount: Int,
+        laughCount: Int,
+        sparkleCount: Int
+    ) {
         dataStore.edit { prefs ->
             val existing = prefs[PreferenceStorage.pendingReactionGeneration] ?: 0L
             val existingTotal =
@@ -60,19 +78,19 @@ class PendingReactionStore @Inject constructor(
                     (prefs[PreferenceStorage.pendingReactionLaughCount] ?: 0) +
                     (prefs[PreferenceStorage.pendingReactionSparkleCount] ?: 0)
             val incomingTotal =
-                payload.heartCount + payload.kissCount + payload.laughCount + payload.sparkleCount
+                heartCount + kissCount + laughCount + sparkleCount
             val shouldUpdate = when {
-                payload.generation > existing -> true
-                payload.generation < existing -> false
+                generation > existing -> true
+                generation < existing -> false
                 else -> incomingTotal > existingTotal
             }
             if (!shouldUpdate) return@edit
-            prefs[PreferenceStorage.pendingReactionGeneration] = payload.generation
-            prefs[PreferenceStorage.pendingReactionPairSessionId] = payload.pairSessionId ?: ""
-            prefs[PreferenceStorage.pendingReactionHeartCount] = payload.heartCount
-            prefs[PreferenceStorage.pendingReactionKissCount] = payload.kissCount
-            prefs[PreferenceStorage.pendingReactionLaughCount] = payload.laughCount
-            prefs[PreferenceStorage.pendingReactionSparkleCount] = payload.sparkleCount
+            prefs[PreferenceStorage.pendingReactionGeneration] = generation
+            prefs[PreferenceStorage.pendingReactionPairSessionId] = pairSessionId ?: ""
+            prefs[PreferenceStorage.pendingReactionHeartCount] = heartCount
+            prefs[PreferenceStorage.pendingReactionKissCount] = kissCount
+            prefs[PreferenceStorage.pendingReactionLaughCount] = laughCount
+            prefs[PreferenceStorage.pendingReactionSparkleCount] = sparkleCount
             prefs[PreferenceStorage.pendingReactionReceivedAtMs] = System.currentTimeMillis()
         }
     }

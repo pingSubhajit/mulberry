@@ -139,13 +139,15 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
                 "Received reaction push pairSessionId=${reactionPayload.pairSessionId} " +
                     "generation=${reactionPayload.generation}"
             )
-            serviceScope.launch(Dispatchers.IO) {
-                runCatching {
+            // Persist synchronously so a short-lived FCM service cannot be torn down before the
+            // wallpaper sees the pending reaction.
+            runCatching {
+                runBlocking(Dispatchers.IO) {
                     pendingReactionStore.setFromPush(reactionPayload)
-                    WallpaperRenderBus.requestRedraw()
-                }.onFailure { error ->
-                    Log.w(TAG, "Failed to persist reaction payload", error)
                 }
+                WallpaperRenderBus.requestRedraw()
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to persist reaction payload", error)
             }
             return
         }
