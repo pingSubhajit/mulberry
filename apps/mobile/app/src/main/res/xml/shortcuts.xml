@@ -25,4 +25,5 @@
             android:targetPackage="com.subhajit.mulberry"
             android:targetClass="com.subhajit.mulberry.MainActivity" />
     </shortcut>
+
 </shortcuts>

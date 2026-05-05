@@ -32,11 +32,11 @@ object WallpaperSyncPausedReminderNotification {
             MulberryNotificationChannels.CHANNEL_ID_WALLPAPER_SYNC
         )
             .setSmallIcon(R.drawable.brand_iconmark_white)
-            .setContentTitle("Wallpaper sync paused")
-            .setContentText("Turn on Wallpaper sync to show strokes on your lock screen.")
+            .setContentTitle("Doodles on wallpaper turned off")
+            .setContentText("Turn on “Show doodles on wallpaper” to show strokes on your lock screen.")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("Turn on Wallpaper sync to show strokes on your lock screen.")
+                    .bigText("Turn on “Show doodles on wallpaper” to show strokes on your lock screen.")
             )
             .setContentIntent(createLaunchIntent(context))
             .setAutoCancel(true)

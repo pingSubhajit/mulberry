@@ -4,6 +4,7 @@ import android.app.WallpaperManager
 import android.app.WallpaperInfo
 import android.content.ComponentName
 import android.content.Context
+import com.subhajit.mulberry.app.shortcut.WallpaperDoodlesShortcutPublisher
 import com.subhajit.mulberry.app.di.ApplicationScope
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
@@ -54,6 +55,7 @@ class DefaultWallpaperCoordinator @Inject constructor(
         applicationScope.launch {
             wallpaperSyncSettingsRepository.enabled.collect { enabled ->
                 wallpaperSyncEnabled = enabled
+                WallpaperDoodlesShortcutPublisher.publish(context, enabled)
             }
         }
 

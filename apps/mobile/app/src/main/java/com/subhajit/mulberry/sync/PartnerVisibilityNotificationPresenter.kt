@@ -63,7 +63,7 @@ object PartnerVisibilityNotificationPresenter {
             )
         } else {
             val reason = if (!payload.wallpaperSyncEnabled) {
-                "Wallpaper sync is off on their device."
+                "“Show doodles on wallpaper” is off on their device."
             } else {
                 "Mulberry isn’t set as wallpaper on their lock or home screen."
             }

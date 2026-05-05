@@ -64,6 +64,16 @@
             android:noHistory="true"
             android:theme="@style/Theme.Mulberry.ShortcutDialog" />
 
+        <activity
+            android:name=".ToggleWallpaperDoodlesShortcutActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/shortcut_toggle_wallpaper_doodles_short_label"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Mulberry.ShortcutNoUi" />
+
         <service
             android:name=".wallpaper.MulberryWallpaperService"
             android:exported="true"

@@ -405,6 +405,7 @@ private fun SettingsRootPage(
     val partnerName = uiState.bootstrapState.partnerDisplayName
     val userName = uiState.bootstrapState.userDisplayName ?: "Mulberry user"
     var showLogoutConfirmation by remember { mutableStateOf(false) }
+    var wallpaperDoodlesInfoSheetOpen by remember { mutableStateOf(false) }
     val partnerVisibility = remember(uiState.bootstrapState.pairingStatus, uiState.bootstrapState.partnerWallpaperStatus) {
         resolvePartnerDrawingVisibility(
             paired = isPaired,
@@ -412,6 +413,7 @@ private fun SettingsRootPage(
         )
     }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val wallpaperDoodlesInfoSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     Column(
         modifier = modifier
@@ -475,6 +477,7 @@ private fun SettingsRootPage(
             uiState = uiState,
             onPaneSelected = onPaneSelected,
             onWallpaperSyncEnabledChanged = onWallpaperSyncEnabledChanged,
+            onWallpaperDoodlesInfoRequested = { wallpaperDoodlesInfoSheetOpen = true },
             onLogoutRequested = { showLogoutConfirmation = true }
         )
 
@@ -517,6 +520,22 @@ private fun SettingsRootPage(
                 partnerName = partnerName ?: "Your partner",
                 visibility = partnerVisibility,
                 onDismiss = { onPartnerVisibilitySheetOpenChanged(false) }
+            )
+        }
+    }
+
+    if (wallpaperDoodlesInfoSheetOpen) {
+        LaunchedEffect(wallpaperDoodlesInfoSheetOpen, wallpaperDoodlesInfoSheetState) {
+            wallpaperDoodlesInfoSheetState.expand()
+        }
+        ModalBottomSheet(
+            onDismissRequest = { wallpaperDoodlesInfoSheetOpen = false },
+            sheetState = wallpaperDoodlesInfoSheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            WallpaperDoodlesInfoSheetContent(
+                onDismiss = { wallpaperDoodlesInfoSheetOpen = false }
             )
         }
     }
@@ -627,6 +646,7 @@ private fun SettingsRootMenu(
     uiState: SettingsUiState,
     onPaneSelected: (SettingsPane) -> Unit,
     onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
+    onWallpaperDoodlesInfoRequested: () -> Unit,
     onLogoutRequested: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -659,10 +679,11 @@ private fun SettingsRootMenu(
         )
         SettingsRootToggleRow(
             icon = SettingsRootIcon.Lock,
-            title = "Wallpaper sync",
+            title = "Show doodles on wallpaper",
             checked = uiState.wallpaperSyncEnabled,
             enabled = !uiState.isBusy,
-            onCheckedChange = onWallpaperSyncEnabledChanged
+            onCheckedChange = onWallpaperSyncEnabledChanged,
+            onInfoClick = onWallpaperDoodlesInfoRequested
         )
         SettingsRootRow(
             icon = SettingsRootIcon.Privacy,
@@ -821,9 +842,9 @@ private fun PartnerDrawingVisibilitySheetContent(
     }
     val body = when (visibility) {
         PartnerDrawingVisibility.Unknown ->
-            "Mulberry updates this status when your partner opens the app. If Wallpaper sync is enabled on their device, Mulberry also checks periodically in the background."
+            "Mulberry updates this status when your partner opens the app. If “Show doodles on wallpaper” is enabled on their device, Mulberry also checks periodically in the background."
         PartnerDrawingVisibility.CannotSeeLatestSyncOff ->
-            "Wallpaper sync is off on your partner’s device. They may still see an older snapshot, but they won’t see anything new you draw."
+            "“Show doodles on wallpaper” is off on your partner’s device. They may still see an older snapshot, but they won’t see anything new you draw."
         PartnerDrawingVisibility.CannotSeeWallpaperNotSet ->
             "Mulberry isn’t set as wallpaper on your partner’s lock screen or home screen, so they won’t see your canvas there."
         PartnerDrawingVisibility.CanSee ->
@@ -833,7 +854,7 @@ private fun PartnerDrawingVisibilitySheetContent(
         PartnerDrawingVisibility.CannotSeeLatestSyncOff ->
             listOf(
                 "Ask $partnerName to open Mulberry.",
-                "In Settings, turn on Wallpaper sync."
+                "In Settings, turn on “Show doodles on wallpaper”."
             )
         PartnerDrawingVisibility.CannotSeeWallpaperNotSet ->
             listOf(
@@ -896,7 +917,8 @@ private fun SettingsRootToggleRow(
     checked: Boolean,
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    onInfoClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = modifier
@@ -924,6 +946,70 @@ private fun SettingsRootToggleRow(
             enabled = enabled,
             onCheckedChange = onCheckedChange
         )
+        if (onInfoClick != null) {
+            Spacer(modifier = Modifier.width(10.dp))
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = true, onClick = onInfoClick)
+                    .padding(7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.settings_icon_info),
+                    contentDescription = "About $title",
+                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f)),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WallpaperDoodlesInfoSheetContent(onDismiss: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 22.dp)
+            .padding(bottom = 24.dp)
+    ) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Show doodles on wallpaper",
+            color = MaterialTheme.colorScheme.onSurface,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 20.sp,
+            lineHeight = 26.sp
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = "When this is on, Mulberry draws doodles on top of your device wallpaper (lock screen or home screen).",
+            color = MaterialTheme.mulberryAppColors.mutedText,
+            fontFamily = PoppinsFontFamily,
+            fontSize = 14.sp,
+            lineHeight = 20.sp
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = "Turn it off to hide doodles from your wallpaper, useful during a meeting or anytime you don’t want them visible on your screen.",
+            color = MaterialTheme.mulberryAppColors.mutedText,
+            fontFamily = PoppinsFontFamily,
+            fontSize = 14.sp,
+            lineHeight = 20.sp
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = "This does not delete anything; you can turn it back on anytime.",
+            color = MaterialTheme.mulberryAppColors.mutedText,
+            fontFamily = PoppinsFontFamily,
+            fontSize = 14.sp,
+            lineHeight = 20.sp
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+        SettingsSaveButton(text = "Got it", enabled = true, onClick = onDismiss)
     }
 }
 

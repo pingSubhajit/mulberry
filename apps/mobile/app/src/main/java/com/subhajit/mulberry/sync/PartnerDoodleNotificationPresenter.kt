@@ -44,7 +44,7 @@ object PartnerDoodleNotificationPresenter {
             .setContentIntent(createLaunchIntent(context))
             .addAction(
                 R.drawable.brand_iconmark_white,
-                "Turn on Wallpaper sync",
+                "Turn on doodles on wallpaper",
                 createEnableWallpaperSyncIntent(context)
             )
             .setAutoCancel(true)
