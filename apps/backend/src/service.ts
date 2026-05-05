@@ -24,7 +24,9 @@ import type {
   RedeemInviteResponse,
   SessionRecord,
   StreakResponse,
+  UpdateWallpaperStatusRequest,
   UserRecord,
+  UserWallpaperStatusRow,
 } from "./domain.js"
 import type { GoogleTokenVerifier } from "./googleAuth.js"
 import type { PushDispatchService } from "./push.js"
@@ -195,6 +197,86 @@ export class MulberryService {
   async getBootstrap(accessToken: string): Promise<BootstrapResponse> {
     const context = await this.requireSessionContext(accessToken)
     return this.buildBootstrap(context.user.id)
+  }
+
+  async updateWallpaperStatus(
+    accessToken: string,
+    request: UpdateWallpaperStatusRequest,
+  ): Promise<{ ok: true }> {
+    const context = await this.requireSessionContext(accessToken)
+    const pairSession = await this.getPairSession(context.user.id)
+    if (!pairSession) {
+      throw new HttpError(400, "User is not paired")
+    }
+
+    const wallpaperSyncEnabled = Boolean(request.wallpaperSyncEnabled)
+    const wallpaperSelectedOnHome = Boolean(request.wallpaperSelectedOnHome)
+    const wallpaperSelectedOnLock = Boolean(request.wallpaperSelectedOnLock)
+    const canSeeLatestDrawings = wallpaperSyncEnabled && (wallpaperSelectedOnHome || wallpaperSelectedOnLock)
+
+    const existing = await this.getUserWallpaperStatus(context.user.id)
+    const shouldNotifyPeer = existing != null && existing.has_ever_been_able_to_see && (
+      existing.can_see_latest_drawings !== canSeeLatestDrawings
+    )
+
+    const rows = await this.db.query<UserWallpaperStatusRow>(
+      `
+      INSERT INTO user_wallpaper_status (
+        user_id,
+        pair_session_id,
+        wallpaper_sync_enabled,
+        wallpaper_selected_on_home,
+        wallpaper_selected_on_lock,
+        can_see_latest_drawings,
+        has_ever_been_able_to_see,
+        updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      ON CONFLICT (user_id) DO UPDATE SET
+        pair_session_id = EXCLUDED.pair_session_id,
+        wallpaper_sync_enabled = EXCLUDED.wallpaper_sync_enabled,
+        wallpaper_selected_on_home = EXCLUDED.wallpaper_selected_on_home,
+        wallpaper_selected_on_lock = EXCLUDED.wallpaper_selected_on_lock,
+        can_see_latest_drawings = EXCLUDED.can_see_latest_drawings,
+        has_ever_been_able_to_see = (user_wallpaper_status.has_ever_been_able_to_see OR EXCLUDED.has_ever_been_able_to_see),
+        updated_at = NOW()
+      RETURNING
+        user_id,
+        pair_session_id,
+        wallpaper_sync_enabled,
+        wallpaper_selected_on_home,
+        wallpaper_selected_on_lock,
+        can_see_latest_drawings,
+        has_ever_been_able_to_see,
+        updated_at
+      `,
+      [
+        context.user.id,
+        pairSession.id,
+        wallpaperSyncEnabled,
+        wallpaperSelectedOnHome,
+        wallpaperSelectedOnLock,
+        canSeeLatestDrawings,
+        canSeeLatestDrawings,
+      ],
+    )
+    const persisted = rows.rows[0]
+
+    if (shouldNotifyPeer) {
+      const profile = await this.getProfile(context.user.id)
+      this.pushDispatchService?.enqueuePartnerVisibilityChanged(
+        pairSession.id,
+        context.user.id,
+        profile?.display_name ?? "Your partner",
+        persisted.can_see_latest_drawings,
+        {
+          wallpaperSyncEnabled: persisted.wallpaper_sync_enabled,
+          wallpaperSelectedOnHome: persisted.wallpaper_selected_on_home,
+          wallpaperSelectedOnLock: persisted.wallpaper_selected_on_lock,
+        },
+      )
+    }
+
+    return { ok: true }
   }
 
   async getStreak(accessToken: string, todayInput: string): Promise<StreakResponse> {
@@ -1268,6 +1350,7 @@ export class MulberryService {
           pairSession.user_one_id === userId ? pairSession.user_two_id : pairSession.user_one_id,
         )
       : null
+    const partnerWallpaperStatus = partnerUser ? await this.getUserWallpaperStatus(partnerUser.id) : null
     const pendingInvite = await this.getPendingInvite(userId)
     let onboardingCompleted = Boolean(profile?.onboarding_completed_at)
     if (pendingInvite && !onboardingCompleted) {
@@ -1301,6 +1384,14 @@ export class MulberryService {
           null
         : this.profilePhotoUrl(profile?.partner_profile_photo_path) ?? inviterPhotoUrl,
       partnerDisplayName: profile?.partner_display_name ?? null,
+      partnerWallpaperStatus: partnerWallpaperStatus ? {
+        updatedAt: new Date(partnerWallpaperStatus.updated_at).toISOString(),
+        wallpaperSyncEnabled: partnerWallpaperStatus.wallpaper_sync_enabled,
+        wallpaperSelectedOnHome: partnerWallpaperStatus.wallpaper_selected_on_home,
+        wallpaperSelectedOnLock: partnerWallpaperStatus.wallpaper_selected_on_lock,
+        canSeeLatestDrawings: partnerWallpaperStatus.can_see_latest_drawings,
+        hasEverBeenAbleToSee: partnerWallpaperStatus.has_ever_been_able_to_see,
+      } : null,
       anniversaryDate: profile?.anniversary_date ?? null,
       partnerProfileNextUpdateAt: pairSession ? this.partnerProfileNextUpdateAt(profile) : null,
       pairedAt: pairSession ? new Date(pairSession.created_at).toISOString() : null,
@@ -1322,6 +1413,26 @@ export class MulberryService {
           }
         : null,
     }
+  }
+
+  private async getUserWallpaperStatus(userId: string): Promise<UserWallpaperStatusRow | null> {
+    const rows = await this.db.query<UserWallpaperStatusRow>(
+      `
+      SELECT
+        user_id,
+        pair_session_id,
+        wallpaper_sync_enabled,
+        wallpaper_selected_on_home,
+        wallpaper_selected_on_lock,
+        can_see_latest_drawings,
+        has_ever_been_able_to_see,
+        updated_at
+      FROM user_wallpaper_status
+      WHERE user_id = $1
+      `,
+      [userId],
+    )
+    return rows.rows[0] ?? null
   }
 
   private async getProfile(userId: string): Promise<ProfileRecord | null> {

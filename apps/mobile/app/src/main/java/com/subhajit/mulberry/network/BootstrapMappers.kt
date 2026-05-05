@@ -4,6 +4,7 @@ import com.subhajit.mulberry.data.bootstrap.AuthStatus
 import com.subhajit.mulberry.data.bootstrap.InviteStatus
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.data.bootstrap.PendingInviteSummary
+import com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 
 fun BootstrapResponse.toDomainBootstrap(): SessionBootstrapState = SessionBootstrapState(
@@ -16,6 +17,16 @@ fun BootstrapResponse.toDomainBootstrap(): SessionBootstrapState = SessionBootst
     userDisplayName = userDisplayName,
     partnerPhotoUrl = partnerPhotoUrl,
     partnerDisplayName = partnerDisplayName,
+    partnerWallpaperStatus = partnerWallpaperStatus?.let {
+        PartnerWallpaperStatus(
+            updatedAt = it.updatedAt,
+            wallpaperSyncEnabled = it.wallpaperSyncEnabled,
+            wallpaperSelectedOnHome = it.wallpaperSelectedOnHome,
+            wallpaperSelectedOnLock = it.wallpaperSelectedOnLock,
+            canSeeLatestDrawings = it.canSeeLatestDrawings,
+            hasEverBeenAbleToSee = it.hasEverBeenAbleToSee
+        )
+    },
     anniversaryDate = anniversaryDate,
     partnerProfileNextUpdateAt = partnerProfileNextUpdateAt,
     pairedAt = pairedAt,

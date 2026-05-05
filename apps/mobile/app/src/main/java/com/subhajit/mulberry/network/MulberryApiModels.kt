@@ -27,6 +27,7 @@ data class BootstrapResponse(
     val userDisplayName: String?,
     val partnerPhotoUrl: String?,
     val partnerDisplayName: String?,
+    val partnerWallpaperStatus: PartnerWallpaperStatusResponse?,
     val anniversaryDate: String?,
     val partnerProfileNextUpdateAt: String?,
     val pairedAt: String?,
@@ -34,6 +35,15 @@ data class BootstrapResponse(
     val pairingStatus: String,
     val pairSessionId: String?,
     val invite: InviteResponse?
+)
+
+data class PartnerWallpaperStatusResponse(
+    val updatedAt: String,
+    val wallpaperSyncEnabled: Boolean,
+    val wallpaperSelectedOnHome: Boolean,
+    val wallpaperSelectedOnLock: Boolean,
+    val canSeeLatestDrawings: Boolean,
+    val hasEverBeenAbleToSee: Boolean
 )
 
 data class StreakWeekDayResponse(
@@ -71,6 +81,12 @@ data class DisplayNameRequest(
 data class PartnerProfileRequest(
     val partnerDisplayName: String,
     val anniversaryDate: String
+)
+
+data class UpdateWallpaperStatusRequest(
+    val wallpaperSyncEnabled: Boolean,
+    val wallpaperSelectedOnHome: Boolean,
+    val wallpaperSelectedOnLock: Boolean
 )
 
 data class CreateInviteResponse(

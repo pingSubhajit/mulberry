@@ -27,6 +27,23 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             val recipientDisplayName = preferences[PreferenceStorage.pendingRecipientDisplayName]
             val inviteStatus = preferences[PreferenceStorage.pendingInviteStatus]
                 ?.let(InviteStatus::valueOf)
+            val partnerWallpaperUpdatedAt =
+                preferences[PreferenceStorage.partnerWallpaperStatusUpdatedAt]
+            val partnerWallpaperStatus = partnerWallpaperUpdatedAt?.let { updatedAt ->
+                PartnerWallpaperStatus(
+                    updatedAt = updatedAt,
+                    wallpaperSyncEnabled =
+                        preferences[PreferenceStorage.partnerWallpaperSyncEnabled] ?: true,
+                    wallpaperSelectedOnHome =
+                        preferences[PreferenceStorage.partnerWallpaperSelectedOnHome] ?: false,
+                    wallpaperSelectedOnLock =
+                        preferences[PreferenceStorage.partnerWallpaperSelectedOnLock] ?: false,
+                    canSeeLatestDrawings =
+                        preferences[PreferenceStorage.partnerCanSeeLatestDrawings] ?: false,
+                    hasEverBeenAbleToSee =
+                        preferences[PreferenceStorage.partnerHasEverBeenAbleToSee] ?: false
+                )
+            }
 
             SessionBootstrapState(
                 authStatus = preferences[PreferenceStorage.authStatus]
@@ -40,6 +57,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                 userDisplayName = preferences[PreferenceStorage.userDisplayName],
                 partnerPhotoUrl = preferences[PreferenceStorage.partnerPhotoUrl],
                 partnerDisplayName = preferences[PreferenceStorage.partnerDisplayName],
+                partnerWallpaperStatus = partnerWallpaperStatus,
                 anniversaryDate = preferences[PreferenceStorage.anniversaryDate],
                 partnerProfileNextUpdateAt = preferences[PreferenceStorage.partnerProfileNextUpdateAt],
                 pairedAt = preferences[PreferenceStorage.pairedAt],
@@ -102,6 +120,27 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             updateNullable(preferences, PreferenceStorage.userDisplayName, state.userDisplayName)
             updateNullable(preferences, PreferenceStorage.partnerPhotoUrl, state.partnerPhotoUrl)
             updateNullable(preferences, PreferenceStorage.partnerDisplayName, state.partnerDisplayName)
+            if (state.partnerWallpaperStatus == null) {
+                preferences.remove(PreferenceStorage.partnerWallpaperStatusUpdatedAt)
+                preferences.remove(PreferenceStorage.partnerWallpaperSyncEnabled)
+                preferences.remove(PreferenceStorage.partnerWallpaperSelectedOnHome)
+                preferences.remove(PreferenceStorage.partnerWallpaperSelectedOnLock)
+                preferences.remove(PreferenceStorage.partnerCanSeeLatestDrawings)
+                preferences.remove(PreferenceStorage.partnerHasEverBeenAbleToSee)
+            } else {
+                preferences[PreferenceStorage.partnerWallpaperStatusUpdatedAt] =
+                    state.partnerWallpaperStatus.updatedAt
+                preferences[PreferenceStorage.partnerWallpaperSyncEnabled] =
+                    state.partnerWallpaperStatus.wallpaperSyncEnabled
+                preferences[PreferenceStorage.partnerWallpaperSelectedOnHome] =
+                    state.partnerWallpaperStatus.wallpaperSelectedOnHome
+                preferences[PreferenceStorage.partnerWallpaperSelectedOnLock] =
+                    state.partnerWallpaperStatus.wallpaperSelectedOnLock
+                preferences[PreferenceStorage.partnerCanSeeLatestDrawings] =
+                    state.partnerWallpaperStatus.canSeeLatestDrawings
+                preferences[PreferenceStorage.partnerHasEverBeenAbleToSee] =
+                    state.partnerWallpaperStatus.hasEverBeenAbleToSee
+            }
             updateNullable(preferences, PreferenceStorage.anniversaryDate, state.anniversaryDate)
             updateNullable(
                 preferences,
@@ -158,6 +197,28 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
         }
     }
 
+    override suspend fun setPartnerWallpaperStatus(status: PartnerWallpaperStatus?) {
+        dataStore.edit { preferences ->
+            if (status == null) {
+                preferences.remove(PreferenceStorage.partnerWallpaperStatusUpdatedAt)
+                preferences.remove(PreferenceStorage.partnerWallpaperSyncEnabled)
+                preferences.remove(PreferenceStorage.partnerWallpaperSelectedOnHome)
+                preferences.remove(PreferenceStorage.partnerWallpaperSelectedOnLock)
+                preferences.remove(PreferenceStorage.partnerCanSeeLatestDrawings)
+                preferences.remove(PreferenceStorage.partnerHasEverBeenAbleToSee)
+            } else {
+                preferences[PreferenceStorage.partnerWallpaperStatusUpdatedAt] = status.updatedAt
+                preferences[PreferenceStorage.partnerWallpaperSyncEnabled] = status.wallpaperSyncEnabled
+                preferences[PreferenceStorage.partnerWallpaperSelectedOnHome] =
+                    status.wallpaperSelectedOnHome
+                preferences[PreferenceStorage.partnerWallpaperSelectedOnLock] =
+                    status.wallpaperSelectedOnLock
+                preferences[PreferenceStorage.partnerCanSeeLatestDrawings] = status.canSeeLatestDrawings
+                preferences[PreferenceStorage.partnerHasEverBeenAbleToSee] = status.hasEverBeenAbleToSee
+            }
+        }
+    }
+
     override suspend fun seedDemoSession() {
         if (!appConfig.enableDebugMenu) return
 
@@ -196,6 +257,12 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences.remove(PreferenceStorage.userDisplayName)
             preferences.remove(PreferenceStorage.partnerPhotoUrl)
             preferences.remove(PreferenceStorage.partnerDisplayName)
+            preferences.remove(PreferenceStorage.partnerWallpaperStatusUpdatedAt)
+            preferences.remove(PreferenceStorage.partnerWallpaperSyncEnabled)
+            preferences.remove(PreferenceStorage.partnerWallpaperSelectedOnHome)
+            preferences.remove(PreferenceStorage.partnerWallpaperSelectedOnLock)
+            preferences.remove(PreferenceStorage.partnerCanSeeLatestDrawings)
+            preferences.remove(PreferenceStorage.partnerHasEverBeenAbleToSee)
             preferences.remove(PreferenceStorage.anniversaryDate)
             preferences.remove(PreferenceStorage.partnerProfileNextUpdateAt)
             preferences.remove(PreferenceStorage.pairingStatus)

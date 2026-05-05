@@ -8,8 +8,10 @@ import kotlinx.coroutines.flow.asStateFlow
 enum class AppShortcutAction(val intentAction: String) {
     ClearDoodles("com.subhajit.mulberry.action.CLEAR_DOODLES"),
     ChangeWallpaper("com.subhajit.mulberry.action.CHANGE_WALLPAPER"),
+    OpenCanvas("com.subhajit.mulberry.action.OPEN_CANVAS"),
     ShowPairingConfirmation("com.subhajit.mulberry.action.SHOW_PAIRING_CONFIRMATION"),
     ShowPairingHub("com.subhajit.mulberry.action.SHOW_PAIRING_HUB"),
+    ShowPartnerVisibilitySheet("com.subhajit.mulberry.action.SHOW_PARTNER_VISIBILITY_SHEET"),
     ShowSettings("com.subhajit.mulberry.action.SHOW_SETTINGS")
 }
 

@@ -149,6 +149,9 @@
     <string name="notification_channel_partner_doodles_name">New doodles</string>
     <string name="notification_channel_partner_doodles_description">When your partner adds a doodle that isn’t on your lock screen yet.</string>
 
+    <string name="notification_channel_partner_visibility_name">Partner visibility</string>
+    <string name="notification_channel_partner_visibility_description">When your partner can or can’t see your latest drawings.</string>
+
     <string name="notification_channel_draw_reminders_name">Draw reminders</string>
     <string name="notification_channel_draw_reminders_description">Gentle reminders to draw something for your partner.</string>
 

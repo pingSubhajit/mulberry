@@ -29,6 +29,7 @@ import com.subhajit.mulberry.pairing.inbound.InboundInviteActionController
 import com.subhajit.mulberry.pairing.inbound.InboundInviteDeepLinkCoordinatorViewModel
 import com.subhajit.mulberry.pairing.inbound.InboundInviteDeepLinkEffect
 import com.subhajit.mulberry.settings.SettingsRoute
+import com.subhajit.mulberry.settings.PartnerVisibilitySheetController
 import com.subhajit.mulberry.streak.StreakRoute
 import com.subhajit.mulberry.wallpaper.WallpaperCatalogRoute
 import com.subhajit.mulberry.wallpaper.WallpaperHelpRoute
@@ -52,6 +53,16 @@ fun MulberryNavHost(
 
     LaunchedEffect(shortcutAction, currentRoute) {
         val action = shortcutAction ?: return@LaunchedEffect
+        if (action == AppShortcutAction.ShowPartnerVisibilitySheet) {
+            PartnerVisibilitySheetController.requestOpen()
+            if (currentRoute != AppRoute.Settings.route) {
+                navController.navigate(AppRoute.Settings.route) {
+                    launchSingleTop = true
+                }
+            }
+            AppShortcutActionController.markHandled(action)
+            return@LaunchedEffect
+        }
         if (action == AppShortcutAction.ShowSettings) {
             if (currentRoute != AppRoute.Settings.route) {
                 navController.navigate(AppRoute.Settings.route) {

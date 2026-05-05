@@ -156,6 +156,17 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       PRIMARY KEY (pair_session_id, activity_day)
     );
 
+    CREATE TABLE IF NOT EXISTS user_wallpaper_status (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      pair_session_id TEXT REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      wallpaper_sync_enabled BOOLEAN NOT NULL,
+      wallpaper_selected_on_home BOOLEAN NOT NULL,
+      wallpaper_selected_on_lock BOOLEAN NOT NULL,
+      can_see_latest_drawings BOOLEAN NOT NULL,
+      has_ever_been_able_to_see BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS wallpapers (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,

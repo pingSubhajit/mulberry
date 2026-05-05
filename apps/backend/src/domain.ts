@@ -50,6 +50,7 @@ export interface BootstrapResponse {
   userDisplayName: string | null
   partnerPhotoUrl: string | null
   partnerDisplayName: string | null
+  partnerWallpaperStatus: PartnerWallpaperStatus | null
   anniversaryDate: string | null
   partnerProfileNextUpdateAt: string | null
   pairedAt: string | null
@@ -57,6 +58,15 @@ export interface BootstrapResponse {
   pairingStatus: PairingStatus
   pairSessionId: string | null
   invite: InviteSummary | null
+}
+
+export interface PartnerWallpaperStatus {
+  updatedAt: string
+  wallpaperSyncEnabled: boolean
+  wallpaperSelectedOnHome: boolean
+  wallpaperSelectedOnLock: boolean
+  canSeeLatestDrawings: boolean
+  hasEverBeenAbleToSee: boolean
 }
 
 export interface StreakWeekDay {
@@ -146,6 +156,12 @@ export interface RegisterFcmTokenRequest {
   appEnvironment: string
 }
 
+export interface UpdateWallpaperStatusRequest {
+  wallpaperSyncEnabled: boolean
+  wallpaperSelectedOnHome: boolean
+  wallpaperSelectedOnLock: boolean
+}
+
 export interface DeviceTokenRecord {
   id: string
   userId: string
@@ -225,6 +241,17 @@ export interface DeviceTokenRow {
   app_environment: string
   last_seen_at: Date | string
   revoked_at: Date | string | null
+}
+
+export interface UserWallpaperStatusRow {
+  user_id: string
+  pair_session_id: string | null
+  wallpaper_sync_enabled: boolean
+  wallpaper_selected_on_home: boolean
+  wallpaper_selected_on_lock: boolean
+  can_see_latest_drawings: boolean
+  has_ever_been_able_to_see: boolean
+  updated_at: Date | string
 }
 
 export interface GoogleIdentity {

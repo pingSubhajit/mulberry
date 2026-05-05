@@ -11,6 +11,7 @@ interface SessionBootstrapRepository {
     suspend fun cacheBootstrap(state: SessionBootstrapState)
     suspend fun cacheSession(session: AppSession?)
     suspend fun setWallpaperConfigured(configured: Boolean)
+    suspend fun setPartnerWallpaperStatus(status: PartnerWallpaperStatus?)
 
     suspend fun seedDemoSession()
 

@@ -535,6 +535,95 @@ describe("Mulberry backend", () => {
     })
   })
 
+  it("does not push partner visibility when a user first reports they can see drawings", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-token")
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/me/wallpaper-status",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        wallpaperSyncEnabled: true,
+        wallpaperSelectedOnHome: true,
+        wallpaperSelectedOnLock: false,
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(pushSender.sentMessages).toHaveLength(0)
+  })
+
+  it("pushes partner visibility after the user loses and regains drawing visibility", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-token")
+
+    const initial = await app.inject({
+      method: "PUT",
+      url: "/me/wallpaper-status",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        wallpaperSyncEnabled: true,
+        wallpaperSelectedOnHome: true,
+        wallpaperSelectedOnLock: false,
+      },
+    })
+    expect(initial.statusCode).toBe(200)
+
+    const lost = await app.inject({
+      method: "PUT",
+      url: "/me/wallpaper-status",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        wallpaperSyncEnabled: false,
+        wallpaperSelectedOnHome: true,
+        wallpaperSelectedOnLock: false,
+      },
+    })
+    expect(lost.statusCode).toBe(200)
+    await eventually(() => pushSender.sentMessages.length === 1)
+    expect(pushSender.sentMessages[0]).toMatchObject({
+      tokens: ["recipient-token"],
+      data: {
+        type: "PARTNER_VISIBILITY_CHANGED",
+        pairSessionId: inviter.pairSessionId,
+        actorUserId: inviter.userId,
+        actorDisplayName: "Subhajit",
+        canSeeLatestDrawings: "false",
+        wallpaperSyncEnabled: "false",
+        wallpaperSelectedOnHome: "true",
+        wallpaperSelectedOnLock: "false",
+      },
+    })
+
+    const regained = await app.inject({
+      method: "PUT",
+      url: "/me/wallpaper-status",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        wallpaperSyncEnabled: true,
+        wallpaperSelectedOnHome: false,
+        wallpaperSelectedOnLock: true,
+      },
+    })
+    expect(regained.statusCode).toBe(200)
+    await eventually(() => pushSender.sentMessages.length === 2)
+    expect(pushSender.sentMessages[1]).toMatchObject({
+      tokens: ["recipient-token"],
+      data: {
+        type: "PARTNER_VISIBILITY_CHANGED",
+        pairSessionId: inviter.pairSessionId,
+        actorUserId: inviter.userId,
+        actorDisplayName: "Subhajit",
+        canSeeLatestDrawings: "true",
+        wallpaperSyncEnabled: "true",
+        wallpaperSelectedOnHome: "false",
+        wallpaperSelectedOnLock: "true",
+      },
+    })
+  })
+
   it("pushes a pairing disconnected to the peer when a user disconnects", async () => {
     const { inviter, recipient } = await pairUsers()
     await registerFcmToken(recipient.accessToken, "recipient-token")

@@ -40,12 +40,24 @@ export interface DrawReminderPushPayload {
   reminderCount: string
 }
 
+export interface PartnerVisibilityChangedPushPayload {
+  type: "PARTNER_VISIBILITY_CHANGED"
+  pairSessionId: string
+  actorUserId: string
+  actorDisplayName: string
+  canSeeLatestDrawings: string
+  wallpaperSyncEnabled: string
+  wallpaperSelectedOnHome: string
+  wallpaperSelectedOnLock: string
+}
+
 export type MulberryPushPayload =
   | CanvasUpdatedPushPayload
   | CanvasNudgePushPayload
   | PairingConfirmedPushPayload
   | PairingDisconnectedPushPayload
   | DrawReminderPushPayload
+  | PartnerVisibilityChangedPushPayload
 
 export interface MulberryPushMessage {
   tokens: string[]
@@ -146,6 +158,7 @@ const DEFAULT_DRAW_REMINDER_BASE_DELAY_MS = 24 * 60 * 60 * 1_000
 const DEFAULT_DRAW_REMINDER_POLL_INTERVAL_MS = 30_000
 const DEFAULT_DRAW_REMINDER_TTL_MS = 24 * 60 * 60 * 1_000
 const DEFAULT_DRAW_REMINDER_MAX_BACKOFF_DAYS = 7
+const DEFAULT_PARTNER_VISIBILITY_TTL_MS = 24 * 60 * 60 * 1_000
 
 export class PushDispatchService {
   private readonly pendingByPairSession = new Map<string, PendingCanvasUpdate>()
@@ -160,6 +173,7 @@ export class PushDispatchService {
   private readonly drawReminderPollIntervalMs: number
   private readonly drawReminderTtlMs: number
   private readonly drawReminderMaxBackoffDays: number
+  private readonly partnerVisibilityTtlMs: number
   private nudgePoller: ReturnType<typeof setInterval> | null = null
   private nudgeFlushInProgress = false
   private drawReminderPoller: ReturnType<typeof setInterval> | null = null
@@ -187,6 +201,7 @@ export class PushDispatchService {
       1,
       Math.floor(options.drawReminderMaxBackoffDays ?? DEFAULT_DRAW_REMINDER_MAX_BACKOFF_DAYS),
     )
+    this.partnerVisibilityTtlMs = DEFAULT_PARTNER_VISIBILITY_TTL_MS
 
     this.nudgePoller = setInterval(() => {
       void this.flushDueNudges()
@@ -263,6 +278,26 @@ export class PushDispatchService {
         updated_at = NOW()
       `,
       [pairSessionId, actorUserId, latestRevision, dueAt],
+    )
+  }
+
+  enqueuePartnerVisibilityChanged(
+    pairSessionId: string,
+    actorUserId: string,
+    actorDisplayName: string,
+    canSeeLatestDrawings: boolean,
+    details: {
+      wallpaperSyncEnabled: boolean
+      wallpaperSelectedOnHome: boolean
+      wallpaperSelectedOnLock: boolean
+    },
+  ): void {
+    void this.sendPartnerVisibilityChanged(
+      pairSessionId,
+      actorUserId,
+      actorDisplayName,
+      canSeeLatestDrawings,
+      details,
     )
   }
 
@@ -464,6 +499,72 @@ export class PushDispatchService {
     }
 
     console.info("[push] pairing disconnected sent", {
+      pairSessionId,
+      invalidTokenCount: result.invalidTokens.length,
+    })
+
+    if (result.invalidTokens.length > 0) {
+      await this.revokeTokens(result.invalidTokens)
+    }
+  }
+
+  private async sendPartnerVisibilityChanged(
+    pairSessionId: string,
+    actorUserId: string,
+    actorDisplayName: string,
+    canSeeLatestDrawings: boolean,
+    details: {
+      wallpaperSyncEnabled: boolean
+      wallpaperSelectedOnHome: boolean
+      wallpaperSelectedOnLock: boolean
+    },
+  ): Promise<void> {
+    const tokens = await this.activePeerTokens(pairSessionId, actorUserId)
+    if (tokens.length === 0) {
+      console.info("[push] no active peer tokens for partner visibility", {
+        pairSessionId,
+        actorUserId,
+      })
+      return
+    }
+
+    console.info("[push] sending partner visibility", {
+      pairSessionId,
+      actorUserId,
+      canSeeLatestDrawings,
+      tokenCount: tokens.length,
+    })
+
+    let result: PushSendResult
+    try {
+      result = await this.sender.send({
+        tokens,
+        data: {
+          type: "PARTNER_VISIBILITY_CHANGED",
+          pairSessionId,
+          actorUserId,
+          actorDisplayName,
+          canSeeLatestDrawings: String(canSeeLatestDrawings),
+          wallpaperSyncEnabled: String(details.wallpaperSyncEnabled),
+          wallpaperSelectedOnHome: String(details.wallpaperSelectedOnHome),
+          wallpaperSelectedOnLock: String(details.wallpaperSelectedOnLock),
+        },
+        android: {
+          priority: "high",
+          collapseKey: `partner-visibility-${pairSessionId}`,
+          ttlMs: this.partnerVisibilityTtlMs,
+        },
+      })
+    } catch (error) {
+      console.error("[push] partner visibility send failed", {
+        pairSessionId,
+        actorUserId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+
+    console.info("[push] partner visibility sent", {
       pairSessionId,
       invalidTokenCount: result.invalidTokens.length,
     })

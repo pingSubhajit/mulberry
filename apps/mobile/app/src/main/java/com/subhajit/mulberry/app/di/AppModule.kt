@@ -55,10 +55,13 @@ import com.subhajit.mulberry.sync.BackgroundCanvasSyncScheduler
 import com.subhajit.mulberry.sync.DataStoreSyncMetadataRepository
 import com.subhajit.mulberry.sync.DefaultBackgroundCanvasSyncCoordinator
 import com.subhajit.mulberry.sync.DefaultCanvasSyncRepository
+import com.subhajit.mulberry.sync.DefaultPartnerWallpaperStatusReportCoordinator
 import com.subhajit.mulberry.sync.FcmTokenRepository
 import com.subhajit.mulberry.sync.FirebaseFcmTokenRepository
 import com.subhajit.mulberry.sync.OkHttpCanvasSyncClient
 import com.subhajit.mulberry.sync.DefaultRemoteOperationApplier
+import com.subhajit.mulberry.sync.PartnerWallpaperStatusReportCoordinator
+import com.subhajit.mulberry.sync.PartnerWallpaperStatusReportScheduler
 import com.subhajit.mulberry.sync.RemoteOperationApplier
 import com.subhajit.mulberry.sync.SyncMetadataRepository
 import com.subhajit.mulberry.sync.SyncOutboxStore
@@ -66,6 +69,7 @@ import com.subhajit.mulberry.sync.SyncOutboxDao
 import com.subhajit.mulberry.sync.WallpaperSyncPausedReminderScheduler
 import com.subhajit.mulberry.sync.WorkManagerWallpaperSyncPausedReminderScheduler
 import com.subhajit.mulberry.sync.WorkManagerBackgroundCanvasSyncScheduler
+import com.subhajit.mulberry.sync.WorkManagerPartnerWallpaperStatusReportScheduler
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
 import com.subhajit.mulberry.wallpaper.BackendWallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
@@ -272,6 +276,18 @@ abstract class AppBindingsModule {
     abstract fun bindWallpaperSyncPausedReminderScheduler(
         implementation: WorkManagerWallpaperSyncPausedReminderScheduler
     ): WallpaperSyncPausedReminderScheduler
+
+    @Binds
+    @Singleton
+    abstract fun bindPartnerWallpaperStatusReportScheduler(
+        implementation: WorkManagerPartnerWallpaperStatusReportScheduler
+    ): PartnerWallpaperStatusReportScheduler
+
+    @Binds
+    @Singleton
+    abstract fun bindPartnerWallpaperStatusReportCoordinator(
+        implementation: DefaultPartnerWallpaperStatusReportCoordinator
+    ): PartnerWallpaperStatusReportCoordinator
 
     @Binds
     @Singleton

@@ -26,6 +26,7 @@ import com.subhajit.mulberry.sync.DrawReminderNotificationHandler
 import com.subhajit.mulberry.sync.DrawReminderNotificationPresenter
 import com.subhajit.mulberry.sync.DrawReminderPushPayload
 import com.subhajit.mulberry.sync.FcmTokenRepository
+import com.subhajit.mulberry.sync.PartnerWallpaperStatusReportCoordinator
 import com.subhajit.mulberry.sync.PartnerDoodleNotificationPresenter
 import com.subhajit.mulberry.sync.SyncMetadata
 import com.subhajit.mulberry.sync.SyncMetadataRepository
@@ -101,6 +102,7 @@ class SettingsViewModel @Inject constructor(
     private val backgroundImageRepository: BackgroundImageRepository,
     private val canvasSnapshotRenderer: CanvasSnapshotRenderer,
     private val wallpaperCoordinator: WallpaperCoordinator,
+    private val partnerWallpaperStatusReportCoordinator: PartnerWallpaperStatusReportCoordinator,
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     private val apiService: MulberryApiService,
     private val stickerAssetStore: StickerAssetStore,
@@ -230,6 +232,7 @@ class SettingsViewModel @Inject constructor(
                 wallpaperCoordinator.ensureSnapshotCurrent()
             }
             wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+            partnerWallpaperStatusReportCoordinator.reportNow(reason = "wallpaper_sync_toggle")
         }
     }
 

@@ -34,6 +34,15 @@ data class AppSession(
     val userId: String
 )
 
+data class PartnerWallpaperStatus(
+    val updatedAt: String,
+    val wallpaperSyncEnabled: Boolean,
+    val wallpaperSelectedOnHome: Boolean,
+    val wallpaperSelectedOnLock: Boolean,
+    val canSeeLatestDrawings: Boolean,
+    val hasEverBeenAbleToSee: Boolean
+)
+
 data class SessionBootstrapState(
     val authStatus: AuthStatus = AuthStatus.SIGNED_OUT,
     val hasCompletedOnboarding: Boolean = false,
@@ -44,6 +53,7 @@ data class SessionBootstrapState(
     val userDisplayName: String? = null,
     val partnerPhotoUrl: String? = null,
     val partnerDisplayName: String? = null,
+    val partnerWallpaperStatus: PartnerWallpaperStatus? = null,
     val anniversaryDate: String? = null,
     val partnerProfileNextUpdateAt: String? = null,
     val pairedAt: String? = null,

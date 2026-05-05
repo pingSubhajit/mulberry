@@ -32,6 +32,7 @@ import com.subhajit.mulberry.pairing.inbound.InstallReferrerInboundInviteIngeste
 import com.subhajit.mulberry.pairing.inbound.normalizeInviteCode
 import com.subhajit.mulberry.sync.CanvasSyncRepository
 import com.subhajit.mulberry.sync.FcmTokenRepository
+import com.subhajit.mulberry.sync.PartnerWallpaperStatusReportCoordinator
 import com.subhajit.mulberry.ui.theme.MulberryTheme
 import com.subhajit.mulberry.update.InAppUpdatePromptCoordinator
 import com.subhajit.mulberry.navigation.AppRoute
@@ -59,6 +60,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var sessionBootstrapRepository: SessionBootstrapRepository
     @Inject lateinit var appUpdateManager: AppUpdateManager
     @Inject lateinit var inAppUpdatePromptCoordinator: InAppUpdatePromptCoordinator
+    @Inject lateinit var partnerWallpaperStatusReportCoordinator: PartnerWallpaperStatusReportCoordinator
 
     private val currentRoute = MutableStateFlow<String?>(null)
     private var pendingUpdatePromptVersionCode: Int? = null
@@ -151,6 +153,9 @@ class MainActivity : ComponentActivity() {
         canvasSyncRepository.start()
         lifecycleScope.launch {
             fcmTokenRepository.syncTokenWithBackend()
+        }
+        lifecycleScope.launch {
+            partnerWallpaperStatusReportCoordinator.reportNow(reason = "foreground_start")
         }
         installReferrerInboundInviteIngester.ingestIfNeededAsync()
         if (isMainAppRoute(currentRoute.value)) {

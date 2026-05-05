@@ -190,6 +190,28 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return service.updatePartnerProfilePhoto(requireBearerToken(request), await readRequiredImageUpload(request))
   })
 
+  app.put("/me/wallpaper-status", async (request) => {
+    const body = request.body as {
+      wallpaperSyncEnabled?: unknown
+      wallpaperSelectedOnHome?: unknown
+      wallpaperSelectedOnLock?: unknown
+    }
+    if (typeof body?.wallpaperSyncEnabled !== "boolean") {
+      throw new HttpError(400, "wallpaperSyncEnabled must be a boolean")
+    }
+    if (typeof body?.wallpaperSelectedOnHome !== "boolean") {
+      throw new HttpError(400, "wallpaperSelectedOnHome must be a boolean")
+    }
+    if (typeof body?.wallpaperSelectedOnLock !== "boolean") {
+      throw new HttpError(400, "wallpaperSelectedOnLock must be a boolean")
+    }
+    return service.updateWallpaperStatus(requireBearerToken(request), {
+      wallpaperSyncEnabled: body.wallpaperSyncEnabled,
+      wallpaperSelectedOnHome: body.wallpaperSelectedOnHome,
+      wallpaperSelectedOnLock: body.wallpaperSelectedOnLock,
+    })
+  })
+
   app.post("/invites", async (request) => {
     return service.createInvite(requireBearerToken(request))
   })

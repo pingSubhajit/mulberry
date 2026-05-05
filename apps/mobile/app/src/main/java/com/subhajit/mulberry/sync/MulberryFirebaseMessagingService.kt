@@ -4,6 +4,8 @@ import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.subhajit.mulberry.app.AppForegroundState
+import com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus
+import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -11,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 @AndroidEntryPoint
 class MulberryFirebaseMessagingService : FirebaseMessagingService() {
@@ -18,6 +21,7 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
     @Inject lateinit var backgroundCanvasSyncScheduler: BackgroundCanvasSyncScheduler
     @Inject lateinit var canvasNudgeNotificationHandler: CanvasNudgeNotificationHandler
     @Inject lateinit var drawReminderNotificationHandler: DrawReminderNotificationHandler
+    @Inject lateinit var sessionBootstrapRepository: SessionBootstrapRepository
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -54,6 +58,44 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
             )
             if (!AppForegroundState.isForeground.value) {
                 PairingNotificationPresenter.showPartnerUnpaired(this, disconnectedPayload)
+            }
+            return
+        }
+
+        val partnerVisibilityPayload = PartnerVisibilityChangedPushPayloadParser.parse(message.data)
+        if (partnerVisibilityPayload != null) {
+            Log.i(
+                TAG,
+                "Received partner visibility push pairSessionId=${partnerVisibilityPayload.pairSessionId} " +
+                    "canSeeLatest=${partnerVisibilityPayload.canSeeLatestDrawings}"
+            )
+            Log.i(TAG, "Handling partner visibility push")
+            Log.i(TAG, "Triggering partner visibility notification")
+            runCatching {
+                PartnerVisibilityNotificationPresenter.show(
+                    this@MulberryFirebaseMessagingService,
+                    partnerVisibilityPayload
+                )
+            }.onFailure { error ->
+                Log.w(TAG, "Partner visibility notification failed", error)
+            }
+
+            // Persist synchronously so this survives the FCM service being torn down immediately.
+            runCatching {
+                runBlocking(Dispatchers.IO) {
+                    sessionBootstrapRepository.setPartnerWallpaperStatus(
+                        PartnerWallpaperStatus(
+                            updatedAt = java.time.Instant.now().toString(),
+                            wallpaperSyncEnabled = partnerVisibilityPayload.wallpaperSyncEnabled,
+                            wallpaperSelectedOnHome = partnerVisibilityPayload.wallpaperSelectedOnHome,
+                            wallpaperSelectedOnLock = partnerVisibilityPayload.wallpaperSelectedOnLock,
+                            canSeeLatestDrawings = partnerVisibilityPayload.canSeeLatestDrawings,
+                            hasEverBeenAbleToSee = true
+                        )
+                    )
+                }
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to persist partner wallpaper status", error)
             }
             return
         }

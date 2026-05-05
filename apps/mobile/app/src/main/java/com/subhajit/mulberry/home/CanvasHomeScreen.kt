@@ -355,18 +355,23 @@ fun CanvasHomeRoute(
         val action = shortcutAction ?: return@LaunchedEffect
         if (!isHomeReady) return@LaunchedEffect
 
-        when (action) {
-            AppShortcutAction.ClearDoodles -> {
-                if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
-                    onClearRequested()
-                }
-                onShortcutActionHandled(action)
-            }
+	        when (action) {
+	            AppShortcutAction.ClearDoodles -> {
+	                if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
+	                    onClearRequested()
+	                }
+	                onShortcutActionHandled(action)
+	            }
 
             AppShortcutAction.ChangeWallpaper -> {
                 pagerState.animateScrollToPage(MainAppTab.entries.indexOf(MainAppTab.LockScreen))
                 onShortcutActionHandled(action)
             }
+
+	            AppShortcutAction.OpenCanvas -> {
+	                pagerState.animateScrollToPage(MainAppTab.entries.indexOf(MainAppTab.Canvas))
+	                onShortcutActionHandled(action)
+	            }
 
             AppShortcutAction.ShowPairingConfirmation -> {
                 onPairingConfirmationRequested()
@@ -381,6 +386,10 @@ fun CanvasHomeRoute(
             }
 
             AppShortcutAction.ShowSettings -> {
+                onShortcutActionHandled(action)
+            }
+
+            AppShortcutAction.ShowPartnerVisibilitySheet -> {
                 onShortcutActionHandled(action)
             }
         }

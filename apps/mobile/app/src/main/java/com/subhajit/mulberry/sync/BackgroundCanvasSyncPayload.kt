@@ -30,6 +30,16 @@ data class DrawReminderPushPayload(
     val reminderCount: Int
 )
 
+data class PartnerVisibilityChangedPushPayload(
+    val pairSessionId: String?,
+    val actorUserId: String?,
+    val actorDisplayName: String,
+    val canSeeLatestDrawings: Boolean,
+    val wallpaperSyncEnabled: Boolean,
+    val wallpaperSelectedOnHome: Boolean,
+    val wallpaperSelectedOnLock: Boolean
+)
+
 object BackgroundCanvasSyncPayloadParser {
     private const val TYPE_CANVAS_UPDATED = "CANVAS_UPDATED"
 
@@ -95,6 +105,23 @@ object DrawReminderPushPayloadParser {
             pairSessionId = data["pairSessionId"]?.takeIf { it.isNotBlank() },
             partnerDisplayName = data["partnerDisplayName"]?.takeIf { it.isNotBlank() } ?: "Your partner",
             reminderCount = data["reminderCount"]?.toIntOrNull() ?: 0
+        )
+    }
+}
+
+object PartnerVisibilityChangedPushPayloadParser {
+    private const val TYPE_PARTNER_VISIBILITY_CHANGED = "PARTNER_VISIBILITY_CHANGED"
+
+    fun parse(data: Map<String, String>): PartnerVisibilityChangedPushPayload? {
+        if (data["type"] != TYPE_PARTNER_VISIBILITY_CHANGED) return null
+        return PartnerVisibilityChangedPushPayload(
+            pairSessionId = data["pairSessionId"]?.takeIf { it.isNotBlank() },
+            actorUserId = data["actorUserId"]?.takeIf { it.isNotBlank() },
+            actorDisplayName = data["actorDisplayName"]?.takeIf { it.isNotBlank() } ?: "Your partner",
+            canSeeLatestDrawings = data["canSeeLatestDrawings"]?.toBooleanStrictOrNull() ?: false,
+            wallpaperSyncEnabled = data["wallpaperSyncEnabled"]?.toBooleanStrictOrNull() ?: true,
+            wallpaperSelectedOnHome = data["wallpaperSelectedOnHome"]?.toBooleanStrictOrNull() ?: false,
+            wallpaperSelectedOnLock = data["wallpaperSelectedOnLock"]?.toBooleanStrictOrNull() ?: false
         )
     }
 }

@@ -14,6 +14,7 @@ object MulberryNotificationChannels {
 
     const val CHANNEL_ID_PAIRING_UPDATES = "pairing_updates"
     const val CHANNEL_ID_PARTNER_DOODLES = "partner_doodles"
+    const val CHANNEL_ID_PARTNER_VISIBILITY = "partner_visibility"
     const val CHANNEL_ID_DRAW_REMINDERS = "draw_reminders"
     const val CHANNEL_ID_WALLPAPER_SYNC = "wallpaper_sync"
     const val CHANNEL_ID_CANVAS_SYNC = "canvas_sync"
@@ -57,6 +58,14 @@ object MulberryNotificationChannels {
                 group = GROUP_ID_PARTNER
             },
             NotificationChannel(
+                CHANNEL_ID_PARTNER_VISIBILITY,
+                context.getString(R.string.notification_channel_partner_visibility_name),
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = context.getString(R.string.notification_channel_partner_visibility_description)
+                group = GROUP_ID_PARTNER
+            },
+            NotificationChannel(
                 CHANNEL_ID_DRAW_REMINDERS,
                 context.getString(R.string.notification_channel_draw_reminders_name),
                 NotificationManager.IMPORTANCE_HIGH
@@ -84,4 +93,3 @@ object MulberryNotificationChannels {
         notificationManager.createNotificationChannels(channels)
     }
 }
-

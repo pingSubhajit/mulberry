@@ -18,6 +18,18 @@ object PreferenceStorage {
     val userDisplayName = stringPreferencesKey("user_display_name")
     val partnerPhotoUrl = stringPreferencesKey("partner_photo_url")
     val partnerDisplayName = stringPreferencesKey("partner_display_name")
+    val partnerWallpaperStatusUpdatedAt =
+        stringPreferencesKey("partner_wallpaper_status_updated_at")
+    val partnerWallpaperSyncEnabled =
+        booleanPreferencesKey("partner_wallpaper_sync_enabled")
+    val partnerWallpaperSelectedOnHome =
+        booleanPreferencesKey("partner_wallpaper_selected_on_home")
+    val partnerWallpaperSelectedOnLock =
+        booleanPreferencesKey("partner_wallpaper_selected_on_lock")
+    val partnerCanSeeLatestDrawings =
+        booleanPreferencesKey("partner_can_see_latest_drawings")
+    val partnerHasEverBeenAbleToSee =
+        booleanPreferencesKey("partner_has_ever_been_able_to_see")
     val anniversaryDate = stringPreferencesKey("anniversary_date")
     val partnerProfileNextUpdateAt = stringPreferencesKey("partner_profile_next_update_at")
     val pairedAt = stringPreferencesKey("paired_at")

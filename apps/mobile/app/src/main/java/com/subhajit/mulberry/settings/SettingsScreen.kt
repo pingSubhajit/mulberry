@@ -92,6 +92,7 @@ import com.subhajit.mulberry.core.ui.TermsOfUseSheetContent
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
+import com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus
 import com.subhajit.mulberry.review.InAppReviewLauncher
 import com.subhajit.mulberry.streak.StreakSimulationPreset
 import com.subhajit.mulberry.sync.SyncState
@@ -124,10 +125,12 @@ fun SettingsRoute(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val shouldOpenPartnerVisibilitySheet by PartnerVisibilitySheetController.pendingAction.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = context as? ComponentActivity
     val snackbarHostState = remember { SnackbarHostState() }
     var pane by remember { mutableStateOf(SettingsPane.Home) }
+    var partnerVisibilitySheetOpen by remember { mutableStateOf(false) }
     val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) viewModel.onProfilePhotoSelected(uri)
     }
@@ -140,6 +143,14 @@ fun SettingsRoute(
             onNavigateBack()
         } else {
             pane = SettingsPane.Home
+        }
+    }
+
+    LaunchedEffect(shouldOpenPartnerVisibilitySheet) {
+        if (shouldOpenPartnerVisibilitySheet) {
+            pane = SettingsPane.Home
+            partnerVisibilitySheetOpen = true
+            PartnerVisibilitySheetController.markHandled()
         }
     }
 
@@ -197,6 +208,8 @@ fun SettingsRoute(
         uiState = uiState,
         pane = pane,
         snackbarHostState = snackbarHostState,
+        partnerVisibilitySheetOpen = partnerVisibilitySheetOpen,
+        onPartnerVisibilitySheetOpenChanged = { partnerVisibilitySheetOpen = it },
         onNavigateBack = {
             if (pane == SettingsPane.Home) onNavigateBack() else pane = SettingsPane.Home
         },
@@ -238,6 +251,8 @@ private fun SettingsScreen(
     uiState: SettingsUiState,
     pane: SettingsPane,
     snackbarHostState: SnackbarHostState,
+    partnerVisibilitySheetOpen: Boolean,
+    onPartnerVisibilitySheetOpenChanged: (Boolean) -> Unit,
     onNavigateBack: () -> Unit,
     onPaneSelected: (SettingsPane) -> Unit,
     onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
@@ -281,6 +296,8 @@ private fun SettingsScreen(
 	                onClose = onNavigateBack,
 	                onPaneSelected = onPaneSelected,
 	                onWallpaperSyncEnabledChanged = onWallpaperSyncEnabledChanged,
+                    partnerVisibilitySheetOpen = partnerVisibilitySheetOpen,
+                    onPartnerVisibilitySheetOpenChanged = onPartnerVisibilitySheetOpenChanged,
 	                onLogout = onLogout,
 	                modifier = Modifier.padding(padding)
 	            )
@@ -369,12 +386,15 @@ private fun SettingsScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsRootPage(
     uiState: SettingsUiState,
     onClose: () -> Unit,
     onPaneSelected: (SettingsPane) -> Unit,
     onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
+    partnerVisibilitySheetOpen: Boolean,
+    onPartnerVisibilitySheetOpenChanged: (Boolean) -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -382,6 +402,13 @@ private fun SettingsRootPage(
     val partnerName = uiState.bootstrapState.partnerDisplayName
     val userName = uiState.bootstrapState.userDisplayName ?: "Mulberry user"
     var showLogoutConfirmation by remember { mutableStateOf(false) }
+    val partnerVisibility = remember(uiState.bootstrapState.pairingStatus, uiState.bootstrapState.partnerWallpaperStatus) {
+        resolvePartnerDrawingVisibility(
+            paired = isPaired,
+            partnerWallpaperStatus = uiState.bootstrapState.partnerWallpaperStatus
+        )
+    }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     Column(
         modifier = modifier
@@ -424,7 +451,19 @@ private fun SettingsRootPage(
             anniversaryDate = uiState.bootstrapState.anniversaryDate
         )
 
-        Spacer(modifier = Modifier.height(if (isPaired) 70.dp else 46.dp))
+        Spacer(modifier = Modifier.height(if (isPaired) 40.dp else 46.dp))
+
+        if (isPaired && partnerVisibility != PartnerDrawingVisibility.CanSee) {
+            PartnerDrawingVisibilityBanner(
+                partnerName = partnerName ?: "your partner",
+                visibility = partnerVisibility,
+                onClick = { onPartnerVisibilitySheetOpenChanged(true) }
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+        } else if (isPaired) {
+            Spacer(modifier = Modifier.height(30.dp))
+        }
+
         SettingsRootMenu(
             uiState = uiState,
             onPaneSelected = onPaneSelected,
@@ -455,6 +494,24 @@ private fun SettingsRootPage(
                 onLogout()
             }
         )
+    }
+
+    if (partnerVisibilitySheetOpen) {
+        LaunchedEffect(partnerVisibilitySheetOpen, sheetState) {
+            sheetState.expand()
+        }
+        ModalBottomSheet(
+            onDismissRequest = { onPartnerVisibilitySheetOpenChanged(false) },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            PartnerDrawingVisibilitySheetContent(
+                partnerName = partnerName ?: "Your partner",
+                visibility = partnerVisibility,
+                onDismiss = { onPartnerVisibilitySheetOpenChanged(false) }
+            )
+        }
     }
 }
 
@@ -675,6 +732,180 @@ private fun SettingsRootRow(
         if (showChevron) {
             RootChevron()
         }
+    }
+}
+
+private enum class PartnerDrawingVisibility {
+    Unknown,
+    CanSee,
+    CannotSeeLatestSyncOff,
+    CannotSeeWallpaperNotSet
+}
+
+private fun resolvePartnerDrawingVisibility(
+    paired: Boolean,
+    partnerWallpaperStatus: PartnerWallpaperStatus?
+): PartnerDrawingVisibility {
+    if (!paired) return PartnerDrawingVisibility.Unknown
+    val status = partnerWallpaperStatus ?: return PartnerDrawingVisibility.Unknown
+    if (!status.wallpaperSyncEnabled) return PartnerDrawingVisibility.CannotSeeLatestSyncOff
+    if (!status.wallpaperSelectedOnHome && !status.wallpaperSelectedOnLock) {
+        return PartnerDrawingVisibility.CannotSeeWallpaperNotSet
+    }
+    return PartnerDrawingVisibility.CanSee
+}
+
+@Composable
+private fun PartnerDrawingVisibilityBanner(
+    partnerName: String,
+    visibility: PartnerDrawingVisibility,
+    onClick: () -> Unit
+) {
+    val title = when (visibility) {
+        PartnerDrawingVisibility.Unknown ->
+            "Can’t confirm if $partnerName can see your latest drawings"
+        PartnerDrawingVisibility.CannotSeeLatestSyncOff,
+        PartnerDrawingVisibility.CannotSeeWallpaperNotSet ->
+            "$partnerName can’t see your latest drawings"
+        PartnerDrawingVisibility.CanSee ->
+            "$partnerName can see your latest drawings"
+    }
+    val body = when (visibility) {
+        PartnerDrawingVisibility.Unknown ->
+            "Ask them to open Mulberry so we can check their wallpaper setup."
+        PartnerDrawingVisibility.CannotSeeLatestSyncOff ->
+            "Wallpaper sync is off on their device."
+        PartnerDrawingVisibility.CannotSeeWallpaperNotSet ->
+            "Mulberry isn’t set as wallpaper on their lock or home screen."
+        PartnerDrawingVisibility.CanSee ->
+            "All set."
+    }
+
+    SoftCard(
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            RootLineIcon(
+                icon = SettingsRootIcon.Partner,
+                color = MulberryPrimary,
+                modifier = Modifier.size(22.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontFamily = PoppinsFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    lineHeight = 20.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = body,
+                    color = MaterialTheme.mulberryAppColors.mutedText,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+            }
+            Text(
+                text = "›",
+                color = MulberryPrimary,
+                fontFamily = PoppinsFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 24.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun PartnerDrawingVisibilitySheetContent(
+    partnerName: String,
+    visibility: PartnerDrawingVisibility,
+    onDismiss: () -> Unit
+) {
+    val title = when (visibility) {
+        PartnerDrawingVisibility.Unknown ->
+            "We can’t confirm if $partnerName can see your latest drawings yet"
+        PartnerDrawingVisibility.CannotSeeLatestSyncOff ->
+            "$partnerName can’t see your latest drawings"
+        PartnerDrawingVisibility.CannotSeeWallpaperNotSet ->
+            "$partnerName can’t see your drawings"
+        PartnerDrawingVisibility.CanSee ->
+            "$partnerName can see your latest drawings"
+    }
+    val body = when (visibility) {
+        PartnerDrawingVisibility.Unknown ->
+            "Mulberry updates this status when your partner opens the app. If Wallpaper sync is enabled on their device, Mulberry also checks periodically in the background."
+        PartnerDrawingVisibility.CannotSeeLatestSyncOff ->
+            "Wallpaper sync is off on your partner’s device. They may still see an older snapshot, but they won’t see anything new you draw."
+        PartnerDrawingVisibility.CannotSeeWallpaperNotSet ->
+            "Mulberry isn’t set as wallpaper on your partner’s lock screen or home screen, so they won’t see your canvas there."
+        PartnerDrawingVisibility.CanSee ->
+            "Everything looks good — your partner should see new drawings on their device."
+    }
+    val steps = when (visibility) {
+        PartnerDrawingVisibility.CannotSeeLatestSyncOff ->
+            listOf(
+                "Ask $partnerName to open Mulberry.",
+                "In Settings, turn on Wallpaper sync."
+            )
+        PartnerDrawingVisibility.CannotSeeWallpaperNotSet ->
+            listOf(
+                "Ask $partnerName to open Mulberry.",
+                "Set up Mulberry as a wallpaper (lock or home screen)."
+            )
+        PartnerDrawingVisibility.Unknown ->
+            listOf(
+                "Ask $partnerName to open Mulberry so it can report its status."
+            )
+        PartnerDrawingVisibility.CanSee ->
+            emptyList()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 22.dp)
+            .padding(bottom = 24.dp)
+    ) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 20.sp,
+            lineHeight = 26.sp
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = body,
+            color = MaterialTheme.mulberryAppColors.mutedText,
+            fontFamily = PoppinsFontFamily,
+            fontSize = 14.sp,
+            lineHeight = 20.sp
+        )
+        if (steps.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            steps.forEachIndexed { index, step ->
+                Text(
+                    text = "${index + 1}. $step",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+        Spacer(modifier = Modifier.height(18.dp))
+        SettingsSaveButton(text = "Got it", enabled = true, onClick = onDismiss)
     }
 }
 
