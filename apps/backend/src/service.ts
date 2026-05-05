@@ -102,6 +102,8 @@ const PARTNER_PROFILE_UPDATE_COOLDOWN_MS = 72 * 60 * 60 * 1_000
 const PARTNER_DETAILS_REQUIRED_MESSAGE = "Partner details are required before creating an invite"
 const PROFILE_PHOTO_PREFIX = "profile-photos"
 const PROFILE_PHOTO_MAX_BYTES = 10 * 1024 * 1024
+const REACTION_SEND_RATE_LIMIT_CAPACITY = 6
+const REACTION_SEND_RATE_LIMIT_REFILL_TOKENS_PER_SEC = 1
 
 export class MulberryService {
   constructor(
@@ -857,6 +859,10 @@ export class MulberryService {
     }
 
     const updated = await this.db.transaction(async (tx) => {
+      await this.enforceReactionSendRateLimit(tx, {
+        actorUserId: context.user.id,
+        pairSessionId: pairSession.id,
+      })
       return this.appendReactionForRecipient(tx, {
         pairSessionId: pairSession.id,
         recipientUserId,
@@ -872,6 +878,82 @@ export class MulberryService {
     })
 
     return { ok: true, ...updated }
+  }
+
+  private async enforceReactionSendRateLimit(
+    tx: Pick<Database, "query">,
+    input: { actorUserId: string; pairSessionId: string },
+  ): Promise<void> {
+    const nowMs = Date.now()
+    const rows = await tx.query<{
+      available_tokens: number
+      last_refill_at_ms: number
+    }>(
+      `
+      SELECT available_tokens, last_refill_at_ms
+      FROM reaction_send_rate_limits
+      WHERE actor_user_id = $1 AND pair_session_id = $2
+      FOR UPDATE
+      `,
+      [input.actorUserId, input.pairSessionId],
+    )
+
+    const existing = rows.rows[0]
+    if (!existing) {
+      await tx.query(
+        `
+        INSERT INTO reaction_send_rate_limits (
+          actor_user_id,
+          pair_session_id,
+          available_tokens,
+          last_refill_at_ms,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, NOW())
+        `,
+        [
+          input.actorUserId,
+          input.pairSessionId,
+          REACTION_SEND_RATE_LIMIT_CAPACITY - 1,
+          nowMs,
+        ],
+      )
+      return
+    }
+
+    const lastRefillAtMs = Number(existing.last_refill_at_ms) || nowMs
+    const elapsedSec = Math.max(0, (nowMs - lastRefillAtMs) / 1000)
+    let tokens = Number(existing.available_tokens) || 0
+    tokens = Math.min(
+      REACTION_SEND_RATE_LIMIT_CAPACITY,
+      tokens + elapsedSec * REACTION_SEND_RATE_LIMIT_REFILL_TOKENS_PER_SEC,
+    )
+
+    if (tokens < 1) {
+      await tx.query(
+        `
+        UPDATE reaction_send_rate_limits
+        SET available_tokens = $3,
+          last_refill_at_ms = $4,
+          updated_at = NOW()
+        WHERE actor_user_id = $1 AND pair_session_id = $2
+        `,
+        [input.actorUserId, input.pairSessionId, tokens, nowMs],
+      )
+      throw new HttpError(429, "Too many reactions sent; try again in a moment")
+    }
+
+    tokens -= 1
+    await tx.query(
+      `
+      UPDATE reaction_send_rate_limits
+      SET available_tokens = $3,
+        last_refill_at_ms = $4,
+        updated_at = NOW()
+      WHERE actor_user_id = $1 AND pair_session_id = $2
+      `,
+      [input.actorUserId, input.pairSessionId, tokens, nowMs],
+    )
   }
 
   async leaseReactionPlayback(

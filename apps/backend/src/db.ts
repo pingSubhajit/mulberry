@@ -244,6 +244,18 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
 
     CREATE INDEX IF NOT EXISTS reaction_inboxes_pair_idx
       ON reaction_inboxes(pair_session_id);
+
+    CREATE TABLE IF NOT EXISTS reaction_send_rate_limits (
+      actor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      available_tokens DOUBLE PRECISION NOT NULL,
+      last_refill_at_ms BIGINT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (actor_user_id, pair_session_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS reaction_send_rate_limits_updated_idx
+      ON reaction_send_rate_limits(updated_at);
   `)
 }
 

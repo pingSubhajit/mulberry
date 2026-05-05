@@ -783,10 +783,10 @@ private fun StreakPill(
 	    onNewStickerRequestedAt: (StrokePoint) -> Unit,
 		    isEditorOpen: Boolean,
 		    onClearRequested: () -> Unit,
-	    onUndoRequested: () -> Unit,
-	    onRedoRequested: () -> Unit,
-        onSendReaction: (ReactionType) -> Unit
-	) {
+		    onUndoRequested: () -> Unit,
+		    onRedoRequested: () -> Unit,
+	        onSendReaction: suspend (ReactionType) -> Boolean
+		) {
     val userName = uiState.bootstrapState.userDisplayName
         ?.takeIf { it.isNotBlank() }
         ?: stringResource(R.string.home_default_user_name)

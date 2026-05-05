@@ -23,6 +23,7 @@ import com.subhajit.mulberry.app.shortcut.ReactionShortcutPublisher
 import com.subhajit.mulberry.reactions.ReactionGif
 import com.subhajit.mulberry.reactions.ReactionLocalStore
 import com.subhajit.mulberry.reactions.ReactionRepository
+import com.subhajit.mulberry.reactions.ReactionSendRateLimiter
 import com.subhajit.mulberry.reactions.ReactionType
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -38,6 +39,7 @@ class SendReactionShortcutActivity : ComponentActivity() {
 
     @Inject lateinit var reactionRepository: ReactionRepository
     @Inject lateinit var reactionLocalStore: ReactionLocalStore
+    @Inject lateinit var reactionSendRateLimiter: ReactionSendRateLimiter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,8 +51,11 @@ class SendReactionShortcutActivity : ComponentActivity() {
                 ReactionShortcutOverlay(reactionType)
             }
             ReactionShortcutPublisher.publish(this@SendReactionShortcutActivity, reactionType)
-            launch(Dispatchers.IO) {
-                reactionRepository.sendReaction(reactionType)
+            val shouldSend = reactionSendRateLimiter.tryAcquire()
+            if (shouldSend) {
+                launch(Dispatchers.IO) {
+                    reactionRepository.sendReaction(reactionType)
+                }
             }
             delay(900)
             finish()

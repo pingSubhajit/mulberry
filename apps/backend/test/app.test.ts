@@ -241,6 +241,29 @@ describe("Mulberry backend", () => {
     expect((secondPush?.data as any).kissCount).toBe("1")
   })
 
+  it("rate limits reaction sends per actor and pair session", async () => {
+    const { inviter } = await pairUsers()
+
+    for (let i = 0; i < 6; i += 1) {
+      const ok = await app.inject({
+        method: "POST",
+        url: "/reactions/send",
+        headers: bearer(inviter.accessToken),
+        payload: { reactionType: "HEART" },
+      })
+      expect(ok.statusCode).toBe(200)
+    }
+
+    const limited = await app.inject({
+      method: "POST",
+      url: "/reactions/send",
+      headers: bearer(inviter.accessToken),
+      payload: { reactionType: "HEART" },
+    })
+    expect(limited.statusCode).toBe(429)
+    expect(limited.json().message).toMatch(/too many reactions/i)
+  })
+
   it("leases and confirms reaction playback exactly once across devices", async () => {
     const { inviter, recipient } = await pairUsers()
     await registerFcmToken(recipient.accessToken, "recipient-token")

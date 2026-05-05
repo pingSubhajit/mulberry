@@ -33,6 +33,7 @@ import com.subhajit.mulberry.pairing.inbound.PendingInboundInvite
 import com.subhajit.mulberry.app.shortcut.ReactionShortcutPublisher
 import com.subhajit.mulberry.reactions.ReactionLocalStore
 import com.subhajit.mulberry.reactions.ReactionRepository
+import com.subhajit.mulberry.reactions.ReactionSendRateLimiter
 import com.subhajit.mulberry.reactions.ReactionType
 import com.subhajit.mulberry.settings.PairingDisconnectCoordinator
 import com.subhajit.mulberry.streak.StreakSimulationRepository
@@ -184,6 +185,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val appConfig: AppConfig,
     private val reactionRepository: ReactionRepository,
     private val reactionLocalStore: ReactionLocalStore,
+    private val reactionSendRateLimiter: ReactionSendRateLimiter,
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
     private val showClearConfirmation = MutableStateFlow(false)
@@ -211,6 +213,17 @@ class CanvasHomeViewModel @Inject constructor(
     private val _effects = MutableSharedFlow<CanvasHomeEffect>()
     val effects = _effects.asSharedFlow()
     val wallpaperPresets: List<WallpaperPreset> = DefaultWallpaperPresets
+
+    /**
+     * Returns true only when the reaction send was accepted locally and the API call succeeded.
+     * Used by the UI to avoid showing a "sent" animation when we didn't actually send.
+     */
+    suspend fun trySendReaction(type: ReactionType): Boolean {
+        if (!reactionSendRateLimiter.tryAcquire()) return false
+        reactionLocalStore.setLastUsedReaction(type)
+        ReactionShortcutPublisher.publish(appContext, type)
+        return reactionRepository.sendReaction(type).isSuccess
+    }
 
     fun sendReaction(type: ReactionType) {
         viewModelScope.launch {
