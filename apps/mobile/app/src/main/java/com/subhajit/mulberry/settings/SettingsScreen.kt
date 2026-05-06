@@ -241,6 +241,7 @@ fun SettingsRoute(
         onCrashlyticsTestCrash = viewModel::onCrashlyticsTestCrash,
         onTriggerInAppReview = viewModel::onTriggerInAppReviewClicked,
         onTriggerInAppUpdate = viewModel::onTriggerInAppUpdateClicked,
+        onPreviewLatestWhatsNew = viewModel::onPreviewLatestWhatsNewClicked,
         onClearStickerAssets = viewModel::onClearStickerAssets,
         onClearStickerCatalogCache = viewModel::onClearStickerCatalogCache,
         onSetStreakSimulation = viewModel::onSetStreakSimulation
@@ -279,6 +280,7 @@ private fun SettingsScreen(
     onCrashlyticsTestCrash: () -> Unit,
     onTriggerInAppReview: () -> Unit,
     onTriggerInAppUpdate: () -> Unit,
+    onPreviewLatestWhatsNew: () -> Unit,
     onClearStickerAssets: () -> Unit,
     onClearStickerCatalogCache: () -> Unit,
     onSetStreakSimulation: (StreakSimulationPreset?) -> Unit
@@ -352,6 +354,7 @@ private fun SettingsScreen(
                 onCrashlyticsTestCrash = onCrashlyticsTestCrash,
                 onTriggerInAppReview = onTriggerInAppReview,
                 onTriggerInAppUpdate = onTriggerInAppUpdate,
+                onPreviewLatestWhatsNew = onPreviewLatestWhatsNew,
                 onClearStickerAssets = onClearStickerAssets,
                 onClearStickerCatalogCache = onClearStickerCatalogCache,
                 onSetStreakSimulation = onSetStreakSimulation,
@@ -2079,6 +2082,7 @@ private fun DeveloperOptionsPane(
     onCrashlyticsTestCrash: () -> Unit,
     onTriggerInAppReview: () -> Unit,
     onTriggerInAppUpdate: () -> Unit,
+    onPreviewLatestWhatsNew: () -> Unit,
     onClearStickerAssets: () -> Unit,
     onClearStickerCatalogCache: () -> Unit,
     onSetStreakSimulation: (StreakSimulationPreset?) -> Unit,
@@ -2138,6 +2142,13 @@ private fun DeveloperOptionsPane(
                     text = "Check for update now (debug)",
                     isBusy = uiState.isBusy,
                     onClick = onTriggerInAppUpdate,
+                    enabled = !uiState.isBusy
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                SettingsSecondaryButton(
+                    text = "Preview what's new (latest)",
+                    isBusy = uiState.isBusy,
+                    onClick = onPreviewLatestWhatsNew,
                     enabled = !uiState.isBusy
                 )
             }

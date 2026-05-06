@@ -89,6 +89,8 @@ import com.subhajit.mulberry.streak.InMemoryStreakSimulationRepository
 import com.subhajit.mulberry.streak.StreakSimulationRepository
 import com.subhajit.mulberry.update.DataStoreInAppUpdatePromptStateStore
 import com.subhajit.mulberry.update.InAppUpdatePromptStateStore
+import com.subhajit.mulberry.whatsnew.DataStoreWhatsNewPromptStateStore
+import com.subhajit.mulberry.whatsnew.WhatsNewPromptStateStore
 import com.google.android.play.core.appupdate.AppUpdateManager
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import dagger.Binds
@@ -312,6 +314,12 @@ abstract class AppBindingsModule {
     abstract fun bindReviewPromptStateStore(
         implementation: DataStoreReviewPromptStateStore
     ): ReviewPromptStateStore
+
+    @Binds
+    @Singleton
+    abstract fun bindWhatsNewPromptStateStore(
+        implementation: DataStoreWhatsNewPromptStateStore
+    ): WhatsNewPromptStateStore
 }
 
 @Module

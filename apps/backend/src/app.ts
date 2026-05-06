@@ -23,6 +23,7 @@ import {
   type WallpaperStorage,
 } from "./wallpapers.js"
 import { createStickerStorage, StickerCatalogService } from "./stickers.js"
+import { registerWhatsNewRoutes } from "./whatsNew.js"
 
 export interface CreateAppOptions {
   config?: AppConfig
@@ -89,6 +90,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     },
   })
   await app.register(fastifyWebsocket)
+
+  registerWhatsNewRoutes(app)
 
   app.addHook("onClose", async () => {
     pushDispatchService.dispose()

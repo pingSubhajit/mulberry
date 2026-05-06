@@ -35,6 +35,7 @@ import com.subhajit.mulberry.sync.FcmTokenRepository
 import com.subhajit.mulberry.sync.PartnerWallpaperStatusReportCoordinator
 import com.subhajit.mulberry.ui.theme.MulberryTheme
 import com.subhajit.mulberry.update.InAppUpdatePromptCoordinator
+import com.subhajit.mulberry.whatsnew.WhatsNewPrompter
 import com.subhajit.mulberry.navigation.AppRoute
 import com.google.android.play.core.appupdate.AppUpdateManager
 import com.google.android.play.core.appupdate.AppUpdateOptions
@@ -61,6 +62,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var appUpdateManager: AppUpdateManager
     @Inject lateinit var inAppUpdatePromptCoordinator: InAppUpdatePromptCoordinator
     @Inject lateinit var partnerWallpaperStatusReportCoordinator: PartnerWallpaperStatusReportCoordinator
+    @Inject lateinit var whatsNewPrompter: WhatsNewPrompter
 
     private val currentRoute = MutableStateFlow<String?>(null)
     private var pendingUpdatePromptVersionCode: Int? = null
@@ -96,6 +98,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+                maybeStartWhatsNewAutoPrompt()
             }
 
         lifecycleScope.launch {
@@ -246,7 +249,10 @@ class MainActivity : ComponentActivity() {
     private fun maybeStartFlexibleUpdatePrompt(isManual: Boolean) {
         if (!isMainAppRoute(currentRoute.value)) return
         // Implementation continues below using Play callbacks (kept outside coroutine for Task API).
-        if (!shouldAttemptPlayUpdateFlow()) return
+        if (!shouldAttemptPlayUpdateFlow()) {
+            maybeStartWhatsNewAutoPrompt()
+            return
+        }
         lifecycleScope.launch {
             val bootstrap = sessionBootstrapRepository.state.first()
             if (bootstrap.authStatus != AuthStatus.SIGNED_IN) return@launch
@@ -258,13 +264,16 @@ class MainActivity : ComponentActivity() {
                 .addOnSuccessListener { appUpdateInfo ->
                     if (appUpdateInfo.installStatus() == InstallStatus.DOWNLOADED) {
                         showUpdateReadySnackbar()
+                        maybeStartWhatsNewAutoPrompt()
                         return@addOnSuccessListener
                     }
 
                     if (appUpdateInfo.updateAvailability() != UpdateAvailability.UPDATE_AVAILABLE) {
+                        maybeStartWhatsNewAutoPrompt()
                         return@addOnSuccessListener
                     }
                     if (!appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)) {
+                        maybeStartWhatsNewAutoPrompt()
                         return@addOnSuccessListener
                     }
 
@@ -275,7 +284,10 @@ class MainActivity : ComponentActivity() {
                             availableVersionCode = availableVersionCode,
                             isManual = isManual
                         )
-                        if (!shouldPrompt) return@launch
+                        if (!shouldPrompt) {
+                            maybeStartWhatsNewAutoPrompt()
+                            return@launch
+                        }
 
                         pendingUpdatePromptVersionCode = availableVersionCode
                         appUpdateManager.startUpdateFlowForResult(
@@ -287,7 +299,22 @@ class MainActivity : ComponentActivity() {
                 }
                 .addOnFailureListener { error ->
                     Log.w(TAG, "Unable to check app update availability message=${error.message}", error)
+                    maybeStartWhatsNewAutoPrompt()
                 }
+        }
+    }
+
+    private fun maybeStartWhatsNewAutoPrompt() {
+        if (!isMainAppRoute(currentRoute.value)) return
+        lifecycleScope.launch {
+            val bootstrap = sessionBootstrapRepository.state.first()
+            if (bootstrap.authStatus != AuthStatus.SIGNED_IN) return@launch
+            if (!bootstrap.hasCompletedOnboarding) return@launch
+            whatsNewPrompter.maybeAutoPrompt(
+                nowMs = System.currentTimeMillis(),
+                currentVersionName = BuildConfig.VERSION_NAME,
+                isEligibleToShow = true
+            )
         }
     }
 

@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.app
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -13,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.subhajit.mulberry.app.snackbar.MulberrySnackbarController
 import com.subhajit.mulberry.navigation.MulberryNavHost
+import com.subhajit.mulberry.whatsnew.WhatsNewSheetHost
 
 @Composable
 fun MulberryApp(
@@ -44,7 +46,10 @@ fun MulberryApp(
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            MulberryNavHost(onRouteChanged = onRouteChanged)
+            Box(modifier = Modifier.fillMaxSize()) {
+                MulberryNavHost(onRouteChanged = onRouteChanged)
+                WhatsNewSheetHost()
+            }
         }
     }
 }

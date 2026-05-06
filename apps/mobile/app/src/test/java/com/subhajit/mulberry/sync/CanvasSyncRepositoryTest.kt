@@ -28,6 +28,8 @@ import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.network.PartnerProfileRequest
 import com.subhajit.mulberry.network.ProfileRequest
 import com.subhajit.mulberry.network.RefreshRequest
+import okhttp3.ResponseBody
+import retrofit2.Response
 import com.subhajit.mulberry.network.RedeemInviteRequest
 import com.subhajit.mulberry.network.RedeemInviteResponse
 import com.subhajit.mulberry.network.RegisterFcmTokenRequest
@@ -671,4 +673,8 @@ private class FakeMulberryApiService : MulberryApiService {
 
     override suspend fun confirmReactionPlayback(request: ReactionConfirmRequest): ReactionConfirmResponse =
         error("unused")
+
+    override suspend fun getWhatsNewMarkdown(version: String): Response<ResponseBody> = error("unused")
+
+    override suspend fun getLatestWhatsNewMarkdown(): Response<ResponseBody> = error("unused")
 }

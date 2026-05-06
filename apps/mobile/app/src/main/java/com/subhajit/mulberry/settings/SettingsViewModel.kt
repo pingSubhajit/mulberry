@@ -40,6 +40,7 @@ import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
 import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerCatalogCacheStore
+import com.subhajit.mulberry.whatsnew.WhatsNewPrompter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -105,6 +106,7 @@ class SettingsViewModel @Inject constructor(
     private val partnerWallpaperStatusReportCoordinator: PartnerWallpaperStatusReportCoordinator,
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     private val apiService: MulberryApiService,
+    private val whatsNewPrompter: WhatsNewPrompter,
     private val stickerAssetStore: StickerAssetStore,
     private val stickerCatalogCacheStore: StickerCatalogCacheStore,
     @ApplicationContext private val appContext: Context,
@@ -210,6 +212,15 @@ class SettingsViewModel @Inject constructor(
     fun onTriggerInAppUpdateClicked() {
         viewModelScope.launch {
             _effects.emit(SettingsEffect.LaunchInAppUpdateManual)
+        }
+    }
+
+    fun onPreviewLatestWhatsNewClicked() {
+        viewModelScope.launch {
+            val error = whatsNewPrompter.previewLatest(nowMs = System.currentTimeMillis())
+            if (error != null) {
+                _effects.emit(SettingsEffect.Message(error))
+            }
         }
     }
 

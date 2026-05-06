@@ -193,6 +193,7 @@ dependencies {
     implementation(libs.play.review)
     implementation(libs.play.review.ktx)
     implementation(libs.coil.compose)
+    implementation(libs.commonmark)
     implementation(libs.androidx.ink.strokes)
     implementation(libs.androidx.ink.brush)
     implementation(libs.androidx.ink.brush.compose)

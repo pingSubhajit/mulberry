@@ -10,6 +10,8 @@ import retrofit2.http.PUT
 import retrofit2.http.Query
 import retrofit2.http.Path
 import okhttp3.MultipartBody
+import okhttp3.ResponseBody
+import retrofit2.Response
 
 interface MulberryApiService {
     @POST("/auth/google")
@@ -114,4 +116,10 @@ interface MulberryApiService {
 
     @POST("/reactions/confirm")
     suspend fun confirmReactionPlayback(@Body request: ReactionConfirmRequest): ReactionConfirmResponse
+
+    @GET("/whats-new/{version}.md")
+    suspend fun getWhatsNewMarkdown(@Path("version") version: String): Response<ResponseBody>
+
+    @GET("/whats-new/latest.md")
+    suspend fun getLatestWhatsNewMarkdown(): Response<ResponseBody>
 }

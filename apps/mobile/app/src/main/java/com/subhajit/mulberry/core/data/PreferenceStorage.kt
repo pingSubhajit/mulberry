@@ -86,6 +86,11 @@ object PreferenceStorage {
     val inAppUpdateDeclinedVersionCode = intPreferencesKey("in_app_update_declined_version_code")
     val inAppUpdateDeclinedAtMs = longPreferencesKey("in_app_update_declined_at_ms")
 
+    val whatsNewLastSeenVersionName = stringPreferencesKey("whats_new_last_seen_version_name")
+    val whatsNewPendingVersionName = stringPreferencesKey("whats_new_pending_version_name")
+    val whatsNewNextRetryAtMs = longPreferencesKey("whats_new_next_retry_at_ms")
+    val whatsNewRetryAttempt = intPreferencesKey("whats_new_retry_attempt")
+
     val placeholderPairingControlsOverride =
         booleanPreferencesKey("flag_placeholder_pairing_controls_override")
     val wallpaperSetupCtaOverride =
