@@ -131,6 +131,7 @@ class DefaultCanvasSnapshotRendererTest {
         val packVersion = 1
         val stickerId = "test-sticker"
         val destination = stickerAssetStore.destinationFile(
+            userId = "test-user",
             packKey = packKey,
             packVersion = packVersion,
             stickerId = stickerId,
@@ -227,6 +228,7 @@ class DefaultCanvasSnapshotRendererTest {
         }
 
         override suspend fun setWallpaperConfigured(configured: Boolean) = Unit
+        override suspend fun setPartnerWallpaperStatus(status: com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus?) = Unit
         override suspend fun seedDemoSession() = Unit
 
         override suspend fun reset() {

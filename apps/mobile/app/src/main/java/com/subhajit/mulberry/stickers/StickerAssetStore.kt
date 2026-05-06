@@ -12,7 +12,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 
 @Singleton
@@ -86,24 +85,12 @@ class StickerAssetStore @Inject constructor(
                 }
 
                 fun tryDownload(url: String): Pair<Boolean, Int> {
-                    if (temp.exists()) temp.delete()
-                    temp.createNewFile()
-                    val request = Request.Builder()
-                        .url(url)
-                        .get()
-                        .build()
-                    okHttpClient.newCall(request).execute().use { response ->
-                        val code = response.code
-                        if (!response.isSuccessful) return false to code
-                        val body = response.body ?: return false to code
-                        temp.outputStream().use { output ->
-                            body.byteStream().use { input ->
-                                input.copyTo(output)
-                            }
-                        }
-                        return (temp.length() > 0) to code
-                    }
-                    return false to -1
+                    val result = downloadStickerAssetToTempFile(
+                        okHttpClient = okHttpClient,
+                        url = url,
+                        tempFile = temp
+                    )
+                    return result.ok to result.httpCode
                 }
 
                 val primary = urlHint?.takeIf { it.isNotBlank() } ?: fetchFreshUrl()

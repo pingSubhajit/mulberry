@@ -77,9 +77,9 @@ class MainActivity : ComponentActivity() {
         splashScreen.setKeepOnScreenCondition {
             AppStartupGate.keepSplashVisible.value
         }
+        super.onCreate(savedInstanceState)
         AppShortcutActionController.dispatch(intent)
         handleInviteLink(intent)
-        super.onCreate(savedInstanceState)
         AppStartupGate.armTimeout(lifecycleScope)
         requestNotificationPermissionIfNeeded()
         enableEdgeToEdge()
