@@ -2,7 +2,6 @@ package com.subhajit.mulberry.home
 
 import android.content.Intent
 import android.os.SystemClock
-import android.util.Log
 import com.subhajit.mulberry.BuildConfig
 import com.subhajit.mulberry.drawing.geometry.normalizeToSurface
 import androidx.activity.ComponentActivity
@@ -1052,9 +1051,6 @@ private fun StreakPill(
 	    }
 
 	    val sendAndAnimate: (ReactionType) -> Unit = { type ->
-	        if (BuildConfig.DEBUG) {
-	            Log.d("MulberryReactions", "sendReaction type=${type.apiValue}")
-	        }
             coroutineScope.launch {
                 val didSend = onSendReaction(type)
                 if (!didSend) return@launch

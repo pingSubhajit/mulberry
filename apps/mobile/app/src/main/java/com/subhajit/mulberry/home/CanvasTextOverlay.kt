@@ -223,45 +223,76 @@ fun CanvasTextOverlay(
 
     // Important: only install pointer handlers when needed; this overlay sits above the
     // drawing canvas so it must not block drawing/erase gestures unless it consumes them.
-    val gestureModifier = when {
-        (activeTool == DrawingTool.TEXT || activeTool == DrawingTool.STICKER || activeTool == DrawingTool.NONE) &&
-            !isEditorOpen ->
-            Modifier.pointerInput(elements, canvasSize, selectedColorArgb, activeTool) {
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
-                if (canvasSize.width <= 0 || canvasSize.height <= 0) return@awaitEachGesture
-                val safeViewportScale = viewportTransform.scale.coerceAtLeast(0.0001f)
-                fun toContentOffset(point: Offset): Offset = (point - viewportTransform.offsetPx) / safeViewportScale
-                val hittable = when (activeTool) {
-                    DrawingTool.TEXT -> elements.filterIsInstance<CanvasTextElement>()
-                    DrawingTool.STICKER -> elements.filterIsInstance<CanvasStickerElement>()
-                    else -> elements
-                }
+	    val gestureModifier = when {
+	        (activeTool == DrawingTool.TEXT || activeTool == DrawingTool.STICKER || activeTool == DrawingTool.NONE) &&
+	            !isEditorOpen ->
+	            Modifier.pointerInput(elements, canvasSize, selectedColorArgb, activeTool) {
+		            awaitEachGesture {
+		                val down = awaitFirstDown(requireUnconsumed = false)
+		                if (canvasSize.width <= 0 || canvasSize.height <= 0) return@awaitEachGesture
+		                val hittable = when (activeTool) {
+		                    DrawingTool.TEXT -> elements.filterIsInstance<CanvasTextElement>()
+		                    DrawingTool.STICKER -> elements.filterIsInstance<CanvasStickerElement>()
+		                    else -> elements
+		                }
 
-                val initialHitId = hitTest(
-                    elements = hittable,
-                    stickerBitmaps = stickerBitmaps,
-                    pointPx = toContentOffset(down.position),
-                    canvasSize = canvasSize,
-                    textSizePx = baseTextSizePx,
-                    poppins = poppinsTypeface,
-                    virgil = virgilTypeface,
-                    dmSans = dmSansTypeface,
-                    spaceMono = spaceMonoTypeface,
-                    playfair = playfairTypeface,
-                    bangers = bangersTypeface,
-                    permanentMarker = permanentMarkerTypeface,
-                    kalam = kalamTypeface,
-                    caveat = caveatTypeface,
-                    merriweather = merriweatherTypeface,
-                    oswald = oswaldTypeface,
-                    baloo2 = baloo2Typeface
-                )
-                val initialDown = down.position
-                val touchSlop = viewConfiguration.touchSlop
+		                fun toContentOffset(point: Offset): Offset {
+		                    val currentViewportTransform = latestViewportTransform
+		                    val safeViewportScale = currentViewportTransform.scale.coerceAtLeast(0.0001f)
+		                    return (point - currentViewportTransform.offsetPx) / safeViewportScale
+		                }
 
-                var lockedElementId: String? = initialHitId
-                liveTransformPreview = null
+		                fun hitTestAtScreenPosition(point: Offset): String? {
+		                    val currentViewportTransform = latestViewportTransform
+		                    val safeViewportScale = currentViewportTransform.scale.coerceAtLeast(0.0001f)
+		                    val contentA = (point - currentViewportTransform.offsetPx) / safeViewportScale
+		                    val contentB = (point / safeViewportScale) - currentViewportTransform.offsetPx
+		                    return hitTest(
+		                        elements = hittable,
+		                        stickerBitmaps = stickerBitmaps,
+	                        pointPx = contentA,
+	                        canvasSize = canvasSize,
+	                        textSizePx = baseTextSizePx,
+	                        poppins = poppinsTypeface,
+	                        virgil = virgilTypeface,
+	                        dmSans = dmSansTypeface,
+	                        spaceMono = spaceMonoTypeface,
+	                        playfair = playfairTypeface,
+	                        bangers = bangersTypeface,
+	                        permanentMarker = permanentMarkerTypeface,
+	                        kalam = kalamTypeface,
+	                        caveat = caveatTypeface,
+	                        merriweather = merriweatherTypeface,
+	                        oswald = oswaldTypeface,
+	                        baloo2 = baloo2Typeface
+	                    ) ?: hitTest(
+	                        elements = hittable,
+	                        stickerBitmaps = stickerBitmaps,
+	                        pointPx = contentB,
+	                        canvasSize = canvasSize,
+	                        textSizePx = baseTextSizePx,
+	                        poppins = poppinsTypeface,
+	                        virgil = virgilTypeface,
+	                        dmSans = dmSansTypeface,
+	                        spaceMono = spaceMonoTypeface,
+	                        playfair = playfairTypeface,
+	                        bangers = bangersTypeface,
+	                        permanentMarker = permanentMarkerTypeface,
+	                        kalam = kalamTypeface,
+	                        caveat = caveatTypeface,
+	                        merriweather = merriweatherTypeface,
+		                        oswald = oswaldTypeface,
+		                        baloo2 = baloo2Typeface
+		                    )
+		                }
+		
+		                val initialHitId = hitTestAtScreenPosition(down.position)
+
+	                val initialDown = down.position
+	                val touchSlop = viewConfiguration.touchSlop
+
+	                var lockedElementId: String? = initialHitId
+	                liveTransformPreview = null
 
                 var beganTransform = false
                 var beganDrag = false
@@ -384,25 +415,7 @@ fun CanvasTextOverlay(
 		                            // is an element transform or a viewport transform (no-tool only).
 		                            // This avoids needing to exceed touch slop before pinch-zoom works on empty space.
 		                            if (activeTool == DrawingTool.NONE && lockedElementId == null) {
-		                                lockedElementId = hitTest(
-		                                    elements = hittable,
-		                                    stickerBitmaps = stickerBitmaps,
-		                                    pointPx = toContentOffset(centroid),
-		                                    canvasSize = canvasSize,
-		                                    textSizePx = baseTextSizePx,
-		                                    poppins = poppinsTypeface,
-		                                    virgil = virgilTypeface,
-		                                    dmSans = dmSansTypeface,
-		                                    spaceMono = spaceMonoTypeface,
-		                                    playfair = playfairTypeface,
-		                                    bangers = bangersTypeface,
-		                                    permanentMarker = permanentMarkerTypeface,
-		                                    kalam = kalamTypeface,
-		                                    caveat = caveatTypeface,
-		                                    merriweather = merriweatherTypeface,
-		                                    oswald = oswaldTypeface,
-		                                    baloo2 = baloo2Typeface
-		                                )
+		                                lockedElementId = hitTestAtScreenPosition(centroid)
 		                            }
 		                        }
 		                        if (positions.size == 1) {
@@ -412,7 +425,7 @@ fun CanvasTextOverlay(
 		                    }
 
 	                    val panDelta = centroid - lastCentroid
-                        val contentPanDelta = panDelta / safeViewportScale
+                        val contentPanDelta = panDelta / latestViewportTransform.scale.coerceAtLeast(0.0001f)
 
 	                    if (!beganTransform && positions.size >= 2 && !transformBaselineSet) {
 	                        transformBaselineSet = true
@@ -470,31 +483,13 @@ fun CanvasTextOverlay(
                             longPressJob?.cancel()
 
 	                        // Allow direct 2-finger transform without a prior tap selection by
-	                        // picking the topmost element under the gesture centroid.
-	                        if (lockedElementId == null) {
-	                            lockedElementId = hitTest(
-	                                elements = hittable,
-	                                stickerBitmaps = stickerBitmaps,
-	                                pointPx = toContentOffset(centroid),
-	                                canvasSize = canvasSize,
-                                textSizePx = baseTextSizePx,
-                                poppins = poppinsTypeface,
-                                virgil = virgilTypeface,
-                                dmSans = dmSansTypeface,
-                                spaceMono = spaceMonoTypeface,
-                                playfair = playfairTypeface,
-                                bangers = bangersTypeface,
-                                permanentMarker = permanentMarkerTypeface,
-                                kalam = kalamTypeface,
-                                caveat = caveatTypeface,
-                                merriweather = merriweatherTypeface,
-                                oswald = oswaldTypeface,
-                                baloo2 = baloo2Typeface
-                            )
-	                            lastCentroid = centroid
-	                            lastAngle = angle
-	                            lastSpan = span.coerceAtLeast(1f)
-	                        }
+		                        // picking the topmost element under the gesture centroid.
+		                        if (lockedElementId == null) {
+		                            lockedElementId = hitTestAtScreenPosition(centroid)
+		                            lastCentroid = centroid
+		                            lastAngle = angle
+		                            lastSpan = span.coerceAtLeast(1f)
+		                        }
 
                         // If we still don't have a target element, we can't transform; ignore.
                         if (lockedElementId == null) {
@@ -734,16 +729,19 @@ fun CanvasTextOverlay(
                 }
             }
         }
-        activeTool == DrawingTool.ERASE && !isEditorOpen -> Modifier.pointerInput(elements, canvasSize) {
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
-                if (canvasSize.width <= 0 || canvasSize.height <= 0) return@awaitEachGesture
-                val safeViewportScale = viewportTransform.scale.coerceAtLeast(0.0001f)
-                fun toContentOffset(point: Offset): Offset = (point - viewportTransform.offsetPx) / safeViewportScale
+	        activeTool == DrawingTool.ERASE && !isEditorOpen -> Modifier.pointerInput(elements, canvasSize) {
+	            awaitEachGesture {
+	                val down = awaitFirstDown(requireUnconsumed = false)
+	                if (canvasSize.width <= 0 || canvasSize.height <= 0) return@awaitEachGesture
+	                fun toContentOffset(point: Offset): Offset {
+	                    val currentViewportTransform = latestViewportTransform
+	                    val safeViewportScale = currentViewportTransform.scale.coerceAtLeast(0.0001f)
+	                    return (point - currentViewportTransform.offsetPx) / safeViewportScale
+	                }
 
-                val hitId = hitTest(
-                    elements = elements,
-                    stickerBitmaps = stickerBitmaps,
+	                val hitId = hitTest(
+	                    elements = elements,
+	                    stickerBitmaps = stickerBitmaps,
                     pointPx = toContentOffset(down.position),
                     canvasSize = canvasSize,
                     textSizePx = baseTextSizePx,
