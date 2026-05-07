@@ -109,6 +109,7 @@
     <string name="home_paired_canvas_guidance_body">Whatever you draw will appear at the wallpaper of their phone</string>
     <string name="home_canvas_undo_content_description">Undo</string>
     <string name="home_canvas_redo_content_description">Redo</string>
+    <string name="home_canvas_brush_content_description">Brush</string>
     <string name="home_canvas_erase_content_description">Erase strokes</string>
     <string name="home_canvas_text_content_description">Text</string>
     <string name="home_canvas_sticker_content_description">Stickers</string>

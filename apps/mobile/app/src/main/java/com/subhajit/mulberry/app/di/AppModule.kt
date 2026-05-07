@@ -364,7 +364,8 @@ object AppProvidesModule {
         "drawing.db"
     ).addMigrations(
         DrawingMigrations.MIGRATION_7_8,
-        DrawingMigrations.MIGRATION_8_9
+        DrawingMigrations.MIGRATION_8_9,
+        DrawingMigrations.MIGRATION_9_10
     ).fallbackToDestructiveMigration().build()
 
     @Provides

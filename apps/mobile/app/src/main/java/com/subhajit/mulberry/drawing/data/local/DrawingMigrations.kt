@@ -43,4 +43,23 @@ object DrawingMigrations {
             )
         }
     }
+
+    val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Track last non-"none" tool separately so we can default to no-tool on cold start
+            // without losing the user's last chosen tool.
+            db.execSQL(
+                "ALTER TABLE canvas_metadata_entity " +
+                    "ADD COLUMN lastNonNoneTool TEXT NOT NULL DEFAULT 'DRAW'"
+            )
+            // Initialize from the existing selectedTool if present; otherwise keep default.
+            db.execSQL(
+                "UPDATE canvas_metadata_entity " +
+                    "SET lastNonNoneTool = CASE " +
+                    "WHEN selectedTool IS NOT NULL AND selectedTool != 'NONE' THEN selectedTool " +
+                    "ELSE lastNonNoneTool " +
+                    "END"
+            )
+        }
+    }
 }

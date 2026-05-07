@@ -9,7 +9,8 @@ import com.subhajit.mulberry.sync.SyncOutboxStatus
 
 class RoomConverters {
     @TypeConverter
-    fun toDrawingTool(value: String): DrawingTool = DrawingTool.valueOf(value)
+    fun toDrawingTool(value: String): DrawingTool =
+        runCatching { DrawingTool.valueOf(value) }.getOrElse { DrawingTool.DRAW }
 
     @TypeConverter
     fun fromDrawingTool(value: DrawingTool): String = value.name

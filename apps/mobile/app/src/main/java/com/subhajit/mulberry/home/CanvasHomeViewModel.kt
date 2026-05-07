@@ -214,6 +214,16 @@ class CanvasHomeViewModel @Inject constructor(
     val effects = _effects.asSharedFlow()
     val wallpaperPresets: List<WallpaperPreset> = DefaultWallpaperPresets
 
+    init {
+        // Cold start: default to no-tool. RAM resume naturally keeps the last-used tool because
+        // this runs only once per process.
+        if (CanvasProcessDefaults.shouldForceNoToolOnColdStart()) {
+            viewModelScope.launch {
+                drawingRepository.setTool(DrawingTool.NONE)
+            }
+        }
+    }
+
     /**
      * Returns true only when the reaction send was accepted locally and the API call succeeded.
      * Used by the UI to avoid showing a "sent" animation when we didn't actually send.
@@ -820,13 +830,6 @@ class CanvasHomeViewModel @Inject constructor(
                 DrawingTool.TEXT -> drawingRepository.setTextColor(colorArgb)
                 else -> drawingRepository.setBrushColor(colorArgb)
             }
-
-            val nextTool = when (currentTool) {
-                DrawingTool.ERASE -> DrawingTool.DRAW
-                DrawingTool.STICKER -> DrawingTool.DRAW
-                else -> currentTool
-            }
-            if (nextTool != currentTool) drawingRepository.setTool(nextTool)
         }
     }
 
@@ -836,10 +839,21 @@ class CanvasHomeViewModel @Inject constructor(
         }
     }
 
+    fun onBrushToggle() {
+        viewModelScope.launch {
+            val nextTool = if (uiState.value.toolState.activeTool == DrawingTool.DRAW) {
+                DrawingTool.NONE
+            } else {
+                DrawingTool.DRAW
+            }
+            drawingRepository.setTool(nextTool)
+        }
+    }
+
     fun onEraserToggle() {
         viewModelScope.launch {
             val nextTool = if (uiState.value.toolState.activeTool == DrawingTool.ERASE) {
-                DrawingTool.DRAW
+                DrawingTool.NONE
             } else {
                 DrawingTool.ERASE
             }
@@ -850,7 +864,7 @@ class CanvasHomeViewModel @Inject constructor(
     fun onTextToggle() {
         viewModelScope.launch {
             val nextTool = if (uiState.value.toolState.activeTool == DrawingTool.TEXT) {
-                DrawingTool.DRAW
+                DrawingTool.NONE
             } else {
                 DrawingTool.TEXT
             }
@@ -861,7 +875,7 @@ class CanvasHomeViewModel @Inject constructor(
     fun onStickerToggle() {
         viewModelScope.launch {
             val nextTool = if (uiState.value.toolState.activeTool == DrawingTool.STICKER) {
-                DrawingTool.DRAW
+                DrawingTool.NONE
             } else {
                 DrawingTool.STICKER
             }

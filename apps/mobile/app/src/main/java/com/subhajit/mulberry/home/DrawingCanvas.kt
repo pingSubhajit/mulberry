@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -46,6 +47,7 @@ import kotlinx.coroutines.withContext
 fun DrawingCanvas(
     canvasState: CanvasState,
     activeTool: DrawingTool,
+    viewportTransform: CanvasViewportTransform,
     onDrawStart: (StrokePoint) -> Unit,
     onDrawPoint: (StrokePoint) -> Unit,
     onDrawEnd: () -> Unit,
@@ -122,20 +124,24 @@ fun DrawingCanvas(
                 val slopChange = awaitTouchSlopOrCancellation(down.id) { change, _ ->
                     if (!started) {
                         started = true
-                        onDrawStart(down.position.toStrokePoint(canvasSize))
+                        onDrawStart(down.position.toStrokePoint(canvasSize, viewportTransform))
                     }
-                    onDrawPoint(change.position.toStrokePoint(canvasSize))
+                    onDrawPoint(change.position.toStrokePoint(canvasSize, viewportTransform))
                     change.consume()
                 }
 
                 // If the pointer never crossed touch slop, treat this as a tap (no stroke).
-                // Tap-based dot strokes and reactions are handled at a higher level where we
-                // can arbitrate between single-tap vs double-tap vs long-press.
-                if (slopChange == null || !started) return@awaitEachGesture
+                // (Now that reactions are gated to the no-tool state, taps in brush mode
+                // should produce a dot stroke immediately.)
+                if (slopChange == null || !started) {
+                    onDrawStart(down.position.toStrokePoint(canvasSize, viewportTransform))
+                    onDrawEnd()
+                    return@awaitEachGesture
+                }
 
                 drag(down.id) { change ->
                     if (change.positionChanged()) {
-                        onDrawPoint(change.position.toStrokePoint(canvasSize))
+                        onDrawPoint(change.position.toStrokePoint(canvasSize, viewportTransform))
                     }
                     change.consume()
                 }
@@ -144,7 +150,7 @@ fun DrawingCanvas(
         }
         DrawingTool.ERASE -> Modifier.pointerInput(activeTool) {
             detectTapGestures { offset ->
-                onEraseTap(offset.toStrokePoint(canvasSize))
+                onEraseTap(offset.toStrokePoint(canvasSize, viewportTransform))
             }
         }
         else -> Modifier
@@ -174,22 +180,43 @@ fun DrawingCanvas(
         )
         if (committedBitmap != null && overlayStrokeStartIndex != null) {
             cacheVersion
-            drawIntoCanvas { canvas ->
-                canvas.nativeCanvas.drawBitmap(committedBitmap, 0f, 0f, null)
-            }
-            canvasState.strokes.drop(overlayStrokeStartIndex).forEach { stroke ->
-                drawCommittedStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
+            withTransform(
+                transformBlock = {
+                    translate(viewportTransform.offsetPx.x, viewportTransform.offsetPx.y)
+                    scale(viewportTransform.scale, viewportTransform.scale)
+                }
+            ) {
+                drawIntoCanvas { canvas ->
+                    canvas.nativeCanvas.drawBitmap(committedBitmap, 0f, 0f, null)
+                }
+                canvasState.strokes.drop(overlayStrokeStartIndex).forEach { stroke ->
+                    drawCommittedStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
+                }
             }
         } else {
-            canvasState.strokes.forEach { stroke ->
-                drawCommittedStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
+            withTransform(
+                transformBlock = {
+                    translate(viewportTransform.offsetPx.x, viewportTransform.offsetPx.y)
+                    scale(viewportTransform.scale, viewportTransform.scale)
+                }
+            ) {
+                canvasState.strokes.forEach { stroke ->
+                    drawCommittedStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
+                }
             }
         }
-        canvasState.remoteActiveStrokes.forEach { stroke ->
-            drawLiveStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
-        }
-        canvasState.activeStroke?.let { stroke ->
-            drawLiveStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
+        withTransform(
+            transformBlock = {
+                translate(viewportTransform.offsetPx.x, viewportTransform.offsetPx.y)
+                scale(viewportTransform.scale, viewportTransform.scale)
+            }
+        ) {
+            canvasState.remoteActiveStrokes.forEach { stroke ->
+                drawLiveStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
+            }
+            canvasState.activeStroke?.let { stroke ->
+                drawLiveStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
+            }
         }
     }
 }
@@ -236,8 +263,11 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLiveStroke(
     with(strokeRenderMode.liveStrokeVisualRenderer()) { drawStroke(stroke) }
 }
 
-private fun Offset.toStrokePoint(canvasSize: IntSize): StrokePoint =
-    StrokePoint(x = x, y = y).normalizeToSurface(canvasSize.width, canvasSize.height)
+private fun Offset.toStrokePoint(canvasSize: IntSize, viewportTransform: CanvasViewportTransform): StrokePoint {
+    val safeScale = viewportTransform.scale.coerceAtLeast(0.0001f)
+    val content = (this - viewportTransform.offsetPx) / safeScale
+    return StrokePoint(x = content.x, y = content.y).normalizeToSurface(canvasSize.width, canvasSize.height)
+}
 
 private fun DrawingStroke.toRenderStroke(canvasSize: IntSize): DrawingStroke =
     denormalizeToSurface(

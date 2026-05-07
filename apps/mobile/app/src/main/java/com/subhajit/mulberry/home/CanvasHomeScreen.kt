@@ -284,6 +284,7 @@ fun CanvasHomeRoute(
         onCanvasViewportChanged = viewModel::onCanvasViewportChanged,
         onColorSelected = viewModel::onColorSelected,
         onBrushWidthChanged = viewModel::onBrushWidthChanged,
+        onBrushToggle = viewModel::onBrushToggle,
         onEraserToggle = viewModel::onEraserToggle,
         onTextToggle = viewModel::onTextToggle,
         onStickerToggle = viewModel::onStickerToggle,
@@ -344,6 +345,7 @@ fun CanvasHomeRoute(
     onCanvasViewportChanged: (Int, Int) -> Unit,
     onColorSelected: (Long) -> Unit,
     onBrushWidthChanged: (Float) -> Unit,
+    onBrushToggle: () -> Unit,
     onEraserToggle: () -> Unit,
     onTextToggle: () -> Unit,
     onStickerToggle: () -> Unit,
@@ -641,22 +643,23 @@ fun CanvasHomeRoute(
                     .weight(1f)
             ) { page ->
 	                when (MainAppTab.entries[page]) {
-	                    MainAppTab.Canvas -> CanvasHomePane(
-	                        uiState = uiState,
-	                        onInviteRequested = onInviteRequested,
-	                        onJoinCodeRequested = onJoinCodeRequested,
-                        onCanvasPress = onCanvasPress,
-                        onCanvasDrag = onCanvasDrag,
-                        onCanvasRelease = onCanvasRelease,
-                        onCanvasTap = onCanvasTap,
-                        onCanvasViewportChanged = onCanvasViewportChanged,
-                        onColorSelected = onColorSelected,
-                        onBrushWidthChanged = onBrushWidthChanged,
-                        onEraserToggle = onEraserToggle,
-                        onTextToggle = toolSelectText,
-                        onStickerToggle = toolSelectSticker,
-                        onStickerPackSelected = onStickerPackSelected,
-                        stickerAssetStore = stickerAssetStore,
+		                    MainAppTab.Canvas -> CanvasHomePane(
+		                        uiState = uiState,
+		                        onInviteRequested = onInviteRequested,
+		                        onJoinCodeRequested = onJoinCodeRequested,
+	                        onCanvasPress = onCanvasPress,
+	                        onCanvasDrag = onCanvasDrag,
+	                        onCanvasRelease = onCanvasRelease,
+	                        onCanvasTap = onCanvasTap,
+	                        onCanvasViewportChanged = onCanvasViewportChanged,
+	                        onColorSelected = onColorSelected,
+	                        onBrushWidthChanged = onBrushWidthChanged,
+	                        onBrushToggle = onBrushToggle,
+	                        onEraserToggle = onEraserToggle,
+	                        onTextToggle = toolSelectText,
+	                        onStickerToggle = toolSelectSticker,
+	                        onStickerPackSelected = onStickerPackSelected,
+	                        stickerAssetStore = stickerAssetStore,
                         onTextElementAdded = onTextElementAdded,
                         onTextElementUpdated = onTextElementUpdated,
                         onTextElementDeleted = onTextElementDeleted,
@@ -850,21 +853,22 @@ private fun StreakPill(
 
 @Composable
 	private fun CanvasHomePane(
-	    uiState: CanvasHomeUiState,
-	    onInviteRequested: () -> Unit,
-	    onJoinCodeRequested: () -> Unit,
-	    onCanvasPress: (StrokePoint) -> Unit,
-    onCanvasDrag: (StrokePoint) -> Unit,
-    onCanvasRelease: () -> Unit,
-    onCanvasTap: (StrokePoint) -> Unit,
-    onCanvasViewportChanged: (Int, Int) -> Unit,
-    onColorSelected: (Long) -> Unit,
-    onBrushWidthChanged: (Float) -> Unit,
-    onEraserToggle: () -> Unit,
-    onTextToggle: () -> Unit,
-    onStickerToggle: () -> Unit,
-    onStickerPackSelected: (String, Int) -> Unit,
-    stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
+		    uiState: CanvasHomeUiState,
+		    onInviteRequested: () -> Unit,
+		    onJoinCodeRequested: () -> Unit,
+		    onCanvasPress: (StrokePoint) -> Unit,
+	    onCanvasDrag: (StrokePoint) -> Unit,
+	    onCanvasRelease: () -> Unit,
+	    onCanvasTap: (StrokePoint) -> Unit,
+	    onCanvasViewportChanged: (Int, Int) -> Unit,
+	    onColorSelected: (Long) -> Unit,
+	    onBrushWidthChanged: (Float) -> Unit,
+	    onBrushToggle: () -> Unit,
+	    onEraserToggle: () -> Unit,
+	    onTextToggle: () -> Unit,
+	    onStickerToggle: () -> Unit,
+	    onStickerPackSelected: (String, Int) -> Unit,
+	    stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
@@ -962,22 +966,23 @@ private fun StreakPill(
                     )
                     .testTag(TestTags.HOME_ENTER_CODE_BUTTON)
             )
-        }
-    } else {
-            PairedCanvasPane(
-                uiState = uiState,
-                onCanvasPress = onCanvasPress,
-	            onCanvasDrag = onCanvasDrag,
-            onCanvasRelease = onCanvasRelease,
-            onCanvasTap = onCanvasTap,
-            onCanvasViewportChanged = onCanvasViewportChanged,
-            onColorSelected = onColorSelected,
-            onBrushWidthChanged = onBrushWidthChanged,
-            onEraserToggle = onEraserToggle,
-            onTextToggle = onTextToggle,
-            onStickerToggle = onStickerToggle,
-            onStickerPackSelected = onStickerPackSelected,
-            stickerAssetStore = stickerAssetStore,
+	        }
+	    } else {
+	            PairedCanvasPane(
+	                uiState = uiState,
+	                onCanvasPress = onCanvasPress,
+		            onCanvasDrag = onCanvasDrag,
+	            onCanvasRelease = onCanvasRelease,
+	            onCanvasTap = onCanvasTap,
+	            onCanvasViewportChanged = onCanvasViewportChanged,
+	            onColorSelected = onColorSelected,
+	            onBrushWidthChanged = onBrushWidthChanged,
+	            onBrushToggle = onBrushToggle,
+	            onEraserToggle = onEraserToggle,
+	            onTextToggle = onTextToggle,
+	            onStickerToggle = onStickerToggle,
+	            onStickerPackSelected = onStickerPackSelected,
+	            stickerAssetStore = stickerAssetStore,
             onTextElementAdded = onTextElementAdded,
             onTextElementUpdated = onTextElementUpdated,
             onTextElementDeleted = onTextElementDeleted,
@@ -1000,20 +1005,21 @@ private fun StreakPill(
 	}
 
 @Composable
-private fun PairedCanvasPane(
-    uiState: CanvasHomeUiState,
-    onCanvasPress: (StrokePoint) -> Unit,
-    onCanvasDrag: (StrokePoint) -> Unit,
-    onCanvasRelease: () -> Unit,
-    onCanvasTap: (StrokePoint) -> Unit,
-    onCanvasViewportChanged: (Int, Int) -> Unit,
-    onColorSelected: (Long) -> Unit,
-    onBrushWidthChanged: (Float) -> Unit,
-    onEraserToggle: () -> Unit,
-    onTextToggle: () -> Unit,
-    onStickerToggle: () -> Unit,
-    onStickerPackSelected: (String, Int) -> Unit,
-    stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
+	private fun PairedCanvasPane(
+	    uiState: CanvasHomeUiState,
+	    onCanvasPress: (StrokePoint) -> Unit,
+	    onCanvasDrag: (StrokePoint) -> Unit,
+	    onCanvasRelease: () -> Unit,
+	    onCanvasTap: (StrokePoint) -> Unit,
+	    onCanvasViewportChanged: (Int, Int) -> Unit,
+	    onColorSelected: (Long) -> Unit,
+	    onBrushWidthChanged: (Float) -> Unit,
+	    onBrushToggle: () -> Unit,
+	    onEraserToggle: () -> Unit,
+	    onTextToggle: () -> Unit,
+	    onStickerToggle: () -> Unit,
+	    onStickerPackSelected: (String, Int) -> Unit,
+	    stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
@@ -1035,10 +1041,9 @@ private fun PairedCanvasPane(
         val viewConfig = LocalViewConfiguration.current
         val coroutineScope = rememberCoroutineScope()
 	    var reactionRailOpen by remember { mutableStateOf(false) }
-	    var lastTapUpAtMs by remember { mutableStateOf<Long?>(null) }
 	    var sentReactionOverlay by remember { mutableStateOf<SentReactionOverlayState?>(null) }
 	    var sentReactionToken by remember { mutableStateOf(0L) }
-	    var pendingDotJob by remember { mutableStateOf<Job?>(null) }
+        var viewportTransform by remember { mutableStateOf(CanvasViewportTransform()) }
 
 	    LaunchedEffect(sentReactionOverlay) {
 	        if (sentReactionOverlay == null) return@LaunchedEffect
@@ -1046,16 +1051,10 @@ private fun PairedCanvasPane(
 	        sentReactionOverlay = null
 	    }
 
-        val cancelPendingDot: () -> Unit = {
-            pendingDotJob?.cancel()
-            pendingDotJob = null
-        }
-
 	    val sendAndAnimate: (ReactionType) -> Unit = { type ->
 	        if (BuildConfig.DEBUG) {
 	            Log.d("MulberryReactions", "sendReaction type=${type.apiValue}")
 	        }
-	        cancelPendingDot()
             coroutineScope.launch {
                 val didSend = onSendReaction(type)
                 if (!didSend) return@launch
@@ -1064,81 +1063,6 @@ private fun PairedCanvasPane(
                 reactionRailOpen = false
             }
 	    }
-
-        val reactionGestureModifier = Modifier.pointerInput(isEditorOpen, uiState.toolState.activeTool, reactionRailOpen) {
-            if (isEditorOpen || uiState.toolState.activeTool != DrawingTool.DRAW) return@pointerInput
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
-                val downAtMs = down.uptimeMillis
-                // If this could be the second tap in a double-tap, cancel any pending dot now
-                // (don't wait for the second tap "up").
-                val lastTapAt = lastTapUpAtMs
-                if (lastTapAt != null && downAtMs - lastTapAt <= viewConfig.doubleTapTimeoutMillis) {
-                    cancelPendingDot()
-                }
-		            val up = withTimeoutOrNull(viewConfig.longPressTimeoutMillis.toLong()) {
-		                waitForUpOrCancellation()
-		            }
-
-		            // Timeout => treat as long-press (and keep the rail open until the user taps again).
-		            if (up == null) {
-                        val elapsedMs = SystemClock.uptimeMillis() - downAtMs
-                        if (elapsedMs < viewConfig.longPressTimeoutMillis) {
-                            // Gesture cancelled (e.g. drag); ignore.
-                            return@awaitEachGesture
-                        }
-		                if (BuildConfig.DEBUG) {
-		                    Log.d("MulberryReactions", "longPress -> open rail")
-		                }
-                        cancelPendingDot()
-		                reactionRailOpen = true
-		                lastTapUpAtMs = null
-		                // Drain the rest of the gesture.
-		                waitForUpOrCancellation()
-		                return@awaitEachGesture
-		            }
-
-		            // If the rail is already open, any tap closes it (and we don't treat it as a reaction).
-		            if (reactionRailOpen) {
-		                if (BuildConfig.DEBUG) {
-		                    Log.d("MulberryReactions", "tap -> close rail")
-		                }
-                        cancelPendingDot()
-		                reactionRailOpen = false
-		                lastTapUpAtMs = null
-		                return@awaitEachGesture
-		            }
-
-		            val now = up.uptimeMillis
-		            val lastTap = lastTapUpAtMs
-		            if (lastTap != null && now - lastTap <= viewConfig.doubleTapTimeoutMillis) {
-		                lastTapUpAtMs = null
-		                if (BuildConfig.DEBUG) {
-		                    Log.d("MulberryReactions", "doubleTap -> heart")
-		                }
-                        cancelPendingDot()
-		                sendAndAnimate(ReactionType.HEART)
-		                return@awaitEachGesture
-		            }
-		            lastTapUpAtMs = now
-
-                    // Single-tap: delay committing the dot until the double-tap window passes.
-                    cancelPendingDot()
-                    val tapPoint = StrokePoint(
-                        x = up.position.x,
-                        y = up.position.y
-                    ).normalizeToSurface(size.width, size.height)
-                    pendingDotJob = coroutineScope.launch {
-                        delay(viewConfig.doubleTapTimeoutMillis.toLong())
-                        if (reactionRailOpen || isEditorOpen || uiState.toolState.activeTool != DrawingTool.DRAW) return@launch
-                        if (BuildConfig.DEBUG) {
-                            Log.d("MulberryReactions", "singleTap -> dot")
-                        }
-                        onCanvasPress(tapPoint)
-                        onCanvasRelease()
-                    }
-		        }
-		    }
 
 	    Column(
 	        modifier = modifier
@@ -1162,6 +1086,7 @@ private fun PairedCanvasPane(
 	            DrawingCanvas(
 	                canvasState = uiState.canvasState,
 	                activeTool = uiState.toolState.activeTool,
+                    viewportTransform = viewportTransform,
 	                onDrawStart = onCanvasPress,
                 onDrawPoint = onCanvasDrag,
                 onDrawEnd = onCanvasRelease,
@@ -1170,7 +1095,7 @@ private fun PairedCanvasPane(
 	                modifier = Modifier
 	                    .fillMaxSize()
 	                    .padding(8.dp)
-                        .then(reactionGestureModifier),
+                        ,
 	                strokeRenderMode = uiState.canvasStrokeRenderMode
 	            )
 
@@ -1180,6 +1105,11 @@ private fun PairedCanvasPane(
 	                palette = uiState.palette,
 	                selectedColorArgb = uiState.toolState.selectedColorArgb,
 	                stickerAssetStore = stickerAssetStore,
+                    reactionRailOpen = reactionRailOpen,
+                    onReactionRailOpenChanged = { reactionRailOpen = it },
+                    onReactionTriggered = sendAndAnimate,
+                    viewportTransform = viewportTransform,
+                    onViewportTransformChanged = { viewportTransform = it },
 	                onEraseTap = onCanvasTap,
 	                onAddTextElement = onTextElementAdded,
 	                onUpdateTextElement = onTextElementUpdated,
@@ -1213,9 +1143,7 @@ private fun PairedCanvasPane(
                                     awaitFirstDown(requireUnconsumed = false)
                                     val up = waitForUpOrCancellation()
                                     if (up != null) {
-                                        cancelPendingDot()
                                         reactionRailOpen = false
-                                        lastTapUpAtMs = null
                                     }
                                 }
                             }
@@ -1226,7 +1154,6 @@ private fun PairedCanvasPane(
 	                ReactionRail(
 	                    onReactionSelected = sendAndAnimate,
 	                    onDismiss = {
-                            cancelPendingDot()
                             reactionRailOpen = false
                         },
 	                    modifier = Modifier.align(Alignment.BottomCenter)
@@ -1248,6 +1175,7 @@ private fun PairedCanvasPane(
             onColorSelected = onColorSelected,
             onUndoRequested = onUndoRequested,
             onRedoRequested = onRedoRequested,
+            onBrushToggle = onBrushToggle,
             onEraserToggle = onEraserToggle,
             onTextToggle = onTextToggle,
             onStickerToggle = onStickerToggle,
@@ -1575,7 +1503,10 @@ private fun CanvasActionButton(
                 .fillMaxSize()
                 .alpha(iconAlpha),
             contentScale = ContentScale.Fit,
-            colorFilter = if (drawableRes == R.drawable.canvas_action_text) {
+            colorFilter = if (
+                drawableRes == R.drawable.canvas_action_text ||
+                    drawableRes == R.drawable.canvas_action_brush
+            ) {
                 ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
             } else {
                 null
@@ -1696,6 +1627,7 @@ private fun CanvasControlTray(
     onColorSelected: (Long) -> Unit,
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit,
+    onBrushToggle: () -> Unit,
     onEraserToggle: () -> Unit,
     onTextToggle: () -> Unit,
     onStickerToggle: () -> Unit,
@@ -1705,10 +1637,10 @@ private fun CanvasControlTray(
     var showColorPicker by remember { mutableStateOf(false) }
     var showCustomColorPicker by remember { mutableStateOf(false) }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(69.dp)
+	    Row(
+	        modifier = Modifier
+	            .fillMaxWidth()
+	            .height(69.dp)
             .shadow(
                 elevation = 15.dp,
                 shape = RoundedCornerShape(500.dp),
@@ -1717,12 +1649,42 @@ private fun CanvasControlTray(
                 spotColor = Color(0x26000000)
             )
             .clip(RoundedCornerShape(500.dp))
-            .background(MaterialTheme.mulberryAppColors.softSurface)
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
+	            .background(MaterialTheme.mulberryAppColors.softSurface)
+	            .horizontalScroll(rememberScrollState())
+	            // Slightly asymmetric padding so the right edge tends to clip a tool,
+	            // hinting that the tray is horizontally swipeable.
+	            .padding(start = 20.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+	        verticalAlignment = Alignment.CenterVertically,
+	        horizontalArrangement = Arrangement.spacedBy(18.dp)
+	    ) {
+        CanvasActionButton(
+            drawableRes = R.drawable.canvas_action_undo,
+            contentDescription = stringResource(R.string.home_canvas_undo_content_description),
+            selected = true,
+            showSelectedRing = false,
+            dimWhenNotSelected = false,
+            enabled = uiState.canUndo,
+            onClick = onUndoRequested,
+            modifier = Modifier.testTag(TestTags.UNDO_BUTTON)
+        )
+        CanvasActionButton(
+            drawableRes = R.drawable.canvas_action_redo,
+            contentDescription = stringResource(R.string.home_canvas_redo_content_description),
+            selected = true,
+            showSelectedRing = false,
+            dimWhenNotSelected = false,
+            enabled = uiState.canRedo,
+            onClick = onRedoRequested,
+            modifier = Modifier.testTag(TestTags.REDO_BUTTON)
+        )
+        CanvasActionButton(
+            drawableRes = R.drawable.canvas_action_brush,
+            contentDescription = stringResource(R.string.home_canvas_brush_content_description),
+            selected = uiState.toolState.activeTool == DrawingTool.DRAW,
+            onClick = onBrushToggle,
+            modifier = Modifier.testTag(TestTags.BRUSH_BUTTON)
+        )
+
         Box {
             BrushWidthButton(
                 width = uiState.toolState.selectedWidth,
@@ -1771,6 +1733,11 @@ private fun CanvasControlTray(
             }
         }
 
+        val canShowBrushColorSelection =
+            uiState.toolState.activeTool == DrawingTool.DRAW ||
+                uiState.toolState.activeTool == DrawingTool.NONE ||
+                uiState.toolState.activeTool == DrawingTool.TEXT
+
         Box {
             ColorDotButton(
                 colorArgb = uiState.toolState.selectedColorArgb,
@@ -1803,9 +1770,7 @@ private fun CanvasControlTray(
                                 rowItems.forEach { item ->
                                     if (item == Long.MIN_VALUE) {
                                         CustomColorSwatch(
-                                            isSelected = customSelected &&
-                                                (uiState.toolState.activeTool == DrawingTool.DRAW ||
-                                                    uiState.toolState.activeTool == DrawingTool.TEXT),
+                                            isSelected = customSelected && canShowBrushColorSelection,
                                             onClick = {
                                                 showColorPicker = false
                                                 showCustomColorPicker = true
@@ -1816,8 +1781,7 @@ private fun CanvasControlTray(
                                         ColorSwatch(
                                             colorArgb = item,
                                             isSelected = item == uiState.toolState.selectedColorArgb &&
-                                                (uiState.toolState.activeTool == DrawingTool.DRAW ||
-                                                    uiState.toolState.activeTool == DrawingTool.TEXT),
+                                                canShowBrushColorSelection,
                                             onClick = {
                                                 onColorSelected(item)
                                                 showColorPicker = false
@@ -1842,26 +1806,6 @@ private fun CanvasControlTray(
             }
         )
 
-        CanvasActionButton(
-            drawableRes = R.drawable.canvas_action_undo,
-            contentDescription = stringResource(R.string.home_canvas_undo_content_description),
-            selected = true,
-            showSelectedRing = false,
-            dimWhenNotSelected = false,
-            enabled = uiState.canUndo,
-            onClick = onUndoRequested,
-            modifier = Modifier.testTag(TestTags.UNDO_BUTTON)
-        )
-        CanvasActionButton(
-            drawableRes = R.drawable.canvas_action_redo,
-            contentDescription = stringResource(R.string.home_canvas_redo_content_description),
-            selected = true,
-            showSelectedRing = false,
-            dimWhenNotSelected = false,
-            enabled = uiState.canRedo,
-            onClick = onRedoRequested,
-            modifier = Modifier.testTag(TestTags.REDO_BUTTON)
-        )
         CanvasActionButton(
             drawableRes = R.drawable.canvas_action_erase,
             contentDescription = stringResource(R.string.home_canvas_erase_content_description),
@@ -3297,6 +3241,7 @@ private fun CanvasSurfaceScreen(
                 DrawingCanvas(
                     canvasState = uiState.canvasState,
                     activeTool = uiState.toolState.activeTool,
+                    viewportTransform = CanvasViewportTransform(),
                     onDrawStart = onCanvasPress,
                     onDrawPoint = onCanvasDrag,
                     onDrawEnd = onCanvasRelease,

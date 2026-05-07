@@ -190,9 +190,11 @@ class RoomDrawingRepository @Inject constructor(
 
     override suspend fun setTool(tool: DrawingTool) {
         val metadata = currentMetadata()
+        val nextLastNonNone = if (tool != DrawingTool.NONE) tool else metadata.lastNonNoneTool
         canvasMetadataDao.upsertMetadata(
             metadata.copy(
                 selectedTool = tool,
+                lastNonNoneTool = nextLastNonNone,
                 lastModifiedAt = System.currentTimeMillis()
             )
         )

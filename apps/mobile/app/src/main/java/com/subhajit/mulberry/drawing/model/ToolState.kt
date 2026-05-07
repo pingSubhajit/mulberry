@@ -1,7 +1,7 @@
 package com.subhajit.mulberry.drawing.model
 
 data class ToolState(
-    val activeTool: DrawingTool = DrawingTool.DRAW,
+    val activeTool: DrawingTool = DrawingTool.NONE,
     val strokeColorArgb: Long,
     val textColorArgb: Long,
     val selectedWidth: Float
