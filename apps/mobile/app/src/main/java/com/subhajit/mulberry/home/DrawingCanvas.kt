@@ -52,7 +52,7 @@ fun DrawingCanvas(
     onEraseTap: (StrokePoint) -> Unit,
     onCanvasSizeChanged: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
-    strokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.Hybrid
+    strokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.DryBrush
 ) {
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val context = LocalContext.current.applicationContext
@@ -266,7 +266,7 @@ private data class CommittedCanvasBitmapCache(
     val bitmap: Bitmap? = null,
     val strokeIds: List<String> = emptyList(),
     val canvasSize: IntSize = IntSize.Zero,
-    val strokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.Hybrid,
+    val strokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.DryBrush,
     val version: Long = 0L
 ) {
     fun canAppend(

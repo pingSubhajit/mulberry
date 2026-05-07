@@ -14,10 +14,10 @@ class DrawingCanvasCachePlanTest {
             cacheHasBitmap = false,
             cacheStrokeIds = listOf("a"),
             cacheCanvasSize = IntSize(100, 200),
-            cacheStrokeRenderMode = CanvasStrokeRenderMode.Hybrid,
+            cacheStrokeRenderMode = CanvasStrokeRenderMode.DryBrush,
             currentStrokeIds = listOf("a"),
             currentCanvasSize = IntSize(100, 200),
-            currentStrokeRenderMode = CanvasStrokeRenderMode.Hybrid
+            currentStrokeRenderMode = CanvasStrokeRenderMode.DryBrush
         )
 
         assertNull(overlayStartIndex)
@@ -29,10 +29,10 @@ class DrawingCanvasCachePlanTest {
             cacheHasBitmap = true,
             cacheStrokeIds = listOf("a"),
             cacheCanvasSize = IntSize(100, 200),
-            cacheStrokeRenderMode = CanvasStrokeRenderMode.Hybrid,
+            cacheStrokeRenderMode = CanvasStrokeRenderMode.DryBrush,
             currentStrokeIds = listOf("a", "b"),
             currentCanvasSize = IntSize(100, 200),
-            currentStrokeRenderMode = CanvasStrokeRenderMode.Hybrid
+            currentStrokeRenderMode = CanvasStrokeRenderMode.DryBrush
         )
 
         assertEquals(1, overlayStartIndex)
@@ -44,10 +44,10 @@ class DrawingCanvasCachePlanTest {
             cacheHasBitmap = true,
             cacheStrokeIds = listOf("a", "b"),
             cacheCanvasSize = IntSize(100, 200),
-            cacheStrokeRenderMode = CanvasStrokeRenderMode.Hybrid,
+            cacheStrokeRenderMode = CanvasStrokeRenderMode.DryBrush,
             currentStrokeIds = listOf("a"),
             currentCanvasSize = IntSize(100, 200),
-            currentStrokeRenderMode = CanvasStrokeRenderMode.Hybrid
+            currentStrokeRenderMode = CanvasStrokeRenderMode.DryBrush
         )
 
         assertNull(overlayStartIndex)

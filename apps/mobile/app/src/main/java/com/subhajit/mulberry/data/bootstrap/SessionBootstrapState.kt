@@ -1,5 +1,7 @@
 package com.subhajit.mulberry.data.bootstrap
 
+import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
+
 enum class AuthStatus(val displayName: String) {
     SIGNED_OUT("Signed Out"),
     SIGNED_IN("Signed In"),
@@ -47,6 +49,7 @@ data class SessionBootstrapState(
     val authStatus: AuthStatus = AuthStatus.SIGNED_OUT,
     val hasCompletedOnboarding: Boolean = false,
     val hasWallpaperConfigured: Boolean = false,
+    val canvasStrokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.DryBrush,
     val userId: String? = null,
     val userEmail: String? = null,
     val userPhotoUrl: String? = null,

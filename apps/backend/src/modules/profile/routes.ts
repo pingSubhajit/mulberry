@@ -42,6 +42,13 @@ export function registerProfileRoutes(app: FastifyInstance, service: ProfileServ
     return service.updatePartnerProfilePhoto(requireBearerToken(request), await readRequiredImageUpload(request))
   })
 
+  app.put("/me/canvas-stroke-render-mode", async (request) => {
+    const body = request.body as { canvasStrokeRenderMode?: unknown }
+    return service.updateCanvasStrokeRenderMode(requireBearerToken(request), {
+      canvasStrokeRenderMode: body?.canvasStrokeRenderMode,
+    })
+  })
+
   app.put("/me/wallpaper-status", async (request) => {
     const body = request.body as {
       wallpaperSyncEnabled?: unknown
@@ -64,4 +71,3 @@ export function registerProfileRoutes(app: FastifyInstance, service: ProfileServ
     })
   })
 }
-

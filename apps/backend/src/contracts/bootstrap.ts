@@ -15,6 +15,7 @@ export interface BootstrapResponse {
   authStatus: AuthStatus
   onboardingCompleted: boolean
   hasWallpaperConfigured: boolean
+  canvasStrokeRenderMode: string
   userId: string | null
   userEmail: string | null
   userPhotoUrl: string | null
@@ -39,4 +40,3 @@ export interface StreakResponseWithWeek {
   lastActivityDay: string | null
   week: StreakWeekDay[]
 }
-

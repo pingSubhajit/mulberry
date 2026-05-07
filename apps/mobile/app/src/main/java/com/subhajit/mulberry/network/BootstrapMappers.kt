@@ -6,11 +6,13 @@ import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.data.bootstrap.PendingInviteSummary
 import com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
+import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
 
 fun BootstrapResponse.toDomainBootstrap(): SessionBootstrapState = SessionBootstrapState(
     authStatus = AuthStatus.valueOf(authStatus),
     hasCompletedOnboarding = onboardingCompleted,
     hasWallpaperConfigured = hasWallpaperConfigured,
+    canvasStrokeRenderMode = CanvasStrokeRenderMode.fromRaw(canvasStrokeRenderMode),
     userId = userId,
     userEmail = userEmail,
     userPhotoUrl = userPhotoUrl,

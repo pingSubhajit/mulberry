@@ -153,7 +153,7 @@ data class CanvasHomeUiState(
     val stickerCatalogErrorMessage: String? = null,
     val lastUsedSticker: StickerSelection? = null,
     val showClearConfirmation: Boolean = false,
-    val canvasStrokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.Hybrid,
+    val canvasStrokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.DryBrush,
     val palette: List<Long> = DrawingDefaults.palette
 )
 
@@ -353,7 +353,7 @@ class CanvasHomeViewModel @Inject constructor(
             stickerCatalogErrorMessage = stickers.error,
             lastUsedSticker = lastUsedSticker,
             showClearConfirmation = inviteControls.clearDialogVisible,
-            canvasStrokeRenderMode = appConfig.canvasStrokeRenderMode
+            canvasStrokeRenderMode = baseState.bootstrapState.canvasStrokeRenderMode
         )
     }
 

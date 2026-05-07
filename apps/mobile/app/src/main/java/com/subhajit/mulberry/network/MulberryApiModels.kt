@@ -21,6 +21,7 @@ data class BootstrapResponse(
     val authStatus: String,
     val onboardingCompleted: Boolean,
     val hasWallpaperConfigured: Boolean = false,
+    val canvasStrokeRenderMode: String = "dry",
     val userId: String?,
     val userEmail: String?,
     val userPhotoUrl: String?,
@@ -87,6 +88,10 @@ data class UpdateWallpaperStatusRequest(
     val wallpaperSyncEnabled: Boolean,
     val wallpaperSelectedOnHome: Boolean,
     val wallpaperSelectedOnLock: Boolean
+)
+
+data class UpdateCanvasStrokeRenderModeRequest(
+    val canvasStrokeRenderMode: String
 )
 
 data class CreateInviteResponse(

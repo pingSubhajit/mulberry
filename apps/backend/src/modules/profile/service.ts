@@ -34,6 +34,29 @@ export class ProfileService {
     private readonly profilePhotoStorage?: ProfilePhotoStorage,
   ) {}
 
+  async updateCanvasStrokeRenderMode(
+    accessToken: string,
+    request: { canvasStrokeRenderMode: unknown },
+  ): Promise<BootstrapResponse> {
+    const context = await requireSessionContext(this.db, accessToken)
+    const pairSession = await getPairSession(this.db, context.user.id)
+    if (!pairSession) {
+      throw new HttpError(400, "User is not paired")
+    }
+
+    const mode = parseCanvasStrokeRenderMode(request.canvasStrokeRenderMode)
+    await this.db.query(
+      `
+      UPDATE pair_sessions
+      SET canvas_stroke_render_mode = $1
+      WHERE id = $2
+      `,
+      [mode, pairSession.id],
+    )
+
+    return this.bootstrapService.buildBootstrap(context.user.id)
+  }
+
   async updateWallpaperStatus(accessToken: string, request: UpdateWallpaperStatusRequest): Promise<{ ok: true }> {
     const context = await requireSessionContext(this.db, accessToken)
     const pairSession = await getPairSession(this.db, context.user.id)
@@ -478,9 +501,36 @@ export class ProfileService {
   }
 }
 
+function parseCanvasStrokeRenderMode(raw: unknown): "dry" | "round" {
+  if (typeof raw !== "string") {
+    throw new HttpError(400, "canvasStrokeRenderMode must be a string")
+  }
+  const value = raw.trim().toLowerCase()
+  if (!value) {
+    throw new HttpError(400, "canvasStrokeRenderMode must be non-empty")
+  }
+  switch (value) {
+    case "dry":
+    case "dry_brush":
+    case "dry-brush":
+    case "dry_brush_only":
+    case "dry-brush-only":
+    case "dry_brush_only_strokes":
+      return "dry"
+    case "round":
+    case "round_stroke":
+    case "round-stroke":
+    case "round_stroke_only":
+    case "round-stroke-only":
+    case "round_stroke_only_strokes":
+      return "round"
+    default:
+      throw new HttpError(400, `Unsupported canvasStrokeRenderMode: ${raw}`)
+  }
+}
+
 function isSupportedProfilePhotoType(contentType: string | undefined): boolean {
   return contentType === "image/jpeg" ||
     contentType === "image/png" ||
     contentType === "image/webp"
 }
-

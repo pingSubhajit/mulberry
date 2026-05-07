@@ -9,6 +9,7 @@ import com.subhajit.mulberry.app.di.ApplicationScope
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataEntity
+import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.lang.reflect.Method
@@ -50,6 +51,32 @@ class DefaultWallpaperCoordinator @Inject constructor(
     init {
         applicationScope.launch {
             refreshWallpaperSelection()
+        }
+
+        applicationScope.launch {
+            var lastObservedMode: CanvasStrokeRenderMode? = null
+            sessionBootstrapRepository.state
+                .map { it.canvasStrokeRenderMode }
+                .distinctUntilChanged()
+                .collect { mode ->
+                    if (lastObservedMode == null) {
+                        lastObservedMode = mode
+                        return@collect
+                    }
+                    if (lastObservedMode == mode) return@collect
+                    lastObservedMode = mode
+
+                    // Stroke rendering is cached as a snapshot PNG for the wallpaper. If the stroke style changes
+                    // (manually or programmatically), re-render the snapshot so the wallpaper reflects the new style.
+                    //
+                    // Do not delete the snapshot file here; the wallpaper engine may be decoding it concurrently.
+                    if (wallpaperSyncSettingsRepository.enabled.first()) {
+                        renderMutex.withLock {
+                            snapshotRenderer.renderCurrentSnapshot()
+                        }
+                    }
+                    notifyWallpaperUpdatedIfSelected()
+                }
         }
 
         applicationScope.launch {

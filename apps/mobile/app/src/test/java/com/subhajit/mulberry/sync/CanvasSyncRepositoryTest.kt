@@ -28,6 +28,7 @@ import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.network.PartnerProfileRequest
 import com.subhajit.mulberry.network.ProfileRequest
 import com.subhajit.mulberry.network.RefreshRequest
+import com.subhajit.mulberry.network.UpdateCanvasStrokeRenderModeRequest
 import okhttp3.ResponseBody
 import retrofit2.Response
 import com.subhajit.mulberry.network.RedeemInviteRequest
@@ -607,6 +608,9 @@ private class FakeMulberryApiService : MulberryApiService {
         error("unused")
 
     override suspend fun updatePartnerProfilePhoto(image: MultipartBody.Part): BootstrapResponse =
+        error("unused")
+
+    override suspend fun updateCanvasStrokeRenderMode(request: UpdateCanvasStrokeRenderModeRequest): BootstrapResponse =
         error("unused")
 
     override suspend fun updateWallpaperStatus(request: UpdateWallpaperStatusRequest): DebugActionResponse =

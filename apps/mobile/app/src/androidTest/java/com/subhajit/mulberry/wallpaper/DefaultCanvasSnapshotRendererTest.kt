@@ -3,7 +3,6 @@ package com.subhajit.mulberry.wallpaper
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.subhajit.mulberry.core.config.AppConfigFactory
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataEntity
 import com.subhajit.mulberry.drawing.data.local.CanvasStickerElementEntity
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
@@ -48,6 +47,7 @@ class DefaultCanvasSnapshotRendererTest {
         database = Room.inMemoryDatabaseBuilder(context, DrawingDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+        val sessionBootstrapRepository = FakeSessionBootstrapRepository()
         stickerAssetStore = StickerAssetStore(
             context = context,
             okHttpClient = OkHttpClient.Builder()
@@ -66,7 +66,7 @@ class DefaultCanvasSnapshotRendererTest {
                 .build(),
             stickerCatalogRepository = FakeStickerCatalogRepository(),
             stickerCatalogCacheStore = FakeStickerCatalogCacheStore(),
-            sessionBootstrapRepository = FakeSessionBootstrapRepository()
+            sessionBootstrapRepository = sessionBootstrapRepository
         )
         renderer = DefaultCanvasSnapshotRenderer(
             context = context,
@@ -76,11 +76,7 @@ class DefaultCanvasSnapshotRendererTest {
             canvasStickerElementDao = database.canvasStickerElementDao(),
             canvasMetadataDao = database.canvasMetadataDao(),
             stickerAssetStore = stickerAssetStore,
-            appConfig = AppConfigFactory.fromFields(
-                environmentName = "dev",
-                apiBaseUrl = "http://localhost",
-                enableDebugMenu = false
-            )
+            sessionBootstrapRepository = sessionBootstrapRepository
         )
     }
 

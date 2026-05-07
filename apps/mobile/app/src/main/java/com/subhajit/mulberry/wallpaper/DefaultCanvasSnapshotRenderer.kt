@@ -13,7 +13,7 @@ import android.text.TextPaint
 import androidx.core.graphics.createBitmap
 import androidx.core.content.res.ResourcesCompat
 import androidx.room.withTransaction
-import com.subhajit.mulberry.core.config.AppConfig
+import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataEntity
 import com.subhajit.mulberry.drawing.data.local.CanvasStickerElementDao
@@ -29,6 +29,7 @@ import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.Stroke
+import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
 import com.subhajit.mulberry.drawing.render.committedStrokeBitmapRenderer
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.stickers.StickerAssetStore
@@ -36,9 +37,11 @@ import com.subhajit.mulberry.stickers.StickerAssetVariant
 import com.subhajit.mulberry.stickers.resolveStickerRenderSizePx
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.FileOutputStream
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 @Singleton
@@ -50,13 +53,15 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
     private val canvasStickerElementDao: CanvasStickerElementDao,
     private val canvasMetadataDao: CanvasMetadataDao,
     private val stickerAssetStore: StickerAssetStore,
-    private val appConfig: AppConfig
+    private val sessionBootstrapRepository: SessionBootstrapRepository
 ) : CanvasSnapshotRenderer {
 
     override suspend fun renderCurrentSnapshot(): SnapshotRenderResult = withContext(Dispatchers.IO) {
+        val strokeRenderMode = sessionBootstrapRepository.state.first().canvasStrokeRenderMode
         val dimensions = resolveSnapshotDimensions()
         val snapshotFile = WallpaperFiles.snapshotFile(context)
         snapshotFile.parentFile?.mkdirs()
+        val tempSnapshotFile = File(snapshotFile.parentFile, "${snapshotFile.name}.tmp")
         var capturedMetadata = CanvasMetadataEntity.default()
         var strokes = emptyList<Stroke>()
         var textElements = emptyList<CanvasTextElementEntity>()
@@ -82,7 +87,8 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
         drawStrokes(
             canvas = canvas,
             strokes = strokes,
-            placement = placement
+            placement = placement,
+            strokeRenderMode = strokeRenderMode
         )
         val missingStickerAssets = drawOverlayElements(
             canvas = canvas,
@@ -91,8 +97,21 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
             placement = placement
         )
 
-        FileOutputStream(snapshotFile).use { output ->
+        runCatching { tempSnapshotFile.delete() }
+        val wrote = FileOutputStream(tempSnapshotFile).use { output ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+        }
+        if (!wrote) {
+            runCatching { tempSnapshotFile.delete() }
+            error("Unable to write wallpaper snapshot PNG")
+        }
+        if (!tempSnapshotFile.renameTo(snapshotFile)) {
+            // Best-effort fallback: try replacing the target then renaming.
+            runCatching { snapshotFile.delete() }
+            if (!tempSnapshotFile.renameTo(snapshotFile)) {
+                runCatching { tempSnapshotFile.delete() }
+                error("Unable to move wallpaper snapshot into place")
+            }
         }
         bitmap.recycle()
 
@@ -121,7 +140,9 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
 
     override suspend fun clearSnapshots() {
         withContext(Dispatchers.IO) {
-            WallpaperFiles.snapshotFile(context).delete()
+            val snapshotFile = WallpaperFiles.snapshotFile(context)
+            snapshotFile.delete()
+            File(snapshotFile.parentFile, "${snapshotFile.name}.tmp").delete()
         }
     }
 
@@ -142,9 +163,10 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
     private fun drawStrokes(
         canvas: Canvas,
         strokes: List<Stroke>,
-        placement: SnapshotPlacement
+        placement: SnapshotPlacement,
+        strokeRenderMode: CanvasStrokeRenderMode
     ) {
-        appConfig.canvasStrokeRenderMode.committedStrokeBitmapRenderer().drawStrokes(
+        strokeRenderMode.committedStrokeBitmapRenderer().drawStrokes(
             canvas = canvas,
             strokes = strokes.map { stroke ->
                 stroke.denormalizeToSurface(

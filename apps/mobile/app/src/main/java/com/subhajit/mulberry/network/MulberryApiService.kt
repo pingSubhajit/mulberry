@@ -52,6 +52,9 @@ interface MulberryApiService {
     @PUT("/me/partner-profile-photo")
     suspend fun updatePartnerProfilePhoto(@Part image: MultipartBody.Part): BootstrapResponse
 
+    @PUT("/me/canvas-stroke-render-mode")
+    suspend fun updateCanvasStrokeRenderMode(@Body request: UpdateCanvasStrokeRenderModeRequest): BootstrapResponse
+
     @PUT("/me/wallpaper-status")
     suspend fun updateWallpaperStatus(@Body request: UpdateWallpaperStatusRequest): DebugActionResponse
 

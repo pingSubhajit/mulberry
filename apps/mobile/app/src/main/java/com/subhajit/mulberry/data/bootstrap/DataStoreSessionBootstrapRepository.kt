@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import com.subhajit.mulberry.core.config.AppConfig
 import com.subhajit.mulberry.core.data.PreferenceStorage
+import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -51,6 +52,9 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                     ?: AuthStatus.SIGNED_OUT,
                 hasCompletedOnboarding = preferences[PreferenceStorage.onboardingCompleted] ?: false,
                 hasWallpaperConfigured = preferences[PreferenceStorage.wallpaperConfigured] ?: false,
+                canvasStrokeRenderMode = preferences[PreferenceStorage.canvasStrokeRenderMode]
+                    ?.let { raw -> runCatching { CanvasStrokeRenderMode.valueOf(raw) }.getOrNull() }
+                    ?: CanvasStrokeRenderMode.DryBrush,
                 userId = preferences[PreferenceStorage.sessionUserId],
                 userEmail = preferences[PreferenceStorage.userEmail],
                 userPhotoUrl = preferences[PreferenceStorage.userPhotoUrl],
@@ -120,6 +124,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             updateNullable(preferences, PreferenceStorage.userDisplayName, state.userDisplayName)
             updateNullable(preferences, PreferenceStorage.partnerPhotoUrl, state.partnerPhotoUrl)
             updateNullable(preferences, PreferenceStorage.partnerDisplayName, state.partnerDisplayName)
+            preferences[PreferenceStorage.canvasStrokeRenderMode] = state.canvasStrokeRenderMode.name
             if (state.partnerWallpaperStatus == null) {
                 preferences.remove(PreferenceStorage.partnerWallpaperStatusUpdatedAt)
                 preferences.remove(PreferenceStorage.partnerWallpaperSyncEnabled)
@@ -233,6 +238,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             SessionBootstrapState(
                 authStatus = AuthStatus.SIGNED_IN,
                 hasCompletedOnboarding = true,
+                canvasStrokeRenderMode = CanvasStrokeRenderMode.DryBrush,
                 userId = "dev-user-id",
                 userDisplayName = "Subhajit",
                 partnerDisplayName = "Ankita",
@@ -257,6 +263,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences.remove(PreferenceStorage.userDisplayName)
             preferences.remove(PreferenceStorage.partnerPhotoUrl)
             preferences.remove(PreferenceStorage.partnerDisplayName)
+            preferences.remove(PreferenceStorage.canvasStrokeRenderMode)
             preferences.remove(PreferenceStorage.partnerWallpaperStatusUpdatedAt)
             preferences.remove(PreferenceStorage.partnerWallpaperSyncEnabled)
             preferences.remove(PreferenceStorage.partnerWallpaperSelectedOnHome)

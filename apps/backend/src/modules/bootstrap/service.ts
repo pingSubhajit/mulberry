@@ -58,6 +58,7 @@ export class BootstrapService {
       authStatus: "SIGNED_IN",
       onboardingCompleted,
       hasWallpaperConfigured: false,
+      canvasStrokeRenderMode: pairSession?.canvas_stroke_render_mode ?? "dry",
       userId,
       userEmail: user?.email ?? null,
       userPhotoUrl: this.profilePhotoUrl(profile?.profile_photo_path) ?? user?.google_picture_url ?? null,
@@ -198,4 +199,3 @@ export class BootstrapService {
     )
   }
 }
-

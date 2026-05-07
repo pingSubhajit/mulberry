@@ -80,6 +80,19 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    ALTER TABLE pair_sessions
+      ADD COLUMN IF NOT EXISTS canvas_stroke_render_mode TEXT;
+
+    UPDATE pair_sessions
+    SET canvas_stroke_render_mode = 'dry'
+    WHERE canvas_stroke_render_mode IS NULL;
+
+    ALTER TABLE pair_sessions
+      ALTER COLUMN canvas_stroke_render_mode SET DEFAULT 'dry';
+
+    ALTER TABLE pair_sessions
+      ALTER COLUMN canvas_stroke_render_mode SET NOT NULL;
+
     CREATE TABLE IF NOT EXISTS invites (
       id TEXT PRIMARY KEY,
       inviter_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -283,4 +296,3 @@ export async function createDatabase(databaseUrl: string): Promise<Database> {
     },
   }
 }
-

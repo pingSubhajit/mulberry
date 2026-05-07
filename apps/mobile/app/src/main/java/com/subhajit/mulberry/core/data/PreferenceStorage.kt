@@ -18,6 +18,7 @@ object PreferenceStorage {
     val userDisplayName = stringPreferencesKey("user_display_name")
     val partnerPhotoUrl = stringPreferencesKey("partner_photo_url")
     val partnerDisplayName = stringPreferencesKey("partner_display_name")
+    val canvasStrokeRenderMode = stringPreferencesKey("canvas_stroke_render_mode")
     val partnerWallpaperStatusUpdatedAt =
         stringPreferencesKey("partner_wallpaper_status_updated_at")
     val partnerWallpaperSyncEnabled =

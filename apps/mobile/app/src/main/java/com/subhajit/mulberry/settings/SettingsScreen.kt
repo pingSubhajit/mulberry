@@ -94,6 +94,7 @@ import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus
+import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
 import com.subhajit.mulberry.review.InAppReviewLauncher
 import com.subhajit.mulberry.streak.StreakSimulationPreset
 import com.subhajit.mulberry.sync.SyncState
@@ -113,7 +114,6 @@ private enum class SettingsPane {
     Home,
     Profile,
     Partner,
-    PrivacyLegal,
     About,
     DeveloperOptions
 }
@@ -216,6 +216,7 @@ fun SettingsRoute(
         },
         onPaneSelected = { pane = it },
         onWallpaperSyncEnabledChanged = viewModel::onWallpaperSyncEnabledChanged,
+        onCanvasStrokeRenderModeChanged = viewModel::onCanvasStrokeRenderModeChanged,
         onDisplayNameSave = viewModel::onDisplayNameSave,
         onProfilePhotoChangeRequested = { profilePhotoPicker.launch("image/*") },
         onDisconnectPartner = viewModel::onDisconnectPartner,
@@ -258,6 +259,7 @@ private fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onPaneSelected: (SettingsPane) -> Unit,
     onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
+    onCanvasStrokeRenderModeChanged: (Boolean) -> Unit,
     onDisplayNameSave: (String) -> Unit,
     onProfilePhotoChangeRequested: () -> Unit,
     onDisconnectPartner: () -> Unit,
@@ -296,16 +298,17 @@ private fun SettingsScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { padding ->
 	        if (pane == SettingsPane.Home) {
-	            SettingsRootPage(
-	                uiState = uiState,
-	                onClose = onNavigateBack,
-	                onPaneSelected = onPaneSelected,
-	                onWallpaperSyncEnabledChanged = onWallpaperSyncEnabledChanged,
-                    partnerVisibilitySheetOpen = partnerVisibilitySheetOpen,
-                    onPartnerVisibilitySheetOpenChanged = onPartnerVisibilitySheetOpenChanged,
-	                onLogout = onLogout,
-	                modifier = Modifier.padding(padding)
-	            )
+            SettingsRootPage(
+                uiState = uiState,
+                onClose = onNavigateBack,
+                onPaneSelected = onPaneSelected,
+                onWallpaperSyncEnabledChanged = onWallpaperSyncEnabledChanged,
+                onCanvasStrokeRenderModeChanged = onCanvasStrokeRenderModeChanged,
+                partnerVisibilitySheetOpen = partnerVisibilitySheetOpen,
+                onPartnerVisibilitySheetOpenChanged = onPartnerVisibilitySheetOpenChanged,
+                onLogout = onLogout,
+                modifier = Modifier.padding(padding)
+            )
 	        } else if (pane == SettingsPane.Profile) {
 	            ProfilePane(
 	                uiState = uiState,
@@ -321,11 +324,6 @@ private fun SettingsScreen(
                 onDisconnectPartner = onDisconnectPartner,
                 onPartnerProfileSave = onPartnerProfileSave,
                 onPartnerPhotoChangeRequested = onPartnerPhotoChangeRequested,
-                modifier = Modifier.padding(padding)
-            )
-        } else if (pane == SettingsPane.PrivacyLegal) {
-            PrivacyLegalPane(
-                onBack = onNavigateBack,
                 modifier = Modifier.padding(padding)
             )
         } else if (pane == SettingsPane.About) {
@@ -382,7 +380,6 @@ private fun SettingsScreen(
                 when (pane) {
                     SettingsPane.Profile,
                     SettingsPane.Partner,
-                    SettingsPane.PrivacyLegal,
                     SettingsPane.About,
                     SettingsPane.DeveloperOptions -> Unit
                     SettingsPane.Home -> Unit
@@ -399,6 +396,7 @@ private fun SettingsRootPage(
     onClose: () -> Unit,
     onPaneSelected: (SettingsPane) -> Unit,
     onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
+    onCanvasStrokeRenderModeChanged: (Boolean) -> Unit,
     partnerVisibilitySheetOpen: Boolean,
     onPartnerVisibilitySheetOpenChanged: (Boolean) -> Unit,
     onLogout: () -> Unit,
@@ -480,6 +478,7 @@ private fun SettingsRootPage(
             uiState = uiState,
             onPaneSelected = onPaneSelected,
             onWallpaperSyncEnabledChanged = onWallpaperSyncEnabledChanged,
+            onCanvasStrokeRenderModeChanged = onCanvasStrokeRenderModeChanged,
             onWallpaperDoodlesInfoRequested = { wallpaperDoodlesInfoSheetOpen = true },
             onLogoutRequested = { showLogoutConfirmation = true }
         )
@@ -649,6 +648,7 @@ private fun SettingsRootMenu(
     uiState: SettingsUiState,
     onPaneSelected: (SettingsPane) -> Unit,
     onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
+    onCanvasStrokeRenderModeChanged: (Boolean) -> Unit,
     onWallpaperDoodlesInfoRequested: () -> Unit,
     onLogoutRequested: () -> Unit
 ) {
@@ -688,10 +688,12 @@ private fun SettingsRootMenu(
             onCheckedChange = onWallpaperSyncEnabledChanged,
             onInfoClick = onWallpaperDoodlesInfoRequested
         )
-        SettingsRootRow(
-            icon = SettingsRootIcon.Privacy,
-            title = "Privacy and legal",
-            onClick = { onPaneSelected(SettingsPane.PrivacyLegal) }
+        SettingsRootToggleRow(
+            icon = SettingsRootIcon.BrushStyle,
+            title = "Dry brush strokes",
+            checked = uiState.bootstrapState.canvasStrokeRenderMode == CanvasStrokeRenderMode.DryBrush,
+            enabled = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED && !uiState.isBusy,
+            onCheckedChange = onCanvasStrokeRenderModeChanged
         )
         SettingsRootRow(
             icon = SettingsRootIcon.About,
@@ -1189,7 +1191,7 @@ private enum class SettingsRootIcon {
     SyncConnected,
     SyncUnpaired,
     Lock,
-    Privacy,
+    BrushStyle,
     About,
     Logout
 }
@@ -1201,7 +1203,7 @@ private fun SettingsRootIcon.drawableRes(): Int = when (this) {
     SettingsRootIcon.SyncConnected -> R.drawable.settings_icon_sync_connected
     SettingsRootIcon.SyncUnpaired -> R.drawable.settings_icon_sync_unpaired
     SettingsRootIcon.Lock -> R.drawable.settings_icon_lock
-    SettingsRootIcon.Privacy -> R.drawable.settings_icon_privacy
+    SettingsRootIcon.BrushStyle -> R.drawable.settings_icon_edit_pencil
     SettingsRootIcon.About -> R.drawable.settings_icon_about
     SettingsRootIcon.Logout -> R.drawable.settings_icon_logout
 }
@@ -1954,6 +1956,7 @@ private enum class LegalSheet {
     TermsOfUse
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AboutPane(
     uiState: SettingsUiState,
@@ -1962,6 +1965,8 @@ private fun AboutPane(
     modifier: Modifier = Modifier
 ) {
     val uriHandler = LocalUriHandler.current
+    var activeSheet by remember { mutableStateOf<LegalSheet?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     SettingsDetailScaffold(
         title = "About",
@@ -2009,6 +2014,45 @@ private fun AboutPane(
             onClick = { uriHandler.openUri("https://github.com/pingSubhajit/mulberry") },
             showChevron = true
         )
+
+        Spacer(modifier = Modifier.height(34.dp))
+        Text(
+            text = "Privacy and legal",
+            color = MaterialTheme.colorScheme.onBackground,
+            fontFamily = PoppinsFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 18.sp,
+            lineHeight = 24.sp
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        PrivacyLegalCard(
+            title = "Privacy policy",
+            body = "How Mulberry facilitates handling and the security of your data",
+            onClick = { activeSheet = LegalSheet.PrivacyPolicy }
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        PrivacyLegalCard(
+            title = "Terms of use",
+            body = "Terms and conditions you accept as you continue to use the service",
+            onClick = { activeSheet = LegalSheet.TermsOfUse }
+        )
+        Spacer(modifier = Modifier.height(30.dp))
+        PrivacyPromiseRow()
+    }
+
+    if (activeSheet != null) {
+        ModalBottomSheet(
+            onDismissRequest = { activeSheet = null },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            when (activeSheet) {
+                LegalSheet.PrivacyPolicy -> PrivacyPolicySheetContent(onDismiss = { activeSheet = null })
+                LegalSheet.TermsOfUse -> TermsOfUseSheetContent(onDismiss = { activeSheet = null })
+                null -> Unit
+            }
+        }
     }
 }
 
@@ -2783,7 +2827,6 @@ private fun SettingsPane.title(): String = when (this) {
     SettingsPane.Home -> "Settings"
     SettingsPane.Profile -> "Profile"
     SettingsPane.Partner -> "Partner"
-    SettingsPane.PrivacyLegal -> "Privacy & Legal"
     SettingsPane.About -> "About"
     SettingsPane.DeveloperOptions -> "Developer Options"
 }
@@ -2792,7 +2835,6 @@ private fun SettingsPane.subtitle(): String = when (this) {
     SettingsPane.Home -> "Keep your Mulberry account and connection tidy."
     SettingsPane.Profile -> "Your Google account details and session."
     SettingsPane.Partner -> "View your connected partner details."
-    SettingsPane.PrivacyLegal -> "Policies that explain how Mulberry works."
     SettingsPane.About -> "Build information and app details."
     SettingsPane.DeveloperOptions -> "Diagnostics and support tools."
 }

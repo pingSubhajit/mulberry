@@ -40,6 +40,7 @@ export interface PairSessionRecord {
   id: string
   user_one_id: string
   user_two_id: string
+  canvas_stroke_render_mode: string
   created_at: Date | string
 }
 
@@ -76,4 +77,3 @@ export interface UserWallpaperStatusRow {
   has_ever_been_able_to_see: boolean
   updated_at: Date | string
 }
-

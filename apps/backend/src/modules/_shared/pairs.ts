@@ -7,7 +7,7 @@ export async function getPairSession(
 ): Promise<PairSessionRecord | null> {
   const rows = await db.query<PairSessionRecord>(
     `
-      SELECT id, user_one_id, user_two_id, created_at
+      SELECT id, user_one_id, user_two_id, canvas_stroke_render_mode, created_at
       FROM pair_sessions
       WHERE user_one_id = $1 OR user_two_id = $1
       LIMIT 1
@@ -16,4 +16,3 @@ export async function getPairSession(
   )
   return rows.rows[0] ?? null
 }
-

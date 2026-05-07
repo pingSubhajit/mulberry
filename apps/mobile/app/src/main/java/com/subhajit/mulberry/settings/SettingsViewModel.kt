@@ -14,9 +14,11 @@ import com.subhajit.mulberry.core.flags.FeatureFlags
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
 import com.subhajit.mulberry.drawing.DrawingRepository
+import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
 import com.subhajit.mulberry.network.DisplayNameRequest
 import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.network.PartnerProfileRequest
+import com.subhajit.mulberry.network.UpdateCanvasStrokeRenderModeRequest
 import com.subhajit.mulberry.network.toDomainBootstrap
 import com.subhajit.mulberry.sync.BackgroundCanvasSyncCoordinator
 import com.subhajit.mulberry.sync.CanvasNudgeNotificationHandler
@@ -244,6 +246,19 @@ class SettingsViewModel @Inject constructor(
             }
             wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
             partnerWallpaperStatusReportCoordinator.reportNow(reason = "wallpaper_sync_toggle")
+        }
+    }
+
+    fun onCanvasStrokeRenderModeChanged(useDryBrush: Boolean) {
+        viewModelScope.launchWithBusy {
+            val mode = if (useDryBrush) CanvasStrokeRenderMode.DryBrush else CanvasStrokeRenderMode.RoundStroke
+            val bootstrap = apiService.updateCanvasStrokeRenderMode(
+                UpdateCanvasStrokeRenderModeRequest(
+                    canvasStrokeRenderMode = if (mode == CanvasStrokeRenderMode.DryBrush) "dry" else "round"
+                )
+            ).toDomainBootstrap()
+            sessionRepository.cacheBootstrap(bootstrap)
+            _effects.emit(SettingsEffect.Message("Brush style updated"))
         }
     }
 
