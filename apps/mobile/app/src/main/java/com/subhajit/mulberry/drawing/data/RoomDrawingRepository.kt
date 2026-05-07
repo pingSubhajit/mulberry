@@ -250,6 +250,7 @@ class RoomDrawingRepository @Inject constructor(
             val nextRevision = metadata.revision + 1
             drawingDao.clearStrokes()
             canvasTextElementDao.clear()
+            canvasStickerElementDao.clear()
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.CLEAR_CANVAS,

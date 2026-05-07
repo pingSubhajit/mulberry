@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.engine.StrokeBuilder
+import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
@@ -122,6 +123,34 @@ class RoomDrawingRepositoryTest {
 
         assertTrue(canvasState.isEmpty)
         assertTrue(canvasState.strokes.isEmpty())
+    }
+
+    @Test
+    fun clearPersistsAcrossReloadAndClearsStickerElements() = runBlocking {
+        repository.upsertLocalStickerElement(
+            CanvasStickerElement(
+                id = "sticker-1",
+                createdAt = 10L,
+                center = StrokePoint(0.5f, 0.5f),
+                rotationRad = 0f,
+                scale = 0.22f,
+                packKey = "kawaii-cats",
+                packVersion = 1,
+                stickerId = "test-sticker"
+            )
+        )
+
+        val before = repository.canvasState.first { it.elements.isNotEmpty() }
+        assertFalse(before.isEmpty)
+        assertEquals(1, before.elements.size)
+
+        repository.clearCanvas()
+
+        val recreated = createRepository()
+        val after = recreated.canvasState.first()
+
+        assertTrue(after.elements.isEmpty())
+        assertTrue(after.isEmpty)
     }
 
     @Test
