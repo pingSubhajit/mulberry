@@ -22,9 +22,11 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -773,6 +775,7 @@ private fun MainAppHeader(
     onProfileClick: () -> Unit
 ) {
     val displayName = userName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.home_default_user_name)
+    val titleColorFilter = if (isSystemInDarkTheme()) ColorFilter.tint(Color.White) else null
 
     Row(
         modifier = Modifier
@@ -786,6 +789,7 @@ private fun MainAppHeader(
             painter = painterResource(R.drawable.home_header_wordmark),
             contentDescription = stringResource(R.string.app_name),
             contentScale = ContentScale.Fit,
+            colorFilter = titleColorFilter,
             modifier = Modifier.size(width = 85.dp, height = 19.dp)
         )
 
@@ -1461,9 +1465,9 @@ private fun CanvasActionButton(
     dimWhenNotSelected: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    size: Dp = 50.dp
+    size: Dp = 49.dp
 ) {
-    val ringWidth = 2.dp
+    val ringWidth = if (selected) 4.dp else 2.dp
     val ringColor = MulberryPrimary.copy(alpha = 0.95f)
     val iconAlpha = when {
         !enabled -> 0.35f
@@ -1515,11 +1519,12 @@ private fun CanvasActionButton(
 private fun ColorDotButton(
     colorArgb: Long,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    buttonSize: Dp = 49.dp
 ) {
     Surface(
         modifier = modifier
-            .size(47.dp)
+            .size(buttonSize)
             .shadow(
                 elevation = 12.dp,
                 shape = CircleShape,
@@ -1539,11 +1544,12 @@ private fun BrushWidthButton(
     width: Float,
     accentColor: Color,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    buttonSize: Dp = 49.dp
 ) {
     Surface(
         modifier = modifier
-            .size(47.dp)
+            .size(buttonSize)
             .shadow(
                 elevation = 12.dp,
                 shape = CircleShape,
@@ -1633,26 +1639,44 @@ private fun CanvasControlTray(
     var showColorPicker by remember { mutableStateOf(false) }
     var showCustomColorPicker by remember { mutableStateOf(false) }
 
-	    Row(
-	        modifier = Modifier
-	            .fillMaxWidth()
-	            .height(69.dp)
-            .shadow(
-                elevation = 15.dp,
-                shape = RoundedCornerShape(500.dp),
-                clip = false,
-                ambientColor = Color(0x26000000),
-                spotColor = Color(0x26000000)
+    val trayPadding = 10.dp
+    val toolSize = 49.dp
+    val baseToolSpacing = 18.dp
+    val minToolSpacing = 12.dp
+    val maxToolSpacing = 22.dp
+    val toolCount = 8
+
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val availableWidth = (maxWidth - trayPadding * 2).coerceAtLeast(0.dp)
+        val toolSpacing = remember(availableWidth) {
+            computeCanvasTrayToolSpacing(
+                availableWidth = availableWidth,
+                toolSize = toolSize,
+                baseSpacing = baseToolSpacing,
+                minSpacing = minToolSpacing,
+                maxSpacing = maxToolSpacing,
+                toolCount = toolCount
             )
-            .clip(RoundedCornerShape(500.dp))
-	            .background(MaterialTheme.mulberryAppColors.softSurface)
-	            .horizontalScroll(rememberScrollState())
-	            // Slightly asymmetric padding so the right edge tends to clip a tool,
-	            // hinting that the tray is horizontally swipeable.
-	            .padding(start = 20.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
-	        verticalAlignment = Alignment.CenterVertically,
-	        horizontalArrangement = Arrangement.spacedBy(18.dp)
-	    ) {
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(69.dp)
+                .shadow(
+                    elevation = 15.dp,
+                    shape = RoundedCornerShape(500.dp),
+                    clip = false,
+                    ambientColor = Color(0x26000000),
+                    spotColor = Color(0x26000000)
+                )
+                .clip(RoundedCornerShape(500.dp))
+                .background(MaterialTheme.mulberryAppColors.softSurface)
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = trayPadding, vertical = trayPadding),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(toolSpacing)
+        ) {
         CanvasActionButton(
             drawableRes = R.drawable.canvas_action_undo,
             contentDescription = stringResource(R.string.home_canvas_undo_content_description),
@@ -1661,7 +1685,8 @@ private fun CanvasControlTray(
             dimWhenNotSelected = false,
             enabled = uiState.canUndo,
             onClick = onUndoRequested,
-            modifier = Modifier.testTag(TestTags.UNDO_BUTTON)
+            modifier = Modifier.testTag(TestTags.UNDO_BUTTON),
+            size = toolSize
         )
         CanvasActionButton(
             drawableRes = R.drawable.canvas_action_redo,
@@ -1671,14 +1696,16 @@ private fun CanvasControlTray(
             dimWhenNotSelected = false,
             enabled = uiState.canRedo,
             onClick = onRedoRequested,
-            modifier = Modifier.testTag(TestTags.REDO_BUTTON)
+            modifier = Modifier.testTag(TestTags.REDO_BUTTON),
+            size = toolSize
         )
         CanvasActionButton(
             drawableRes = R.drawable.canvas_action_brush,
             contentDescription = stringResource(R.string.home_canvas_brush_content_description),
             selected = uiState.toolState.activeTool == DrawingTool.DRAW,
             onClick = onBrushToggle,
-            modifier = Modifier.testTag(TestTags.BRUSH_BUTTON)
+            modifier = Modifier.testTag(TestTags.BRUSH_BUTTON),
+            size = toolSize
         )
 
         Box {
@@ -1691,7 +1718,8 @@ private fun CanvasControlTray(
                         showColorPicker = false
                     }
                 },
-                modifier = Modifier.testTag(TestTags.BRUSH_WIDTH_BUTTON)
+                modifier = Modifier.testTag(TestTags.BRUSH_WIDTH_BUTTON),
+                buttonSize = toolSize
             )
 
             DropdownMenu(
@@ -1740,7 +1768,8 @@ private fun CanvasControlTray(
                 onClick = {
                     showColorPicker = true
                     showWidthPicker = false
-                }
+                },
+                buttonSize = toolSize
             )
 
             DropdownMenu(
@@ -1807,21 +1836,24 @@ private fun CanvasControlTray(
             contentDescription = stringResource(R.string.home_canvas_erase_content_description),
             selected = uiState.toolState.activeTool == DrawingTool.ERASE,
             onClick = onEraserToggle,
-            modifier = Modifier.testTag(TestTags.ERASER_BUTTON)
+            modifier = Modifier.testTag(TestTags.ERASER_BUTTON),
+            size = toolSize
         )
         CanvasActionButton(
             drawableRes = R.drawable.canvas_action_text,
             contentDescription = stringResource(R.string.home_canvas_text_content_description),
             selected = uiState.toolState.activeTool == DrawingTool.TEXT,
             onClick = onTextToggle,
-            modifier = Modifier.testTag(TestTags.TEXT_BUTTON)
+            modifier = Modifier.testTag(TestTags.TEXT_BUTTON),
+            size = toolSize
         )
         CanvasActionButton(
             drawableRes = R.drawable.canvas_action_sticker,
             contentDescription = stringResource(R.string.home_canvas_sticker_content_description),
             selected = uiState.toolState.activeTool == DrawingTool.STICKER,
             onClick = onStickerToggle,
-            modifier = Modifier.testTag(TestTags.STICKER_BUTTON)
+            modifier = Modifier.testTag(TestTags.STICKER_BUTTON),
+            size = toolSize
         )
         CanvasActionButton(
             drawableRes = R.drawable.canvas_action_clear,
@@ -1830,9 +1862,39 @@ private fun CanvasControlTray(
             showSelectedRing = false,
             dimWhenNotSelected = false,
             onClick = onClearRequested,
-            modifier = Modifier.testTag(TestTags.CLEAR_BUTTON)
+            modifier = Modifier.testTag(TestTags.CLEAR_BUTTON),
+            size = toolSize
         )
     }
+    }
+}
+
+private fun computeCanvasTrayToolSpacing(
+    availableWidth: Dp,
+    toolSize: Dp,
+    baseSpacing: Dp,
+    minSpacing: Dp,
+    maxSpacing: Dp,
+    toolCount: Int
+): Dp {
+    val halfTool = toolSize / 2f
+    val maxFullTools = (toolCount - 1).coerceAtLeast(1)
+
+    var bestSpacing: Dp? = null
+    var bestScore = Float.POSITIVE_INFINITY
+
+    for (fullTools in 1..maxFullTools) {
+        val spacing = (availableWidth - (toolSize * fullTools) - halfTool) / fullTools.toFloat()
+        if (spacing < minSpacing || spacing > maxSpacing) continue
+
+        val score = kotlin.math.abs(spacing.value - baseSpacing.value)
+        if (score < bestScore) {
+            bestScore = score
+            bestSpacing = spacing
+        }
+    }
+
+    return bestSpacing ?: baseSpacing
 }
 
 @Composable
