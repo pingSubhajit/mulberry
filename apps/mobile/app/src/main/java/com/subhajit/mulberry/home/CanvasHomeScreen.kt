@@ -1504,8 +1504,7 @@ private fun CanvasActionButton(
                 .alpha(iconAlpha),
             contentScale = ContentScale.Fit,
             colorFilter = if (
-                drawableRes == R.drawable.canvas_action_text ||
-                    drawableRes == R.drawable.canvas_action_brush
+                drawableRes == R.drawable.canvas_action_text
             ) {
                 ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
             } else {
