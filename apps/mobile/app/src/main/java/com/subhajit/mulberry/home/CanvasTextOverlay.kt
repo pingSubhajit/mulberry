@@ -422,23 +422,18 @@ fun CanvasTextOverlay(
                 var baselineCentroid = initialDown
                 var baselineAngle = 0f
                 var baselineSpan = 0f
-                var gestureEndUptimeMs = down.uptimeMillis
+	                var gestureEndUptimeMs = down.uptimeMillis
 
-                var longPressMovedOrTransformed = false
-                var longPressFired = false
-                var stillPressed = true
-                val longPressJob: Job? =
-                    if (activeTool == DrawingTool.NONE && !reactionRailOpen) {
-                        coroutineScope.launch {
-                            delay(viewConfiguration.longPressTimeoutMillis.toLong())
-                            if (stillPressed && !longPressMovedOrTransformed && !longPressFired) {
-                                longPressFired = true
-                                onReactionRailOpenChanged(true)
-                            }
-                        }
-                    } else {
-                        null
-                    }
+	                var longPressMovedOrTransformed = false
+	                var longPressFired = false
+	                var stillPressed = true
+	                var lastEventUptimeMs = down.uptimeMillis
+	                val longPressDeadlineUptimeMs: Long? =
+	                    if (activeTool == DrawingTool.NONE && !reactionRailOpen) {
+	                        down.uptimeMillis + viewConfiguration.longPressTimeoutMillis
+	                    } else {
+	                        null
+	                    }
 
                 fun activeElement(): CanvasElement? {
                     val selected = lockedElementId ?: return null
@@ -481,25 +476,58 @@ fun CanvasTextOverlay(
 	                    onViewportTransformChanged(CanvasViewportTransform(scale = newScale, offsetPx = clampedOffset))
 	                }
 
-	                // Track pointers until all are up.
-	                while (true) {
-	                    val event = awaitPointerEvent()
-	                    val pressed = event.changes.filter { it.pressed }
-	                    if (pressed.isEmpty()) {
-                            stillPressed = false
-                            gestureEndUptimeMs = event.changes.firstOrNull()?.uptimeMillis ?: gestureEndUptimeMs
-                            longPressJob?.cancel()
-                            break
-                        }
+		                // Track pointers until all are up.
+		                while (true) {
+		                    val event = if (
+		                        longPressDeadlineUptimeMs != null &&
+		                            !longPressMovedOrTransformed &&
+		                            !longPressFired
+		                    ) {
+		                        val remainingMs = longPressDeadlineUptimeMs - lastEventUptimeMs
+		                        if (remainingMs > 0L) {
+		                            withTimeoutOrNull(remainingMs) { awaitPointerEvent() }
+		                        } else {
+		                            awaitPointerEvent()
+		                        }
+		                    } else {
+		                        awaitPointerEvent()
+		                    }
 
-	                    val positions = pressed.map { it.position }
-	                    val centroid = positions.reduce { acc, offset -> acc + offset } / positions.size.toFloat()
+		                    if (event == null) {
+		                        if (stillPressed && !longPressMovedOrTransformed && !longPressFired) {
+		                            longPressFired = true
+		                            onReactionRailOpenChanged(true)
+		                        }
+		                        continue
+		                    }
 
-                        if (longPressFired) {
-                            // Reaction rail is open; consume pointer changes so nothing else reacts.
-                            pressed.forEach { it.consume() }
-                            lastCentroid = centroid
-                            continue
+		                    lastEventUptimeMs = event.changes.firstOrNull()?.uptimeMillis ?: lastEventUptimeMs
+		                    val pressed = event.changes.filter { it.pressed }
+		                    if (pressed.isEmpty()) {
+	                            stillPressed = false
+	                            gestureEndUptimeMs = event.changes.firstOrNull()?.uptimeMillis ?: gestureEndUptimeMs
+	                            break
+	                        }
+
+		                    val positions = pressed.map { it.position }
+		                    val centroid = positions.reduce { acc, offset -> acc + offset } / positions.size.toFloat()
+
+	                        if (
+	                            longPressDeadlineUptimeMs != null &&
+	                                stillPressed &&
+	                                !longPressMovedOrTransformed &&
+	                                !longPressFired &&
+	                                lastEventUptimeMs >= longPressDeadlineUptimeMs
+	                        ) {
+	                            longPressFired = true
+	                            onReactionRailOpenChanged(true)
+	                        }
+
+	                        if (longPressFired) {
+	                            // Reaction rail is open; consume pointer changes so nothing else reacts.
+	                            pressed.forEach { it.consume() }
+	                            lastCentroid = centroid
+	                            continue
                         }
 
 	                    val span = if (positions.size >= 2) {
@@ -560,13 +588,12 @@ fun CanvasTextOverlay(
 	                            positions.size >= 2 &&
 	                            (baselineCentroidMove > 1f || baselineSpanMove > 1f)
 	                    ) {
-	                        sawMultiTouch = true
-	                        consumeGesture = true
-	                        didViewportInteract = true
-	                        longPressMovedOrTransformed = true
-	                        longPressJob?.cancel()
+		                        sawMultiTouch = true
+		                        consumeGesture = true
+		                        didViewportInteract = true
+		                        longPressMovedOrTransformed = true
 
-	                        val zoomChange = span.coerceAtLeast(1f) / lastSpan.coerceAtLeast(1f)
+		                        val zoomChange = span.coerceAtLeast(1f) / lastSpan.coerceAtLeast(1f)
 	                        updateViewportTransform(
 	                            panChange = panDelta,
 	                            zoomChange = zoomChange,
@@ -578,24 +605,22 @@ fun CanvasTextOverlay(
 	                        continue
 	                    }
 
-	                    if (!longPressMovedOrTransformed) {
-	                        if (positions.size >= 2 || totalMove > touchSlop) {
-	                            longPressMovedOrTransformed = true
-	                            longPressJob?.cancel()
-	                        }
-                    }
+		                    if (!longPressMovedOrTransformed) {
+		                        if (positions.size >= 2 || totalMove > touchSlop) {
+		                            longPressMovedOrTransformed = true
+		                        }
+	                    }
 
 	                    if (
 	                        !beganTransform &&
 	                        positions.size >= 2 &&
 	                        (baselineCentroidMove > touchSlop || baselineSpanMove > touchSlop || baselineRotationMove > touchSlop)
 	                    ) {
-	                        sawMultiTouch = true
-	                        consumeGesture = true
-                            longPressMovedOrTransformed = true
-                            longPressJob?.cancel()
+		                        sawMultiTouch = true
+		                        consumeGesture = true
+	                            longPressMovedOrTransformed = true
 
-	                        // Allow direct 2-finger transform without a prior tap selection by
+		                        // Allow direct 2-finger transform without a prior tap selection by
 		                        // picking the topmost element under the gesture centroid.
 		                        if (lockedElementId == null) {
 		                            lockedElementId = hitTestAtScreenPosition(centroid)
@@ -652,11 +677,10 @@ fun CanvasTextOverlay(
                             }
                             continue
                         }
-                        beganDrag = true
-                        isTransformInProgress = true
-                        longPressMovedOrTransformed = true
-                        longPressJob?.cancel()
-                    }
+	                        beganDrag = true
+	                        isTransformInProgress = true
+	                        longPressMovedOrTransformed = true
+	                    }
 
                     if (beganDrag) {
                         val current = activeElement() ?: break

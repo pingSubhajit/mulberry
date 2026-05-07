@@ -1254,22 +1254,23 @@ private fun ReactionRail(
         )
     }
 
-    Row(
-        modifier = modifier
-            .padding(bottom = 14.dp)
-            .graphicsLayer {
-                alpha = containerAlpha.value
-                scaleX = containerScale.value
-                scaleY = containerScale.value
-                translationY = containerOffsetYDp.value.dp.toPx()
-            }
-            .clip(RoundedCornerShape(999.dp))
-            .background(MaterialTheme.mulberryAppColors.softSurfaceAlt)
-            .border(
-                width = 1.dp,
-                color = MulberryPrimary.copy(alpha = 0.25f),
-                shape = RoundedCornerShape(999.dp)
-            )
+	    Row(
+	        modifier = modifier
+	            .padding(bottom = 14.dp)
+	            .graphicsLayer {
+	                alpha = containerAlpha.value
+	                scaleX = containerScale.value
+	                scaleY = containerScale.value
+	                translationY = containerOffsetYDp.value.dp.toPx()
+	            }
+	            .testTag(TestTags.REACTION_RAIL)
+	            .clip(RoundedCornerShape(999.dp))
+	            .background(MaterialTheme.mulberryAppColors.softSurfaceAlt)
+	            .border(
+	                width = 1.dp,
+	                color = MulberryPrimary.copy(alpha = 0.25f),
+	                shape = RoundedCornerShape(999.dp)
+	            )
             .padding(horizontal = 12.dp, vertical = 9.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically
