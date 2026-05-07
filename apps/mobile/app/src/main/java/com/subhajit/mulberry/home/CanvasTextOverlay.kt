@@ -61,6 +61,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -804,26 +807,28 @@ fun CanvasTextOverlay(
         modifier = modifier
             .onSizeChanged { canvasSize = it }
             .then(gestureModifier)
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawIntoCanvas { canvas ->
-                val native = canvas.nativeCanvas
-                val pillPaddingPx = with(density) { 12.dp.toPx() }
-                val pillCornerPx = with(density) { 18.dp.toPx() }
+	    ) {
+	        Canvas(modifier = Modifier.fillMaxSize()) {
+	            withTransform(
+	                transformBlock = {
+	                    translate(viewportTransform.offsetPx.x, viewportTransform.offsetPx.y)
+	                    scale(viewportTransform.scale, viewportTransform.scale)
+	                }
+	            ) {
+	                drawIntoCanvas { canvas ->
+	                    val native = canvas.nativeCanvas
+	                    val pillPaddingPx = with(density) { 12.dp.toPx() }
+	                    val pillCornerPx = with(density) { 18.dp.toPx() }
 
-                val renderList = elements.map { element ->
-                    if (element.id == liveTransformPreview?.id) liveTransformPreview!! else element
-                }
+	                    val renderList = elements.map { element ->
+	                        if (element.id == liveTransformPreview?.id) liveTransformPreview!! else element
+	                    }
 
-                native.save()
-                native.translate(viewportTransform.offsetPx.x, viewportTransform.offsetPx.y)
-                native.scale(viewportTransform.scale, viewportTransform.scale)
-
-                renderList.forEach { element ->
-                    when (element) {
-                        is CanvasTextElement -> {
-                            val center = element.center.denormalize(canvasSize)
-                            val wrapWidth = (element.boxWidth * canvasSize.width).toInt().coerceAtLeast(1)
+	                    renderList.forEach { element ->
+	                        when (element) {
+	                        is CanvasTextElement -> {
+	                            val center = element.center.denormalize(canvasSize)
+	                            val wrapWidth = (element.boxWidth * canvasSize.width).toInt().coerceAtLeast(1)
                             val typeface = when (element.font) {
                                 CanvasTextFont.POPPINS -> poppinsTypeface
                                 CanvasTextFont.VIRGIL -> virgilTypeface
@@ -886,9 +891,9 @@ fun CanvasTextOverlay(
                             native.translate(left, top)
                             layout.draw(native)
 
-                            native.restore()
-                        }
-                        is CanvasStickerElement -> {
+	                            native.restore()
+	                        }
+	                        is CanvasStickerElement -> {
                             val center = element.center.denormalize(canvasSize)
                             val key = "${element.packKey}:${element.packVersion}:${element.stickerId}:full"
                             val bitmap = stickerBitmaps[key]
@@ -930,14 +935,13 @@ fun CanvasTextOverlay(
                                 native.drawRoundRect(rect, 18f, 18f, placeholderPaint)
                             }
 
-                            native.restore()
-                        }
-                    }
-                }
-
-                native.restore()
-            }
-        }
+	                            native.restore()
+	                        }
+	                        }
+	                    }
+	                }
+	            }
+	        }
 
         // Delete is now handled inside the text edit toolbar (not on-canvas).
     }
