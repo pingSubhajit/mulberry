@@ -1641,8 +1641,11 @@ private fun CanvasControlTray(
     val trayPadding = 10.dp
     val toolSize = 49.dp
     val baseToolSpacing = 18.dp
-    val minToolSpacing = 12.dp
-    val maxToolSpacing = 22.dp
+    // We keep the "default" spacing feel, but when the tray is scrollable we
+    // increase spacing just enough so the last tool that would otherwise be fully
+    // visible becomes half-clipped, hinting that the tray is swipeable.
+    val minToolSpacing = baseToolSpacing
+    val maxToolSpacing = 80.dp
     val toolCount = 8
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -1868,7 +1871,7 @@ private fun CanvasControlTray(
     }
 }
 
-private fun computeCanvasTrayToolSpacing(
+internal fun computeCanvasTrayToolSpacing(
     availableWidth: Dp,
     toolSize: Dp,
     baseSpacing: Dp,
@@ -1876,24 +1879,39 @@ private fun computeCanvasTrayToolSpacing(
     maxSpacing: Dp,
     toolCount: Int
 ): Dp {
-    val halfTool = toolSize / 2f
-    val maxFullTools = (toolCount - 1).coerceAtLeast(1)
+    if (toolCount <= 1) return baseSpacing
 
-    var bestSpacing: Dp? = null
-    var bestScore = Float.POSITIVE_INFINITY
+    fun fullWidth(fullTools: Int, spacing: Dp): Dp {
+        if (fullTools <= 0) return 0.dp
+        val gaps = (fullTools - 1).coerceAtLeast(0)
+        return (toolSize * fullTools) + (spacing * gaps)
+    }
 
-    for (fullTools in 1..maxFullTools) {
-        val spacing = (availableWidth - (toolSize * fullTools) - halfTool) / fullTools.toFloat()
-        if (spacing < minSpacing || spacing > maxSpacing) continue
+    // If everything fits at the base spacing, don't force a "peek".
+    val allFitAtBase = fullWidth(toolCount, baseSpacing) <= availableWidth
+    if (allFitAtBase) return baseSpacing
 
-        val score = kotlin.math.abs(spacing.value - baseSpacing.value)
-        if (score < bestScore) {
-            bestScore = score
-            bestSpacing = spacing
+    // Phase 1: with base spacing, find how many tools can be fully visible.
+    var maxFullToolsAtBase = 1
+    for (fullTools in 1..toolCount) {
+        if (fullWidth(fullTools, baseSpacing) <= availableWidth) {
+            maxFullToolsAtBase = fullTools
+        } else {
+            break
         }
     }
 
-    return bestSpacing ?: baseSpacing
+    // Phase 2: increase spacing so the last tool that would otherwise be fully visible
+    // becomes half-clipped, hinting swipeability.
+    val peekToolIndex = maxFullToolsAtBase
+    if (peekToolIndex <= 1) return baseSpacing
+
+    val fullToolsBeforePeek = (peekToolIndex - 1).coerceAtLeast(1)
+    val gaps = fullToolsBeforePeek
+    val targetSpacing = (availableWidth - (toolSize * (fullToolsBeforePeek + 0.5f))) / gaps.toFloat()
+
+    // Keep spacing within a sane range; if clamped, the peek will be slightly more/less than half.
+    return targetSpacing.coerceIn(minSpacing, maxSpacing)
 }
 
 @Composable
