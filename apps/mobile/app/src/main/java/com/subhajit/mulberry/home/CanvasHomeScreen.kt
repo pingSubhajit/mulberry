@@ -8,11 +8,25 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.EaseIn
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -97,6 +111,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.testTag
@@ -1075,7 +1090,10 @@ private fun StreakPill(
 	            modifier = Modifier
 	                .fillMaxWidth()
 	                .weight(1f)
-	                .clip(RoundedCornerShape(24.dp))
+	                .graphicsLayer {
+	                    shape = RoundedCornerShape(24.dp)
+	                    clip = true
+	                }
 	                .background(MaterialTheme.mulberryAppColors.softSurface)
 	                .border(
 	                    width = 2.dp,
@@ -1128,12 +1146,15 @@ private fun StreakPill(
 	                    .padding(8.dp)
 	            )
 
-            if (uiState.canvasState.isEmpty) {
-                CanvasBlankStateGuidance(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 58.dp)
-                )
+            androidx.compose.animation.AnimatedVisibility(
+                visible = uiState.canvasState.isEmpty,
+                enter = fadeIn(animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)),
+                exit = fadeOut(animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing)),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 58.dp)
+            ) {
+                CanvasBlankStateGuidance()
             }
 
                 if (reactionRailOpen) {
@@ -1187,8 +1208,26 @@ private fun StreakPill(
 }
 
 @Composable
-private fun CanvasBlankStateGuidance(modifier: Modifier = Modifier) {
+private fun AnimatedVisibilityScope.CanvasBlankStateGuidance(modifier: Modifier = Modifier) {
     val guidanceFontFamily = rememberMulberryGuidanceFontFamily()
+    val squeeExitExtraOffsetPx = with(LocalDensity.current) { 28.dp.roundToPx() }
+
+    val squeeBobPhase by rememberInfiniteTransition(label = "squee_idle_bob").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 1800
+                0f at 0
+                0f at 240
+                1f at 900 with LinearOutSlowInEasing
+                0f at 1800 with EaseIn
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "squee_idle_bob_phase"
+    )
+    val squeeBobOffset = ((-6f) * squeeBobPhase).dp
 
     Column(
         modifier = modifier
@@ -1227,8 +1266,19 @@ private fun CanvasBlankStateGuidance(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .padding(start = 12.dp)
+                    .offset(y = squeeBobOffset)
                     .height(160.dp)
                     .aspectRatio(432f / 498f)
+                    .animateEnterExit(
+                        enter = slideInHorizontally(
+                            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+                            initialOffsetX = { fullWidth -> -fullWidth - squeeExitExtraOffsetPx }
+                        ),
+                        exit = slideOutHorizontally(
+                            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+                            targetOffsetX = { fullWidth -> -fullWidth - squeeExitExtraOffsetPx }
+                        )
+                    )
             )
         }
     }
