@@ -4,7 +4,7 @@ object DrawingDefaults {
     const val DEFAULT_COLOR_ARGB: Long = 0xFFB31329L
     const val DEFAULT_WIDTH: Float = 10f
     const val MIN_WIDTH: Float = 4f
-    const val MAX_WIDTH: Float = 28f
+    const val MAX_WIDTH: Float = 42f
     const val STROKE_HIT_TOLERANCE: Float = 16f
 
     val palette: List<Long> = listOf(
