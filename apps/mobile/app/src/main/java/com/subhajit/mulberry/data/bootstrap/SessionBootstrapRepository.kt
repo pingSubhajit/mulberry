@@ -13,6 +13,9 @@ interface SessionBootstrapRepository {
     suspend fun setWallpaperConfigured(configured: Boolean)
     suspend fun setPartnerWallpaperStatus(status: PartnerWallpaperStatus?)
 
+    suspend fun hasShownBrushToolGuide(userId: String): Boolean
+    suspend fun markBrushToolGuideShown(userId: String)
+
     suspend fun seedDemoSession()
 
     suspend fun reset()

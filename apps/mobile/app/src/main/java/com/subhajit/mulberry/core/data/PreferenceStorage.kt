@@ -4,6 +4,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 
 const val APP_PREFERENCES_FILE = "app_preferences"
 
@@ -93,6 +94,8 @@ object PreferenceStorage {
     val whatsNewPendingVersionName = stringPreferencesKey("whats_new_pending_version_name")
     val whatsNewNextRetryAtMs = longPreferencesKey("whats_new_next_retry_at_ms")
     val whatsNewRetryAttempt = intPreferencesKey("whats_new_retry_attempt")
+
+    val brushToolGuideShownUserIds = stringSetPreferencesKey("brush_tool_guide_shown_user_ids")
 
     val placeholderPairingControlsOverride =
         booleanPreferencesKey("flag_placeholder_pairing_controls_override")

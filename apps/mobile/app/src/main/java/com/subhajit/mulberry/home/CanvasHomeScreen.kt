@@ -104,11 +104,15 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -135,6 +139,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
@@ -264,6 +270,8 @@ fun CanvasHomeRoute(
 	        uiState = uiState,
 	        shortcutAction = shortcutAction,
 	        wallpaperPresets = viewModel.wallpaperPresets,
+            onCanvasTabVisible = viewModel::onCanvasTabVisible,
+            onBrushToolGuideDismissed = viewModel::onBrushToolGuideDismissed,
 		        onNavigateToWallpaperStatus = onNavigateToWallpaperStatus,
             onNavigateToWallpaperHelp = onNavigateToWallpaperHelp,
             onNavigateToPairingHelp = onNavigateToPairingHelp,
@@ -329,6 +337,8 @@ fun CanvasHomeRoute(
 		    uiState: CanvasHomeUiState,
 		    shortcutAction: AppShortcutAction?,
 		    wallpaperPresets: List<WallpaperPreset>,
+            onCanvasTabVisible: () -> Unit,
+            onBrushToolGuideDismissed: () -> Unit,
 			    onNavigateToWallpaperStatus: () -> Unit,
         onNavigateToWallpaperHelp: () -> Unit,
         onNavigateToPairingHelp: () -> Unit,
@@ -395,6 +405,12 @@ fun CanvasHomeRoute(
     val isHomeReady =
         uiState.bootstrapState.authStatus == AuthStatus.SIGNED_IN &&
             uiState.bootstrapState.hasCompletedOnboarding
+
+    LaunchedEffect(selectedTab, uiState.bootstrapState.pairingStatus) {
+        if (selectedTab == MainAppTab.Canvas && uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
+            onCanvasTabVisible()
+        }
+    }
 
     LaunchedEffect(shortcutAction, isHomeReady, uiState.bootstrapState.pairingStatus) {
         val action = shortcutAction ?: return@LaunchedEffect
@@ -661,6 +677,7 @@ fun CanvasHomeRoute(
 	                when (MainAppTab.entries[page]) {
 		                    MainAppTab.Canvas -> CanvasHomePane(
 		                        uiState = uiState,
+                                onBrushToolGuideDismissed = onBrushToolGuideDismissed,
 		                        onInviteRequested = onInviteRequested,
 		                        onJoinCodeRequested = onJoinCodeRequested,
 	                        onCanvasPress = onCanvasPress,
@@ -872,6 +889,7 @@ private fun StreakPill(
 @Composable
 	private fun CanvasHomePane(
 		    uiState: CanvasHomeUiState,
+            onBrushToolGuideDismissed: () -> Unit,
 		    onInviteRequested: () -> Unit,
 		    onJoinCodeRequested: () -> Unit,
 		    onCanvasPress: (StrokePoint) -> Unit,
@@ -988,6 +1006,7 @@ private fun StreakPill(
 	    } else {
 	            PairedCanvasPane(
 	                uiState = uiState,
+                    onBrushToolGuideDismissed = onBrushToolGuideDismissed,
 	                onCanvasPress = onCanvasPress,
 		            onCanvasDrag = onCanvasDrag,
 	            onCanvasRelease = onCanvasRelease,
@@ -1025,6 +1044,7 @@ private fun StreakPill(
 @Composable
 	private fun PairedCanvasPane(
 	    uiState: CanvasHomeUiState,
+        onBrushToolGuideDismissed: () -> Unit,
 	    onCanvasPress: (StrokePoint) -> Unit,
 	    onCanvasDrag: (StrokePoint) -> Unit,
 	    onCanvasRelease: () -> Unit,
@@ -1079,28 +1099,53 @@ private fun StreakPill(
             }
 	    }
 
-	    Column(
-	        modifier = modifier
-	            .fillMaxSize()
-	            .padding(horizontal = 20.dp)
-	            .padding(top = 12.dp),
-	        verticalArrangement = Arrangement.spacedBy(8.dp)
-	    ) {
-	        Box(
-	            modifier = Modifier
-	                .fillMaxWidth()
-	                .weight(1f)
-	                .graphicsLayer {
-	                    shape = RoundedCornerShape(24.dp)
-	                    clip = true
-	                }
-	                .background(MaterialTheme.mulberryAppColors.softSurface)
-	                .border(
-	                    width = 2.dp,
-	                    color = MulberryPrimary.copy(alpha = 0.30f),
-	                    shape = RoundedCornerShape(24.dp)
-	                )
-	        ) {
+        var paneOriginInRoot by remember { mutableStateOf(Offset.Zero) }
+        var paneSizePx by remember { mutableStateOf(IntSize.Zero) }
+        var brushButtonBoundsInRoot by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        var guideTooltipSizePx by remember { mutableStateOf(IntSize.Zero) }
+        val density = LocalDensity.current
+
+        val guideBobDp by rememberInfiniteTransition(label = "brush_tool_guide_bob").animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 850, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "brush_tool_guide_bob_phase"
+        )
+        val guideBobOffsetPx = with(density) { ((-7f) * guideBobDp).dp.toPx() }
+
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .onGloballyPositioned { coordinates ->
+                    paneOriginInRoot = coordinates.positionInRoot()
+                    paneSizePx = coordinates.size
+                }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .graphicsLayer {
+                            shape = RoundedCornerShape(24.dp)
+                            clip = true
+                        }
+                        .background(MaterialTheme.mulberryAppColors.softSurface)
+                        .border(
+                            width = 2.dp,
+                            color = MulberryPrimary.copy(alpha = 0.30f),
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                ) {
 	            DrawingCanvas(
 	                canvasState = uiState.canvasState,
 	                activeTool = uiState.toolState.activeTool,
@@ -1192,20 +1237,66 @@ private fun StreakPill(
 	            }
         }
 
-        CanvasControlTray(
-            uiState = uiState,
-            onBrushWidthChanged = onBrushWidthChanged,
-            onColorSelected = onColorSelected,
-            onUndoRequested = onUndoRequested,
-            onRedoRequested = onRedoRequested,
-            onBrushToggle = onBrushToggle,
-            onEraserToggle = onEraserToggle,
-            onTextToggle = onTextToggle,
-            onStickerToggle = onStickerToggle,
-            onClearRequested = onClearRequested
-        )
+                CanvasControlTray(
+                    uiState = uiState,
+                    showBrushToolGuide = uiState.showBrushToolGuide,
+                    onBrushToolGuideDismissed = onBrushToolGuideDismissed,
+                    onBrushButtonBoundsInRootChanged = { bounds ->
+                        brushButtonBoundsInRoot = bounds
+                    },
+                    onBrushWidthChanged = onBrushWidthChanged,
+                    onColorSelected = onColorSelected,
+                    onUndoRequested = onUndoRequested,
+                    onRedoRequested = onRedoRequested,
+                    onBrushToggle = onBrushToggle,
+                    onEraserToggle = onEraserToggle,
+                    onTextToggle = onTextToggle,
+                    onStickerToggle = onStickerToggle,
+                    onClearRequested = onClearRequested
+                )
+            }
+
+            if (uiState.showBrushToolGuide) {
+                val brushBounds = brushButtonBoundsInRoot
+                if (brushBounds != null && paneSizePx.width > 0 && paneSizePx.height > 0) {
+                    val horizontalPaddingPx = with(density) { 14.dp.toPx() }
+                    val verticalPaddingPx = with(density) { 8.dp.toPx() }
+
+                    val brushCenterXInPane =
+                        brushBounds.center.x - paneOriginInRoot.x
+                    val brushTopInPane =
+                        brushBounds.top - paneOriginInRoot.y
+
+                    val tooltipX =
+                        (brushCenterXInPane - guideTooltipSizePx.width / 2f)
+                            .coerceIn(
+                                horizontalPaddingPx,
+                                (paneSizePx.width - guideTooltipSizePx.width - horizontalPaddingPx)
+                                    .coerceAtLeast(horizontalPaddingPx)
+                            )
+                    val tooltipY =
+                        (brushTopInPane - guideTooltipSizePx.height - verticalPaddingPx)
+                            .coerceAtLeast(verticalPaddingPx)
+
+                    BrushToolGuideTooltip(
+                        text = stringResource(R.string.home_canvas_brush_tool_guide_tooltip),
+                        onDismiss = onBrushToolGuideDismissed,
+                        modifier = Modifier
+                            .zIndex(50f)
+                            .offset {
+                                IntOffset(
+                                    x = tooltipX.toInt(),
+                                    y = (tooltipY + guideBobOffsetPx).toInt()
+                                )
+                            }
+                            .onGloballyPositioned { coordinates ->
+                                guideTooltipSizePx = coordinates.size
+                            }
+                    )
+                }
+            }
+        }
     }
-}
 
 @Composable
 private fun AnimatedVisibilityScope.CanvasBlankStateGuidance(modifier: Modifier = Modifier) {
@@ -1281,6 +1372,89 @@ private fun AnimatedVisibilityScope.CanvasBlankStateGuidance(modifier: Modifier 
                     )
             )
         }
+    }
+}
+
+@Composable
+private fun BrushToolGuideTooltip(
+    text: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Surface(
+            color = MulberryPrimary,
+            shape = RoundedCornerShape(24.dp),
+            shadowElevation = 10.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(start = 16.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = text,
+                    color = Color.White,
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 16.sp,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                GuideCloseButton(onClick = onDismiss)
+            }
+        }
+
+        Canvas(
+            modifier = Modifier
+                .size(width = 22.dp, height = 10.dp)
+                .offset(y = (-1).dp)
+        ) {
+            val path = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(size.width / 2f, size.height)
+                lineTo(size.width, 0f)
+                close()
+            }
+            drawPath(path = path, color = MulberryPrimary)
+        }
+    }
+}
+
+@Composable
+private fun GuideCloseButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Canvas(
+        modifier = modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.22f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            )
+            .padding(8.dp)
+    ) {
+        val stroke = Stroke(width = 2.8f, cap = StrokeCap.Round)
+        drawLine(
+            color = Color.White,
+            start = androidx.compose.ui.geometry.Offset(0f, 0f),
+            end = androidx.compose.ui.geometry.Offset(size.width, size.height),
+            strokeWidth = stroke.width,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = Color.White,
+            start = androidx.compose.ui.geometry.Offset(size.width, 0f),
+            end = androidx.compose.ui.geometry.Offset(0f, size.height),
+            strokeWidth = stroke.width,
+            cap = StrokeCap.Round
+        )
     }
 }
 
@@ -1694,6 +1868,9 @@ private fun Modifier.vertical(): Modifier =
 @Composable
 private fun CanvasControlTray(
     uiState: CanvasHomeUiState,
+    showBrushToolGuide: Boolean,
+    onBrushToolGuideDismissed: () -> Unit,
+    onBrushButtonBoundsInRootChanged: (androidx.compose.ui.geometry.Rect) -> Unit,
     onBrushWidthChanged: (Float) -> Unit,
     onColorSelected: (Long) -> Unit,
     onUndoRequested: () -> Unit,
@@ -1775,8 +1952,15 @@ private fun CanvasControlTray(
             drawableRes = R.drawable.canvas_action_brush,
             contentDescription = stringResource(R.string.home_canvas_brush_content_description),
             selected = uiState.toolState.activeTool == DrawingTool.DRAW,
-            onClick = onBrushToggle,
-            modifier = Modifier.testTag(TestTags.BRUSH_BUTTON),
+            onClick = {
+                onBrushToggle()
+                if (showBrushToolGuide) onBrushToolGuideDismissed()
+            },
+            modifier = Modifier
+                .testTag(TestTags.BRUSH_BUTTON)
+                .onGloballyPositioned { coordinates ->
+                    onBrushButtonBoundsInRootChanged(coordinates.boundsInRoot())
+                },
             size = toolSize
         )
 

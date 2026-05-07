@@ -224,6 +224,19 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
         }
     }
 
+    override suspend fun hasShownBrushToolGuide(userId: String): Boolean {
+        val shownUserIds =
+            dataStore.data.first()[PreferenceStorage.brushToolGuideShownUserIds].orEmpty()
+        return userId in shownUserIds
+    }
+
+    override suspend fun markBrushToolGuideShown(userId: String) {
+        dataStore.edit { preferences ->
+            val shownUserIds = preferences[PreferenceStorage.brushToolGuideShownUserIds].orEmpty()
+            preferences[PreferenceStorage.brushToolGuideShownUserIds] = shownUserIds + userId
+        }
+    }
+
     override suspend fun seedDemoSession() {
         if (!appConfig.enableDebugMenu) return
 
@@ -285,6 +298,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences.remove(PreferenceStorage.pendingInboundInviteDismissedAtMs)
             preferences.remove(PreferenceStorage.installReferrerChecked)
             preferences.remove(PreferenceStorage.wallpaperConfigured)
+            preferences.remove(PreferenceStorage.brushToolGuideShownUserIds)
             preferences.remove(PreferenceStorage.onboardingDraftDisplayName)
             preferences.remove(PreferenceStorage.onboardingDraftPartnerDisplayName)
             preferences.remove(PreferenceStorage.onboardingDraftAnniversaryDate)

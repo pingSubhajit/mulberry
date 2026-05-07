@@ -154,7 +154,8 @@ data class CanvasHomeUiState(
     val lastUsedSticker: StickerSelection? = null,
     val showClearConfirmation: Boolean = false,
     val canvasStrokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.DryBrush,
-    val palette: List<Long> = DrawingDefaults.palette
+    val palette: List<Long> = DrawingDefaults.palette,
+    val showBrushToolGuide: Boolean = false
 )
 
 sealed interface CanvasHomeEffect {
@@ -210,6 +211,7 @@ class CanvasHomeViewModel @Inject constructor(
     private var stickerPacksRefreshRetryJob: Job? = null
     private var stickerPacksRefreshRetryAttempt: Int = 0
     private val currentTimeMillis = MutableStateFlow(System.currentTimeMillis())
+    private val showBrushToolGuideState = MutableStateFlow(false)
     private val _effects = MutableSharedFlow<CanvasHomeEffect>()
     val effects = _effects.asSharedFlow()
     val wallpaperPresets: List<WallpaperPreset> = DefaultWallpaperPresets
@@ -369,10 +371,12 @@ class CanvasHomeViewModel @Inject constructor(
 
     val uiState = combine(
         uiStateBase,
-        streakSimulationRepository.simulation
-    ) { base, streakSimulation ->
+        streakSimulationRepository.simulation,
+        showBrushToolGuideState
+    ) { base, streakSimulation, showBrushToolGuide ->
         base.copy(
-            bootstrapState = base.bootstrapState.withDisplayStreakSimulation(streakSimulation)
+            bootstrapState = base.bootstrapState.withDisplayStreakSimulation(streakSimulation),
+            showBrushToolGuide = showBrushToolGuide
         )
     }.stateIn(
         scope = viewModelScope,
@@ -476,6 +480,33 @@ class CanvasHomeViewModel @Inject constructor(
 
                     PairingStatus.INVITE_PENDING_ACCEPTANCE -> Unit
                 }
+            }
+        }
+    }
+
+    fun onCanvasTabVisible() {
+        val bootstrap = uiState.value.bootstrapState
+        if (bootstrap.pairingStatus != PairingStatus.PAIRED) return
+        val userId = bootstrap.userId ?: return
+
+        viewModelScope.launch {
+            val alreadyShown = runCatching {
+                sessionRepository.hasShownBrushToolGuide(userId)
+            }.getOrDefault(true)
+            if (!alreadyShown) {
+                showBrushToolGuideState.value = true
+            }
+        }
+    }
+
+    fun onBrushToolGuideDismissed() {
+        val userId = uiState.value.bootstrapState.userId
+        showBrushToolGuideState.value = false
+        if (userId == null) return
+
+        viewModelScope.launch {
+            runCatching {
+                sessionRepository.markBrushToolGuideShown(userId)
             }
         }
     }
