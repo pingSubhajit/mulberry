@@ -213,7 +213,9 @@ describe("Mulberry backend", () => {
     })
     expect(first.statusCode).toBe(200)
     expect(first.json().heartCount).toBe(1)
+    expect(first.json().hugCount).toBe(0)
     expect(first.json().kissCount).toBe(0)
+    expect(first.json().smileCount).toBe(0)
 
     await eventually(() => pushSender.sentMessages.at(-1) != null)
     const firstPush = pushSender.sentMessages.at(-1)
@@ -221,7 +223,9 @@ describe("Mulberry backend", () => {
     expect(firstPush?.tokens).toEqual(["recipient-token"])
     expect(firstPush?.android.collapseKey).toBe(`reaction-${inviter.pairSessionId}-${first.json().generation}-1`)
     expect((firstPush?.data as any).heartCount).toBe("1")
+    expect((firstPush?.data as any).hugCount).toBe("0")
     expect((firstPush?.data as any).kissCount).toBe("0")
+    expect((firstPush?.data as any).smileCount).toBe("0")
 
     const second = await app.inject({
       method: "POST",
@@ -231,7 +235,9 @@ describe("Mulberry backend", () => {
     })
     expect(second.statusCode).toBe(200)
     expect(second.json().heartCount).toBe(1)
+    expect(second.json().hugCount).toBe(0)
     expect(second.json().kissCount).toBe(1)
+    expect(second.json().smileCount).toBe(0)
 
     await eventually(() => pushSender.sentMessages.length >= 2)
     const secondPush = pushSender.sentMessages.at(-1)
@@ -239,7 +245,9 @@ describe("Mulberry backend", () => {
     expect(secondPush?.tokens).toEqual(["recipient-token"])
     expect(secondPush?.android.collapseKey).toBe(`reaction-${inviter.pairSessionId}-${second.json().generation}-2`)
     expect((secondPush?.data as any).heartCount).toBe("1")
+    expect((secondPush?.data as any).hugCount).toBe("0")
     expect((secondPush?.data as any).kissCount).toBe("1")
+    expect((secondPush?.data as any).smileCount).toBe("0")
   })
 
   it("rate limits reaction sends per actor and pair session", async () => {

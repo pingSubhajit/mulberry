@@ -9,7 +9,9 @@ object ReactionGifAssets {
     @RawRes
     fun rawResFor(type: ReactionType): Int = when (type) {
         ReactionType.HEART -> R.raw.reaction_heart
+        ReactionType.HUG -> R.raw.reaction_hug
         ReactionType.KISS -> R.raw.reaction_kiss
+        ReactionType.SMILE -> R.raw.reaction_smile
         ReactionType.LAUGH -> R.raw.reaction_laugh
         ReactionType.SPARKLE -> R.raw.reaction_sparkles
     }
@@ -20,4 +22,3 @@ object ReactionGifAssets {
         }
     }.getOrNull()
 }
-

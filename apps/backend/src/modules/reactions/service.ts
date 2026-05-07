@@ -7,7 +7,7 @@ import { getPairSession } from "../_shared/pairs.js"
 const REACTION_SEND_RATE_LIMIT_CAPACITY = 6
 const REACTION_SEND_RATE_LIMIT_REFILL_TOKENS_PER_SEC = 1
 
-type NormalizedReactionType = "HEART" | "KISS" | "LAUGH" | "SPARKLE"
+type NormalizedReactionType = "HEART" | "HUG" | "KISS" | "SMILE" | "LAUGH" | "SPARKLE"
 
 export class ReactionsService {
   constructor(
@@ -22,7 +22,9 @@ export class ReactionsService {
     ok: true
     generation: number
     heartCount: number
+    hugCount: number
     kissCount: number
+    smileCount: number
     laughCount: number
     sparkleCount: number
   }> {
@@ -37,7 +39,7 @@ export class ReactionsService {
       : pairSession.user_one_id
     const normalizedType = normalizeReactionType(reactionType)
     if (!normalizedType) {
-      throw new HttpError(400, "reactionType must be one of HEART, KISS, LAUGH, SPARKLE")
+      throw new HttpError(400, "reactionType must be one of HEART, HUG, KISS, SMILE, LAUGH, SPARKLE")
     }
 
     const updated = await this.db.transaction(async (tx) => {
@@ -54,7 +56,9 @@ export class ReactionsService {
 
     this.pushDispatchService?.enqueueReaction(pairSession.id, context.user.id, updated.generation, {
       heartCount: updated.heartCount,
+      hugCount: updated.hugCount,
       kissCount: updated.kissCount,
+      smileCount: updated.smileCount,
       laughCount: updated.laughCount,
       sparkleCount: updated.sparkleCount,
     })
@@ -210,18 +214,22 @@ export class ReactionsService {
       recipientUserId: string
       reactionType: NormalizedReactionType
     },
-  ): Promise<{
-    generation: number
-    heartCount: number
-    kissCount: number
-    laughCount: number
-    sparkleCount: number
-  }> {
+	  ): Promise<{
+	    generation: number
+	    heartCount: number
+	    hugCount: number
+	    kissCount: number
+	    smileCount: number
+	    laughCount: number
+	    sparkleCount: number
+	  }> {
     const rows = await tx.query<{
       pair_session_id: string | null
       generation: number
       heart_count: number
+      hug_count: number
       kiss_count: number
+      smile_count: number
       laugh_count: number
       sparkle_count: number
       lease_expires_at: string | null
@@ -231,7 +239,9 @@ export class ReactionsService {
         pair_session_id,
         generation,
         heart_count,
+        hug_count,
         kiss_count,
+        smile_count,
         laugh_count,
         sparkle_count,
         lease_expires_at
@@ -244,7 +254,9 @@ export class ReactionsService {
     const existing = rows.rows[0]
     if (!existing) {
       const heart = input.reactionType === "HEART" ? 1 : 0
+      const hug = input.reactionType === "HUG" ? 1 : 0
       const kiss = input.reactionType === "KISS" ? 1 : 0
+      const smile = input.reactionType === "SMILE" ? 1 : 0
       const laugh = input.reactionType === "LAUGH" ? 1 : 0
       const sparkle = input.reactionType === "SPARKLE" ? 1 : 0
       await tx.query(
@@ -254,7 +266,9 @@ export class ReactionsService {
           pair_session_id,
           generation,
           heart_count,
+          hug_count,
           kiss_count,
+          smile_count,
           laugh_count,
           sparkle_count,
           leased_by_device_id,
@@ -263,14 +277,16 @@ export class ReactionsService {
           consumed_generation,
           updated_at
         )
-        VALUES ($1, $2, 1, $3, $4, $5, $6, NULL, NULL, NULL, 0, NOW())
+        VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, NULL, NULL, NULL, 0, NOW())
         `,
-        [input.recipientUserId, input.pairSessionId, heart, kiss, laugh, sparkle],
+        [input.recipientUserId, input.pairSessionId, heart, hug, kiss, smile, laugh, sparkle],
       )
       return {
         generation: 1,
         heartCount: heart,
+        hugCount: hug,
         kissCount: kiss,
+        smileCount: smile,
         laughCount: laugh,
         sparkleCount: sparkle,
       }
@@ -278,18 +294,22 @@ export class ReactionsService {
 
     let generation = Number(existing.generation) || 1
     let heart = Number(existing.heart_count) || 0
+    let hug = Number(existing.hug_count) || 0
     let kiss = Number(existing.kiss_count) || 0
+    let smile = Number(existing.smile_count) || 0
     let laugh = Number(existing.laugh_count) || 0
     let sparkle = Number(existing.sparkle_count) || 0
 
-    const totalBefore = heart + kiss + laugh + sparkle
+    const totalBefore = heart + hug + kiss + smile + laugh + sparkle
     const pairChanged = (existing.pair_session_id ?? "") !== input.pairSessionId
     const leaseExpiresAt = existing.lease_expires_at ? new Date(existing.lease_expires_at) : null
     const leaseActive = leaseExpiresAt !== null && leaseExpiresAt.getTime() > Date.now()
     if (pairChanged) {
       generation += 1
       heart = 0
+      hug = 0
       kiss = 0
+      smile = 0
       laugh = 0
       sparkle = 0
       await tx.query(
@@ -305,7 +325,9 @@ export class ReactionsService {
     } else if (totalBefore === 0 || leaseActive) {
       generation += 1
       heart = 0
+      hug = 0
       kiss = 0
+      smile = 0
       laugh = 0
       sparkle = 0
       await tx.query(
@@ -321,7 +343,9 @@ export class ReactionsService {
     }
 
     if (input.reactionType === "HEART") heart += 1
+    if (input.reactionType === "HUG") hug += 1
     if (input.reactionType === "KISS") kiss += 1
+    if (input.reactionType === "SMILE") smile += 1
     if (input.reactionType === "LAUGH") laugh += 1
     if (input.reactionType === "SPARKLE") sparkle += 1
 
@@ -331,19 +355,23 @@ export class ReactionsService {
       SET pair_session_id = $2,
         generation = $3,
         heart_count = $4,
-        kiss_count = $5,
-        laugh_count = $6,
-        sparkle_count = $7,
+        hug_count = $5,
+        kiss_count = $6,
+        smile_count = $7,
+        laugh_count = $8,
+        sparkle_count = $9,
         updated_at = NOW()
       WHERE recipient_user_id = $1
       `,
-      [input.recipientUserId, input.pairSessionId, generation, heart, kiss, laugh, sparkle],
+      [input.recipientUserId, input.pairSessionId, generation, heart, hug, kiss, smile, laugh, sparkle],
     )
 
     return {
       generation,
       heartCount: heart,
+      hugCount: hug,
       kissCount: kiss,
+      smileCount: smile,
       laughCount: laugh,
       sparkleCount: sparkle,
     }
@@ -366,7 +394,9 @@ export class ReactionsService {
       pair_session_id: string | null
       generation: number
       heart_count: number
+      hug_count: number
       kiss_count: number
+      smile_count: number
       laugh_count: number
       sparkle_count: number
       leased_by_device_id: string | null
@@ -379,7 +409,9 @@ export class ReactionsService {
         pair_session_id,
         generation,
         heart_count,
+        hug_count,
         kiss_count,
+        smile_count,
         laugh_count,
         sparkle_count,
         leased_by_device_id,
@@ -398,10 +430,12 @@ export class ReactionsService {
     }
 
     const heart = Number(row.heart_count) || 0
+    const hug = Number(row.hug_count) || 0
     const kiss = Number(row.kiss_count) || 0
+    const smile = Number(row.smile_count) || 0
     const laugh = Number(row.laugh_count) || 0
     const sparkle = Number(row.sparkle_count) || 0
-    const total = heart + kiss + laugh + sparkle
+    const total = heart + hug + kiss + smile + laugh + sparkle
     if (total <= 0) {
       return { status: "NO_PENDING" }
     }
@@ -487,7 +521,9 @@ export class ReactionsService {
       `
       UPDATE reaction_inboxes
       SET heart_count = 0,
+        hug_count = 0,
         kiss_count = 0,
+        smile_count = 0,
         laugh_count = 0,
         sparkle_count = 0,
         leased_by_device_id = NULL,
@@ -504,9 +540,15 @@ export class ReactionsService {
 
 function normalizeReactionType(raw: string): NormalizedReactionType | null {
   const value = raw.trim().toUpperCase()
-  if (value === "HEART" || value === "KISS" || value === "LAUGH" || value === "SPARKLE") {
+  if (
+    value === "HEART" ||
+    value === "HUG" ||
+    value === "KISS" ||
+    value === "SMILE" ||
+    value === "LAUGH" ||
+    value === "SPARKLE"
+  ) {
     return value
   }
   return null
 }
-

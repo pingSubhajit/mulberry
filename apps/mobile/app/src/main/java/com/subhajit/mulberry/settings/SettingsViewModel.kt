@@ -226,6 +226,18 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun onWhatsNewClicked() {
+        viewModelScope.launch {
+            val error = whatsNewPrompter.openForVersion(
+                nowMs = System.currentTimeMillis(),
+                versionName = BuildConfig.VERSION_NAME
+            )
+            if (error != null) {
+                _effects.emit(SettingsEffect.Message(error))
+            }
+        }
+    }
+
     fun onSetStreakSimulation(preset: StreakSimulationPreset?) {
         viewModelScope.launch {
             streakSimulationRepository.setSimulation(preset)

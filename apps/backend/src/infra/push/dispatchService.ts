@@ -139,7 +139,9 @@ export class PushDispatchService {
     generation: number,
     counts: {
       heartCount: number
+      hugCount: number
       kissCount: number
+      smileCount: number
       laughCount: number
       sparkleCount: number
     },
@@ -467,13 +469,21 @@ export class PushDispatchService {
     generation: number,
     counts: {
       heartCount: number
+      hugCount: number
       kissCount: number
+      smileCount: number
       laughCount: number
       sparkleCount: number
     },
   ): Promise<void> {
     const tokens = await this.activePeerTokens(pairSessionId, actorUserId)
-    const totalCount = counts.heartCount + counts.kissCount + counts.laughCount + counts.sparkleCount
+    const totalCount =
+      counts.heartCount +
+      counts.hugCount +
+      counts.kissCount +
+      counts.smileCount +
+      counts.laughCount +
+      counts.sparkleCount
     if (tokens.length === 0) {
       console.info("[push] no active peer tokens for reaction", {
         pairSessionId,
@@ -498,7 +508,9 @@ export class PushDispatchService {
           pairSessionId,
           generation: String(generation),
           heartCount: String(counts.heartCount),
+          hugCount: String(counts.hugCount),
           kissCount: String(counts.kissCount),
+          smileCount: String(counts.smileCount),
           laughCount: String(counts.laughCount),
           sparkleCount: String(counts.sparkleCount),
         },
@@ -899,4 +911,3 @@ export class PushDispatchService {
     return rows.rows[0]?.partner_display_name?.trim() || "Your partner"
   }
 }
-

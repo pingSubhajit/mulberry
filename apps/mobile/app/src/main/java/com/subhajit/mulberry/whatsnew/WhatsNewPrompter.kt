@@ -16,6 +16,7 @@ data class ActiveWhatsNewPrompt(
 
 enum class WhatsNewPromptSource {
     Auto,
+    Manual,
     DeveloperPreview
 }
 
@@ -109,6 +110,40 @@ class WhatsNewPrompter @Inject constructor(
         }
     }
 
+    suspend fun openForVersion(
+        nowMs: Long,
+        versionName: String
+    ): String? {
+        mutex.withLock {
+            if (_activePrompt.value != null) return null
+            return when (val result = repository.fetchByVersion(versionName)) {
+                is WhatsNewFetchResult.Success -> {
+                    val entry = WhatsNewParser.parse(result.rawMarkdown)
+                    _activePrompt.value = ActiveWhatsNewPrompt(
+                        entry = entry,
+                        markSeenVersionName = versionName,
+                        source = WhatsNewPromptSource.Manual
+                    )
+                    null
+                }
+
+                WhatsNewFetchResult.NotFound -> {
+                    store.updateAndGet {
+                        it.copy(
+                            lastSeenVersionName = versionName,
+                            pendingVersionName = null,
+                            nextRetryAtMs = null,
+                            retryAttempt = 0
+                        )
+                    }
+                    "No what’s new entry is configured for version $versionName."
+                }
+
+                is WhatsNewFetchResult.Error -> "Unable to fetch what’s new for version $versionName (${result.message})."
+            }
+        }
+    }
+
     suspend fun onPromptDismissed() {
         mutex.withLock {
             val prompt = _activePrompt.value ?: return
@@ -137,4 +172,3 @@ class WhatsNewPrompter @Inject constructor(
         private const val MAX_RETRY_ATTEMPTS = 10
     }
 }
-

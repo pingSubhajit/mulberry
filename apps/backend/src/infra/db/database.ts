@@ -245,7 +245,9 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       pair_session_id TEXT REFERENCES pair_sessions(id) ON DELETE CASCADE,
       generation BIGINT NOT NULL DEFAULT 1,
       heart_count INTEGER NOT NULL DEFAULT 0,
+      hug_count INTEGER NOT NULL DEFAULT 0,
       kiss_count INTEGER NOT NULL DEFAULT 0,
+      smile_count INTEGER NOT NULL DEFAULT 0,
       laugh_count INTEGER NOT NULL DEFAULT 0,
       sparkle_count INTEGER NOT NULL DEFAULT 0,
       leased_by_device_id TEXT,
@@ -254,6 +256,11 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       consumed_generation BIGINT NOT NULL DEFAULT 0,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE reaction_inboxes
+      ADD COLUMN IF NOT EXISTS hug_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE reaction_inboxes
+      ADD COLUMN IF NOT EXISTS smile_count INTEGER NOT NULL DEFAULT 0;
 
     CREATE INDEX IF NOT EXISTS reaction_inboxes_pair_idx
       ON reaction_inboxes(pair_session_id);

@@ -6,7 +6,9 @@ enum class ReactionType(
     val shortcutLabel: String
 ) {
     HEART(apiValue = "HEART", emoji = "❤️", shortcutLabel = "Send love"),
+    HUG(apiValue = "HUG", emoji = "🤗", shortcutLabel = "Send a hug"),
     KISS(apiValue = "KISS", emoji = "💋", shortcutLabel = "Send a kiss"),
+    SMILE(apiValue = "SMILE", emoji = "😊", shortcutLabel = "Send a smile"),
     LAUGH(apiValue = "LAUGH", emoji = "😂", shortcutLabel = "Send laughs"),
     SPARKLE(apiValue = "SPARKLE", emoji = "✨", shortcutLabel = "Send sparkles");
 
@@ -17,4 +19,3 @@ enum class ReactionType(
         }
     }
 }
-

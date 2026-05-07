@@ -243,6 +243,7 @@ fun SettingsRoute(
         onTriggerInAppReview = viewModel::onTriggerInAppReviewClicked,
         onTriggerInAppUpdate = viewModel::onTriggerInAppUpdateClicked,
         onPreviewLatestWhatsNew = viewModel::onPreviewLatestWhatsNewClicked,
+        onWhatsNew = viewModel::onWhatsNewClicked,
         onClearStickerAssets = viewModel::onClearStickerAssets,
         onClearStickerCatalogCache = viewModel::onClearStickerCatalogCache,
         onSetStreakSimulation = viewModel::onSetStreakSimulation
@@ -283,6 +284,7 @@ private fun SettingsScreen(
     onTriggerInAppReview: () -> Unit,
     onTriggerInAppUpdate: () -> Unit,
     onPreviewLatestWhatsNew: () -> Unit,
+    onWhatsNew: () -> Unit,
     onClearStickerAssets: () -> Unit,
     onClearStickerCatalogCache: () -> Unit,
     onSetStreakSimulation: (StreakSimulationPreset?) -> Unit
@@ -304,6 +306,7 @@ private fun SettingsScreen(
                 onPaneSelected = onPaneSelected,
                 onWallpaperSyncEnabledChanged = onWallpaperSyncEnabledChanged,
                 onCanvasStrokeRenderModeChanged = onCanvasStrokeRenderModeChanged,
+                onWhatsNew = onWhatsNew,
                 partnerVisibilitySheetOpen = partnerVisibilitySheetOpen,
                 onPartnerVisibilitySheetOpenChanged = onPartnerVisibilitySheetOpenChanged,
                 onLogout = onLogout,
@@ -397,6 +400,7 @@ private fun SettingsRootPage(
     onPaneSelected: (SettingsPane) -> Unit,
     onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
     onCanvasStrokeRenderModeChanged: (Boolean) -> Unit,
+    onWhatsNew: () -> Unit,
     partnerVisibilitySheetOpen: Boolean,
     onPartnerVisibilitySheetOpenChanged: (Boolean) -> Unit,
     onLogout: () -> Unit,
@@ -479,6 +483,7 @@ private fun SettingsRootPage(
             onPaneSelected = onPaneSelected,
             onWallpaperSyncEnabledChanged = onWallpaperSyncEnabledChanged,
             onCanvasStrokeRenderModeChanged = onCanvasStrokeRenderModeChanged,
+            onWhatsNew = onWhatsNew,
             onWallpaperDoodlesInfoRequested = { wallpaperDoodlesInfoSheetOpen = true },
             onLogoutRequested = { showLogoutConfirmation = true }
         )
@@ -649,6 +654,7 @@ private fun SettingsRootMenu(
     onPaneSelected: (SettingsPane) -> Unit,
     onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
     onCanvasStrokeRenderModeChanged: (Boolean) -> Unit,
+    onWhatsNew: () -> Unit,
     onWallpaperDoodlesInfoRequested: () -> Unit,
     onLogoutRequested: () -> Unit
 ) {
@@ -700,6 +706,13 @@ private fun SettingsRootMenu(
             title = "About",
             onClick = { onPaneSelected(SettingsPane.About) }
         )
+        SettingsRootRow(
+            icon = SettingsRootIcon.WhatsNew,
+            title = "What’s new",
+            showChevron = false,
+            trailingContent = { RootMulberryRedDot() },
+            onClick = onWhatsNew
+        )
         if (uiState.developerOptionsEnabled) {
             SettingsRootRow(
                 icon = SettingsRootIcon.About,
@@ -726,9 +739,11 @@ private fun SettingsRootRow(
     statusColor: Color = MaterialTheme.colorScheme.onSurface,
     enabled: Boolean = true,
     showChevron: Boolean = true,
+    trailingContent: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val hasTrailing = showChevron || trailingContent != null
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -759,11 +774,13 @@ private fun SettingsRootRow(
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
-                modifier = Modifier.padding(end = if (showChevron) 18.dp else 0.dp)
+                modifier = Modifier.padding(end = if (hasTrailing) 18.dp else 0.dp)
             )
         }
         if (showChevron) {
             RootChevron()
+        } else if (trailingContent != null) {
+            trailingContent()
         }
     }
 }
@@ -1193,6 +1210,7 @@ private enum class SettingsRootIcon {
     Lock,
     BrushStyle,
     About,
+    WhatsNew,
     Logout
 }
 
@@ -1205,6 +1223,7 @@ private fun SettingsRootIcon.drawableRes(): Int = when (this) {
     SettingsRootIcon.Lock -> R.drawable.settings_icon_lock
     SettingsRootIcon.BrushStyle -> R.drawable.settings_icon_edit_pencil
     SettingsRootIcon.About -> R.drawable.settings_icon_about
+    SettingsRootIcon.WhatsNew -> R.drawable.settings_icon_megaphone
     SettingsRootIcon.Logout -> R.drawable.settings_icon_logout
 }
 
@@ -1240,6 +1259,15 @@ private fun RootChevron() {
             strokeWidth = 3.0f,
             cap = StrokeCap.Round
         )
+    }
+}
+
+@Composable
+private fun RootMulberryRedDot(
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.size(10.dp)) {
+        drawCircle(color = com.subhajit.mulberry.ui.theme.MulberryPrimary)
     }
 }
 

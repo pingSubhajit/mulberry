@@ -349,7 +349,9 @@ class MulberryWallpaperService : WallpaperService() {
 
             val types = mutableListOf<ReactionType>()
             repeat(batch.heartCount.coerceAtMost(6)) { types.add(ReactionType.HEART) }
+            repeat(batch.hugCount.coerceAtMost(6)) { types.add(ReactionType.HUG) }
             repeat(batch.kissCount.coerceAtMost(6)) { types.add(ReactionType.KISS) }
+            repeat(batch.smileCount.coerceAtMost(6)) { types.add(ReactionType.SMILE) }
             repeat(batch.laughCount.coerceAtMost(6)) { types.add(ReactionType.LAUGH) }
             repeat(batch.sparkleCount.coerceAtMost(6)) { types.add(ReactionType.SPARKLE) }
 
@@ -387,7 +389,14 @@ class MulberryWallpaperService : WallpaperService() {
             }
 
             val spamText = if (uniqueTypes <= 1 && batch.totalCount >= 6) {
-                "You have been spammed with love."
+                when (types.firstOrNull() ?: ReactionType.HEART) {
+                    ReactionType.HEART -> "You have been spammed with love."
+                    ReactionType.HUG -> "You have been spammed with hugs."
+                    ReactionType.KISS -> "You have been spammed with kisses."
+                    ReactionType.SMILE -> "You have been spammed with smiles."
+                    ReactionType.LAUGH -> "You have been spammed with laughs."
+                    ReactionType.SPARKLE -> "You have been spammed with sparkles."
+                }
             } else null
 
             return ReactionAnimationState(

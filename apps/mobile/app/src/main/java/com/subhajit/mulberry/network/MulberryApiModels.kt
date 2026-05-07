@@ -302,7 +302,9 @@ data class ReactionSendResponse(
     val ok: Boolean,
     val generation: Long,
     val heartCount: Int,
+    val hugCount: Int,
     val kissCount: Int,
+    val smileCount: Int,
     val laughCount: Int,
     val sparkleCount: Int
 )

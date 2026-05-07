@@ -44,7 +44,9 @@ data class ReactionPushPayload(
     val pairSessionId: String?,
     val generation: Long,
     val heartCount: Int,
+    val hugCount: Int,
     val kissCount: Int,
+    val smileCount: Int,
     val laughCount: Int,
     val sparkleCount: Int
 )
@@ -146,7 +148,9 @@ object ReactionPushPayloadParser {
             pairSessionId = data["pairSessionId"]?.takeIf { it.isNotBlank() },
             generation = generation,
             heartCount = data["heartCount"]?.toIntOrNull() ?: 0,
+            hugCount = data["hugCount"]?.toIntOrNull() ?: 0,
             kissCount = data["kissCount"]?.toIntOrNull() ?: 0,
+            smileCount = data["smileCount"]?.toIntOrNull() ?: 0,
             laughCount = data["laughCount"]?.toIntOrNull() ?: 0,
             sparkleCount = data["sparkleCount"]?.toIntOrNull() ?: 0
         )

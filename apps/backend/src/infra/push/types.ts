@@ -40,7 +40,9 @@ export interface ReactionPushPayload {
   pairSessionId: string
   generation: string
   heartCount: string
+  hugCount: string
   kissCount: string
+  smileCount: string
   laughCount: string
   sparkleCount: string
 }
@@ -82,4 +84,3 @@ export interface PushSendResult {
 export interface PushSender {
   send(message: MulberryPushMessage): Promise<PushSendResult>
 }
-
