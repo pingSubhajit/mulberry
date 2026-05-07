@@ -178,42 +178,42 @@ fun DrawingCanvas(
             currentCanvasSize = canvasSize,
             currentStrokeRenderMode = strokeRenderMode
         )
-        if (committedBitmap != null && overlayStrokeStartIndex != null) {
-            cacheVersion
-            withTransform(
-                transformBlock = {
-                    translate(viewportTransform.offsetPx.x, viewportTransform.offsetPx.y)
-                    scale(viewportTransform.scale, viewportTransform.scale)
-                }
-            ) {
-                drawIntoCanvas { canvas ->
-                    canvas.nativeCanvas.drawBitmap(committedBitmap, 0f, 0f, null)
-                }
+	        if (committedBitmap != null && overlayStrokeStartIndex != null) {
+	            cacheVersion
+	            withTransform(
+	                transformBlock = {
+	                    scale(viewportTransform.scale, viewportTransform.scale, pivot = Offset.Zero)
+	                    translate(viewportTransform.offsetPx.x, viewportTransform.offsetPx.y)
+	                }
+	            ) {
+	                drawIntoCanvas { canvas ->
+	                    canvas.nativeCanvas.drawBitmap(committedBitmap, 0f, 0f, null)
+	                }
                 canvasState.strokes.drop(overlayStrokeStartIndex).forEach { stroke ->
                     drawCommittedStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
                 }
             }
-        } else {
-            withTransform(
-                transformBlock = {
-                    translate(viewportTransform.offsetPx.x, viewportTransform.offsetPx.y)
-                    scale(viewportTransform.scale, viewportTransform.scale)
-                }
-            ) {
-                canvasState.strokes.forEach { stroke ->
-                    drawCommittedStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
-                }
-            }
-        }
-        withTransform(
-            transformBlock = {
-                translate(viewportTransform.offsetPx.x, viewportTransform.offsetPx.y)
-                scale(viewportTransform.scale, viewportTransform.scale)
-            }
-        ) {
-            canvasState.remoteActiveStrokes.forEach { stroke ->
-                drawLiveStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
-            }
+	        } else {
+	            withTransform(
+	                transformBlock = {
+	                    scale(viewportTransform.scale, viewportTransform.scale, pivot = Offset.Zero)
+	                    translate(viewportTransform.offsetPx.x, viewportTransform.offsetPx.y)
+	                }
+	            ) {
+	                canvasState.strokes.forEach { stroke ->
+	                    drawCommittedStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
+	                }
+	            }
+	        }
+	        withTransform(
+	            transformBlock = {
+	                scale(viewportTransform.scale, viewportTransform.scale, pivot = Offset.Zero)
+	                translate(viewportTransform.offsetPx.x, viewportTransform.offsetPx.y)
+	            }
+	        ) {
+	            canvasState.remoteActiveStrokes.forEach { stroke ->
+	                drawLiveStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
+	            }
             canvasState.activeStroke?.let { stroke ->
                 drawLiveStroke(stroke.toRenderStroke(canvasSize), strokeRenderMode)
             }

@@ -811,8 +811,8 @@ fun CanvasTextOverlay(
 	        Canvas(modifier = Modifier.fillMaxSize()) {
 	            withTransform(
 	                transformBlock = {
+	                    scale(viewportTransform.scale, viewportTransform.scale, pivot = Offset.Zero)
 	                    translate(viewportTransform.offsetPx.x, viewportTransform.offsetPx.y)
-	                    scale(viewportTransform.scale, viewportTransform.scale)
 	                }
 	            ) {
 	                drawIntoCanvas { canvas ->
