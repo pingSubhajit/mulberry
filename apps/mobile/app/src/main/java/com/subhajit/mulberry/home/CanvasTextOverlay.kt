@@ -119,6 +119,16 @@ import kotlin.math.PI
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 
+private data class CachedTextLayout(
+    val text: String,
+    val font: CanvasTextFont,
+    val alignment: CanvasTextAlign,
+    val wrapWidthPx: Int,
+    val textSizePx: Float,
+    val layout: StaticLayout,
+    val paint: TextPaint
+)
+
 data class CanvasTextEditorSession(
     val element: CanvasTextElement,
     val isNew: Boolean
@@ -157,6 +167,7 @@ fun CanvasTextOverlay(
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var liveTransformPreview by remember { mutableStateOf<CanvasElement?>(null) }
     val stickerBitmaps = remember { mutableStateMapOf<String, android.graphics.Bitmap>() }
+    val textLayoutCache = remember { mutableMapOf<String, CachedTextLayout>() }
     var lastNoToolTapUpAtMs by remember { mutableStateOf<Long?>(null) }
     var pendingNoToolTapJob by remember { mutableStateOf<Job?>(null) }
 
@@ -204,6 +215,126 @@ fun CanvasTextOverlay(
     val baloo2Typeface = remember(context) { ResourcesCompat.getFont(context, R.font.baloo2_regular) ?: Typeface.DEFAULT }
     val baseTextSizePx = with(density) { 34.sp.toPx() }
     var isTransformInProgress by remember { mutableStateOf(false) }
+    val pillBackgroundPaint = remember { android.graphics.Paint().apply { isAntiAlias = true } }
+    val stickerBitmapPaint = remember { android.graphics.Paint().apply { isAntiAlias = true; isFilterBitmap = true } }
+    val stickerPlaceholderPaint = remember {
+        android.graphics.Paint().apply {
+            isAntiAlias = true
+            color = android.graphics.Color.argb(64, 255, 255, 255)
+        }
+    }
+
+    fun getTextLayoutFor(element: CanvasTextElement): CachedTextLayout {
+        val wrapWidthPx = (element.boxWidth * canvasSize.width).toInt().coerceAtLeast(1)
+        val cached = textLayoutCache[element.id]
+        if (
+            cached != null &&
+            cached.text == element.text &&
+            cached.font == element.font &&
+            cached.alignment == element.alignment &&
+            cached.wrapWidthPx == wrapWidthPx &&
+            cached.textSizePx == baseTextSizePx
+        ) {
+            return cached
+        }
+
+        val typeface = when (element.font) {
+            CanvasTextFont.POPPINS -> poppinsTypeface
+            CanvasTextFont.VIRGIL -> virgilTypeface
+            CanvasTextFont.DM_SANS -> dmSansTypeface
+            CanvasTextFont.SPACE_MONO -> spaceMonoTypeface
+            CanvasTextFont.PLAYFAIR_DISPLAY -> playfairTypeface
+            CanvasTextFont.BANGERS -> bangersTypeface
+            CanvasTextFont.PERMANENT_MARKER -> permanentMarkerTypeface
+            CanvasTextFont.KALAM -> kalamTypeface
+            CanvasTextFont.CAVEAT -> caveatTypeface
+            CanvasTextFont.MERRIWEATHER -> merriweatherTypeface
+            CanvasTextFont.OSWALD -> oswaldTypeface
+            CanvasTextFont.BALOO_2 -> baloo2Typeface
+        }
+
+        val paint = TextPaint().apply {
+            isAntiAlias = true
+            textSize = baseTextSizePx
+            this.typeface = typeface
+            // Color is set at draw-time (depends on background pill and element color).
+            color = 0xFFFFFFFF.toInt()
+        }
+
+        val alignment = when (element.alignment) {
+            CanvasTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL
+            CanvasTextAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
+            CanvasTextAlign.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
+        }
+
+        val layout = StaticLayout.Builder.obtain(element.text, 0, element.text.length, paint, wrapWidthPx)
+            .setAlignment(alignment)
+            .setIncludePad(false)
+            .build()
+
+        return CachedTextLayout(
+            text = element.text,
+            font = element.font,
+            alignment = element.alignment,
+            wrapWidthPx = wrapWidthPx,
+            textSizePx = baseTextSizePx,
+            layout = layout,
+            paint = paint
+        ).also { textLayoutCache[element.id] = it }
+    }
+
+    fun hitTestAtContentPosition(
+        elementsForHitTest: List<CanvasElement>,
+        pointPx: Offset
+    ): String? {
+        if (canvasSize.width <= 0 || canvasSize.height <= 0) return null
+        val reversed = elementsForHitTest.asReversed()
+        for (element in reversed) {
+            val centerPx = element.center.denormalize(canvasSize)
+            val dx = pointPx.x - centerPx.x
+            val dy = pointPx.y - centerPx.y
+            val c = cos(element.rotationRad.toDouble()).toFloat()
+            val s = sin(element.rotationRad.toDouble()).toFloat()
+            val xRot = (c * dx) + (s * dy)
+            val yRot = (-s * dx) + (c * dy)
+
+            when (element) {
+                is CanvasTextElement -> {
+                    val cached = getTextLayoutFor(element)
+                    val halfW = cached.layout.width / 2f
+                    val halfH = cached.layout.height / 2f
+                    val xLocal = xRot / element.scale
+                    val yLocal = yRot / element.scale
+                    if (xLocal in -halfW..halfW && yLocal in -halfH..halfH) {
+                        return element.id
+                    }
+                }
+                is CanvasStickerElement -> {
+                    val key = "${element.packKey}:${element.packVersion}:${element.stickerId}:full"
+                    val bitmap = stickerBitmaps[key]
+                    val maxSizePx = (element.scale.coerceIn(0.08f, 1.6f) * canvasSize.width.toFloat()).coerceAtLeast(1f)
+                    val renderSize = if (bitmap != null) {
+                        resolveStickerRenderSizePx(
+                            maxSizePx = maxSizePx,
+                            bitmapWidthPx = bitmap.width,
+                            bitmapHeightPx = bitmap.height
+                        )
+                    } else {
+                        com.subhajit.mulberry.stickers.StickerRenderSizePx(
+                            widthPx = maxSizePx,
+                            heightPx = maxSizePx
+                        )
+                    }
+                    val halfW = renderSize.widthPx / 2f
+                    val halfH = renderSize.heightPx / 2f
+                    if (xRot in -halfW..halfW && yRot in -halfH..halfH) {
+                        return element.id
+                    }
+                }
+            }
+        }
+        return null
+    }
 
     val stickerElements = remember(elements) { elements.filterIsInstance<CanvasStickerElement>() }
     LaunchedEffect(stickerElements) {
@@ -218,6 +349,13 @@ fun CanvasTextOverlay(
             ) ?: return@forEach
             val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return@forEach
             stickerBitmaps[key] = bitmap
+        }
+    }
+
+    LaunchedEffect(elements) {
+        val activeTextIds = elements.filterIsInstance<CanvasTextElement>().map { it.id }.toSet()
+        textLayoutCache.keys.toList().forEach { cachedId ->
+            if (cachedId !in activeTextIds) textLayoutCache.remove(cachedId)
         }
     }
 
@@ -246,43 +384,18 @@ fun CanvasTextOverlay(
 		                    val currentViewportTransform = latestViewportTransform
 		                    val safeViewportScale = currentViewportTransform.scale.coerceAtLeast(0.0001f)
 		                    val contentA = (point - currentViewportTransform.offsetPx) / safeViewportScale
+		                    val hitA = hitTestAtContentPosition(
+		                        elementsForHitTest = hittable,
+		                        pointPx = contentA
+		                    )
+		                    if (hitA != null) return hitA
+
+		                    // Defensive fallback for any transform-order mismatch between draw vs hit-test math.
+		                    // (We want element interaction to win over viewport pan/zoom.)
 		                    val contentB = (point / safeViewportScale) - currentViewportTransform.offsetPx
-		                    return hitTest(
-		                        elements = hittable,
-		                        stickerBitmaps = stickerBitmaps,
-	                        pointPx = contentA,
-	                        canvasSize = canvasSize,
-	                        textSizePx = baseTextSizePx,
-	                        poppins = poppinsTypeface,
-	                        virgil = virgilTypeface,
-	                        dmSans = dmSansTypeface,
-	                        spaceMono = spaceMonoTypeface,
-	                        playfair = playfairTypeface,
-	                        bangers = bangersTypeface,
-	                        permanentMarker = permanentMarkerTypeface,
-	                        kalam = kalamTypeface,
-	                        caveat = caveatTypeface,
-	                        merriweather = merriweatherTypeface,
-	                        oswald = oswaldTypeface,
-	                        baloo2 = baloo2Typeface
-	                    ) ?: hitTest(
-	                        elements = hittable,
-	                        stickerBitmaps = stickerBitmaps,
-	                        pointPx = contentB,
-	                        canvasSize = canvasSize,
-	                        textSizePx = baseTextSizePx,
-	                        poppins = poppinsTypeface,
-	                        virgil = virgilTypeface,
-	                        dmSans = dmSansTypeface,
-	                        spaceMono = spaceMonoTypeface,
-	                        playfair = playfairTypeface,
-	                        bangers = bangersTypeface,
-	                        permanentMarker = permanentMarkerTypeface,
-	                        kalam = kalamTypeface,
-	                        caveat = caveatTypeface,
-	                        merriweather = merriweatherTypeface,
-		                        oswald = oswaldTypeface,
-		                        baloo2 = baloo2Typeface
+		                    return hitTestAtContentPosition(
+		                        elementsForHitTest = hittable,
+		                        pointPx = contentB
 		                    )
 		                }
 		
@@ -738,26 +851,19 @@ fun CanvasTextOverlay(
 	                    val safeViewportScale = currentViewportTransform.scale.coerceAtLeast(0.0001f)
 	                    return (point - currentViewportTransform.offsetPx) / safeViewportScale
 	                }
+	                fun toContentOffsetFallback(point: Offset): Offset {
+	                    val currentViewportTransform = latestViewportTransform
+	                    val safeViewportScale = currentViewportTransform.scale.coerceAtLeast(0.0001f)
+	                    return (point / safeViewportScale) - currentViewportTransform.offsetPx
+	                }
 
-	                val hitId = hitTest(
-	                    elements = elements,
-	                    stickerBitmaps = stickerBitmaps,
-                    pointPx = toContentOffset(down.position),
-                    canvasSize = canvasSize,
-                    textSizePx = baseTextSizePx,
-                    poppins = poppinsTypeface,
-                    virgil = virgilTypeface,
-                    dmSans = dmSansTypeface,
-                    spaceMono = spaceMonoTypeface,
-                    playfair = playfairTypeface,
-                    bangers = bangersTypeface,
-                    permanentMarker = permanentMarkerTypeface,
-                    kalam = kalamTypeface,
-                    caveat = caveatTypeface,
-                    merriweather = merriweatherTypeface,
-                    oswald = oswaldTypeface,
-                    baloo2 = baloo2Typeface
-                )
+	                val hitId = hitTestAtContentPosition(
+	                    elementsForHitTest = elements,
+	                    pointPx = toContentOffset(down.position)
+	                ) ?: hitTestAtContentPosition(
+	                    elementsForHitTest = elements,
+	                    pointPx = toContentOffsetFallback(down.position)
+	                )
 
                 // Consume so the parent pager/tab row doesn't treat this as a swipe-to-navigate.
                 down.consume()
@@ -790,7 +896,9 @@ fun CanvasTextOverlay(
                         else -> onDeleteTextElement(hitId)
                     }
                 } else {
-                    onEraseTap(toContentOffset(initialDown).toNormalizedPoint(canvasSize))
+                    // Prefer the main transform math; fallback keeps behavior sensible if draw transform differs.
+                    val content = toContentOffset(initialDown)
+                    onEraseTap(content.toNormalizedPoint(canvasSize))
                 }
             }
         }
@@ -818,76 +926,40 @@ fun CanvasTextOverlay(
 	                    val pillPaddingPx = with(density) { 12.dp.toPx() }
 	                    val pillCornerPx = with(density) { 18.dp.toPx() }
 
-	                    val renderList = elements.map { element ->
-	                        if (element.id == liveTransformPreview?.id) liveTransformPreview!! else element
-	                    }
-
-	                    renderList.forEach { element ->
+	                    val preview = liveTransformPreview
+	                    elements.forEach { baseElement ->
+	                        val element = if (preview != null && preview.id == baseElement.id) preview else baseElement
 	                        when (element) {
 	                        is CanvasTextElement -> {
 	                            val center = element.center.denormalize(canvasSize)
-	                            val wrapWidth = (element.boxWidth * canvasSize.width).toInt().coerceAtLeast(1)
-                            val typeface = when (element.font) {
-                                CanvasTextFont.POPPINS -> poppinsTypeface
-                                CanvasTextFont.VIRGIL -> virgilTypeface
-                                CanvasTextFont.DM_SANS -> dmSansTypeface
-                                CanvasTextFont.SPACE_MONO -> spaceMonoTypeface
-                                CanvasTextFont.PLAYFAIR_DISPLAY -> playfairTypeface
-                                CanvasTextFont.BANGERS -> bangersTypeface
-                                CanvasTextFont.PERMANENT_MARKER -> permanentMarkerTypeface
-                                CanvasTextFont.KALAM -> kalamTypeface
-                                CanvasTextFont.CAVEAT -> caveatTypeface
-                                CanvasTextFont.MERRIWEATHER -> merriweatherTypeface
-                                CanvasTextFont.OSWALD -> oswaldTypeface
-                                CanvasTextFont.BALOO_2 -> baloo2Typeface
-                            }
+	                            val cachedLayout = getTextLayoutFor(element)
                             val backgroundColor = element.colorArgb.toInt()
                             val textColor = if (element.backgroundPillEnabled) {
                                 if (luminance(backgroundColor) > 0.55f) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
                             } else {
                                 backgroundColor
                             }
-
-                            val paint = TextPaint().apply {
-                                isAntiAlias = true
-                                color = textColor
-                                textSize = baseTextSizePx
-                                this.typeface = typeface
-                            }
-
-                            val alignment = when (element.alignment) {
-                                CanvasTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL
-                                CanvasTextAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
-                                CanvasTextAlign.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
-                            }
-
-                            val layout = StaticLayout.Builder.obtain(element.text, 0, element.text.length, paint, wrapWidth)
-                                .setAlignment(alignment)
-                                .setIncludePad(false)
-                                .build()
+                            cachedLayout.paint.color = textColor
 
                             native.save()
                             native.translate(center.x, center.y)
                             native.rotate((element.rotationRad * 180f / Math.PI).toFloat())
                             native.scale(element.scale, element.scale)
 
-                            val left = -layout.width / 2f
-                            val top = -layout.height / 2f
+                            val left = -cachedLayout.layout.width / 2f
+                            val top = -cachedLayout.layout.height / 2f
                             if (element.backgroundPillEnabled) {
-                                val pillPaint = android.graphics.Paint().apply {
-                                    isAntiAlias = true
-                                    color = backgroundColor
-                                }
+                                pillBackgroundPaint.color = backgroundColor
                                 val rect = RectF(
                                     left - pillPaddingPx,
                                     top - pillPaddingPx,
-                                    left + layout.width + pillPaddingPx,
-                                    top + layout.height + pillPaddingPx
+                                    left + cachedLayout.layout.width + pillPaddingPx,
+                                    top + cachedLayout.layout.height + pillPaddingPx
                                 )
-                                native.drawRoundRect(rect, pillCornerPx, pillCornerPx, pillPaint)
+                                native.drawRoundRect(rect, pillCornerPx, pillCornerPx, pillBackgroundPaint)
                             }
                             native.translate(left, top)
-                            layout.draw(native)
+                            cachedLayout.layout.draw(native)
 
 	                            native.restore()
 	                        }
@@ -920,17 +992,9 @@ fun CanvasTextOverlay(
 
                             if (bitmap != null) {
                                 val src = android.graphics.Rect(0, 0, bitmap.width, bitmap.height)
-                                val paint = android.graphics.Paint().apply {
-                                    isAntiAlias = true
-                                    isFilterBitmap = true
-                                }
-                                native.drawBitmap(bitmap, src, rect, paint)
+                                native.drawBitmap(bitmap, src, rect, stickerBitmapPaint)
                             } else {
-                                val placeholderPaint = android.graphics.Paint().apply {
-                                    isAntiAlias = true
-                                    color = android.graphics.Color.argb(64, 255, 255, 255)
-                                }
-                                native.drawRoundRect(rect, 18f, 18f, placeholderPaint)
+                                native.drawRoundRect(rect, 18f, 18f, stickerPlaceholderPaint)
                             }
 
 	                            native.restore()
@@ -1572,102 +1636,6 @@ private fun EditorIconButton(
             )
         }
     }
-}
-
-private fun hitTest(
-    elements: List<CanvasElement>,
-    stickerBitmaps: Map<String, android.graphics.Bitmap>,
-    pointPx: Offset,
-    canvasSize: IntSize,
-    textSizePx: Float,
-    poppins: Typeface,
-    virgil: Typeface,
-    dmSans: Typeface,
-    spaceMono: Typeface,
-    playfair: Typeface,
-    bangers: Typeface,
-    permanentMarker: Typeface,
-    kalam: Typeface,
-    caveat: Typeface,
-    merriweather: Typeface,
-    oswald: Typeface,
-    baloo2: Typeface
-): String? {
-    if (canvasSize.width <= 0 || canvasSize.height <= 0) return null
-    val paint = TextPaint().apply { isAntiAlias = true }
-    paint.textSize = textSizePx
-
-    val reversed = elements.asReversed()
-    for (element in reversed) {
-        val centerPx = element.center.denormalize(canvasSize)
-        val dx = pointPx.x - centerPx.x
-        val dy = pointPx.y - centerPx.y
-        val c = cos(element.rotationRad.toDouble()).toFloat()
-        val s = sin(element.rotationRad.toDouble()).toFloat()
-        val xRot = (c * dx) + (s * dy)
-        val yRot = (-s * dx) + (c * dy)
-
-        when (element) {
-            is CanvasTextElement -> {
-                val wrapWidth = (element.boxWidth * canvasSize.width).toInt().coerceAtLeast(1)
-                paint.typeface = when (element.font) {
-                    CanvasTextFont.POPPINS -> poppins
-                    CanvasTextFont.VIRGIL -> virgil
-                    CanvasTextFont.DM_SANS -> dmSans
-                    CanvasTextFont.SPACE_MONO -> spaceMono
-                    CanvasTextFont.PLAYFAIR_DISPLAY -> playfair
-                    CanvasTextFont.BANGERS -> bangers
-                    CanvasTextFont.PERMANENT_MARKER -> permanentMarker
-                    CanvasTextFont.KALAM -> kalam
-                    CanvasTextFont.CAVEAT -> caveat
-                    CanvasTextFont.MERRIWEATHER -> merriweather
-                    CanvasTextFont.OSWALD -> oswald
-                    CanvasTextFont.BALOO_2 -> baloo2
-                }
-                val alignment = when (element.alignment) {
-                    CanvasTextAlign.LEFT -> Layout.Alignment.ALIGN_NORMAL
-                    CanvasTextAlign.CENTER -> Layout.Alignment.ALIGN_CENTER
-                    CanvasTextAlign.RIGHT -> Layout.Alignment.ALIGN_OPPOSITE
-                }
-                val layout = StaticLayout.Builder.obtain(element.text, 0, element.text.length, paint, wrapWidth)
-                    .setAlignment(alignment)
-                    .setIncludePad(false)
-                    .build()
-                val halfW = layout.width / 2f
-                val halfH = layout.height / 2f
-                val xLocal = xRot / element.scale
-                val yLocal = yRot / element.scale
-                if (xLocal in -halfW..halfW && yLocal in -halfH..halfH) {
-                    return element.id
-                }
-            }
-            is CanvasStickerElement -> {
-                val key = "${element.packKey}:${element.packVersion}:${element.stickerId}:full"
-                val bitmap = stickerBitmaps[key]
-                val maxSizePx = (element.scale.coerceIn(0.08f, 1.6f) * canvasSize.width.toFloat()).coerceAtLeast(1f)
-                val renderSize = if (bitmap != null) {
-                    resolveStickerRenderSizePx(
-                        maxSizePx = maxSizePx,
-                        bitmapWidthPx = bitmap.width,
-                        bitmapHeightPx = bitmap.height
-                    )
-                } else {
-                    com.subhajit.mulberry.stickers.StickerRenderSizePx(
-                        widthPx = maxSizePx,
-                        heightPx = maxSizePx
-                    )
-                }
-                val halfW = renderSize.widthPx / 2f
-                val halfH = renderSize.heightPx / 2f
-                val xLocal = xRot
-                val yLocal = yRot
-                if (xLocal in -halfW..halfW && yLocal in -halfH..halfH) {
-                    return element.id
-                }
-            }
-        }
-    }
-    return null
 }
 
 private fun StrokePoint.denormalize(canvasSize: IntSize): Offset =
