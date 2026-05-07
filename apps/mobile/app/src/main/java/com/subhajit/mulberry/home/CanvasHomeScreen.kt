@@ -1130,7 +1130,9 @@ private fun StreakPill(
 
             if (uiState.canvasState.isEmpty) {
                 CanvasBlankStateGuidance(
-                    modifier = Modifier.align(Alignment.Center)
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 58.dp)
                 )
             }
 
@@ -1189,7 +1191,9 @@ private fun CanvasBlankStateGuidance(modifier: Modifier = Modifier) {
     val guidanceFontFamily = rememberMulberryGuidanceFontFamily()
 
     Column(
-        modifier = modifier.padding(horizontal = 32.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -1212,6 +1216,21 @@ private fun CanvasBlankStateGuidance(modifier: Modifier = Modifier) {
             textAlign = TextAlign.Center,
             modifier = Modifier.width(252.dp)
         )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Image(
+                painter = painterResource(R.drawable.squee_with_pencil),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 12.dp)
+                    .height(160.dp)
+                    .aspectRatio(432f / 498f)
+            )
+        }
     }
 }
 
