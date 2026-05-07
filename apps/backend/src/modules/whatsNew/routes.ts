@@ -193,7 +193,7 @@ function parseFrontmatter(raw: string): WhatsNewFrontmatter {
     const idx = line.indexOf(":")
     if (idx <= 0) continue
     const key = line.slice(0, idx).trim()
-    const value = line.slice(idx + 1).trim().replace(/^"(.*)"$/, "$1")
+    const value = line.slice(idx + 1).trim().replace(/^\"(.*)\"$/, "$1")
     if (key === "version") result.version = value
     if (key === "released_at") result.released_at = value
   }
@@ -225,3 +225,4 @@ function parseSemverish(version: string): { parts: [number, number, number]; pre
   const patch = Number.isFinite(parts[2]) ? parts[2] : 0
   return { parts: [major, minor, patch], prerelease: version.includes("-") }
 }
+

@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto"
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import sharp from "sharp"
-import type { Database } from "./db.js"
-import { HttpError } from "./service.js"
+import type { Database } from "../../infra/db/database.js"
+import { HttpError } from "../../infra/http/HttpError.js"
 
 export interface WallpaperCatalogConfig {
   supabaseUrl?: string

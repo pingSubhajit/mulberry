@@ -6,7 +6,7 @@ export interface AppConfig {
   firebaseServiceAccountPath?: string
   firebaseServiceAccountJson?: string
   canvasUpdatePushTtlMs?: number
-  pairingConfirmationPushTtlMs?: number
+  pairingConfirmationTtlMs?: number
   canvasNudgeDelayMs?: number
   canvasNudgePollIntervalMs?: number
   canvasNudgePushTtlMs?: number
@@ -43,7 +43,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     firebaseServiceAccountPath: env.FIREBASE_SERVICE_ACCOUNT_PATH,
     firebaseServiceAccountJson: env.FIREBASE_SERVICE_ACCOUNT_JSON,
     canvasUpdatePushTtlMs: optionalPositiveNumber(env.CANVAS_UPDATE_PUSH_TTL_MS),
-    pairingConfirmationPushTtlMs: optionalPositiveNumber(env.PAIRING_CONFIRMATION_PUSH_TTL_MS),
+    pairingConfirmationTtlMs: optionalPositiveNumber(env.PAIRING_CONFIRMATION_PUSH_TTL_MS),
     canvasNudgeDelayMs: optionalPositiveNumber(env.CANVAS_NUDGE_DELAY_MS),
     canvasNudgePollIntervalMs: optionalPositiveNumber(env.CANVAS_NUDGE_POLL_INTERVAL_MS),
     canvasNudgePushTtlMs: optionalPositiveNumber(env.CANVAS_NUDGE_PUSH_TTL_MS),
@@ -66,3 +66,4 @@ function optionalPositiveNumber(value: string | undefined): number | undefined {
   if (!Number.isFinite(parsed) || parsed <= 0) return undefined
   return parsed
 }
+

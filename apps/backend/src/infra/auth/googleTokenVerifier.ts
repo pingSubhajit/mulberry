@@ -1,7 +1,13 @@
 import { OAuth2Client } from "google-auth-library"
-import type { AppConfig } from "./config.js"
-import type { GoogleIdentity } from "./domain.js"
-import { HttpError } from "./service.js"
+import type { AppConfig } from "../config/config.js"
+import { HttpError } from "../http/HttpError.js"
+
+export interface GoogleIdentity {
+  subject: string
+  email: string
+  name: string | null
+  pictureUrl: string | null
+}
 
 export interface GoogleTokenVerifier {
   verify(idToken: string): Promise<GoogleIdentity>
@@ -49,3 +55,4 @@ export class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
     }
   }
 }
+

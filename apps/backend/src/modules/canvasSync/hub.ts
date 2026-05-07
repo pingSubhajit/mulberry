@@ -1,10 +1,7 @@
 import type { WebSocket } from "@fastify/websocket"
-import type {
-  CanvasOperationEnvelope,
-  ClientCanvasOperation,
-  ClientCanvasOperationBatch,
-} from "./domain.js"
-import { HttpError, MulberryService } from "./service.js"
+import type { CanvasOperationEnvelope, ClientCanvasOperation, ClientCanvasOperationBatch } from "../../contracts/canvas.js"
+import { HttpError } from "../../infra/http/HttpError.js"
+import type { CanvasService } from "../canvas/service.js"
 
 type ClientMessage =
   | {
@@ -35,7 +32,7 @@ export class CanvasSyncHub {
   private readonly contexts = new WeakMap<WebSocket, ConnectionContext>()
   private readonly pairQueues = new Map<string, Promise<void>>()
 
-  constructor(private readonly service: MulberryService) {}
+  constructor(private readonly service: CanvasService) {}
 
   attach(socket: WebSocket): void {
     socket.on("message", (data) => {
@@ -270,9 +267,7 @@ export class CanvasSyncHub {
 const SLOW_DOWN_OPERATION_THRESHOLD = 48
 const MAX_SOCKET_BUFFERED_BYTES = 1_048_576
 
-export function isRemoteOperationFromOtherUser(
-  operation: CanvasOperationEnvelope,
-  userId: string,
-): boolean {
+export function isRemoteOperationFromOtherUser(operation: CanvasOperationEnvelope, userId: string): boolean {
   return operation.actorUserId !== userId
 }
+

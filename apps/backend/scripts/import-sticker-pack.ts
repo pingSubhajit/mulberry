@@ -1,9 +1,9 @@
 import { readFile, readdir } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import path from "node:path"
-import { loadConfig } from "../src/config.js"
-import { createDatabase } from "../src/db.js"
-import { createStickerStorage, StickerCatalogService } from "../src/stickers.js"
+import { loadConfig } from "../src/infra/config/config.js"
+import { createDatabase } from "../src/infra/db/database.js"
+import { createStickerStorage, StickerCatalogService } from "../src/modules/stickers/service.js"
 
 async function main() {
   await loadDockerComposeEnvIfPresent()

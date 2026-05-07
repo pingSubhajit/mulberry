@@ -1,14 +1,15 @@
 import { newDb } from "pg-mem"
 import type { FastifyInstance } from "fastify"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { createApp } from "../src/app.js"
-import { runMigrations, type Database } from "../src/db.js"
-import { PushDispatchService, type MulberryPushMessage, type PushSender } from "../src/push.js"
+import { createApp } from "../src/app/createApp.js"
+import { runMigrations, type Database } from "../src/infra/db/database.js"
+import { PushDispatchService } from "../src/infra/push/dispatchService.js"
+import type { MulberryPushMessage, PushSender } from "../src/infra/push/types.js"
 import type {
   ProcessedWallpaperImage,
   WallpaperImageProcessor,
   WallpaperStorage,
-} from "../src/wallpapers.js"
+} from "../src/modules/wallpapers/service.js"
 
 describe("Mulberry backend", () => {
   let app: FastifyInstance

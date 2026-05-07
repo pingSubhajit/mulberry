@@ -3,7 +3,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest"
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { registerWhatsNewRoutes } from "../src/whatsNew.js"
+import { registerWhatsNewRoutes } from "../src/modules/whatsNew/routes.js"
 
 describe("whats-new routes", () => {
   let baseDir: string
@@ -71,4 +71,3 @@ describe("whats-new routes", () => {
     expect(response.headers["cache-control"]).toContain("immutable")
   })
 })
-
