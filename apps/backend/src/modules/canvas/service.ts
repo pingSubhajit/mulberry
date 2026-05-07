@@ -11,9 +11,10 @@ import type {
 } from "../../contracts/canvas.js"
 import type { CanvasOperationRecord } from "../../contracts/dbRecords.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
+import type { AnalyticsClient } from "../../infra/analytics/analytics.js"
 import { requireSessionContext, type CanvasSessionContext } from "../_shared/session.js"
 import { getPairSession } from "../_shared/pairs.js"
-import { validDateOrNow } from "../_shared/dates.js"
+import { dateOnly, validDateOrNow } from "../_shared/dates.js"
 import type { StreakService } from "../streak/service.js"
 
 interface MaterializedStroke {
@@ -62,6 +63,7 @@ export class CanvasService {
     private readonly db: Database,
     private readonly streakService: StreakService,
     private readonly pushDispatchService?: PushDispatchService,
+    private readonly analytics?: AnalyticsClient,
   ) {}
 
   async bootstrapCanvasSync(
@@ -172,17 +174,30 @@ export class CanvasService {
       }
     })
 
-    const { accepted, latestRevision, snapshotRevision, shouldPushCanvasUpdate, shouldEnqueueCanvasNudge, shouldRecordUserDrew } = await this.db.transaction(
+    const {
+      accepted,
+      latestRevision,
+      snapshotRevision,
+      shouldPushCanvasUpdate,
+      shouldEnqueueCanvasNudge,
+      shouldRecordUserDrew,
+      durableCounts,
+      firstCanvasAction,
+    } = await this.db.transaction(
       async (tx) => {
         const snapshotRow = await this.getOrCreateCanvasSnapshot(context.pairSession.id, tx, true)
         let latestRevision = Number(snapshotRow.latest_revision)
         let snapshotRevision = Number(snapshotRow.revision)
+        const initialSnapshotRevision = snapshotRevision
         const snapshot = normalizeCanvasSnapshot(snapshotRow.snapshot_json)
         const acceptedRecords: CanvasOperationRecord[] = []
         let snapshotChanged = false
         let shouldPushCanvasUpdate = false
         let shouldEnqueueCanvasNudge = false
         let shouldRecordUserDrew = false
+        const durableCounts: Record<string, number> = {}
+        let durableTotal = 0
+        let firstCanvasAction: { at: Date; type: string } | null = null
 
         for (const operation of operations) {
           const duplicate = await tx.query<CanvasOperationRecord>(
@@ -249,6 +264,14 @@ export class CanvasService {
             snapshotRevision = Number(acceptedRecord.server_revision)
             snapshotChanged = true
             shouldPushCanvasUpdate = true
+            durableTotal += 1
+            durableCounts[acceptedRecord.type] = (durableCounts[acceptedRecord.type] ?? 0) + 1
+            if (initialSnapshotRevision === 0 && !firstCanvasAction) {
+              firstCanvasAction = {
+                at: new Date(acceptedRecord.created_at),
+                type: acceptedRecord.type,
+              }
+            }
           }
         }
 
@@ -277,9 +300,77 @@ export class CanvasService {
           shouldPushCanvasUpdate,
           shouldEnqueueCanvasNudge,
           shouldRecordUserDrew,
+          durableCounts: { ...durableCounts, _TOTAL: durableTotal },
+          firstCanvasAction,
         }
       },
     )
+
+    const durableCountsByType = durableCounts as unknown as Record<string, number>
+
+    if (this.analytics?.enabled && (durableCountsByType._TOTAL ?? 0) > 0) {
+      const strokeMode = context.pairSession.canvas_stroke_render_mode
+      const activityRecordedAt = firstCanvasAction?.at ?? new Date()
+      const activity = await this.recordPairProductActivity({
+        pairSessionId: context.pairSession.id,
+        occurredAt: activityRecordedAt,
+      })
+
+      this.analytics.capture({
+        distinctId: context.pairSession.id,
+        event: "mulberry_canvas_batch_ingested",
+        properties: {
+          latest_revision: latestRevision,
+          snapshot_revision: snapshotRevision,
+          durable_ops_total: durableCountsByType._TOTAL ?? 0,
+          strokes_finished_count: durableCountsByType["FINISH_STROKE"] ?? 0,
+          strokes_deleted_count: durableCountsByType["DELETE_STROKE"] ?? 0,
+          canvas_cleared_count: durableCountsByType["CLEAR_CANVAS"] ?? 0,
+          text_added_count: durableCountsByType["ADD_TEXT_ELEMENT"] ?? 0,
+          text_updated_count: durableCountsByType["UPDATE_TEXT_ELEMENT"] ?? 0,
+          text_deleted_count: durableCountsByType["DELETE_TEXT_ELEMENT"] ?? 0,
+          sticker_added_count: durableCountsByType["ADD_STICKER_ELEMENT"] ?? 0,
+          sticker_updated_count: durableCountsByType["UPDATE_STICKER_ELEMENT"] ?? 0,
+          sticker_deleted_count: durableCountsByType["DELETE_STICKER_ELEMENT"] ?? 0,
+          canvas_stroke_render_mode: strokeMode,
+        },
+      })
+      if (activity.insertedDay) {
+        this.analytics.capture({
+          distinctId: context.pairSession.id,
+          event: "mulberry_pair_active_day",
+          timestamp: activityRecordedAt,
+          properties: {
+            source: "canvas",
+            activity_day: activity.activityDay,
+            canvas_stroke_render_mode: strokeMode,
+          },
+        })
+      }
+      if (activity.insertedWeek) {
+        this.analytics.capture({
+          distinctId: context.pairSession.id,
+          event: "mulberry_pair_active_week",
+          timestamp: activityRecordedAt,
+          properties: {
+            source: "canvas",
+            week_start_day: activity.weekStartDay,
+            canvas_stroke_render_mode: strokeMode,
+          },
+        })
+      }
+      if (firstCanvasAction) {
+        this.analytics.capture({
+          distinctId: context.pairSession.id,
+          event: "mulberry_canvas_first_action",
+          timestamp: firstCanvasAction.at,
+          properties: {
+            first_action_type: firstCanvasAction.type,
+            canvas_stroke_render_mode: strokeMode,
+          },
+        })
+      }
+    }
 
     if (shouldPushCanvasUpdate) {
       this.pushDispatchService?.enqueueCanvasUpdated(
@@ -303,6 +394,43 @@ export class CanvasService {
     }
 
     return accepted
+  }
+
+  private async recordPairProductActivity(input: {
+    pairSessionId: string
+    occurredAt: Date
+  }): Promise<{ insertedDay: boolean; insertedWeek: boolean; activityDay: string; weekStartDay: string }> {
+    const activityDay = dateOnly(input.occurredAt)
+    const weekStartDay = weekStartFromDay(activityDay)
+
+    const dayRows = await this.db.query<{ inserted: boolean }>(
+      `
+      INSERT INTO pair_product_activity_days (pair_session_id, activity_day, last_seen_at)
+      VALUES ($1, $2::date, NOW())
+      ON CONFLICT (pair_session_id, activity_day) DO UPDATE SET
+        last_seen_at = NOW()
+      RETURNING (xmax = 0) AS inserted
+      `,
+      [input.pairSessionId, activityDay],
+    )
+
+    const weekRows = await this.db.query<{ inserted: boolean }>(
+      `
+      INSERT INTO pair_product_activity_weeks (pair_session_id, week_start_day, last_seen_at)
+      VALUES ($1, $2::date, NOW())
+      ON CONFLICT (pair_session_id, week_start_day) DO UPDATE SET
+        last_seen_at = NOW()
+      RETURNING (xmax = 0) AS inserted
+      `,
+      [input.pairSessionId, weekStartDay],
+    )
+
+    return {
+      insertedDay: Boolean(dayRows.rows[0]?.inserted),
+      insertedWeek: Boolean(weekRows.rows[0]?.inserted),
+      activityDay,
+      weekStartDay,
+    }
   }
 
   private async requireDefaultCanvasSessionContext(accessToken: string): Promise<CanvasSessionContext> {
@@ -578,6 +706,14 @@ function normalizeCanvasSnapshot(raw: unknown): {
   return { strokes: [], elements: [], textElements: [] }
 }
 
+function weekStartFromDay(day: string): string {
+  const date = new Date(`${day}T00:00:00.000Z`)
+  const dayOfWeek = date.getUTCDay() // Sun=0..Sat=6
+  const delta = (dayOfWeek + 6) % 7 // shift to Monday=0..Sunday=6
+  date.setUTCDate(date.getUTCDate() - delta)
+  return dateOnly(date)
+}
+
 function normalizeCanvasPoint(raw: unknown): { x: number; y: number } | null {
   if (typeof raw !== "object" || raw === null) return null
   const item = raw as { x?: unknown; y?: unknown }
@@ -689,4 +825,3 @@ function normalizeCanvasElement(raw: unknown): MaterializedCanvasElement | null 
   }
   return null
 }
-

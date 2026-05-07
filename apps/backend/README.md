@@ -56,6 +56,27 @@ FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/path/to/service-account.json
 FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 ```
 
+## PostHog Product Analytics
+
+Backend analytics emits Mulberry product events to PostHog when configured:
+
+```text
+POSTHOG_PROJECT_API_KEY=phc_...
+POSTHOG_HOST=https://us.i.posthog.com
+POSTHOG_ENVIRONMENT=development
+POSTHOG_DISABLED=false
+```
+
+To auto-create Mulberry dashboards + insights (requires a **PostHog personal API key**):
+
+```bash
+cd apps/backend
+POSTHOG_API_HOST=https://us.posthog.com \
+POSTHOG_PROJECT_ID=123 \
+POSTHOG_PERSONAL_API_KEY=phx_... \
+pnpm posthog:setup-dashboards
+```
+
 ## Sticker Packs (Catalog + Assets)
 
 Sticker packs are stored in Supabase Storage (separate from the app bundle). The backend needs:

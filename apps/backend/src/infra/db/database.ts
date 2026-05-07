@@ -169,6 +169,22 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       PRIMARY KEY (pair_session_id, activity_day)
     );
 
+    CREATE TABLE IF NOT EXISTS pair_product_activity_days (
+      pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      activity_day DATE NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (pair_session_id, activity_day)
+    );
+
+    CREATE TABLE IF NOT EXISTS pair_product_activity_weeks (
+      pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      week_start_day DATE NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (pair_session_id, week_start_day)
+    );
+
     CREATE TABLE IF NOT EXISTS user_wallpaper_status (
       user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       pair_session_id TEXT REFERENCES pair_sessions(id) ON DELETE CASCADE,

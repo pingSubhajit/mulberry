@@ -1,8 +1,10 @@
 import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
+import type { AnalyticsClient } from "../../infra/analytics/analytics.js"
 import { requireSessionContext } from "../_shared/session.js"
 import { getPairSession } from "../_shared/pairs.js"
+import { dateOnly } from "../_shared/dates.js"
 
 const REACTION_SEND_RATE_LIMIT_CAPACITY = 6
 const REACTION_SEND_RATE_LIMIT_REFILL_TOKENS_PER_SEC = 1
@@ -13,6 +15,7 @@ export class ReactionsService {
   constructor(
     private readonly db: Database,
     private readonly pushDispatchService?: PushDispatchService,
+    private readonly analytics?: AnalyticsClient,
   ) {}
 
   async sendReaction(
@@ -53,6 +56,49 @@ export class ReactionsService {
         reactionType: normalizedType,
       })
     })
+
+    const occurredAt = new Date()
+    this.analytics?.capture({
+      distinctId: pairSession.id,
+      event: "mulberry_reaction_sent",
+      timestamp: occurredAt,
+      properties: {
+        reaction_type: normalizedType,
+        canvas_stroke_render_mode: pairSession.canvas_stroke_render_mode,
+      },
+    })
+    if (this.analytics?.enabled) {
+      const activity = await this.recordPairProductActivity({
+        pairSessionId: pairSession.id,
+        occurredAt,
+      })
+      if (activity.insertedDay) {
+        this.analytics.capture({
+          distinctId: pairSession.id,
+          event: "mulberry_pair_active_day",
+          timestamp: occurredAt,
+          properties: {
+            source: "reaction",
+            activity_day: activity.activityDay,
+            reaction_type: normalizedType,
+            canvas_stroke_render_mode: pairSession.canvas_stroke_render_mode,
+          },
+        })
+      }
+      if (activity.insertedWeek) {
+        this.analytics.capture({
+          distinctId: pairSession.id,
+          event: "mulberry_pair_active_week",
+          timestamp: occurredAt,
+          properties: {
+            source: "reaction",
+            week_start_day: activity.weekStartDay,
+            reaction_type: normalizedType,
+            canvas_stroke_render_mode: pairSession.canvas_stroke_render_mode,
+          },
+        })
+      }
+    }
 
     this.pushDispatchService?.enqueueReaction(pairSession.id, context.user.id, updated.generation, {
       heartCount: updated.heartCount,
@@ -536,6 +582,43 @@ export class ReactionsService {
       [input.recipientUserId, input.generation],
     )
   }
+
+  private async recordPairProductActivity(input: {
+    pairSessionId: string
+    occurredAt: Date
+  }): Promise<{ insertedDay: boolean; insertedWeek: boolean; activityDay: string; weekStartDay: string }> {
+    const activityDay = dateOnly(input.occurredAt)
+    const weekStartDay = weekStartFromDay(activityDay)
+
+    const dayRows = await this.db.query<{ inserted: boolean }>(
+      `
+      INSERT INTO pair_product_activity_days (pair_session_id, activity_day, last_seen_at)
+      VALUES ($1, $2::date, NOW())
+      ON CONFLICT (pair_session_id, activity_day) DO UPDATE SET
+        last_seen_at = NOW()
+      RETURNING (xmax = 0) AS inserted
+      `,
+      [input.pairSessionId, activityDay],
+    )
+
+    const weekRows = await this.db.query<{ inserted: boolean }>(
+      `
+      INSERT INTO pair_product_activity_weeks (pair_session_id, week_start_day, last_seen_at)
+      VALUES ($1, $2::date, NOW())
+      ON CONFLICT (pair_session_id, week_start_day) DO UPDATE SET
+        last_seen_at = NOW()
+      RETURNING (xmax = 0) AS inserted
+      `,
+      [input.pairSessionId, weekStartDay],
+    )
+
+    return {
+      insertedDay: Boolean(dayRows.rows[0]?.inserted),
+      insertedWeek: Boolean(weekRows.rows[0]?.inserted),
+      activityDay,
+      weekStartDay,
+    }
+  }
 }
 
 function normalizeReactionType(raw: string): NormalizedReactionType | null {
@@ -551,4 +634,12 @@ function normalizeReactionType(raw: string): NormalizedReactionType | null {
     return value
   }
   return null
+}
+
+function weekStartFromDay(day: string): string {
+  const date = new Date(`${day}T00:00:00.000Z`)
+  const dayOfWeek = date.getUTCDay() // Sun=0..Sat=6
+  const delta = (dayOfWeek + 6) % 7 // shift to Monday=0..Sunday=6
+  date.setUTCDate(date.getUTCDate() - delta)
+  return dateOnly(date)
 }

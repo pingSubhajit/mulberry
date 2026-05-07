@@ -6,6 +6,8 @@ import type { AppConfig } from "../infra/config/config.js"
 import { loadConfig } from "../infra/config/config.js"
 import { createDatabase, type Database } from "../infra/db/database.js"
 import { DefaultGoogleTokenVerifier, type GoogleTokenVerifier } from "../infra/auth/googleTokenVerifier.js"
+import type { AnalyticsClient } from "../infra/analytics/analytics.js"
+import { createAnalyticsClient } from "../infra/analytics/posthogAnalytics.js"
 import {
   createPushSender,
   type FirebasePushSenderOptions,
@@ -48,6 +50,7 @@ export interface CreateAppOptions {
   config?: AppConfig
   db?: Database
   googleVerifier?: GoogleTokenVerifier
+  analytics?: AnalyticsClient
   pushSender?: PushSender
   pushOptions?: PushDispatchOptions
   wallpaperStorage?: WallpaperStorage
@@ -58,6 +61,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const config = options.config ?? loadConfig()
   const db = options.db ?? (await createDatabase(config.databaseUrl))
   const googleVerifier = options.googleVerifier ?? new DefaultGoogleTokenVerifier(config)
+  const analytics = options.analytics ?? createAnalyticsClient(config)
 
   const pushDispatchService = new PushDispatchService(
     db,
@@ -102,9 +106,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const authService = new AuthService(db, googleVerifier, bootstrapService)
   const devicesService = new DevicesService(db)
   const profileService = new ProfileService(db, bootstrapService, pushDispatchService, storage)
-  const pairingService = new PairingService(db, bootstrapService, pushDispatchService)
-  const reactionsService = new ReactionsService(db, pushDispatchService)
-  const canvasService = new CanvasService(db, streakService, pushDispatchService)
+  const pairingService = new PairingService(db, bootstrapService, pushDispatchService, analytics)
+  const reactionsService = new ReactionsService(db, pushDispatchService, analytics)
+  const canvasService = new CanvasService(db, streakService, pushDispatchService, analytics)
   const canvasSyncHub = new CanvasSyncHub(canvasService)
 
   const app = Fastify({ logger: false })
@@ -125,6 +129,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.addHook("onClose", async () => {
     pushDispatchService.dispose()
+    await analytics.shutdown()
     await db.end()
   })
 

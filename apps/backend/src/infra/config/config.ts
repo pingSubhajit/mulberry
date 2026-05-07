@@ -5,6 +5,10 @@ export interface AppConfig {
   allowDevGoogleTokens: boolean
   firebaseServiceAccountPath?: string
   firebaseServiceAccountJson?: string
+  posthogProjectApiKey?: string
+  posthogHost?: string
+  posthogEnvironment?: string
+  posthogDisabled?: boolean
   canvasUpdatePushTtlMs?: number
   pairingConfirmationTtlMs?: number
   canvasNudgeDelayMs?: number
@@ -26,6 +30,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const isProduction = env.NODE_ENV === "production"
   const databaseUrl = env.DATABASE_URL ?? (isProduction ? "" : "postgres://localhost:5432/mulberry")
   const googleClientId = env.GOOGLE_SERVER_CLIENT_ID ?? ""
+  const posthogProjectApiKey = env.POSTHOG_PROJECT_API_KEY
+  const posthogHost = env.POSTHOG_HOST
+  const posthogEnvironment = env.POSTHOG_ENVIRONMENT
+  const posthogDisabled = (env.POSTHOG_DISABLED ?? "false") === "true"
 
   if (isProduction && databaseUrl.trim() === "") {
     throw new Error("DATABASE_URL is required when NODE_ENV=production")
@@ -42,6 +50,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     allowDevGoogleTokens: (env.ALLOW_DEV_GOOGLE_TOKENS ?? (isProduction ? "false" : "true")) === "true",
     firebaseServiceAccountPath: env.FIREBASE_SERVICE_ACCOUNT_PATH,
     firebaseServiceAccountJson: env.FIREBASE_SERVICE_ACCOUNT_JSON,
+    posthogProjectApiKey: posthogProjectApiKey?.trim() ? posthogProjectApiKey : undefined,
+    posthogHost: posthogHost?.trim() ? posthogHost : undefined,
+    posthogEnvironment: posthogEnvironment?.trim() ? posthogEnvironment : undefined,
+    posthogDisabled,
     canvasUpdatePushTtlMs: optionalPositiveNumber(env.CANVAS_UPDATE_PUSH_TTL_MS),
     pairingConfirmationTtlMs: optionalPositiveNumber(env.PAIRING_CONFIRMATION_PUSH_TTL_MS),
     canvasNudgeDelayMs: optionalPositiveNumber(env.CANVAS_NUDGE_DELAY_MS),
@@ -66,4 +78,3 @@ function optionalPositiveNumber(value: string | undefined): number | undefined {
   if (!Number.isFinite(parsed) || parsed <= 0) return undefined
   return parsed
 }
-

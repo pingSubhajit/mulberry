@@ -9,6 +9,7 @@
     "start": "tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
     "db:clear": "tsx scripts/clear-database.ts",
+    "posthog:setup-dashboards": "tsx scripts/posthog/setup-mulberry-dashboards.ts",
     "test": "vitest run"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "firebase-admin": "^13.8.0",
     "google-auth-library": "^10.3.0",
     "pg": "^8.16.3",
+    "posthog-node": "^5.33.0",
     "sharp": "^0.34.5",
     "ws": "^8.20.0"
   },

@@ -10,6 +10,7 @@ import { getPairSession } from "../_shared/pairs.js"
 import { isUniqueViolation } from "../_shared/dbErrors.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
 import type { BootstrapService } from "../bootstrap/service.js"
+import type { AnalyticsClient } from "../../infra/analytics/analytics.js"
 
 const PARTNER_DETAILS_REQUIRED_MESSAGE = "Partner details are required before creating an invite"
 
@@ -18,6 +19,7 @@ export class PairingService {
     private readonly db: Database,
     private readonly bootstrapService: BootstrapService,
     private readonly pushDispatchService?: PushDispatchService,
+    private readonly analytics?: AnalyticsClient,
   ) {}
 
   async createInvite(accessToken: string): Promise<CreateInviteResponse> {
@@ -59,6 +61,14 @@ export class PairingService {
           `,
           [inviteId, context.user.id, code, expiresAt.toISOString()],
         )
+        this.analytics?.capture({
+          distinctId: inviteId,
+          event: "mulberry_invite_created",
+          properties: {
+            inviter_user_id: context.user.id,
+            expires_at: expiresAt.toISOString(),
+          },
+        })
         return {
           inviteId,
           code,
@@ -111,6 +121,14 @@ export class PairingService {
       `,
       [context.user.id, invite.id],
     )
+    this.analytics?.capture({
+      distinctId: invite.id,
+      event: "mulberry_invite_redeemed",
+      properties: {
+        inviter_user_id: invite.inviter_user_id,
+        recipient_user_id: context.user.id,
+      },
+    })
 
     return this.redeemInviteResponseFor(context.user.id, invite, "REDEEMED")
   }
@@ -140,6 +158,25 @@ export class PairingService {
       `,
       [invite.id],
     )
+
+    this.analytics?.capture({
+      distinctId: invite.id,
+      event: "mulberry_invite_accepted",
+      properties: {
+        pair_session_id: pairId,
+        inviter_user_id: invite.inviter_user_id,
+        recipient_user_id: context.user.id,
+      },
+    })
+    this.analytics?.capture({
+      distinctId: pairId,
+      event: "mulberry_pair_created",
+      properties: {
+        invite_id: invite.id,
+        inviter_user_id: invite.inviter_user_id,
+        recipient_user_id: context.user.id,
+      },
+    })
 
     const recipientProfile = await getProfileFrom(this.db, context.user.id)
     this.pushDispatchService?.enqueuePairingConfirmed(
@@ -419,4 +456,3 @@ export class PairingService {
     await this.db.query(`UPDATE invites SET status = 'EXPIRED' WHERE id = $1`, [inviteId])
   }
 }
-
