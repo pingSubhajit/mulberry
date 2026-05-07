@@ -1197,7 +1197,7 @@ private fun StreakPill(
                 exit = fadeOut(animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing)),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 58.dp)
+                    .padding(bottom = 34.dp)
             ) {
                 CanvasBlankStateGuidance()
             }
@@ -1347,17 +1347,20 @@ private fun AnimatedVisibilityScope.CanvasBlankStateGuidance(modifier: Modifier 
             modifier = Modifier.width(252.dp)
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
-        Box(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(178.dp)
+        ) {
             Image(
                 painter = painterResource(R.drawable.squee_with_pencil),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 12.dp)
-                    .offset(y = squeeBobOffset)
+                    .align(Alignment.BottomStart)
+                    .offset(x = (-22).dp, y = squeeBobOffset)
                     .height(160.dp)
                     .aspectRatio(432f / 498f)
                     .animateEnterExit(
