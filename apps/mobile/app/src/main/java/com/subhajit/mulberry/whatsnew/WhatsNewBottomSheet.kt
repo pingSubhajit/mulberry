@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
@@ -81,9 +83,12 @@ fun WhatsNewBottomSheet(
             }
         }
     ) {
+        val maxSheetHeight = LocalConfiguration.current.screenHeightDp.dp * WHATS_NEW_SHEET_MAX_HEIGHT_FRACTION
+        val maxContentHeight = (maxSheetHeight - WHATS_NEW_DRAG_HANDLE_TOTAL_HEIGHT).coerceAtLeast(0.dp)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = maxContentHeight)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.5.dp)
                 .padding(bottom = 20.dp),
@@ -197,3 +202,5 @@ private fun Size.safeAspectRatio(): Float? {
 }
 
 private const val DEFAULT_HERO_ASPECT_RATIO = 365f / 243f
+private const val WHATS_NEW_SHEET_MAX_HEIGHT_FRACTION = 0.85f
+private val WHATS_NEW_DRAG_HANDLE_TOTAL_HEIGHT = 31.dp
