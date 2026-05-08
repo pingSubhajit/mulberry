@@ -30,7 +30,7 @@ class RelationshipWidgetAnniversaryObserver @Inject constructor(
     }
 }
 
-internal object RelationshipWidgetUpdateRequester {
+object RelationshipWidgetUpdateRequester {
     fun requestUpdate(context: Context) {
         val appWidgetManager = AppWidgetManager.getInstance(context)
         requestUpdate(context, appWidgetManager, RelationshipTrackerWidgetProvider::class.java)

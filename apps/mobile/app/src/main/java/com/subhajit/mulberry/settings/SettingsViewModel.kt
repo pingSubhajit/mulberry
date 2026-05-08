@@ -43,6 +43,9 @@ import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
 import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerCatalogCacheStore
 import com.subhajit.mulberry.whatsnew.WhatsNewPrompter
+import com.subhajit.mulberry.widget.relationship.RelationshipWidgetSimulationPreset
+import com.subhajit.mulberry.widget.relationship.RelationshipWidgetSimulationRepository
+import com.subhajit.mulberry.widget.relationship.RelationshipWidgetUpdateRequester
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -70,6 +73,7 @@ data class SettingsUiState(
     val featureFlags: FeatureFlags = FeatureFlags(),
     val bootstrapState: SessionBootstrapState = SessionBootstrapState(),
     val streakSimulationPreset: StreakSimulationPreset? = null,
+    val relationshipWidgetSimulationPreset: RelationshipWidgetSimulationPreset? = null,
     val syncState: SyncState = SyncState.Disconnected,
     val syncMetadata: SyncMetadata = SyncMetadata(),
     val fcmRegistered: Boolean = false,
@@ -95,6 +99,7 @@ class SettingsViewModel @Inject constructor(
     private val developerOptionsRepository: DeveloperOptionsRepository,
     private val canvasDebugOptionsRepository: CanvasDebugOptionsRepository,
     private val streakSimulationRepository: StreakSimulationRepository,
+    private val relationshipWidgetSimulationRepository: RelationshipWidgetSimulationRepository,
     private val wallpaperSyncSettingsRepository: WallpaperSyncSettingsRepository,
     private val canvasNudgeNotificationHandler: CanvasNudgeNotificationHandler,
     private val drawReminderNotificationHandler: DrawReminderNotificationHandler,
@@ -126,8 +131,9 @@ class SettingsViewModel @Inject constructor(
         repository.state,
         featureFlagProvider.flags,
         developerOptionsRepository.enabled,
-        streakSimulationRepository.simulation
-    ) { state, flags, developerOptionsEnabled, streakSimulation ->
+        streakSimulationRepository.simulation,
+        relationshipWidgetSimulationRepository.preset
+    ) { state, flags, developerOptionsEnabled, streakSimulation, relationshipWidgetSimulation ->
         SettingsUiState(
             environmentLabel = appConfig.environment.displayName,
             apiBaseUrl = appConfig.apiBaseUrl,
@@ -139,7 +145,8 @@ class SettingsViewModel @Inject constructor(
             developerOptionsEnabled = developerOptionsEnabled,
             featureFlags = flags,
             bootstrapState = state.withDisplayStreakSimulation(streakSimulation),
-            streakSimulationPreset = streakSimulation?.preset
+            streakSimulationPreset = streakSimulation?.preset,
+            relationshipWidgetSimulationPreset = relationshipWidgetSimulation
         )
     }
 
@@ -209,6 +216,8 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             developerOptionsRepository.setEnabled(enabled)
             if (!enabled) {
+                relationshipWidgetSimulationRepository.setPreset(null)
+                RelationshipWidgetUpdateRequester.requestUpdate(appContext)
                 _effects.emit(SettingsEffect.Message("Developer options disabled"))
             }
         }
@@ -265,6 +274,19 @@ class SettingsViewModel @Inject constructor(
                 SettingsEffect.Message(
                     preset?.let { "${it.title} simulation active until app restart." }
                         ?: "Streak simulation cleared."
+                )
+            )
+        }
+    }
+
+    fun onSetRelationshipWidgetSimulation(preset: RelationshipWidgetSimulationPreset?) {
+        viewModelScope.launch {
+            relationshipWidgetSimulationRepository.setPreset(preset)
+            RelationshipWidgetUpdateRequester.requestUpdate(appContext)
+            _effects.emit(
+                SettingsEffect.Message(
+                    preset?.let { "${it.title} widget simulation active." }
+                        ?: "Relationship widget simulation cleared."
                 )
             )
         }

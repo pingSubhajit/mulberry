@@ -14,7 +14,8 @@ import kotlin.math.roundToInt
 
 internal object RelationshipWidgetTextBitmapRenderer {
     private const val MEDIUM_TEXT_BLOCK_WIDTH_DP = 300
-    private const val MEDIUM_TEXT_BLOCK_HEIGHT_DP = 123
+    private const val MEDIUM_TEXT_BLOCK_HEIGHT_DP = 112
+    private const val MEDIUM_COMPACT_TEXT_BLOCK_HEIGHT_DP = 84
     private const val LARGE_TEXT_BLOCK_WIDTH_DP = 320
     private const val LARGE_TEXT_BLOCK_HEIGHT_DP = 131
 
@@ -26,7 +27,7 @@ internal object RelationshipWidgetTextBitmapRenderer {
     private const val LARGE_SECONDARY_TOP_DP = 63f
     private const val LARGE_CAPTION_TOP_DP = 100f
 
-    private const val PRIMARY_TEXT_SIZE_SP = 48f
+    private const val PRIMARY_TEXT_SIZE_SP = 46f
     private const val SECONDARY_TEXT_SIZE_SP = 18f
     private const val CAPTION_TEXT_SIZE_SP = 11f
 
@@ -55,7 +56,11 @@ internal object RelationshipWidgetTextBitmapRenderer {
                 renderMediumLike(
                     context = context,
                     textBlockWidthDp = MEDIUM_TEXT_BLOCK_WIDTH_DP,
-                    textBlockHeightDp = MEDIUM_TEXT_BLOCK_HEIGHT_DP,
+                    textBlockHeightDp = if (secondaryText.isNullOrBlank()) {
+                        MEDIUM_COMPACT_TEXT_BLOCK_HEIGHT_DP
+                    } else {
+                        MEDIUM_TEXT_BLOCK_HEIGHT_DP
+                    },
                     primaryTopDp = MEDIUM_PRIMARY_TOP_DP,
                     secondaryTopDp = MEDIUM_SECONDARY_TOP_DP,
                     captionTopDp = MEDIUM_CAPTION_TOP_DP,
@@ -212,8 +217,8 @@ internal object RelationshipWidgetTextBitmapRenderer {
             val captionBaseline = topToBaselineY(captionPaint, captionTop)
             canvas.drawText(captionText, rightEdgeX, captionBaseline, captionPaint)
         } else {
-            val primaryHeight = (primaryPaint.fontMetrics.descent - primaryPaint.fontMetrics.ascent)
-            val captionTop = primaryTop + primaryHeight + dpToPx(context, 12).toFloat()
+            val primaryBottom = visualTextBottom(primaryPaint, primaryText, primaryBaseline)
+            val captionTop = primaryBottom + dpToPx(context, 8).toFloat()
             val captionBaseline = topToBaselineY(captionPaint, captionTop)
             canvas.drawText(captionText, rightEdgeX, captionBaseline, captionPaint)
         }
@@ -223,6 +228,12 @@ internal object RelationshipWidgetTextBitmapRenderer {
 
     private fun topToBaselineY(paint: Paint, topY: Float): Float =
         topY - paint.fontMetrics.ascent
+
+    private fun visualTextBottom(paint: Paint, text: String, baselineY: Float): Float {
+        val bounds = android.graphics.Rect()
+        paint.getTextBounds(text, 0, text.length, bounds)
+        return baselineY + bounds.bottom
+    }
 
     private fun fitTextSizePx(
         paint: Paint,

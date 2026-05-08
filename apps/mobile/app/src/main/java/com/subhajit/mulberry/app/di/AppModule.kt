@@ -89,6 +89,8 @@ import com.subhajit.mulberry.stickers.StickerCatalogRepository
 import com.subhajit.mulberry.stickers.StickerCatalogCacheStore
 import com.subhajit.mulberry.streak.InMemoryStreakSimulationRepository
 import com.subhajit.mulberry.streak.StreakSimulationRepository
+import com.subhajit.mulberry.widget.relationship.DataStoreRelationshipWidgetSimulationRepository
+import com.subhajit.mulberry.widget.relationship.RelationshipWidgetSimulationRepository
 import com.subhajit.mulberry.update.DataStoreInAppUpdatePromptStateStore
 import com.subhajit.mulberry.update.InAppUpdatePromptStateStore
 import com.subhajit.mulberry.whatsnew.DataStoreWhatsNewPromptStateStore
@@ -310,6 +312,12 @@ abstract class AppBindingsModule {
     abstract fun bindStreakSimulationRepository(
         implementation: InMemoryStreakSimulationRepository
     ): StreakSimulationRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindRelationshipWidgetSimulationRepository(
+        implementation: DataStoreRelationshipWidgetSimulationRepository
+    ): RelationshipWidgetSimulationRepository
 
     @Binds
     @Singleton

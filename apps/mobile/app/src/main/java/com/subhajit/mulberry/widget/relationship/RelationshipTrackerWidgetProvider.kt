@@ -104,7 +104,13 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
         val dataStore = entryPoint(context).preferenceDataStore()
         val preferences = runCatching { dataStore.data.first() }.getOrElse { emptyPreferences() }
 
-        val anniversaryString = preferences[PreferenceStorage.anniversaryDate]
+        val simulationPreset = preferences[PreferenceStorage.relationshipWidgetSimulationPreset]
+            ?.let { raw -> runCatching { RelationshipWidgetSimulationPreset.valueOf(raw) }.getOrNull() }
+        val anniversaryString = if (simulationPreset == null) {
+            preferences[PreferenceStorage.anniversaryDate]
+        } else {
+            simulationPreset.anniversaryDateFor(LocalDate.now())
+        }
         val model = RelationshipWidgetModelFactory.create(
             context = context,
             anniversaryStorageDate = anniversaryString,
@@ -115,7 +121,11 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
             val renderSize = relationshipWidgetSize
             val layoutRes = when (renderSize) {
                 RelationshipWidgetSize.SQUARE -> R.layout.widget_relationship_square
-                RelationshipWidgetSize.MEDIUM -> R.layout.widget_relationship_medium
+                RelationshipWidgetSize.MEDIUM -> if (model.secondaryText.isNullOrBlank()) {
+                    R.layout.widget_relationship_medium_compact
+                } else {
+                    R.layout.widget_relationship_medium
+                }
             }
 
             val views = RemoteViews(context.packageName, layoutRes)
@@ -146,7 +156,7 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
                     R.id.widget_relationship_progress_donut,
                     RelationshipWidgetProgressDonutRenderer.render(
                         context = context,
-                        sizeDp = 79,
+                        sizeDp = 72,
                         progressFraction = model.anniversaryProgressFraction
                     )
                 )

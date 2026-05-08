@@ -103,6 +103,7 @@ import com.subhajit.mulberry.ui.theme.MulberryPrimaryLight
 import com.subhajit.mulberry.ui.theme.MulberrySurfaceVariant
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
+import com.subhajit.mulberry.widget.relationship.RelationshipWidgetSimulationPreset
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -247,7 +248,8 @@ fun SettingsRoute(
         onWhatsNew = viewModel::onWhatsNewClicked,
         onClearStickerAssets = viewModel::onClearStickerAssets,
         onClearStickerCatalogCache = viewModel::onClearStickerCatalogCache,
-        onSetStreakSimulation = viewModel::onSetStreakSimulation
+        onSetStreakSimulation = viewModel::onSetStreakSimulation,
+        onSetRelationshipWidgetSimulation = viewModel::onSetRelationshipWidgetSimulation
     )
 }
 
@@ -289,7 +291,8 @@ private fun SettingsScreen(
     onWhatsNew: () -> Unit,
     onClearStickerAssets: () -> Unit,
     onClearStickerCatalogCache: () -> Unit,
-    onSetStreakSimulation: (StreakSimulationPreset?) -> Unit
+    onSetStreakSimulation: (StreakSimulationPreset?) -> Unit,
+    onSetRelationshipWidgetSimulation: (RelationshipWidgetSimulationPreset?) -> Unit
 ) {
     Scaffold(
         modifier = Modifier
@@ -362,6 +365,7 @@ private fun SettingsScreen(
                 onClearStickerAssets = onClearStickerAssets,
                 onClearStickerCatalogCache = onClearStickerCatalogCache,
                 onSetStreakSimulation = onSetStreakSimulation,
+                onSetRelationshipWidgetSimulation = onSetRelationshipWidgetSimulation,
                 modifier = Modifier.padding(padding)
             )
         } else {
@@ -2162,6 +2166,7 @@ private fun DeveloperOptionsPane(
     onClearStickerAssets: () -> Unit,
     onClearStickerCatalogCache: () -> Unit,
     onSetStreakSimulation: (StreakSimulationPreset?) -> Unit,
+    onSetRelationshipWidgetSimulation: (RelationshipWidgetSimulationPreset?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showResetConfirmation by remember { mutableStateOf(false) }
@@ -2354,6 +2359,34 @@ private fun DeveloperOptionsPane(
                     onClick = onClearStickerCatalogCache,
                     enabled = !uiState.isBusy
                 )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            DeveloperSectionCard(
+                title = "Relationship widget simulation",
+                body = "Override the widget anniversary locally to validate layout, copy, milestones, and celebratory states."
+            ) {
+                DeveloperValueList(
+                    rows = listOf(
+                        "Current state" to (uiState.relationshipWidgetSimulationPreset?.title ?: "Real anniversary")
+                    )
+                )
+                Spacer(modifier = Modifier.height(18.dp))
+                SettingsSecondaryButton(
+                    text = "Use real anniversary",
+                    isBusy = uiState.isBusy,
+                    onClick = { onSetRelationshipWidgetSimulation(null) },
+                    enabled = !uiState.isBusy
+                )
+                RelationshipWidgetSimulationPreset.entries.forEach { preset ->
+                    Spacer(modifier = Modifier.height(10.dp))
+                    SettingsSecondaryButton(
+                        text = preset.title,
+                        isBusy = uiState.isBusy,
+                        onClick = { onSetRelationshipWidgetSimulation(preset) },
+                        enabled = !uiState.isBusy
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(20.dp))

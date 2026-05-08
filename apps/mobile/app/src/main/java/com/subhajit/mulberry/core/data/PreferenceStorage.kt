@@ -83,6 +83,8 @@ object PreferenceStorage {
     val pendingReactionReceivedAtMs = longPreferencesKey("pending_reaction_received_at_ms")
     val developerOptionsEnabled = booleanPreferencesKey("developer_options_enabled")
     val canvasShowElementBounds = booleanPreferencesKey("canvas_show_element_bounds")
+    val relationshipWidgetSimulationPreset =
+        stringPreferencesKey("relationship_widget_simulation_preset")
     val reviewMilestone3Reached = booleanPreferencesKey("review_milestone_3_reached")
     val reviewAttemptCount = intPreferencesKey("review_attempt_count")
     val reviewLastAttemptAtMs = longPreferencesKey("review_last_attempt_at_ms")
