@@ -23,8 +23,4 @@
             <solid android:color="@android:color/white" />
         </shape>
     </item>
-
-    <!-- Heart asset from Figma. -->
-    <item android:insetLeft="20dp" android:insetTop="20dp" android:insetRight="20dp" android:insetBottom="20dp"
-        android:drawable="@drawable/widget_relationship_heart" />
 </layer-list>

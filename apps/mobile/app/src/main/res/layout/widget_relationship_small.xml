@@ -22,41 +22,36 @@
             android:src="@drawable/widget_relationship_gradient_overlay" />
 
         <ImageView
+            android:id="@+id/widget_relationship_text_stack"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:scaleType="fitCenter" />
+
+        <FrameLayout
             android:id="@+id/widget_relationship_badge"
             android:layout_width="56dp"
             android:layout_height="56dp"
             android:layout_gravity="top|end"
             android:layout_marginTop="12dp"
             android:layout_marginEnd="12dp"
-            android:contentDescription="@null"
-            android:src="@drawable/widget_relationship_badge" />
+            android:contentDescription="@null">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:padding="12dp">
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@null"
+                android:src="@drawable/widget_relationship_badge" />
 
             <TextView
-                android:id="@+id/widget_relationship_primary"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:id="@+id/widget_relationship_badge_text"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
                 android:fontFamily="@font/poppins_bold"
+                android:gravity="center"
                 android:includeFontPadding="false"
-                android:text="256 days"
+                android:text="15"
                 android:textColor="#D81012"
-                android:textSize="30sp" />
-
-            <TextView
-                android:id="@+id/widget_relationship_caption"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:fontFamily="@font/poppins_medium"
-                android:includeFontPadding="false"
-                android:text="Together since Jan 1, 2026"
-                android:textColor="@android:color/black"
-                android:textSize="12sp" />
-        </LinearLayout>
+                android:textSize="14sp" />
+        </FrameLayout>
 </FrameLayout>
