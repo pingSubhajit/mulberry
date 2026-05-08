@@ -433,6 +433,7 @@ private fun SettingsRootPage(
     val userName = uiState.bootstrapState.userDisplayName ?: "Mulberry user"
     var showLogoutConfirmation by remember { mutableStateOf(false) }
     var wallpaperDoodlesInfoSheetOpen by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
     val partnerVisibility = remember(uiState.bootstrapState.pairingStatus, uiState.bootstrapState.partnerWallpaperStatus) {
         resolvePartnerDrawingVisibility(
             paired = isPaired,
@@ -448,6 +449,7 @@ private fun SettingsRootPage(
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
+            .verticalScroll(scrollState)
             .padding(horizontal = 20.dp)
             .padding(top = 0.dp, bottom = 18.dp)
     ) {
@@ -510,7 +512,7 @@ private fun SettingsRootPage(
             onLogoutRequested = { showLogoutConfirmation = true }
         )
 
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(18.dp))
         Text(
             text = "Mulberry v${uiState.appVersionName}",
             color = MaterialTheme.mulberryAppColors.mutedText,
