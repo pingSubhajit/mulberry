@@ -2057,9 +2057,10 @@ private fun CanvasControlTray(
                 width = uiState.toolState.selectedWidth,
                 accentColor = Color(eyedropperPreviewColorArgb ?: uiState.toolState.selectedColorArgb),
                 onClick = {
-                    if (!eyedropperArmed && uiState.toolState.activeTool == DrawingTool.DRAW) {
+                    if (!eyedropperArmed) {
                         showWidthPicker = true
                         showColorPicker = false
+                        showCustomColorPicker = false
                     }
                 },
                 modifier = Modifier.testTag(TestTags.BRUSH_WIDTH_BUTTON),
