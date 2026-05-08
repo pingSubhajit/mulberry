@@ -1861,7 +1861,7 @@ private fun CanvasActionButton(
     selected: Boolean,
     enabled: Boolean = true,
     showSelectedRing: Boolean = selected,
-    dimWhenNotSelected: Boolean = true,
+    dimWhenNotSelected: Boolean = false,
     ringColor: Color = MulberryPrimary.copy(alpha = 0.95f),
     animateSelectionPop: Boolean = true,
     onClick: () -> Unit,
