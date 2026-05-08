@@ -110,6 +110,8 @@ import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import java.util.UUID
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -126,7 +128,8 @@ private data class CachedTextLayout(
     val wrapWidthPx: Int,
     val textSizePx: Float,
     val layout: StaticLayout,
-    val paint: TextPaint
+    val paint: TextPaint,
+    val tightBounds: RectF
 )
 
 data class CanvasTextEditorSession(
@@ -140,6 +143,7 @@ fun CanvasTextOverlay(
     activeTool: DrawingTool,
     palette: List<Long>,
     selectedColorArgb: Long,
+    showElementBounds: Boolean = false,
     stickerAssetStore: StickerAssetStore,
     reactionRailOpen: Boolean,
     onReactionRailOpenChanged: (Boolean) -> Unit,
@@ -223,6 +227,27 @@ fun CanvasTextOverlay(
             color = android.graphics.Color.argb(64, 255, 255, 255)
         }
     }
+    val textBoundsPaint = remember {
+        android.graphics.Paint().apply {
+            isAntiAlias = true
+            style = android.graphics.Paint.Style.STROKE
+            color = android.graphics.Color.MAGENTA
+        }
+    }
+    val textPillBoundsPaint = remember {
+        android.graphics.Paint().apply {
+            isAntiAlias = true
+            style = android.graphics.Paint.Style.STROKE
+            color = android.graphics.Color.CYAN
+        }
+    }
+    val stickerBoundsPaint = remember {
+        android.graphics.Paint().apply {
+            isAntiAlias = true
+            style = android.graphics.Paint.Style.STROKE
+            color = android.graphics.Color.GREEN
+        }
+    }
 
     fun getTextLayoutFor(element: CanvasTextElement): CachedTextLayout {
         val wrapWidthPx = (element.boxWidth * canvasSize.width).toInt().coerceAtLeast(1)
@@ -279,7 +304,8 @@ fun CanvasTextOverlay(
             wrapWidthPx = wrapWidthPx,
             textSizePx = baseTextSizePx,
             layout = layout,
-            paint = paint
+            paint = paint,
+            tightBounds = computeTightTextBounds(layout)
         ).also { textLayoutCache[element.id] = it }
     }
 
@@ -288,6 +314,7 @@ fun CanvasTextOverlay(
         pointPx: Offset
     ): String? {
         if (canvasSize.width <= 0 || canvasSize.height <= 0) return null
+        val pillPaddingPx = with(density) { 12.dp.toPx() }
         val reversed = elementsForHitTest.asReversed()
         for (element in reversed) {
             val centerPx = element.center.denormalize(canvasSize)
@@ -301,11 +328,22 @@ fun CanvasTextOverlay(
             when (element) {
                 is CanvasTextElement -> {
                     val cached = getTextLayoutFor(element)
-                    val halfW = cached.layout.width / 2f
-                    val halfH = cached.layout.height / 2f
                     val xLocal = xRot / element.scale
                     val yLocal = yRot / element.scale
-                    if (xLocal in -halfW..halfW && yLocal in -halfH..halfH) {
+                    val layoutLeft = -cached.layout.width / 2f
+                    val layoutTop = -cached.layout.height / 2f
+                    val tight = cached.tightBounds
+                    var left = layoutLeft + tight.left
+                    var top = layoutTop + tight.top
+                    var right = layoutLeft + tight.right
+                    var bottom = layoutTop + tight.bottom
+                    if (element.backgroundPillEnabled) {
+                        left -= pillPaddingPx
+                        top -= pillPaddingPx
+                        right += pillPaddingPx
+                        bottom += pillPaddingPx
+                    }
+                    if (xLocal in left..right && yLocal in top..bottom) {
                         return element.id
                     }
                 }
@@ -949,6 +987,10 @@ fun CanvasTextOverlay(
 	                    val native = canvas.nativeCanvas
 	                    val pillPaddingPx = with(density) { 12.dp.toPx() }
 	                    val pillCornerPx = with(density) { 18.dp.toPx() }
+                        val debugStrokeWidthPx = with(density) { 1.5.dp.toPx() }
+                        textBoundsPaint.strokeWidth = debugStrokeWidthPx
+                        textPillBoundsPaint.strokeWidth = debugStrokeWidthPx
+                        stickerBoundsPaint.strokeWidth = debugStrokeWidthPx
 
 	                    val preview = liveTransformPreview
 	                    elements.forEach { baseElement ->
@@ -972,15 +1014,23 @@ fun CanvasTextOverlay(
 
                             val left = -cachedLayout.layout.width / 2f
                             val top = -cachedLayout.layout.height / 2f
+                            val tight = cachedLayout.tightBounds
+                            val tightRect = RectF(
+                                left + tight.left,
+                                top + tight.top,
+                                left + tight.right,
+                                top + tight.bottom
+                            )
                             if (element.backgroundPillEnabled) {
                                 pillBackgroundPaint.color = backgroundColor
-                                val rect = RectF(
-                                    left - pillPaddingPx,
-                                    top - pillPaddingPx,
-                                    left + cachedLayout.layout.width + pillPaddingPx,
-                                    top + cachedLayout.layout.height + pillPaddingPx
-                                )
-                                native.drawRoundRect(rect, pillCornerPx, pillCornerPx, pillBackgroundPaint)
+                                val pillRect = RectF(tightRect).apply { inset(-pillPaddingPx, -pillPaddingPx) }
+                                native.drawRoundRect(pillRect, pillCornerPx, pillCornerPx, pillBackgroundPaint)
+                                if (showElementBounds) {
+                                    native.drawRoundRect(pillRect, pillCornerPx, pillCornerPx, textPillBoundsPaint)
+                                }
+                            }
+                            if (showElementBounds) {
+                                native.drawRect(tightRect, textBoundsPaint)
                             }
                             native.translate(left, top)
                             cachedLayout.layout.draw(native)
@@ -1019,6 +1069,9 @@ fun CanvasTextOverlay(
                                 native.drawBitmap(bitmap, src, rect, stickerBitmapPaint)
                             } else {
                                 native.drawRoundRect(rect, 18f, 18f, stickerPlaceholderPaint)
+                            }
+                            if (showElementBounds) {
+                                native.drawRect(rect, stickerBoundsPaint)
                             }
 
 	                            native.restore()
@@ -1672,6 +1725,29 @@ private fun Offset.toNormalizedPoint(canvasSize: IntSize): StrokePoint {
         x = (x / safeW).coerceIn(0f, 1f),
         y = (y / safeH).coerceIn(0f, 1f)
     )
+}
+
+private fun computeTightTextBounds(layout: StaticLayout): RectF {
+    val lineCount = layout.lineCount
+    if (lineCount <= 0) return RectF(0f, 0f, 0f, 0f)
+
+    var left = Float.POSITIVE_INFINITY
+    var right = Float.NEGATIVE_INFINITY
+
+    for (i in 0 until lineCount) {
+        val lineLeft = layout.getLineLeft(i)
+        val lineRight = lineLeft + layout.getLineMax(i)
+        val l = min(lineLeft, lineRight)
+        val r = max(lineLeft, lineRight)
+        if (l < left) left = l
+        if (r > right) right = r
+    }
+
+    if (!left.isFinite() || !right.isFinite()) return RectF(0f, 0f, 0f, 0f)
+
+    val top = layout.getLineTop(0).toFloat()
+    val bottom = layout.getLineBottom(lineCount - 1).toFloat()
+    return RectF(left, top, right, bottom)
 }
 
 private fun luminance(color: Int): Float {

@@ -90,6 +90,11 @@ private class TestSessionBootstrapRepository(initial: SessionBootstrapState) : S
 
     override suspend fun setWallpaperConfigured(configured: Boolean) = Unit
     override suspend fun setPartnerWallpaperStatus(status: PartnerWallpaperStatus?) = Unit
+
+    override suspend fun hasShownBrushToolGuide(userId: String): Boolean = false
+
+    override suspend fun markBrushToolGuideShown(userId: String) = Unit
+
     override suspend fun seedDemoSession() = Unit
     override suspend fun reset() = Unit
 }

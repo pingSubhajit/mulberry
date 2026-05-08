@@ -520,6 +520,10 @@ private class FakeSessionBootstrapRepository : SessionBootstrapRepository {
         state.update { it.copy(partnerWallpaperStatus = status) }
     }
 
+    override suspend fun hasShownBrushToolGuide(userId: String): Boolean = false
+
+    override suspend fun markBrushToolGuideShown(userId: String) = Unit
+
     override suspend fun seedDemoSession() = Unit
 
     override suspend fun reset() {

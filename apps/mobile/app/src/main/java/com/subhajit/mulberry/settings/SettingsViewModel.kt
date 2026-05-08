@@ -66,6 +66,7 @@ data class SettingsUiState(
     val flavor: String = "",
     val enableDebugMenu: Boolean = false,
     val developerOptionsEnabled: Boolean = false,
+    val canvasShowElementBounds: Boolean = false,
     val featureFlags: FeatureFlags = FeatureFlags(),
     val bootstrapState: SessionBootstrapState = SessionBootstrapState(),
     val streakSimulationPreset: StreakSimulationPreset? = null,
@@ -92,6 +93,7 @@ class SettingsViewModel @Inject constructor(
     repository: SessionBootstrapRepository,
     featureFlagProvider: FeatureFlagProvider,
     private val developerOptionsRepository: DeveloperOptionsRepository,
+    private val canvasDebugOptionsRepository: CanvasDebugOptionsRepository,
     private val streakSimulationRepository: StreakSimulationRepository,
     private val wallpaperSyncSettingsRepository: WallpaperSyncSettingsRepository,
     private val canvasNudgeNotificationHandler: CanvasNudgeNotificationHandler,
@@ -120,7 +122,7 @@ class SettingsViewModel @Inject constructor(
     private val busyState = kotlinx.coroutines.flow.MutableStateFlow(false)
     private val versionTapCount = kotlinx.coroutines.flow.MutableStateFlow(0)
 
-    private val baseUiStateCore = combine(
+    private val baseUiStateCoreWithoutCanvasDebug = combine(
         repository.state,
         featureFlagProvider.flags,
         developerOptionsRepository.enabled,
@@ -139,6 +141,13 @@ class SettingsViewModel @Inject constructor(
             bootstrapState = state.withDisplayStreakSimulation(streakSimulation),
             streakSimulationPreset = streakSimulation?.preset
         )
+    }
+
+    private val baseUiStateCore = combine(
+        baseUiStateCoreWithoutCanvasDebug,
+        canvasDebugOptionsRepository.showElementBounds
+    ) { base, canvasShowElementBounds ->
+        base.copy(canvasShowElementBounds = canvasShowElementBounds)
     }
 
     private val baseUiState = combine(
@@ -202,6 +211,17 @@ class SettingsViewModel @Inject constructor(
             if (!enabled) {
                 _effects.emit(SettingsEffect.Message("Developer options disabled"))
             }
+        }
+    }
+
+    fun onCanvasShowElementBoundsChanged(enabled: Boolean) {
+        viewModelScope.launch {
+            canvasDebugOptionsRepository.setShowElementBounds(enabled)
+            _effects.emit(
+                SettingsEffect.Message(
+                    if (enabled) "Canvas element bounds enabled" else "Canvas element bounds disabled"
+                )
+            )
         }
     }
 

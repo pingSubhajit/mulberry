@@ -11,7 +11,7 @@ class CanvasControlTraySpacingTest {
         val toolSize = 49.dp
         val baseSpacing = 18.dp
         val minSpacing = baseSpacing
-        val maxSpacing = 80.dp
+        val maxSpacing = 40.dp
         val toolCount = 8
 
         // A representative "wide phone" content width (already excludes tray padding).
@@ -36,5 +36,28 @@ class CanvasControlTraySpacingTest {
 
         assertEquals(expectedSpacing.value, spacing.value, 0.01f)
         assertTrue("Expected spacing to be within bounds", spacing in minSpacing..maxSpacing)
+    }
+
+    @Test
+    fun spacingDoesNotIncreaseWhenNaturalPeekAlreadyVisible() {
+        val toolSize = 49.dp
+        val baseSpacing = 18.dp
+        val minSpacing = baseSpacing
+        val maxSpacing = 40.dp
+        val toolCount = 8
+
+        // Narrower content width where the next tool already peeks at base spacing.
+        val availableWidth = 280.dp
+
+        val spacing = computeCanvasTrayToolSpacing(
+            availableWidth = availableWidth,
+            toolSize = toolSize,
+            baseSpacing = baseSpacing,
+            minSpacing = minSpacing,
+            maxSpacing = maxSpacing,
+            toolCount = toolCount
+        )
+
+        assertEquals(baseSpacing.value, spacing.value, 0.01f)
     }
 }

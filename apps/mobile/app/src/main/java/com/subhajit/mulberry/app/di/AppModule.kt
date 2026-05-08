@@ -42,6 +42,8 @@ import com.subhajit.mulberry.pairing.InviteRepository
 import com.subhajit.mulberry.pairing.inbound.DataStoreInboundInviteRepository
 import com.subhajit.mulberry.pairing.inbound.InboundInviteRepository
 import com.subhajit.mulberry.settings.BackendPairingSettingsRepository
+import com.subhajit.mulberry.settings.CanvasDebugOptionsRepository
+import com.subhajit.mulberry.settings.DataStoreCanvasDebugOptionsRepository
 import com.subhajit.mulberry.settings.DataStoreDeveloperOptionsRepository
 import com.subhajit.mulberry.settings.DeveloperOptionsRepository
 import com.subhajit.mulberry.settings.PairingSettingsRepository
@@ -296,6 +298,12 @@ abstract class AppBindingsModule {
     abstract fun bindDeveloperOptionsRepository(
         implementation: DataStoreDeveloperOptionsRepository
     ): DeveloperOptionsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCanvasDebugOptionsRepository(
+        implementation: DataStoreCanvasDebugOptionsRepository
+    ): CanvasDebugOptionsRepository
 
     @Binds
     @Singleton

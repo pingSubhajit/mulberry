@@ -232,6 +232,7 @@ fun SettingsRoute(
             viewModel.onDeveloperOptionsEnabledChanged(it)
             if (!it) pane = SettingsPane.Home
         },
+        onCanvasShowElementBoundsChanged = viewModel::onCanvasShowElementBoundsChanged,
         onForceSyncNow = viewModel::onForceSyncNow,
         onRegenerateWallpaperSnapshot = viewModel::onRegenerateWallpaperSnapshot,
         onSendDebugPairingNotification = viewModel::onSendDebugPairingNotification,
@@ -273,6 +274,7 @@ private fun SettingsScreen(
     onClearFeatureOverrides: () -> Unit,
     onVersionTapped: () -> Unit,
     onDeveloperOptionsEnabledChanged: (Boolean) -> Unit,
+    onCanvasShowElementBoundsChanged: (Boolean) -> Unit,
     onForceSyncNow: () -> Unit,
     onRegenerateWallpaperSnapshot: () -> Unit,
     onSendDebugPairingNotification: () -> Unit,
@@ -341,6 +343,7 @@ private fun SettingsScreen(
                 uiState = uiState,
                 onBack = onNavigateBack,
                 onDeveloperOptionsEnabledChanged = onDeveloperOptionsEnabledChanged,
+                onCanvasShowElementBoundsChanged = onCanvasShowElementBoundsChanged,
                 onForceSyncNow = onForceSyncNow,
                 onRegenerateWallpaperSnapshot = onRegenerateWallpaperSnapshot,
                 onClearFeatureOverrides = onClearFeatureOverrides,
@@ -2140,6 +2143,7 @@ private fun DeveloperOptionsPane(
     uiState: SettingsUiState,
     onBack: () -> Unit,
     onDeveloperOptionsEnabledChanged: (Boolean) -> Unit,
+    onCanvasShowElementBoundsChanged: (Boolean) -> Unit,
     onForceSyncNow: () -> Unit,
     onRegenerateWallpaperSnapshot: () -> Unit,
     onClearFeatureOverrides: () -> Unit,
@@ -2317,6 +2321,19 @@ private fun DeveloperOptionsPane(
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 SettingsSecondaryButton("Seed demo session", uiState.isBusy, onSeedDemoSession)
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            DeveloperSectionCard(
+                title = "Canvas debug",
+                body = "Visual overlays to inspect text/sticker layout and hitboxes."
+            ) {
+                ToggleRow(
+                    title = "Show element bounds",
+                    body = "Draw bounding boxes for text and sticker elements on the canvas.",
+                    checked = uiState.canvasShowElementBounds,
+                    onCheckedChange = onCanvasShowElementBoundsChanged
+                )
             }
 
             Spacer(modifier = Modifier.height(20.dp))

@@ -36,6 +36,8 @@ import com.subhajit.mulberry.reactions.ReactionRepository
 import com.subhajit.mulberry.reactions.ReactionSendRateLimiter
 import com.subhajit.mulberry.reactions.ReactionType
 import com.subhajit.mulberry.settings.PairingDisconnectCoordinator
+import com.subhajit.mulberry.settings.CanvasDebugOptionsRepository
+import com.subhajit.mulberry.settings.DeveloperOptionsRepository
 import com.subhajit.mulberry.streak.StreakSimulationRepository
 import com.subhajit.mulberry.streak.withDisplayStreakSimulation
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
@@ -155,6 +157,7 @@ data class CanvasHomeUiState(
     val showClearConfirmation: Boolean = false,
     val canvasStrokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.DryBrush,
     val palette: List<Long> = DrawingDefaults.palette,
+    val canvasShowElementBounds: Boolean = false,
     val showBrushToolGuide: Boolean = false
 )
 
@@ -169,6 +172,8 @@ class CanvasHomeViewModel @Inject constructor(
     repository: SessionBootstrapRepository,
     private val bootstrapRepository: BootstrapRepository,
     featureFlagProvider: FeatureFlagProvider,
+    developerOptionsRepository: DeveloperOptionsRepository,
+    canvasDebugOptionsRepository: CanvasDebugOptionsRepository,
     private val drawingRepository: DrawingRepository,
     private val inviteRepository: InviteRepository,
     private val inboundInviteRepository: InboundInviteRepository,
@@ -215,6 +220,13 @@ class CanvasHomeViewModel @Inject constructor(
     private val _effects = MutableSharedFlow<CanvasHomeEffect>()
     val effects = _effects.asSharedFlow()
     val wallpaperPresets: List<WallpaperPreset> = DefaultWallpaperPresets
+
+    private val canvasShowElementBounds = combine(
+        developerOptionsRepository.enabled,
+        canvasDebugOptionsRepository.showElementBounds
+    ) { developerOptionsEnabled, showElementBounds ->
+        developerOptionsEnabled && showElementBounds
+    }
 
     init {
         // Cold start: default to no-tool. RAM resume naturally keeps the last-used tool because
@@ -326,7 +338,7 @@ class CanvasHomeViewModel @Inject constructor(
         )
     }
 
-    private val uiStateBase = combine(
+    private val uiStateBaseWithoutCanvasDebug = combine(
         baseState,
         inviteControls,
         wallpaperControls,
@@ -367,6 +379,13 @@ class CanvasHomeViewModel @Inject constructor(
             showClearConfirmation = inviteControls.clearDialogVisible,
             canvasStrokeRenderMode = baseState.bootstrapState.canvasStrokeRenderMode
         )
+    }
+
+    private val uiStateBase = combine(
+        uiStateBaseWithoutCanvasDebug,
+        canvasShowElementBounds
+    ) { base, canvasShowElementBounds ->
+        base.copy(canvasShowElementBounds = canvasShowElementBounds)
     }
 
     val uiState = combine(

@@ -1167,6 +1167,7 @@ private fun StreakPill(
 	                activeTool = uiState.toolState.activeTool,
 	                palette = uiState.palette,
 	                selectedColorArgb = uiState.toolState.selectedColorArgb,
+                    showElementBounds = uiState.canvasShowElementBounds,
 	                stickerAssetStore = stickerAssetStore,
                     reactionRailOpen = reactionRailOpen,
                     onReactionRailOpenChanged = { reactionRailOpen = it },
@@ -1895,7 +1896,7 @@ private fun CanvasControlTray(
     // increase spacing just enough so the last tool that would otherwise be fully
     // visible becomes half-clipped, hinting that the tray is swipeable.
     val minToolSpacing = baseToolSpacing
-    val maxToolSpacing = 80.dp
+    val maxToolSpacing = 40.dp
     val toolCount = 8
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -2156,6 +2157,14 @@ internal fun computeCanvasTrayToolSpacing(
         } else {
             break
         }
+    }
+
+    // If the next tool is already naturally peeking at the base spacing,
+    // keep spacing natural (avoid comically large spacing on narrow devices).
+    if (maxFullToolsAtBase < toolCount) {
+        val remaining = availableWidth - fullWidth(maxFullToolsAtBase, baseSpacing)
+        val naturalPeek = (remaining - baseSpacing).coerceAtLeast(0.dp)
+        if (naturalPeek > 0.dp) return baseSpacing
     }
 
     // Phase 2: increase spacing so the last tool that would otherwise be fully visible
