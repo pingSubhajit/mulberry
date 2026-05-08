@@ -28,30 +28,13 @@
             android:contentDescription="@null"
             android:scaleType="fitCenter" />
 
-        <FrameLayout
-            android:id="@+id/widget_relationship_badge"
+        <ImageView
+            android:id="@+id/widget_relationship_progress_donut"
             android:layout_width="56dp"
             android:layout_height="56dp"
             android:layout_gravity="top|end"
             android:layout_marginTop="12dp"
             android:layout_marginEnd="12dp"
-            android:contentDescription="@null">
-
-            <ImageView
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:contentDescription="@null"
-                android:src="@drawable/widget_relationship_badge" />
-
-            <TextView
-                android:id="@+id/widget_relationship_badge_text"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:fontFamily="@font/poppins_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="15"
-                android:textColor="#D81012"
-                android:textSize="14sp" />
-        </FrameLayout>
+            android:contentDescription="@null"
+            android:scaleType="fitCenter" />
 </FrameLayout>

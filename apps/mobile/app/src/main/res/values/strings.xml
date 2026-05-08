@@ -166,6 +166,8 @@
     <string name="notification_channel_canvas_sync_description">Persistent notification while Mulberry updates your wallpaper doodles.</string>
 
     <string name="widget_relationship_name">Together tracker</string>
+    <string name="widget_relationship_label">Time together</string>
+    <string name="widget_relationship_description">Keep your love story close with a daily glance at how long you have been together.</string>
     <string name="widget_relationship_missing_date">Set your anniversary in Settings</string>
     <string name="widget_relationship_and_days">and %1$s</string>
     <string name="widget_relationship_together_since">Together since %1$s</string>

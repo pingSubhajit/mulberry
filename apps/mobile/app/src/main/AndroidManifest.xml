@@ -123,7 +123,8 @@
 
         <receiver
             android:name=".widget.relationship.RelationshipTrackerWidgetProvider"
-            android:exported="true">
+            android:exported="true"
+            android:label="@string/widget_relationship_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.subhajit.mulberry.widget.relationship.action.ALARM_TICK" />
@@ -136,6 +137,24 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/relationship_tracker_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.relationship.RelationshipTrackerSquareWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_relationship_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.subhajit.mulberry.widget.relationship.action.ALARM_TICK" />
+                <action android:name="android.intent.action.TIME_CHANGED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/relationship_tracker_square_widget_info" />
         </receiver>
     </application>
 

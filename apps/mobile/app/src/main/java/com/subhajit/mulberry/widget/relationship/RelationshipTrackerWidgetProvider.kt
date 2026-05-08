@@ -7,8 +7,6 @@ import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.util.TypedValue
-import android.view.View
 import android.widget.RemoteViews
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -32,7 +30,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
+open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
+    protected open val relationshipWidgetSize: RelationshipWidgetSize = RelationshipWidgetSize.MEDIUM
+
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
 
@@ -44,7 +44,7 @@ class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
             try {
                 val appWidgetManager = AppWidgetManager.getInstance(context)
                 val widgetIds = appWidgetManager.getAppWidgetIds(
-                    android.content.ComponentName(context, RelationshipTrackerWidgetProvider::class.java)
+                    android.content.ComponentName(context, this@RelationshipTrackerWidgetProvider::class.java)
                 )
                 updateWidgets(context, appWidgetManager, widgetIds)
                 scheduleDailyTick(context)
@@ -112,46 +112,45 @@ class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
         )
 
         appWidgetIds.forEach { appWidgetId ->
-            val options = appWidgetManager.getAppWidgetOptions(appWidgetId)
-            val renderSize = RelationshipWidgetSize.fromOptions(options)
+            val renderSize = relationshipWidgetSize
             val layoutRes = when (renderSize) {
-                RelationshipWidgetSize.SMALL -> R.layout.widget_relationship_small
+                RelationshipWidgetSize.SQUARE -> R.layout.widget_relationship_square
                 RelationshipWidgetSize.MEDIUM -> R.layout.widget_relationship_medium
-                RelationshipWidgetSize.LARGE -> R.layout.widget_relationship_large
             }
 
             val views = RemoteViews(context.packageName, layoutRes)
-            val textBitmap = RelationshipWidgetTextBitmapRenderer.render(
-                context = context,
-                size = renderSize,
-                primaryText = model.primaryText,
-                secondaryText = model.secondaryText,
-                captionText = model.captionText,
-                primaryUsesGradient = model.primaryUsesGradient
-            )
-            views.setImageViewBitmap(R.id.widget_relationship_text_stack, textBitmap)
 
-            runCatching {
-                if (model.badgeText.isNullOrBlank()) {
-                    views.setViewVisibility(R.id.widget_relationship_badge_text, View.GONE)
-                } else {
-                    views.setViewVisibility(R.id.widget_relationship_badge_text, View.VISIBLE)
-                    views.setTextViewText(R.id.widget_relationship_badge_text, model.badgeText)
-                    val badgeTextSizeSp = when (model.badgeText.length) {
-                        1 -> 18f
-                        2 -> 18f
-                        3 -> 14f
-                        else -> 12f
-                    }
-                    views.setTextViewTextSize(
-                        R.id.widget_relationship_badge_text,
-                        TypedValue.COMPLEX_UNIT_SP,
-                        badgeTextSizeSp
+            if (renderSize == RelationshipWidgetSize.SQUARE) {
+                views.setImageViewBitmap(
+                    R.id.widget_relationship_square_art,
+                    RelationshipWidgetSquareBitmapRenderer.render(
+                        context = context,
+                        primaryText = model.primaryText,
+                        secondaryText = model.secondaryText,
+                        progressFraction = model.anniversaryProgressFraction,
+                        isCelebratory = model.isCelebratory,
+                        primaryUsesGradient = model.primaryUsesGradient
                     )
-                }
-            }
+                )
+            } else {
+                val textBitmap = RelationshipWidgetTextBitmapRenderer.render(
+                    context = context,
+                    size = renderSize,
+                    primaryText = model.primaryText,
+                    secondaryText = model.secondaryText,
+                    captionText = model.captionText,
+                    primaryUsesGradient = model.primaryUsesGradient
+                )
+                views.setImageViewBitmap(R.id.widget_relationship_text_stack, textBitmap)
+                views.setImageViewBitmap(
+                    R.id.widget_relationship_progress_donut,
+                    RelationshipWidgetProgressDonutRenderer.render(
+                        context = context,
+                        sizeDp = 79,
+                        progressFraction = model.anniversaryProgressFraction
+                    )
+                )
 
-            if (layoutRes != R.layout.widget_relationship_small) {
                 views.setImageViewResource(
                     R.id.widget_relationship_squee,
                     if (model.isCelebratory) R.drawable.widget_squee_celebratory else R.drawable.widget_squee_default
@@ -177,7 +176,7 @@ class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
     private fun scheduleDailyTick(context: Context) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
-        val intent = Intent(context, RelationshipTrackerWidgetProvider::class.java)
+        val intent = Intent(context, this::class.java)
             .setAction(ACTION_ALARM_TICK)
 
         val pendingIntent = PendingIntent.getBroadcast(
@@ -209,7 +208,7 @@ class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             0,
-            Intent(context, RelationshipTrackerWidgetProvider::class.java).setAction(ACTION_ALARM_TICK),
+            Intent(context, this::class.java).setAction(ACTION_ALARM_TICK),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         alarmManager.cancel(pendingIntent)
@@ -227,22 +226,9 @@ class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
         fun preferenceDataStore(): DataStore<Preferences>
     }
 
-    internal enum class RelationshipWidgetSize {
-        SMALL,
-        MEDIUM,
-        LARGE;
-
-        companion object {
-            fun fromOptions(options: Bundle): RelationshipWidgetSize {
-                val minWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
-                val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
-                return when {
-                    minHeight >= 180 -> LARGE
-                    minWidth in 1..199 -> SMALL
-                    else -> MEDIUM
-                }
-            }
-        }
+    enum class RelationshipWidgetSize {
+        SQUARE,
+        MEDIUM
     }
 
     private companion object {
@@ -260,13 +246,17 @@ class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
     }
 }
 
+class RelationshipTrackerSquareWidgetProvider : RelationshipTrackerWidgetProvider() {
+    override val relationshipWidgetSize: RelationshipWidgetSize = RelationshipWidgetSize.SQUARE
+}
+
 internal data class RelationshipWidgetModel(
     val primaryText: String,
     val secondaryText: String?,
     val captionText: String,
-    val badgeText: String?,
     val isCelebratory: Boolean,
-    val primaryUsesGradient: Boolean
+    val primaryUsesGradient: Boolean,
+    val anniversaryProgressFraction: Float
 )
 
 internal object RelationshipWidgetModelFactory {
@@ -283,9 +273,9 @@ internal object RelationshipWidgetModelFactory {
                 primaryText = context.getString(R.string.widget_relationship_name),
                 secondaryText = null,
                 captionText = context.getString(R.string.widget_relationship_missing_date),
-                badgeText = null,
                 isCelebratory = false,
-                primaryUsesGradient = false
+                primaryUsesGradient = false,
+                anniversaryProgressFraction = 0f
             )
         }
 
@@ -293,7 +283,12 @@ internal object RelationshipWidgetModelFactory {
         val yearsCompleted = runCatching { anniversary.until(today).years }.getOrDefault(0).coerceAtLeast(0)
         val lastAnniversary = anniversary.plusYears(yearsCompleted.toLong())
         val daysIntoYear = ChronoUnit.DAYS.between(lastAnniversary, today).toInt().coerceAtLeast(0)
-        val daysToNextAnniversary = daysUntilNextAnniversary(anniversary, today)
+        val nextAnniversary = lastAnniversary.plusYears(1)
+        val daysInRelationshipYear = ChronoUnit.DAYS.between(lastAnniversary, nextAnniversary)
+            .toInt()
+            .coerceAtLeast(1)
+        val anniversaryProgressFraction = (daysIntoYear.toFloat() / daysInRelationshipYear.toFloat())
+            .coerceIn(0f, 1f)
 
         val primary = if (yearsCompleted == 0) {
             context.resources.getQuantityString(R.plurals.widget_relationship_days, daysTogether, daysTogether)
@@ -311,16 +306,15 @@ internal object RelationshipWidgetModelFactory {
         }
 
         val caption = buildCaption(context, anniversary, today, daysTogether)
-        val badgeText = daysToNextAnniversary.coerceAtLeast(0).toString()
         val isCelebratory = caption.startsWith("Wow") || caption.startsWith("Happy")
 
         return RelationshipWidgetModel(
             primaryText = primary,
             secondaryText = secondary,
             captionText = caption,
-            badgeText = badgeText,
             isCelebratory = isCelebratory,
-            primaryUsesGradient = yearsCompleted > 0
+            primaryUsesGradient = yearsCompleted > 0,
+            anniversaryProgressFraction = anniversaryProgressFraction
         )
     }
 

@@ -31,39 +31,28 @@
             android:scaleType="fitStart"
             android:src="@drawable/widget_squee_default" />
 
-        <ImageView
-            android:id="@+id/widget_relationship_text_stack"
+        <LinearLayout
+            android:id="@+id/widget_relationship_content_stack"
             android:layout_width="320dp"
-            android:layout_height="152dp"
+            android:layout_height="wrap_content"
             android:layout_gravity="center_vertical|end"
             android:layout_marginEnd="26dp"
-            android:contentDescription="@null"
-            android:scaleType="fitXY" />
-
-        <FrameLayout
-            android:id="@+id/widget_relationship_badge"
-            android:layout_width="79dp"
-            android:layout_height="79dp"
-            android:layout_gravity="top|end"
-            android:layout_marginTop="32dp"
-            android:layout_marginEnd="52dp"
-            android:contentDescription="@null">
+            android:gravity="end"
+            android:orientation="vertical">
 
             <ImageView
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:id="@+id/widget_relationship_progress_donut"
+                android:layout_width="79dp"
+                android:layout_height="79dp"
+                android:layout_gravity="end"
                 android:contentDescription="@null"
-                android:src="@drawable/widget_relationship_badge" />
+                android:scaleType="fitCenter" />
 
-            <TextView
-                android:id="@+id/widget_relationship_badge_text"
+            <ImageView
+                android:id="@+id/widget_relationship_text_stack"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:fontFamily="@font/poppins_bold"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="15"
-                android:textColor="#D81012"
-                android:textSize="18sp" />
-        </FrameLayout>
+                android:layout_height="131dp"
+                android:contentDescription="@null"
+                android:scaleType="fitXY" />
+        </LinearLayout>
     </FrameLayout>

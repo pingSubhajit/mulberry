@@ -14,17 +14,17 @@ import kotlin.math.roundToInt
 
 internal object RelationshipWidgetTextBitmapRenderer {
     private const val MEDIUM_TEXT_BLOCK_WIDTH_DP = 300
-    private const val MEDIUM_TEXT_BLOCK_HEIGHT_DP = 144
+    private const val MEDIUM_TEXT_BLOCK_HEIGHT_DP = 123
     private const val LARGE_TEXT_BLOCK_WIDTH_DP = 320
-    private const val LARGE_TEXT_BLOCK_HEIGHT_DP = 152
+    private const val LARGE_TEXT_BLOCK_HEIGHT_DP = 131
 
-    private const val MEDIUM_PRIMARY_TOP_DP = 16f
-    private const val MEDIUM_SECONDARY_TOP_DP = 76f
-    private const val MEDIUM_CAPTION_TOP_DP = 112f
+    private const val MEDIUM_PRIMARY_TOP_DP = 0f
+    private const val MEDIUM_SECONDARY_TOP_DP = 60f
+    private const val MEDIUM_CAPTION_TOP_DP = 88f
 
-    private const val LARGE_PRIMARY_TOP_DP = 18f
-    private const val LARGE_SECONDARY_TOP_DP = 80f
-    private const val LARGE_CAPTION_TOP_DP = 118f
+    private const val LARGE_PRIMARY_TOP_DP = 0f
+    private const val LARGE_SECONDARY_TOP_DP = 63f
+    private const val LARGE_CAPTION_TOP_DP = 100f
 
     private const val PRIMARY_TEXT_SIZE_SP = 48f
     private const val SECONDARY_TEXT_SIZE_SP = 18f
@@ -45,7 +45,7 @@ internal object RelationshipWidgetTextBitmapRenderer {
         primaryUsesGradient: Boolean
     ): Bitmap {
         return when (size) {
-            RelationshipTrackerWidgetProvider.RelationshipWidgetSize.SMALL ->
+            RelationshipTrackerWidgetProvider.RelationshipWidgetSize.SQUARE ->
                 renderSmall(
                     context = context,
                     primaryText = primaryText,
@@ -59,19 +59,6 @@ internal object RelationshipWidgetTextBitmapRenderer {
                     primaryTopDp = MEDIUM_PRIMARY_TOP_DP,
                     secondaryTopDp = MEDIUM_SECONDARY_TOP_DP,
                     captionTopDp = MEDIUM_CAPTION_TOP_DP,
-                    primaryText = primaryText,
-                    secondaryText = secondaryText,
-                    captionText = captionText,
-                    primaryUsesGradient = primaryUsesGradient
-                )
-            RelationshipTrackerWidgetProvider.RelationshipWidgetSize.LARGE ->
-                renderMediumLike(
-                    context = context,
-                    textBlockWidthDp = LARGE_TEXT_BLOCK_WIDTH_DP,
-                    textBlockHeightDp = LARGE_TEXT_BLOCK_HEIGHT_DP,
-                    primaryTopDp = LARGE_PRIMARY_TOP_DP,
-                    secondaryTopDp = LARGE_SECONDARY_TOP_DP,
-                    captionTopDp = LARGE_CAPTION_TOP_DP,
                     primaryText = primaryText,
                     secondaryText = secondaryText,
                     captionText = captionText,
