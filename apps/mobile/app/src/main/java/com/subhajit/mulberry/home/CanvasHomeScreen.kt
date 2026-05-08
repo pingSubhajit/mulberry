@@ -170,6 +170,7 @@ import com.subhajit.mulberry.ui.theme.KalamFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.VirgilFontFamily
 import com.subhajit.mulberry.ui.animation.rememberBobbingOffsetDp
+import com.subhajit.mulberry.ui.animation.mulberrySelectionPop
 import com.subhajit.mulberry.ui.animation.TwoSidedConfettiBurst
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import com.subhajit.mulberry.wallpaper.RemoteWallpaper
@@ -1862,6 +1863,7 @@ private fun CanvasActionButton(
     showSelectedRing: Boolean = selected,
     dimWhenNotSelected: Boolean = true,
     ringColor: Color = MulberryPrimary.copy(alpha = 0.95f),
+    animateSelectionPop: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 49.dp
@@ -1899,6 +1901,7 @@ private fun CanvasActionButton(
             contentDescription = contentDescription,
             modifier = Modifier
                 .fillMaxSize()
+                .mulberrySelectionPop(selected = selected, enabled = enabled && animateSelectionPop)
                 .alpha(iconAlpha),
             contentScale = ContentScale.Fit,
             colorFilter = if (
@@ -2090,6 +2093,7 @@ private fun CanvasControlTray(
             selected = true,
             showSelectedRing = false,
             dimWhenNotSelected = false,
+            animateSelectionPop = false,
             enabled = uiState.canUndo,
             onClick = onUndoRequested,
             modifier = Modifier.testTag(TestTags.UNDO_BUTTON),
@@ -2101,6 +2105,7 @@ private fun CanvasControlTray(
             selected = true,
             showSelectedRing = false,
             dimWhenNotSelected = false,
+            animateSelectionPop = false,
             enabled = uiState.canRedo,
             onClick = onRedoRequested,
             modifier = Modifier.testTag(TestTags.REDO_BUTTON),
@@ -2294,6 +2299,7 @@ private fun CanvasControlTray(
             selected = true,
             showSelectedRing = false,
             dimWhenNotSelected = false,
+            animateSelectionPop = false,
             onClick = onClearRequested,
             modifier = Modifier.testTag(TestTags.CLEAR_BUTTON),
             size = toolSize
@@ -2659,8 +2665,14 @@ private fun MainAppBottomNavItem(
         verticalArrangement = Arrangement.Center
     ) {
         when (tab) {
-            MainAppTab.Canvas -> BrushNavIcon(color = itemColor)
-            MainAppTab.Wallpaper -> WallpaperNavIcon(color = itemColor)
+            MainAppTab.Canvas -> BrushNavIcon(
+                color = itemColor,
+                modifier = Modifier.mulberrySelectionPop(selected = selected)
+            )
+            MainAppTab.Wallpaper -> WallpaperNavIcon(
+                color = itemColor,
+                modifier = Modifier.mulberrySelectionPop(selected = selected)
+            )
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -2675,8 +2687,11 @@ private fun MainAppBottomNavItem(
 }
 
 @Composable
-private fun BrushNavIcon(color: Color) {
-    Canvas(modifier = Modifier.size(20.dp)) {
+private fun BrushNavIcon(
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.size(20.dp)) {
         drawLine(
             color = color,
             start = Offset(size.width * 0.28f, size.height * 0.72f),
@@ -2698,8 +2713,11 @@ private fun BrushNavIcon(color: Color) {
 }
 
 @Composable
-private fun WallpaperNavIcon(color: Color) {
-    Canvas(modifier = Modifier.size(20.dp)) {
+private fun WallpaperNavIcon(
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.size(20.dp)) {
         val stroke = Stroke(
             width = size.width * 0.12f,
             cap = StrokeCap.Round,
