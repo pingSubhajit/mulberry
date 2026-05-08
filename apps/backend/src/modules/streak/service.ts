@@ -44,6 +44,30 @@ export class StreakService {
     }
   }
 
+  async clearActivityDay(accessToken: string, dayInput: string): Promise<{ ok: true }> {
+    const context = await requireSessionContext(this.db, accessToken)
+    const day = dayInput.trim()
+    if (!isLocalDateString(day)) {
+      throw new HttpError(400, "day is required")
+    }
+
+    const pairSession = await getPairSession(this.db, context.user.id)
+    if (!pairSession) {
+      throw new HttpError(400, "User is not paired")
+    }
+
+    await this.db.query(
+      `
+      DELETE FROM pair_activity_days
+      WHERE pair_session_id = $1
+        AND activity_day = $2::date
+      `,
+      [pairSession.id, day],
+    )
+
+    return { ok: true }
+  }
+
   async currentStreakDays(pairSessionId: string): Promise<number> {
     const rows = await this.db.query<{ activity_day: string | Date }>(
       `
@@ -133,4 +157,3 @@ export class StreakService {
     return new Date(`${day}T00:00:00.000Z`).getUTCDay()
   }
 }
-

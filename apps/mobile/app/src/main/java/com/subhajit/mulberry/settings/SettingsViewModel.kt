@@ -62,6 +62,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import retrofit2.HttpException
 import java.io.IOException
+import java.time.LocalDate
 
 data class SettingsUiState(
     val environmentLabel: String = "",
@@ -133,12 +134,23 @@ class SettingsViewModel @Inject constructor(
     private val pendingPartnerProfilePhotoUri = kotlinx.coroutines.flow.MutableStateFlow<Uri?>(null)
 
     private val baseUiStateCoreWithoutCanvasDebug = combine(
-        repository.state,
-        featureFlagProvider.flags,
-        developerOptionsRepository.enabled,
-        streakSimulationRepository.simulation,
+        combine(
+            repository.state,
+            featureFlagProvider.flags,
+            developerOptionsRepository.enabled,
+            streakSimulationRepository.simulation
+        ) { state, flags, developerOptionsEnabled, streakSimulation ->
+            SettingsCoreInputs(
+                state = state,
+                flags = flags,
+                developerOptionsEnabled = developerOptionsEnabled,
+                streakSimulation = streakSimulation,
+            )
+        },
         relationshipWidgetSimulationRepository.preset
-    ) { state, flags, developerOptionsEnabled, streakSimulation, relationshipWidgetSimulation ->
+    ) { inputs, relationshipWidgetSimulation ->
+        val bootstrapState = inputs.state.withDisplayStreakSimulation(inputs.streakSimulation)
+
         SettingsUiState(
             environmentLabel = appConfig.environment.displayName,
             apiBaseUrl = appConfig.apiBaseUrl,
@@ -147,10 +159,10 @@ class SettingsViewModel @Inject constructor(
             buildType = BuildConfig.BUILD_TYPE,
             flavor = BuildConfig.FLAVOR,
             enableDebugMenu = appConfig.enableDebugMenu,
-            developerOptionsEnabled = developerOptionsEnabled,
-            featureFlags = flags,
-            bootstrapState = state.withDisplayStreakSimulation(streakSimulation),
-            streakSimulationPreset = streakSimulation?.preset,
+            developerOptionsEnabled = inputs.developerOptionsEnabled,
+            featureFlags = inputs.flags,
+            bootstrapState = bootstrapState,
+            streakSimulationPreset = inputs.streakSimulation?.preset,
             relationshipWidgetSimulationPreset = relationshipWidgetSimulation
         )
     }
@@ -289,6 +301,21 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun onClearTodayStreakEntry() {
+        viewModelScope.launchWithBusy {
+            streakSimulationRepository.setSimulation(null)
+            val today = LocalDate.now().toString()
+            val result = apiService.clearStreakActivityDay(
+                com.subhajit.mulberry.network.ClearStreakActivityDayRequest(day = today)
+            )
+            if (!result.ok) {
+                error("Unable to clear streak activity day")
+            }
+            sessionRepository.cacheBootstrap(apiService.getBootstrap().toDomainBootstrap())
+            _effects.emit(SettingsEffect.Message("Cleared today's streak entry."))
+        }
+    }
+
     fun onSetRelationshipWidgetSimulation(preset: RelationshipWidgetSimulationPreset?) {
         viewModelScope.launch {
             relationshipWidgetSimulationRepository.setPreset(preset)
@@ -349,6 +376,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launchWithBusy {
             val userId = sessionRepository.state.first().userId
             fcmTokenRepository.unregisterRegisteredToken()
+            streakSimulationRepository.setSimulation(null)
             sessionRepository.reset()
             canvasSyncRepository.reset()
             drawingRepository.resetAllDrawingState()
@@ -368,6 +396,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launchWithBusy {
             canvasSyncRepository.reset()
             val userId = sessionRepository.state.first().userId
+            streakSimulationRepository.setSimulation(null)
             authRepository.logout()
             if (!userId.isNullOrBlank()) {
                 stickerCatalogCacheStore.clearUser(userId)
@@ -591,6 +620,13 @@ class SettingsViewModel @Inject constructor(
         const val DEVELOPER_UNLOCK_TAPS = 5
     }
 }
+
+private data class SettingsCoreInputs(
+    val state: SessionBootstrapState,
+    val flags: FeatureFlags,
+    val developerOptionsEnabled: Boolean,
+    val streakSimulation: com.subhajit.mulberry.streak.StreakSimulation?,
+)
 
 private fun String.toBackendAnniversaryDate(): String =
     "${substring(6, 10)}-${substring(3, 5)}-${substring(0, 2)}"

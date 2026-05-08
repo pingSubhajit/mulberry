@@ -236,6 +236,10 @@ data class DebugActionResponse(
     val ok: Boolean
 )
 
+data class ClearStreakActivityDayRequest(
+    val day: String
+)
+
 data class WallpaperCatalogResponse(
     val items: List<RemoteWallpaperResponse> = emptyList(),
     val nextCursor: String?

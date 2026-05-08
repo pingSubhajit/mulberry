@@ -88,6 +88,9 @@ interface MulberryApiService {
     @POST("/debug/pairing-disconnected-push")
     suspend fun sendDebugPairingDisconnectedPush(): DebugActionResponse
 
+    @POST("/debug/streak/clear-activity-day")
+    suspend fun clearStreakActivityDay(@Body request: ClearStreakActivityDayRequest): DebugActionResponse
+
     @GET("/canvas/ops")
     suspend fun getCanvasOperations(@Query("afterRevision") afterRevision: Long): CanvasOpsResponse
 

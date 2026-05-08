@@ -2051,6 +2051,52 @@ describe("Mulberry backend", () => {
     expect(bootstrap.json().currentStreakDays).toBe(2)
   })
 
+  it("can clear today's streak activity day via debug route", async () => {
+    const { inviter, recipient } = await pairUsers()
+    const today = offsetDate(0)
+    const yesterday = offsetDate(-1)
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/canvas/ops/batch",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        batchId: "streak-clear-batch",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          { ...finishStrokeOperation("streak-clear-yesterday", "stroke-a"), clientLocalDate: yesterday },
+          { ...finishStrokeOperation("streak-clear-today", "stroke-b"), clientLocalDate: today },
+        ],
+      },
+    })
+    expect(response.statusCode).toBe(200)
+
+    const cleared = await app.inject({
+      method: "POST",
+      url: "/debug/streak/clear-activity-day",
+      headers: bearer(inviter.accessToken),
+      payload: { day: today },
+    })
+    expect(cleared.statusCode).toBe(200)
+    expect(cleared.json()).toEqual({ ok: true })
+
+    const inviterBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(inviterBootstrap.statusCode).toBe(200)
+    expect(inviterBootstrap.json().currentStreakDays).toBe(1)
+
+    const recipientBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(recipientBootstrap.statusCode).toBe(200)
+    expect(recipientBootstrap.json().currentStreakDays).toBe(1)
+  })
+
   it("tracks pair streak days from text and sticker edits", async () => {
     const { inviter } = await pairUsers()
     const today = offsetDate(0)

@@ -261,6 +261,7 @@ fun SettingsRoute(
         onClearStickerAssets = viewModel::onClearStickerAssets,
         onClearStickerCatalogCache = viewModel::onClearStickerCatalogCache,
         onSetStreakSimulation = viewModel::onSetStreakSimulation,
+        onClearTodayStreakEntry = viewModel::onClearTodayStreakEntry,
         onSetRelationshipWidgetSimulation = viewModel::onSetRelationshipWidgetSimulation
     )
 }
@@ -304,6 +305,7 @@ private fun SettingsScreen(
     onClearStickerAssets: () -> Unit,
     onClearStickerCatalogCache: () -> Unit,
     onSetStreakSimulation: (StreakSimulationPreset?) -> Unit,
+    onClearTodayStreakEntry: () -> Unit,
     onSetRelationshipWidgetSimulation: (RelationshipWidgetSimulationPreset?) -> Unit
 ) {
     Scaffold(
@@ -377,6 +379,7 @@ private fun SettingsScreen(
                 onClearStickerAssets = onClearStickerAssets,
                 onClearStickerCatalogCache = onClearStickerCatalogCache,
                 onSetStreakSimulation = onSetStreakSimulation,
+                onClearTodayStreakEntry = onClearTodayStreakEntry,
                 onSetRelationshipWidgetSimulation = onSetRelationshipWidgetSimulation,
                 modifier = Modifier.padding(padding)
             )
@@ -2180,11 +2183,13 @@ private fun DeveloperOptionsPane(
     onClearStickerAssets: () -> Unit,
     onClearStickerCatalogCache: () -> Unit,
     onSetStreakSimulation: (StreakSimulationPreset?) -> Unit,
+    onClearTodayStreakEntry: () -> Unit,
     onSetRelationshipWidgetSimulation: (RelationshipWidgetSimulationPreset?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showResetConfirmation by remember { mutableStateOf(false) }
     var showCrashlyticsCrashConfirmation by remember { mutableStateOf(false) }
+    var showClearTodayStreakConfirmation by remember { mutableStateOf(false) }
 
     SettingsDetailScaffold(
         title = "Developer options",
@@ -2405,6 +2410,18 @@ private fun DeveloperOptionsPane(
 
             Spacer(modifier = Modifier.height(20.dp))
             DeveloperSectionCard(
+                title = "Streak tools",
+                body = "Destructive actions that mutate streak state for both devices. New activity will add today's entry back normally."
+            ) {
+                SettingsDestructiveButton(
+                    text = "Clear today's streak entry (server)",
+                    enabled = !uiState.isBusy,
+                    onClick = { showClearTodayStreakConfirmation = true }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            DeveloperSectionCard(
                 title = "Streak simulation",
                 body = "Display-only mock streak states for the header, settings summary, and streak page. Clears on app restart."
             ) {
@@ -2468,6 +2485,19 @@ private fun DeveloperOptionsPane(
             onConfirm = {
                 showCrashlyticsCrashConfirmation = false
                 onCrashlyticsTestCrash()
+            }
+        )
+    }
+
+    if (showClearTodayStreakConfirmation) {
+        ConfirmationDialog(
+            title = "Clear today's streak entry?",
+            body = "This deletes today's streak activity day on the server (affects your partner too). Any new activity today will restore the entry normally.",
+            confirmText = "Clear",
+            onDismiss = { showClearTodayStreakConfirmation = false },
+            onConfirm = {
+                showClearTodayStreakConfirmation = false
+                onClearTodayStreakEntry()
             }
         )
     }
