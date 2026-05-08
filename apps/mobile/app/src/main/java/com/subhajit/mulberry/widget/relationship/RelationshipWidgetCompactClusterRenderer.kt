@@ -15,10 +15,10 @@ import com.subhajit.mulberry.R
 import kotlin.math.roundToInt
 
 internal object RelationshipWidgetCompactClusterRenderer {
-    private const val PRIMARY_TEXT_SIZE_SP = 43f
-    private const val SECONDARY_TEXT_SIZE_SP = 18f
-    private const val PRIMARY_MIN_TEXT_SIZE_SP = 31f
-    private const val SECONDARY_MIN_TEXT_SIZE_SP = 13f
+    private const val PRIMARY_TEXT_SIZE_SP = 35f
+    private const val SECONDARY_TEXT_SIZE_SP = 15.5f
+    private const val PRIMARY_MIN_TEXT_SIZE_SP = 26f
+    private const val SECONDARY_MIN_TEXT_SIZE_SP = 11.5f
     private const val TEXT_HORIZONTAL_INSET_DP = 4f
     private const val TITLE_TO_SUBTITLE_GAP_DP = 0f
 
@@ -119,7 +119,7 @@ internal object RelationshipWidgetCompactClusterRenderer {
         val primaryBounds = primaryPaint.textBounds(primaryText)
         val secondaryBounds = secondaryPaint.textBounds(secondaryText)
         val requiredHeight = primaryBounds.height() + titleToSubtitleGapPx + secondaryBounds.height()
-        val extraVerticalSpace = (maxHeightPx - requiredHeight).coerceAtMost(0f)
+        val extraVerticalSpace = maxHeightPx - requiredHeight
         val primaryVisualTop = topPx + extraVerticalSpace
         val primaryBaseline = primaryVisualTop - primaryBounds.top
 

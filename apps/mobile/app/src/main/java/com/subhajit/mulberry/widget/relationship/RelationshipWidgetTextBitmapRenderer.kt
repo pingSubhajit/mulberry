@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Shader
 import android.util.TypedValue
 import androidx.core.content.res.ResourcesCompat
@@ -19,17 +20,12 @@ internal object RelationshipWidgetTextBitmapRenderer {
     private const val LARGE_TEXT_BLOCK_WIDTH_DP = 320
     private const val LARGE_TEXT_BLOCK_HEIGHT_DP = 131
 
-    private const val MEDIUM_PRIMARY_TOP_DP = 0f
-    private const val MEDIUM_SECONDARY_TOP_DP = 60f
-    private const val MEDIUM_CAPTION_TOP_DP = 88f
-
-    private const val LARGE_PRIMARY_TOP_DP = 0f
-    private const val LARGE_SECONDARY_TOP_DP = 63f
-    private const val LARGE_CAPTION_TOP_DP = 100f
-
     private const val PRIMARY_TEXT_SIZE_SP = 46f
     private const val SECONDARY_TEXT_SIZE_SP = 18f
     private const val CAPTION_TEXT_SIZE_SP = 11f
+    private const val PRIMARY_TO_SECONDARY_GAP_DP = 12f
+    private const val SECONDARY_TO_CAPTION_GAP_DP = 12f
+    private const val PRIMARY_TO_CAPTION_GAP_DP = 8f
 
     // Figma gradient for the years text.
     private val PRIMARY_GRADIENT_START = Color.parseColor("#D81012")
@@ -62,9 +58,6 @@ internal object RelationshipWidgetTextBitmapRenderer {
                     } else {
                         MEDIUM_TEXT_BLOCK_HEIGHT_DP
                     },
-                    primaryTopDp = MEDIUM_PRIMARY_TOP_DP,
-                    secondaryTopDp = MEDIUM_SECONDARY_TOP_DP,
-                    captionTopDp = MEDIUM_CAPTION_TOP_DP,
                     primaryText = primaryText,
                     secondaryText = secondaryText,
                     captionText = captionText,
@@ -75,9 +68,6 @@ internal object RelationshipWidgetTextBitmapRenderer {
                     context = context,
                     textBlockWidthDp = LARGE_TEXT_BLOCK_WIDTH_DP,
                     textBlockHeightDp = LARGE_TEXT_BLOCK_HEIGHT_DP,
-                    primaryTopDp = LARGE_PRIMARY_TOP_DP,
-                    secondaryTopDp = LARGE_SECONDARY_TOP_DP,
-                    captionTopDp = LARGE_CAPTION_TOP_DP,
                     primaryText = primaryText,
                     secondaryText = secondaryText,
                     captionText = captionText,
@@ -157,9 +147,6 @@ internal object RelationshipWidgetTextBitmapRenderer {
         context: Context,
         textBlockWidthDp: Int,
         textBlockHeightDp: Int,
-        primaryTopDp: Float,
-        secondaryTopDp: Float,
-        captionTopDp: Float,
         primaryText: String,
         secondaryText: String?,
         captionText: String,
@@ -236,35 +223,75 @@ internal object RelationshipWidgetTextBitmapRenderer {
             maxWidthPx = maxTextWidth
         )
 
-        val primaryTop = dpToPx(context, primaryTopDp)
-        val primaryBaseline = topToBaselineY(primaryPaint, primaryTop)
-        canvas.drawText(primaryText, rightEdgeX, primaryBaseline, primaryPaint)
-
-        if (!secondaryText.isNullOrBlank()) {
-            val secondaryTop = dpToPx(context, secondaryTopDp)
-            val secondaryBaseline = topToBaselineY(secondaryPaint, secondaryTop)
-            canvas.drawText(secondaryText, rightEdgeX, secondaryBaseline, secondaryPaint)
-
-            val captionTop = dpToPx(context, captionTopDp)
-            val captionBaseline = topToBaselineY(captionPaint, captionTop)
-            canvas.drawText(captionText, rightEdgeX, captionBaseline, captionPaint)
-        } else {
-            val primaryBottom = visualTextBottom(primaryPaint, primaryText, primaryBaseline)
-            val captionTop = primaryBottom + dpToPx(context, 8).toFloat()
-            val captionBaseline = topToBaselineY(captionPaint, captionTop)
-            canvas.drawText(captionText, rightEdgeX, captionBaseline, captionPaint)
-        }
+        drawCenteredTextCluster(
+            context = context,
+            canvas = canvas,
+            heightPx = heightPx,
+            rightEdgeX = rightEdgeX,
+            primaryPaint = primaryPaint,
+            secondaryPaint = secondaryPaint,
+            captionPaint = captionPaint,
+            primaryText = primaryText,
+            secondaryText = secondaryText,
+            captionText = captionText
+        )
 
         return bitmap
     }
 
-    private fun topToBaselineY(paint: Paint, topY: Float): Float =
-        topY - paint.fontMetrics.ascent
+    private fun drawCenteredTextCluster(
+        context: Context,
+        canvas: Canvas,
+        heightPx: Int,
+        rightEdgeX: Float,
+        primaryPaint: Paint,
+        secondaryPaint: Paint,
+        captionPaint: Paint,
+        primaryText: String,
+        secondaryText: String?,
+        captionText: String
+    ) {
+        val primaryBounds = primaryPaint.textBounds(primaryText)
+        val secondaryBounds = secondaryText
+            ?.takeIf { it.isNotBlank() }
+            ?.let { secondaryPaint.textBounds(it) }
+        val captionBounds = captionPaint.textBounds(captionText)
+        val primaryToSecondaryGap = dpToPx(context, PRIMARY_TO_SECONDARY_GAP_DP)
+        val secondaryToCaptionGap = dpToPx(context, SECONDARY_TO_CAPTION_GAP_DP)
+        val primaryToCaptionGap = dpToPx(context, PRIMARY_TO_CAPTION_GAP_DP)
 
-    private fun visualTextBottom(paint: Paint, text: String, baselineY: Float): Float {
-        val bounds = android.graphics.Rect()
-        paint.getTextBounds(text, 0, text.length, bounds)
-        return baselineY + bounds.bottom
+        val textHeight = if (secondaryText.isNullOrBlank() || secondaryBounds == null) {
+            primaryBounds.height() + primaryToCaptionGap + captionBounds.height()
+        } else {
+            primaryBounds.height() +
+                primaryToSecondaryGap +
+                secondaryBounds.height() +
+                secondaryToCaptionGap +
+                captionBounds.height()
+        }
+        val primaryTop = ((heightPx - textHeight) / 2f).coerceAtLeast(0f)
+        val primaryBaseline = primaryTop - primaryBounds.top
+        canvas.drawText(primaryText, rightEdgeX, primaryBaseline, primaryPaint)
+
+        if (secondaryText.isNullOrBlank() || secondaryBounds == null) {
+            val captionTop = primaryBaseline + primaryBounds.bottom + primaryToCaptionGap
+            val captionBaseline = captionTop - captionBounds.top
+            canvas.drawText(captionText, rightEdgeX, captionBaseline, captionPaint)
+        } else {
+            val secondaryTop = primaryBaseline + primaryBounds.bottom + primaryToSecondaryGap
+            val secondaryBaseline = secondaryTop - secondaryBounds.top
+            canvas.drawText(secondaryText, rightEdgeX, secondaryBaseline, secondaryPaint)
+
+            val captionTop = secondaryBaseline + secondaryBounds.bottom + secondaryToCaptionGap
+            val captionBaseline = captionTop - captionBounds.top
+            canvas.drawText(captionText, rightEdgeX, captionBaseline, captionPaint)
+        }
+    }
+
+    private fun Paint.textBounds(text: String): Rect {
+        val bounds = Rect()
+        getTextBounds(text, 0, text.length, bounds)
+        return bounds
     }
 
     private fun fitTextSizePx(

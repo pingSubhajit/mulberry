@@ -161,21 +161,16 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
                     }
                 )
             } else {
-                val textBitmap = RelationshipWidgetTextBitmapRenderer.render(
-                    context = context,
-                    size = renderSize,
-                    primaryText = model.primaryText,
-                    secondaryText = model.secondaryText,
-                    captionText = model.captionText,
-                    primaryUsesGradient = model.primaryUsesGradient
-                )
-                views.setImageViewBitmap(R.id.widget_relationship_text_stack, textBitmap)
                 views.setImageViewBitmap(
-                    R.id.widget_relationship_progress_donut,
-                    RelationshipWidgetProgressDonutRenderer.render(
+                    R.id.widget_relationship_content_stack,
+                    RelationshipWidgetContentClusterRenderer.render(
                         context = context,
-                        sizeDp = if (renderSize == RelationshipWidgetSize.LARGE) 79 else 72,
-                        progressFraction = model.anniversaryProgressFraction
+                        size = renderSize,
+                        primaryText = model.primaryText,
+                        secondaryText = model.secondaryText,
+                        captionText = model.captionText,
+                        progressFraction = model.anniversaryProgressFraction,
+                        primaryUsesGradient = model.primaryUsesGradient
                     )
                 )
 

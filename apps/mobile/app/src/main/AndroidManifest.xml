@@ -142,6 +142,7 @@
 
         <receiver
             android:name=".widget.relationship.RelationshipTrackerSquareWidgetProvider"
+            android:enabled="false"
             android:exported="true"
             android:label="@string/widget_relationship_label">
             <intent-filter>

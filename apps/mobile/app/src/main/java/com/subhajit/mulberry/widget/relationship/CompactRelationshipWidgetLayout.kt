@@ -36,7 +36,7 @@ internal data class CompactRelationshipWidgetLayout(
 internal object CompactRelationshipWidgetLayoutSpec {
     private const val FALLBACK_WIDTH_DP = 220
     private const val FALLBACK_HEIGHT_DP = 180
-    private const val TEXT_ASPECT_RATIO = 78f / 168f
+    private const val TEXT_ASPECT_RATIO = 70f / 168f
     private const val DONUT_TO_TEXT_GAP_DP = 2f
 
     fun calculate(widthDp: Int, heightDp: Int): CompactRelationshipWidgetLayout {
@@ -44,10 +44,10 @@ internal object CompactRelationshipWidgetLayoutSpec {
         val safeHeight = heightDp.takeIf { it > 0 }?.toFloat() ?: FALLBACK_HEIGHT_DP.toFloat()
 
         val textEndMargin = (safeWidth * 0.055f).coerceIn(12f, 18f)
-        val textBottomMargin = (safeHeight * 0.04f).coerceIn(7f, 10f)
+        val textBottomMargin = (safeHeight * 0.02f).coerceIn(3f, 5f)
         val maxTextWidth = (safeWidth - textEndMargin - 14f).coerceAtLeast(128f)
         val textWidth = (safeWidth * 0.71f).coerceIn(146f, 208f).coerceAtMost(maxTextWidth)
-        val textHeight = (textWidth * TEXT_ASPECT_RATIO).roundDp().coerceIn(70f, 96f)
+        val textHeight = (textWidth * TEXT_ASPECT_RATIO).roundDp().coerceIn(62f, 88f)
 
         val donutSize = (textHeight * 0.72f).coerceIn(54f, 64f)
         val availableDonutTop = safeHeight - textBottomMargin - textHeight - DONUT_TO_TEXT_GAP_DP - donutSize
