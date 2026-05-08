@@ -59,6 +59,9 @@ import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import retrofit2.HttpException
+import java.io.IOException
 
 data class SettingsUiState(
     val environmentLabel: String = "",
@@ -540,16 +543,43 @@ class SettingsViewModel @Inject constructor(
             busyState.value = true
             runCatching { block() }
                 .onFailure { error ->
-                    _effects.emit(SettingsEffect.Message(error.message ?: "Something went wrong"))
+                    _effects.emit(SettingsEffect.Message(error.toUserFacingMessage()))
                 }
             busyState.value = false
+        }
+    }
+
+    private fun Throwable.toUserFacingMessage(): String {
+        return when (this) {
+            is HttpException -> {
+                val statusCode = code()
+                val backendMessage = runCatching {
+                    val raw = response()?.errorBody()?.string()?.trim().orEmpty()
+                    if (raw.isBlank()) return@runCatching null
+                    JSONObject(raw).optString("message").takeIf { it.isNotBlank() }
+                }.getOrNull()
+
+                when {
+                    !backendMessage.isNullOrBlank() -> backendMessage
+                    statusCode == 401 -> "Session expired. Please sign in again."
+                    statusCode in 500..599 -> "Server error. Please try again."
+                    else -> "Request failed (HTTP $statusCode)."
+                }
+            }
+            is IOException -> "Network error. Check your connection and try again."
+            else -> message?.takeIf { it.isNotBlank() } ?: "Something went wrong"
         }
     }
 
     private fun Uri.toImagePart(): MultipartBody.Part {
         val bytes = appContext.contentResolver.openInputStream(this)?.use { it.readBytes() }
             ?: error("Unable to read selected image")
-        val contentType = appContext.contentResolver.getType(this) ?: "image/jpeg"
+        val rawContentType = appContext.contentResolver.getType(this)
+        val contentType = if (rawContentType.isNullOrBlank() || rawContentType == "image/*") {
+            "image/jpeg"
+        } else {
+            rawContentType
+        }
         val requestBody = bytes.toRequestBody(contentType.toMediaType())
         return MultipartBody.Part.createFormData("image", "profile-photo", requestBody)
     }
