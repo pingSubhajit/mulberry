@@ -164,4 +164,15 @@
 
     <string name="notification_channel_canvas_sync_name">Wallpaper doodles syncing</string>
     <string name="notification_channel_canvas_sync_description">Persistent notification while Mulberry updates your wallpaper doodles.</string>
+
+    <string name="widget_relationship_name">Together tracker</string>
+    <string name="widget_relationship_missing_date">Set your anniversary in Settings</string>
+    <string name="widget_relationship_and_days">and %1$s</string>
+    <string name="widget_relationship_together_since">Together since %1$s</string>
+    <string name="widget_relationship_next_anniversary_in">Next anniversary in %1$s</string>
+    <string name="widget_relationship_happy_anniversary">Happy anniversary!!</string>
+    <string name="widget_relationship_happy_anniversary_years">Happy %1$s anniversary!!</string>
+    <string name="widget_relationship_wow_days_now">Wow, %1$s now!!</string>
+    <string name="widget_relationship_wow_months_now">Wow, %1$s now!!</string>
+    <string name="widget_relationship_wow_days_to">Wow, %1$s to %2$d!!</string>
 </resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Matches Figma badge background (Ellipse 51). -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#FFEBED" />
+        </shape>
+    </item>
+
+    <!-- Approximation of Figma's masked gradient ring: show a red ring mostly on the right side. -->
+    <item android:insetLeft="2dp" android:insetTop="2dp" android:insetRight="2dp" android:insetBottom="2dp">
+        <clip android:clipOrientation="horizontal" android:gravity="right">
+            <shape android:shape="oval">
+                <solid android:color="@android:color/transparent" />
+                <stroke android:width="9dp" android:color="#F02324" />
+            </shape>
+        </clip>
+    </item>
+
+    <!-- Inner white circle (Ellipse 52). -->
+    <item android:insetLeft="12dp" android:insetTop="12dp" android:insetRight="12dp" android:insetBottom="12dp">
+        <shape android:shape="oval">
+            <solid android:color="@android:color/white" />
+        </shape>
+    </item>
+
+    <!-- Heart asset from Figma. -->
+    <item android:insetLeft="20dp" android:insetTop="20dp" android:insetRight="20dp" android:insetBottom="20dp"
+        android:drawable="@drawable/widget_relationship_heart" />
+</layer-list>
