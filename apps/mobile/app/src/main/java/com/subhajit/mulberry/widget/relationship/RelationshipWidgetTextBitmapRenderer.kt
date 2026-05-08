@@ -50,7 +50,8 @@ internal object RelationshipWidgetTextBitmapRenderer {
                 renderSmall(
                     context = context,
                     primaryText = primaryText,
-                    captionText = captionText
+                    secondaryText = secondaryText ?: captionText,
+                    primaryUsesGradient = primaryUsesGradient
                 )
             RelationshipTrackerWidgetProvider.RelationshipWidgetSize.MEDIUM ->
                 renderMediumLike(
@@ -88,48 +89,66 @@ internal object RelationshipWidgetTextBitmapRenderer {
     private fun renderSmall(
         context: Context,
         primaryText: String,
-        captionText: String
+        secondaryText: String,
+        primaryUsesGradient: Boolean
     ): Bitmap {
-        val widthPx = dpToPx(context, 160)
-        val heightPx = dpToPx(context, 120)
+        val widthPx = dpToPx(context, 168)
+        val heightPx = dpToPx(context, 78)
         val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
         val primaryTypeface = ResourcesCompat.getFont(context, R.font.poppins_extrabold)
-        val captionTypeface = ResourcesCompat.getFont(context, R.font.poppins_medium)
+        val secondaryTypeface = ResourcesCompat.getFont(context, R.font.poppins_bold)
+
+        val horizontalInsetPx = dpToPx(context, 4).toFloat()
+        val rightEdgeX = widthPx - horizontalInsetPx
+        val maxTextWidth = widthPx - (horizontalInsetPx * 2f)
 
         val primaryPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             typeface = primaryTypeface
-            textAlign = Paint.Align.CENTER
-            color = PRIMARY_GRADIENT_START
+            textAlign = Paint.Align.RIGHT
         }
 
-        val captionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = captionTypeface
-            textAlign = Paint.Align.CENTER
+        val secondaryPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = secondaryTypeface
+            textAlign = Paint.Align.RIGHT
             color = SECONDARY_COLOR
         }
 
-        primaryPaint.textSize = spToPx(context, 34f)
-        captionPaint.textSize = spToPx(context, 13f)
+        val primarySize = fitTextSizePx(
+            paint = primaryPaint,
+            desiredPx = spToPx(context, 47f),
+            minPx = spToPx(context, 32f),
+            text = primaryText,
+            maxWidthPx = maxTextWidth
+        )
+        primaryPaint.textSize = primarySize
+        if (primaryUsesGradient) {
+            val textWidth = primaryPaint.measureText(primaryText).coerceAtLeast(1f)
+            primaryPaint.shader = LinearGradient(
+                rightEdgeX - textWidth,
+                0f,
+                rightEdgeX,
+                0f,
+                PRIMARY_GRADIENT_START,
+                PRIMARY_GRADIENT_END,
+                Shader.TileMode.CLAMP
+            )
+        } else {
+            primaryPaint.shader = null
+            primaryPaint.color = PRIMARY_GRADIENT_START
+        }
 
-        val primaryFm = primaryPaint.fontMetrics
-        val captionFm = captionPaint.fontMetrics
+        secondaryPaint.textSize = fitTextSizePx(
+            paint = secondaryPaint,
+            desiredPx = spToPx(context, 19f),
+            minPx = spToPx(context, 14f),
+            text = secondaryText,
+            maxWidthPx = maxTextWidth
+        )
 
-        val totalHeight =
-            (primaryFm.descent - primaryFm.ascent) +
-                dpToPx(context, 10).toFloat() +
-                (captionFm.descent - captionFm.ascent)
-
-        val startY = (heightPx - totalHeight) / 2f
-
-        val centerX = widthPx / 2f
-        val primaryBaseline = startY - primaryFm.ascent
-        canvas.drawText(primaryText, centerX, primaryBaseline, primaryPaint)
-
-        val captionTop = startY + (primaryFm.descent - primaryFm.ascent) + dpToPx(context, 10).toFloat()
-        val captionBaseline = captionTop - captionFm.ascent
-        canvas.drawText(captionText, centerX, captionBaseline, captionPaint)
+        canvas.drawText(primaryText, rightEdgeX, dpToPx(context, 51f), primaryPaint)
+        canvas.drawText(secondaryText, rightEdgeX, dpToPx(context, 75f), secondaryPaint)
 
         return bitmap
     }

@@ -6,7 +6,9 @@ import android.appwidget.AppWidgetProvider
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.util.TypedValue
 import android.widget.RemoteViews
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -133,18 +135,30 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
             val views = RemoteViews(context.packageName, layoutRes)
 
             if (renderSize == RelationshipWidgetSize.SQUARE) {
+                val compactLayout = CompactRelationshipWidgetLayoutSpec.calculate(
+                    widthDp = options.compactWidgetWidthDp(220),
+                    heightDp = options.compactWidgetHeightDp(180)
+                )
+                views.applyCompactLayout(compactLayout)
                 views.setImageViewBitmap(
-                    R.id.widget_relationship_square_art,
-                    RelationshipWidgetSquareBitmapRenderer.render(
+                    R.id.widget_relationship_compact_cluster,
+                    RelationshipWidgetCompactClusterRenderer.render(
                         context = context,
+                        layout = compactLayout,
                         primaryText = model.primaryText,
                         secondaryText = model.secondaryText,
+                        captionText = model.captionText,
                         progressFraction = model.anniversaryProgressFraction,
-                        isCelebratory = model.isCelebratory,
-                        primaryUsesGradient = model.primaryUsesGradient,
-                        widthDp = options.widgetWidthDp(DEFAULT_COMPACT_WIDGET_WIDTH_DP),
-                        heightDp = options.widgetHeightDp(DEFAULT_WIDGET_HEIGHT_DP)
+                        primaryUsesGradient = model.primaryUsesGradient
                     )
+                )
+                views.setImageViewResource(
+                    R.id.widget_relationship_squee,
+                    if (model.isCelebratory) {
+                        R.drawable.widget_squee_celebratory_square
+                    } else {
+                        R.drawable.widget_squee_default_square
+                    }
                 )
             } else {
                 val textBitmap = RelationshipWidgetTextBitmapRenderer.render(
@@ -256,8 +270,6 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
     }
 
     private companion object {
-        private const val DEFAULT_WIDGET_HEIGHT_DP = 115
-        private const val DEFAULT_COMPACT_WIDGET_WIDTH_DP = 180
         private const val DEFAULT_MEDIUM_WIDGET_WIDTH_DP = 245
         private const val LARGE_WIDGET_MIN_WIDTH_DP = 300
 
@@ -270,7 +282,8 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED,
             Intent.ACTION_DATE_CHANGED,
-            Intent.ACTION_BOOT_COMPLETED
+            Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_MY_PACKAGE_REPLACED
         )
 
         private fun Bundle.widgetWidthDp(fallback: Int): Int =
@@ -278,10 +291,68 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
                 .takeIf { it > 0 }
                 ?: fallback
 
-        private fun Bundle.widgetHeightDp(fallback: Int): Int =
-            getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, fallback)
-                .takeIf { it > 0 }
-                ?: fallback
+        private fun RemoteViews.applyCompactLayout(layout: CompactRelationshipWidgetLayout) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+
+            setViewLayoutWidth(
+                R.id.widget_relationship_squee,
+                layout.squirrelWidthDp,
+                TypedValue.COMPLEX_UNIT_DIP
+            )
+            setViewLayoutHeight(
+                R.id.widget_relationship_squee,
+                layout.squirrelHeightDp,
+                TypedValue.COMPLEX_UNIT_DIP
+            )
+            setViewLayoutMargin(
+                R.id.widget_relationship_squee,
+                RemoteViews.MARGIN_START,
+                layout.squirrelStartMarginDp,
+                TypedValue.COMPLEX_UNIT_DIP
+            )
+            setViewLayoutMargin(
+                R.id.widget_relationship_squee,
+                RemoteViews.MARGIN_TOP,
+                layout.squirrelTopMarginDp,
+                TypedValue.COMPLEX_UNIT_DIP
+            )
+
+            setViewLayoutWidth(
+                R.id.widget_relationship_compact_cluster,
+                layout.clusterWidthDp,
+                TypedValue.COMPLEX_UNIT_DIP
+            )
+            setViewLayoutHeight(
+                R.id.widget_relationship_compact_cluster,
+                layout.clusterHeightDp,
+                TypedValue.COMPLEX_UNIT_DIP
+            )
+            setViewLayoutMargin(
+                R.id.widget_relationship_compact_cluster,
+                RemoteViews.MARGIN_END,
+                layout.textEndMarginDp,
+                TypedValue.COMPLEX_UNIT_DIP
+            )
+            setViewLayoutMargin(
+                R.id.widget_relationship_compact_cluster,
+                RemoteViews.MARGIN_BOTTOM,
+                layout.textBottomMarginDp,
+                TypedValue.COMPLEX_UNIT_DIP
+            )
+        }
+
+        private fun Bundle.compactWidgetWidthDp(fallback: Int): Int =
+            maxOf(
+                getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, fallback),
+                getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, fallback)
+            ).takeIf { it > 0 } ?: fallback
+
+        private fun Bundle.compactWidgetHeightDp(fallback: Int): Int =
+            maxOf(
+                getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, fallback),
+                getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, fallback)
+            ).takeIf { it > 0 } ?: fallback
+
     }
 }
 
