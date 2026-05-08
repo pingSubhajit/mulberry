@@ -106,4 +106,10 @@ object PreferenceStorage {
         booleanPreferencesKey("flag_wallpaper_setup_cta_override")
     val developerBootstrapActionsOverride =
         booleanPreferencesKey("flag_developer_bootstrap_actions_override")
+
+    val streakLevelUpBannerStreakDays = intPreferencesKey("streak_level_up_banner_streak_days")
+    val streakLevelUpBannerShownAtMs = longPreferencesKey("streak_level_up_banner_shown_at_ms")
+    val streakLevelUpBannerExpiresAtMs = longPreferencesKey("streak_level_up_banner_expires_at_ms")
+    val streakLevelUpBannerDismissedAtMs =
+        longPreferencesKey("streak_level_up_banner_dismissed_at_ms")
 }

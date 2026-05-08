@@ -11,6 +11,7 @@ import com.subhajit.mulberry.bootstrap.BootstrapRepository
 import com.subhajit.mulberry.canvas.CanvasRenderState
 import com.subhajit.mulberry.canvas.CanvasRuntime
 import com.subhajit.mulberry.canvas.CanvasRuntimeEvent
+import com.subhajit.mulberry.data.bootstrap.AuthStatus
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
@@ -68,6 +69,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -158,7 +160,8 @@ data class CanvasHomeUiState(
     val canvasStrokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.DryBrush,
     val palette: List<Long> = DrawingDefaults.palette,
     val canvasShowElementBounds: Boolean = false,
-    val showBrushToolGuide: Boolean = false
+    val showBrushToolGuide: Boolean = false,
+    val showStreakLevelUpBanner: Boolean = false
 )
 
 sealed interface CanvasHomeEffect {
@@ -221,12 +224,17 @@ class CanvasHomeViewModel @Inject constructor(
     val effects = _effects.asSharedFlow()
     val wallpaperPresets: List<WallpaperPreset> = DefaultWallpaperPresets
 
+    private val sessionRepository = repository
+
     private val canvasShowElementBounds = combine(
         developerOptionsRepository.enabled,
         canvasDebugOptionsRepository.showElementBounds
     ) { developerOptionsEnabled, showElementBounds ->
         developerOptionsEnabled && showElementBounds
     }
+
+    private var streakLevelUpBannerArmed: Boolean = false
+    private var lastObservedStreakDays: Int? = null
 
     init {
         // Cold start: default to no-tool. RAM resume naturally keeps the last-used tool because
@@ -235,6 +243,51 @@ class CanvasHomeViewModel @Inject constructor(
             viewModelScope.launch {
                 drawingRepository.setTool(DrawingTool.NONE)
             }
+        }
+
+        viewModelScope.launch {
+            sessionRepository.state.collect { state ->
+                if (state.authStatus != AuthStatus.SIGNED_IN) {
+                    streakLevelUpBannerArmed = false
+                    lastObservedStreakDays = null
+                    runCatching { sessionRepository.clearStreakLevelUpBanner() }
+                    return@collect
+                }
+
+                if (!streakLevelUpBannerArmed) {
+                    streakLevelUpBannerArmed = true
+                    lastObservedStreakDays = state.currentStreakDays
+                    return@collect
+                }
+
+                val previous = lastObservedStreakDays ?: state.currentStreakDays
+                lastObservedStreakDays = state.currentStreakDays
+                if (state.currentStreakDays <= previous) return@collect
+
+                val now = System.currentTimeMillis()
+                sessionRepository.setStreakLevelUpBanner(
+                    streakDays = state.currentStreakDays,
+                    shownAtMs = now,
+                    expiresAtMs = now + 60 * 60 * 1000L
+                )
+            }
+        }
+
+        viewModelScope.launch {
+            combine(sessionRepository.state, currentTimeMillis) { state, now ->
+                val expiresAt = state.streakLevelUpBannerExpiresAtMs
+                expiresAt != null && now >= expiresAt && state.streakLevelUpBannerDismissedAtMs == null
+            }.distinctUntilChanged().collect { expired ->
+                if (expired) {
+                    runCatching { sessionRepository.clearStreakLevelUpBanner() }
+                }
+            }
+        }
+    }
+
+    fun onStreakLevelUpBannerClicked() {
+        viewModelScope.launch {
+            sessionRepository.dismissStreakLevelUpBanner(dismissedAtMs = System.currentTimeMillis())
         }
     }
 
@@ -391,11 +444,18 @@ class CanvasHomeViewModel @Inject constructor(
     val uiState = combine(
         uiStateBase,
         streakSimulationRepository.simulation,
-        showBrushToolGuideState
-    ) { base, streakSimulation, showBrushToolGuide ->
+        showBrushToolGuideState,
+        currentTimeMillis
+    ) { base, streakSimulation, showBrushToolGuide, nowMillis ->
+        val bannerExpiresAtMs = base.bootstrapState.streakLevelUpBannerExpiresAtMs
+        val showStreakLevelUpBanner =
+            bannerExpiresAtMs != null &&
+                base.bootstrapState.streakLevelUpBannerDismissedAtMs == null &&
+                nowMillis < bannerExpiresAtMs
         base.copy(
             bootstrapState = base.bootstrapState.withDisplayStreakSimulation(streakSimulation),
-            showBrushToolGuide = showBrushToolGuide
+            showBrushToolGuide = showBrushToolGuide,
+            showStreakLevelUpBanner = showStreakLevelUpBanner
         )
     }.stateIn(
         scope = viewModelScope,
@@ -404,8 +464,6 @@ class CanvasHomeViewModel @Inject constructor(
             environmentLabel = appConfig.environment.displayName
         )
     )
-
-    private val sessionRepository = repository
 
     init {
         viewModelScope.launch {

@@ -61,6 +61,10 @@ data class SessionBootstrapState(
     val partnerProfileNextUpdateAt: String? = null,
     val pairedAt: String? = null,
     val currentStreakDays: Int = 0,
+    val streakLevelUpBannerStreakDays: Int? = null,
+    val streakLevelUpBannerShownAtMs: Long? = null,
+    val streakLevelUpBannerExpiresAtMs: Long? = null,
+    val streakLevelUpBannerDismissedAtMs: Long? = null,
     val pairingStatus: PairingStatus = PairingStatus.UNPAIRED,
     val pairSessionId: String? = null,
     val pendingInvite: PendingInviteSummary? = null

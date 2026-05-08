@@ -66,6 +66,14 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                 partnerProfileNextUpdateAt = preferences[PreferenceStorage.partnerProfileNextUpdateAt],
                 pairedAt = preferences[PreferenceStorage.pairedAt],
                 currentStreakDays = preferences[PreferenceStorage.currentStreakDays] ?: 0,
+                streakLevelUpBannerStreakDays =
+                    preferences[PreferenceStorage.streakLevelUpBannerStreakDays],
+                streakLevelUpBannerShownAtMs =
+                    preferences[PreferenceStorage.streakLevelUpBannerShownAtMs],
+                streakLevelUpBannerExpiresAtMs =
+                    preferences[PreferenceStorage.streakLevelUpBannerExpiresAtMs],
+                streakLevelUpBannerDismissedAtMs =
+                    preferences[PreferenceStorage.streakLevelUpBannerDismissedAtMs],
                 pairingStatus = preferences[PreferenceStorage.pairingStatus]
                     ?.let(::parsePairingStatus)
                     ?: PairingStatus.UNPAIRED,
@@ -237,6 +245,30 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
         }
     }
 
+    override suspend fun setStreakLevelUpBanner(streakDays: Int, shownAtMs: Long, expiresAtMs: Long) {
+        dataStore.edit { preferences ->
+            preferences[PreferenceStorage.streakLevelUpBannerStreakDays] = streakDays
+            preferences[PreferenceStorage.streakLevelUpBannerShownAtMs] = shownAtMs
+            preferences[PreferenceStorage.streakLevelUpBannerExpiresAtMs] = expiresAtMs
+            preferences.remove(PreferenceStorage.streakLevelUpBannerDismissedAtMs)
+        }
+    }
+
+    override suspend fun dismissStreakLevelUpBanner(dismissedAtMs: Long) {
+        dataStore.edit { preferences ->
+            preferences[PreferenceStorage.streakLevelUpBannerDismissedAtMs] = dismissedAtMs
+        }
+    }
+
+    override suspend fun clearStreakLevelUpBanner() {
+        dataStore.edit { preferences ->
+            preferences.remove(PreferenceStorage.streakLevelUpBannerStreakDays)
+            preferences.remove(PreferenceStorage.streakLevelUpBannerShownAtMs)
+            preferences.remove(PreferenceStorage.streakLevelUpBannerExpiresAtMs)
+            preferences.remove(PreferenceStorage.streakLevelUpBannerDismissedAtMs)
+        }
+    }
+
     override suspend fun seedDemoSession() {
         if (!appConfig.enableDebugMenu) return
 
@@ -299,6 +331,10 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences.remove(PreferenceStorage.installReferrerChecked)
             preferences.remove(PreferenceStorage.wallpaperConfigured)
             preferences.remove(PreferenceStorage.brushToolGuideShownUserIds)
+            preferences.remove(PreferenceStorage.streakLevelUpBannerStreakDays)
+            preferences.remove(PreferenceStorage.streakLevelUpBannerShownAtMs)
+            preferences.remove(PreferenceStorage.streakLevelUpBannerExpiresAtMs)
+            preferences.remove(PreferenceStorage.streakLevelUpBannerDismissedAtMs)
             preferences.remove(PreferenceStorage.onboardingDraftDisplayName)
             preferences.remove(PreferenceStorage.onboardingDraftPartnerDisplayName)
             preferences.remove(PreferenceStorage.onboardingDraftAnniversaryDate)

@@ -112,6 +112,7 @@
     <string name="home_canvas_brush_content_description">Brush</string>
     <string name="home_canvas_eyedropper_content_description">Pick color</string>
     <string name="home_canvas_brush_tool_guide_tooltip">Select the brush tool to start</string>
+    <string name="home_canvas_streak_level_up_banner">Your streak just got a level up</string>
     <string name="home_canvas_erase_content_description">Erase strokes</string>
     <string name="home_canvas_text_content_description">Text</string>
     <string name="home_canvas_sticker_content_description">Stickers</string>

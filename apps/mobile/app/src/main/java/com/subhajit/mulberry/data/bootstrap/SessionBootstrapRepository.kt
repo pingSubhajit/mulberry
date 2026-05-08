@@ -16,6 +16,10 @@ interface SessionBootstrapRepository {
     suspend fun hasShownBrushToolGuide(userId: String): Boolean
     suspend fun markBrushToolGuideShown(userId: String)
 
+    suspend fun setStreakLevelUpBanner(streakDays: Int, shownAtMs: Long, expiresAtMs: Long)
+    suspend fun dismissStreakLevelUpBanner(dismissedAtMs: Long)
+    suspend fun clearStreakLevelUpBanner()
+
     suspend fun seedDemoSession()
 
     suspend fun reset()

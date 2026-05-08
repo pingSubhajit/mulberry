@@ -82,6 +82,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -89,6 +90,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -167,6 +169,7 @@ import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.KalamFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.VirgilFontFamily
+import com.subhajit.mulberry.ui.animation.rememberBobbingOffsetDp
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import com.subhajit.mulberry.wallpaper.RemoteWallpaper
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
@@ -194,6 +197,8 @@ import nl.dionsegijn.konfetti.core.models.Size as KonfettiSize
 import java.util.concurrent.TimeUnit
 import kotlin.math.PI
 import kotlin.math.sin
+
+private val LocalStreakLevelUpBannerClick = staticCompositionLocalOf<(() -> Unit)?> { null }
 
 @Composable
 fun CanvasHomeRoute(
@@ -273,6 +278,7 @@ fun CanvasHomeRoute(
 	        wallpaperPresets = viewModel.wallpaperPresets,
             onCanvasTabVisible = viewModel::onCanvasTabVisible,
             onBrushToolGuideDismissed = viewModel::onBrushToolGuideDismissed,
+            onStreakLevelUpBannerClicked = viewModel::onStreakLevelUpBannerClicked,
 		        onNavigateToWallpaperStatus = onNavigateToWallpaperStatus,
             onNavigateToWallpaperHelp = onNavigateToWallpaperHelp,
             onNavigateToPairingHelp = onNavigateToPairingHelp,
@@ -341,6 +347,7 @@ fun CanvasHomeRoute(
 		    wallpaperPresets: List<WallpaperPreset>,
             onCanvasTabVisible: () -> Unit,
             onBrushToolGuideDismissed: () -> Unit,
+            onStreakLevelUpBannerClicked: () -> Unit,
 			    onNavigateToWallpaperStatus: () -> Unit,
         onNavigateToWallpaperHelp: () -> Unit,
         onNavigateToPairingHelp: () -> Unit,
@@ -678,51 +685,58 @@ fun CanvasHomeRoute(
                     .weight(1f)
             ) { page ->
 	                when (MainAppTab.entries[page]) {
-	                    MainAppTab.Canvas -> CanvasHomePane(
-	                        uiState = uiState,
-                            onBrushToolGuideDismissed = onBrushToolGuideDismissed,
-	                        onInviteRequested = onInviteRequested,
-	                        onJoinCodeRequested = onJoinCodeRequested,
-	                        onCanvasPress = onCanvasPress,
-	                        onCanvasDrag = onCanvasDrag,
-	                        onCanvasRelease = onCanvasRelease,
-	                        onCanvasTap = onCanvasTap,
-	                        onCanvasViewportChanged = onCanvasViewportChanged,
-	                        onColorSelected = onColorSelected,
-                            onEyedropperColorCommitted = onEyedropperColorCommitted,
-	                        onBrushWidthChanged = onBrushWidthChanged,
-	                        onBrushToggle = onBrushToggle,
-	                        onEraserToggle = onEraserToggle,
-	                        onTextToggle = toolSelectText,
-	                        onStickerToggle = toolSelectSticker,
-	                        onStickerPackSelected = onStickerPackSelected,
-	                        stickerAssetStore = stickerAssetStore,
-                        onTextElementAdded = onTextElementAdded,
-                        onTextElementUpdated = onTextElementUpdated,
-                        onTextElementDeleted = onTextElementDeleted,
-	                        onStickerElementAdded = onStickerElementAdded,
-	                        onStickerElementUpdated = onStickerElementUpdated,
-	                        onStickerElementDeleted = onStickerElementDeleted,
-	                        onTextEditorRequested = { session ->
-	                            stickerEditorSession = null
-	                            textEditorSession = session
-	                        },
-	                        onStickerEditorRequested = { session ->
-	                            textEditorSession = null
-	                            onStickerPackSelected(session.element.packKey, session.element.packVersion)
-	                            stickerEditorSession = session
-	                        },
-	                        onNewStickerRequestedAt = { center ->
-	                            pendingNewStickerCenter = center
-	                        },
-                            allowToolTapPlacement = allowToolTapPlacement,
-                            onEmptyTapCreationHandled = { allowToolTapPlacement = true },
-		                        isEditorOpen = editorOpen,
-		                        onClearRequested = onClearRequested,
-		                        onUndoRequested = onUndoRequested,
-		                        onRedoRequested = onRedoRequested,
-                            onSendReaction = onSendReaction
-		                    )
+		                    MainAppTab.Canvas -> CompositionLocalProvider(
+                                LocalStreakLevelUpBannerClick provides {
+                                    onStreakLevelUpBannerClicked()
+                                    onNavigateToStreak()
+                                }
+                            ) {
+                                CanvasHomePane(
+                                    uiState = uiState,
+                                    onBrushToolGuideDismissed = onBrushToolGuideDismissed,
+                                    onInviteRequested = onInviteRequested,
+                                    onJoinCodeRequested = onJoinCodeRequested,
+                                    onCanvasPress = onCanvasPress,
+                                    onCanvasDrag = onCanvasDrag,
+                                    onCanvasRelease = onCanvasRelease,
+                                    onCanvasTap = onCanvasTap,
+                                    onCanvasViewportChanged = onCanvasViewportChanged,
+                                    onColorSelected = onColorSelected,
+                                    onEyedropperColorCommitted = onEyedropperColorCommitted,
+                                    onBrushWidthChanged = onBrushWidthChanged,
+                                    onBrushToggle = onBrushToggle,
+                                    onEraserToggle = onEraserToggle,
+                                    onTextToggle = toolSelectText,
+                                    onStickerToggle = toolSelectSticker,
+                                    onStickerPackSelected = onStickerPackSelected,
+                                    stickerAssetStore = stickerAssetStore,
+                                    onTextElementAdded = onTextElementAdded,
+                                    onTextElementUpdated = onTextElementUpdated,
+                                    onTextElementDeleted = onTextElementDeleted,
+                                    onStickerElementAdded = onStickerElementAdded,
+                                    onStickerElementUpdated = onStickerElementUpdated,
+                                    onStickerElementDeleted = onStickerElementDeleted,
+                                    onTextEditorRequested = { session ->
+                                        stickerEditorSession = null
+                                        textEditorSession = session
+                                    },
+                                    onStickerEditorRequested = { session ->
+                                        textEditorSession = null
+                                        onStickerPackSelected(session.element.packKey, session.element.packVersion)
+                                        stickerEditorSession = session
+                                    },
+                                    onNewStickerRequestedAt = { center ->
+                                        pendingNewStickerCenter = center
+                                    },
+                                    allowToolTapPlacement = allowToolTapPlacement,
+                                    onEmptyTapCreationHandled = { allowToolTapPlacement = true },
+                                    isEditorOpen = editorOpen,
+                                    onClearRequested = onClearRequested,
+                                    onUndoRequested = onUndoRequested,
+                                    onRedoRequested = onRedoRequested,
+                                    onSendReaction = onSendReaction
+                                )
+                            }
 
 	                    MainAppTab.Wallpaper -> WallpaperHomePane(
 	                        uiState = uiState,
@@ -891,42 +905,89 @@ private fun StreakPill(
 }
 
 @Composable
-	private fun CanvasHomePane(
-		    uiState: CanvasHomeUiState,
-            onBrushToolGuideDismissed: () -> Unit,
-		    onInviteRequested: () -> Unit,
-		    onJoinCodeRequested: () -> Unit,
-		    onCanvasPress: (StrokePoint) -> Unit,
-	    onCanvasDrag: (StrokePoint) -> Unit,
-	    onCanvasRelease: () -> Unit,
-	    onCanvasTap: (StrokePoint) -> Unit,
-	    onCanvasViewportChanged: (Int, Int) -> Unit,
-	    onColorSelected: (Long) -> Unit,
-        onEyedropperColorCommitted: (Long) -> Unit,
-	    onBrushWidthChanged: (Float) -> Unit,
-	    onBrushToggle: () -> Unit,
-	    onEraserToggle: () -> Unit,
-	    onTextToggle: () -> Unit,
-	    onStickerToggle: () -> Unit,
-	    onStickerPackSelected: (String, Int) -> Unit,
-	    stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
+private fun StreakLevelUpBanner(
+    text: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(15.38.dp)
+
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .background(Color(0xFFB31329))
+            .mulberryTapScale()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 19.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_streak_level_up_bolt),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(21.dp)
+            )
+            Text(
+                text = text,
+                color = Color.White,
+                fontFamily = PoppinsFontFamily,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+
+        Image(
+            painter = painterResource(R.drawable.ic_streak_level_up_chevron),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.size(14.dp)
+        )
+    }
+}
+
+@Composable
+private fun CanvasHomePane(
+    uiState: CanvasHomeUiState,
+    onBrushToolGuideDismissed: () -> Unit,
+    onInviteRequested: () -> Unit,
+    onJoinCodeRequested: () -> Unit,
+    onCanvasPress: (StrokePoint) -> Unit,
+    onCanvasDrag: (StrokePoint) -> Unit,
+    onCanvasRelease: () -> Unit,
+    onCanvasTap: (StrokePoint) -> Unit,
+    onCanvasViewportChanged: (Int, Int) -> Unit,
+    onColorSelected: (Long) -> Unit,
+    onEyedropperColorCommitted: (Long) -> Unit,
+    onBrushWidthChanged: (Float) -> Unit,
+    onBrushToggle: () -> Unit,
+    onEraserToggle: () -> Unit,
+    onTextToggle: () -> Unit,
+    onStickerToggle: () -> Unit,
+    onStickerPackSelected: (String, Int) -> Unit,
+    stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
-	    onStickerElementAdded: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
-	    onStickerElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
-	    onStickerElementDeleted: (String) -> Unit,
-	    onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
-	    onStickerEditorRequested: (CanvasStickerEditorSession) -> Unit,
-	    onNewStickerRequestedAt: (StrokePoint) -> Unit,
-        allowToolTapPlacement: Boolean,
-        onEmptyTapCreationHandled: () -> Unit,
-		    isEditorOpen: Boolean,
-		    onClearRequested: () -> Unit,
-		    onUndoRequested: () -> Unit,
-		    onRedoRequested: () -> Unit,
-	        onSendReaction: suspend (ReactionType) -> Boolean
-		) {
+    onStickerElementAdded: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+    onStickerElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasStickerElement) -> Unit,
+    onStickerElementDeleted: (String) -> Unit,
+    onTextEditorRequested: (CanvasTextEditorSession) -> Unit,
+    onStickerEditorRequested: (CanvasStickerEditorSession) -> Unit,
+    onNewStickerRequestedAt: (StrokePoint) -> Unit,
+    allowToolTapPlacement: Boolean,
+    onEmptyTapCreationHandled: () -> Unit,
+    isEditorOpen: Boolean,
+    onClearRequested: () -> Unit,
+    onUndoRequested: () -> Unit,
+    onRedoRequested: () -> Unit,
+    onSendReaction: suspend (ReactionType) -> Boolean
+) {
     val userName = uiState.bootstrapState.userDisplayName
         ?.takeIf { it.isNotBlank() }
         ?: stringResource(R.string.home_default_user_name)
@@ -1154,17 +1215,12 @@ private fun StreakPill(
         var brushButtonBoundsInRoot by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
         var guideTooltipSizePx by remember { mutableStateOf(IntSize.Zero) }
         val density = LocalDensity.current
+        val streakLevelUpBannerClick = LocalStreakLevelUpBannerClick.current ?: {}
 
-        val guideBobDp by rememberInfiniteTransition(label = "brush_tool_guide_bob").animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 850, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "brush_tool_guide_bob_phase"
-        )
-        val guideBobOffsetPx = with(density) { ((-7f) * guideBobDp).dp.toPx() }
+        val guideBobOffsetPx = with(density) {
+            rememberBobbingOffsetDp(label = "brush_tool_guide_bob").toPx()
+        }
+        val streakLevelUpBobOffset = rememberBobbingOffsetDp(label = "streak_level_up_banner_bob")
 
         Box(
             modifier = modifier
@@ -1267,6 +1323,19 @@ private fun StreakPill(
                             .fillMaxSize()
                             .padding(8.dp)
                     )
+
+                    if (uiState.showStreakLevelUpBanner && !isEditorOpen) {
+                        StreakLevelUpBanner(
+                            text = stringResource(R.string.home_canvas_streak_level_up_banner),
+                            onClick = streakLevelUpBannerClick,
+                            modifier = Modifier
+                                .zIndex(40f)
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth(0.9f)
+                                .padding(top = 12.dp)
+                                .offset(y = streakLevelUpBobOffset)
+                        )
+                    }
 
             androidx.compose.animation.AnimatedVisibility(
                 visible = uiState.canvasState.isEmpty,
