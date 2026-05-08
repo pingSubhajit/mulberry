@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.sync
 
 import android.util.Log
+import com.subhajit.mulberry.bootstrap.BootstrapRepository
 import com.subhajit.mulberry.canvas.CanvasRuntime
 import com.subhajit.mulberry.canvas.CanvasRuntimeEvent
 import com.subhajit.mulberry.canvas.FlowControlMode
@@ -22,6 +23,7 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,6 +46,7 @@ interface CanvasSyncRepository {
 class DefaultCanvasSyncRepository @Inject constructor(
     private val client: CanvasSyncClient,
     private val sessionBootstrapRepository: SessionBootstrapRepository,
+    private val bootstrapRepository: BootstrapRepository,
     private val syncMetadataRepository: SyncMetadataRepository,
     private val syncOutboxStore: CanvasSyncOutboxStore,
     private val canvasRuntime: CanvasRuntime,
@@ -70,6 +73,8 @@ class DefaultCanvasSyncRepository @Inject constructor(
     private var activePairSessionId: String? = null
     private var lastForegroundStoppedAt: Long? = null
     private var lastAppliedRevisionCache = 0L
+    private var streakBootstrapRefreshJob: Job? = null
+    private var lastStreakBootstrapRefreshAtMs: Long? = null
 
     override fun start() {
         if (!started) {
@@ -187,6 +192,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
                 )
                 syncOutboxStore.acknowledge(listOf(message.clientOperationId))
                 message.operation?.let { enqueueAndDrain(listOf(it)) }
+                message.operation?.let { scheduleStreakBootstrapRefreshIfNeeded(listOf(it)) }
                 schedulePendingSend()
             }
             is CanvasSyncMessage.AckBatch -> {
@@ -194,9 +200,11 @@ class DefaultCanvasSyncRepository @Inject constructor(
             }
             is CanvasSyncMessage.ServerOperation -> {
                 enqueueAndDrain(listOf(message.operation))
+                scheduleStreakBootstrapRefreshIfNeeded(listOf(message.operation))
             }
             is CanvasSyncMessage.ServerOperationBatch -> {
                 enqueueAndDrain(message.operations)
+                scheduleStreakBootstrapRefreshIfNeeded(message.operations)
             }
             is CanvasSyncMessage.FlowControl -> {
                 canvasRuntime.submit(
@@ -246,7 +254,36 @@ class DefaultCanvasSyncRepository @Inject constructor(
             syncOutboxStore.acknowledge(message.ackedClientOperationIds)
         }
         enqueueAndDrain(message.operations)
+        scheduleStreakBootstrapRefreshIfNeeded(message.operations)
         schedulePendingSend()
+    }
+
+    private fun scheduleStreakBootstrapRefreshIfNeeded(operations: List<ServerCanvasOperation>) {
+        if (operations.none { it.type.isStreakMeaningfulOperation() }) return
+
+        val nowMs = System.currentTimeMillis()
+        val lastRefreshMs = lastStreakBootstrapRefreshAtMs
+        if (lastRefreshMs != null && nowMs - lastRefreshMs < STREAK_BOOTSTRAP_REFRESH_COOLDOWN_MS) {
+            return
+        }
+        if (streakBootstrapRefreshJob?.isActive == true) return
+
+        streakBootstrapRefreshJob = applicationScope.launch {
+            delay(STREAK_BOOTSTRAP_REFRESH_DEBOUNCE_MS)
+            val result = bootstrapRepository.refreshBootstrap()
+            if (result.isSuccess) {
+                lastStreakBootstrapRefreshAtMs = System.currentTimeMillis()
+            }
+        }
+    }
+
+    private fun DrawingOperationType.isStreakMeaningfulOperation(): Boolean = when (this) {
+        DrawingOperationType.FINISH_STROKE,
+        DrawingOperationType.ADD_TEXT_ELEMENT,
+        DrawingOperationType.UPDATE_TEXT_ELEMENT,
+        DrawingOperationType.ADD_STICKER_ELEMENT,
+        DrawingOperationType.UPDATE_STICKER_ELEMENT -> true
+        else -> false
     }
 
     private suspend fun handleReady(message: CanvasSyncMessage.Ready) {
@@ -767,6 +804,8 @@ class DefaultCanvasSyncRepository @Inject constructor(
         activePairSessionId = null
         revisionBuffer.clear()
         isRecoveringGap = false
+        streakBootstrapRefreshJob?.cancel()
+        streakBootstrapRefreshJob = null
         resetSendTracking()
         if (disconnectClient) {
             client.disconnect()
@@ -793,6 +832,8 @@ class DefaultCanvasSyncRepository @Inject constructor(
         const val MAX_SOCKET_QUEUE_BYTES = 512L * 1024L
         const val REJECTED_SEND_RETRY_DELAY_MS = 250L
         const val ACK_TIMEOUT_MS = 8_000L
+        const val STREAK_BOOTSTRAP_REFRESH_DEBOUNCE_MS = 350L
+        const val STREAK_BOOTSTRAP_REFRESH_COOLDOWN_MS = 90_000L
         const val TAG = "MulberrySync"
     }
 }

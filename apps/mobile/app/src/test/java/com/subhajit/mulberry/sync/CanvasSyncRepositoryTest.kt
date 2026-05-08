@@ -19,6 +19,7 @@ import com.subhajit.mulberry.network.CanvasOpsResponse
 import com.subhajit.mulberry.network.CanvasPointPayload
 import com.subhajit.mulberry.network.CanvasSnapshotPayload
 import com.subhajit.mulberry.network.CanvasSnapshotResponse
+import com.subhajit.mulberry.network.ClearStreakActivityDayRequest
 import com.subhajit.mulberry.network.CreateInviteResponse
 import com.subhajit.mulberry.network.DebugActionResponse
 import com.subhajit.mulberry.network.DeviceTokenResponse
@@ -268,7 +269,8 @@ class CanvasSyncRepositoryTest {
         outbox: FakeCanvasSyncOutboxStore = FakeCanvasSyncOutboxStore(mutableListOf()),
         initialPairSessionId: String? = null
     ): RepositoryFixture {
-        val bootstrapRepository = FakeSessionBootstrapRepository()
+        val sessionBootstrapRepository = FakeSessionBootstrapRepository()
+        val bootstrapRepository = FakeBootstrapRepository(sessionBootstrapRepository)
         val metadataRepository = FakeSyncMetadataRepository(initialPairSessionId)
         val runtime = FakeCanvasRuntime()
         val apiService = FakeMulberryApiService()
@@ -277,7 +279,8 @@ class CanvasSyncRepositoryTest {
         )
         val repository = DefaultCanvasSyncRepository(
             client = client,
-            sessionBootstrapRepository = bootstrapRepository,
+            sessionBootstrapRepository = sessionBootstrapRepository,
+            bootstrapRepository = bootstrapRepository,
             syncMetadataRepository = metadataRepository,
             syncOutboxStore = outbox,
             canvasRuntime = runtime,
@@ -532,6 +535,15 @@ private class FakeSessionBootstrapRepository : SessionBootstrapRepository {
     }
 }
 
+private class FakeBootstrapRepository(
+    private val sessionBootstrapRepository: FakeSessionBootstrapRepository
+) : com.subhajit.mulberry.bootstrap.BootstrapRepository {
+    override val cachedState: Flow<SessionBootstrapState> = sessionBootstrapRepository.state
+
+    override suspend fun refreshBootstrap(): Result<SessionBootstrapState> =
+        Result.success(sessionBootstrapRepository.state.value)
+}
+
 private class FakeSyncMetadataRepository(
     initialPairSessionId: String? = null
 ) : SyncMetadataRepository {
@@ -640,6 +652,9 @@ private class FakeMulberryApiService : MulberryApiService {
     override suspend fun sendDebugPairingConfirmationPush(): DebugActionResponse = error("unused")
 
     override suspend fun sendDebugPairingDisconnectedPush(): DebugActionResponse = error("unused")
+
+    override suspend fun clearStreakActivityDay(request: ClearStreakActivityDayRequest): DebugActionResponse =
+        error("unused")
 
     override suspend fun getCanvasOperations(afterRevision: Long): CanvasOpsResponse =
         CanvasOpsResponse(operations = emptyList())
