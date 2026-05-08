@@ -170,6 +170,7 @@ import com.subhajit.mulberry.ui.theme.KalamFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.VirgilFontFamily
 import com.subhajit.mulberry.ui.animation.rememberBobbingOffsetDp
+import com.subhajit.mulberry.ui.animation.TwoSidedConfettiBurst
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import com.subhajit.mulberry.wallpaper.RemoteWallpaper
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
@@ -186,15 +187,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import nl.dionsegijn.konfetti.compose.KonfettiView
-import nl.dionsegijn.konfetti.core.Angle
-import nl.dionsegijn.konfetti.core.Party
-import nl.dionsegijn.konfetti.core.Position
-import nl.dionsegijn.konfetti.core.Spread
-import nl.dionsegijn.konfetti.core.emitter.Emitter
-import nl.dionsegijn.konfetti.core.models.Shape
-import nl.dionsegijn.konfetti.core.models.Size as KonfettiSize
-import java.util.concurrent.TimeUnit
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -871,6 +863,7 @@ private fun StreakPill(
 ) {
     val label = pluralStringResource(R.plurals.home_streak_days, currentStreakDays, currentStreakDays)
     val shape = RoundedCornerShape(43.dp)
+    val textColor = if (isSystemInDarkTheme()) Color.White else MulberryPrimary
 
     Row(
         modifier = Modifier
@@ -893,7 +886,7 @@ private fun StreakPill(
             )
             Text(
                 text = label,
-                color = MulberryPrimary,
+                color = textColor,
                 fontFamily = KalamFontFamily,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
@@ -1334,6 +1327,14 @@ private fun CanvasHomePane(
                                 .fillMaxWidth(0.9f)
                                 .padding(top = 12.dp)
                                 .offset(y = streakLevelUpBobOffset)
+                        )
+                    }
+
+                    if (uiState.streakLevelUpConfettiToken != null) {
+                        TwoSidedConfettiBurst(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .zIndex(45f)
                         )
                     }
 
@@ -3306,7 +3307,7 @@ private fun PairingConfirmedBottomSheet(
                     )
                 }
             }
-            PairingConfetti(
+            TwoSidedConfettiBurst(
                 modifier = Modifier
                     .matchParentSize()
                     .zIndex(2f)
@@ -3435,57 +3436,6 @@ private fun InboundInvitePairedBottomSheet(
             }
         }
     }
-}
-
-@Composable
-private fun PairingConfetti(modifier: Modifier = Modifier) {
-    val parties = remember {
-        val colors = listOf(
-            0xFFB31329.toInt(),
-            0xFFFF4D6D.toInt(),
-            0xFFFFB000.toInt(),
-            0xFFFFE066.toInt(),
-            0xFFFF7A3D.toInt(),
-            0xFF00A878.toInt(),
-            0xFF6C5CE7.toInt(),
-            0xFFFFF4F5.toInt()
-        )
-        val sizes = listOf(KonfettiSize(6), KonfettiSize(9), KonfettiSize(12))
-        val shapes = listOf(Shape.Square, Shape.Circle, Shape.Rectangle(0.35f))
-        listOf(
-            Party(
-                angle = Angle.RIGHT - 12,
-                spread = Spread.WIDE,
-                speed = 22f,
-                maxSpeed = 44f,
-                damping = 0.90f,
-                size = sizes,
-                shapes = shapes,
-                colors = colors,
-                timeToLive = 3_200L,
-                position = Position.Relative(0.0, 0.42),
-                emitter = Emitter(duration = 360, TimeUnit.MILLISECONDS).max(70)
-            ),
-            Party(
-                angle = Angle.LEFT + 12,
-                spread = Spread.WIDE,
-                speed = 22f,
-                maxSpeed = 44f,
-                damping = 0.90f,
-                size = sizes,
-                shapes = shapes,
-                colors = colors,
-                timeToLive = 3_200L,
-                position = Position.Relative(1.0, 0.42),
-                emitter = Emitter(duration = 360, TimeUnit.MILLISECONDS).max(70)
-            )
-        )
-    }
-
-    KonfettiView(
-        modifier = modifier,
-        parties = parties
-    )
 }
 
 @Composable

@@ -161,7 +161,8 @@ data class CanvasHomeUiState(
     val palette: List<Long> = DrawingDefaults.palette,
     val canvasShowElementBounds: Boolean = false,
     val showBrushToolGuide: Boolean = false,
-    val showStreakLevelUpBanner: Boolean = false
+    val showStreakLevelUpBanner: Boolean = false,
+    val streakLevelUpConfettiToken: Long? = null
 )
 
 sealed interface CanvasHomeEffect {
@@ -220,6 +221,7 @@ class CanvasHomeViewModel @Inject constructor(
     private var stickerPacksRefreshRetryAttempt: Int = 0
     private val currentTimeMillis = MutableStateFlow(System.currentTimeMillis())
     private val showBrushToolGuideState = MutableStateFlow(false)
+    private val streakLevelUpConfettiToken = MutableStateFlow<Long?>(null)
     private val _effects = MutableSharedFlow<CanvasHomeEffect>()
     val effects = _effects.asSharedFlow()
     val wallpaperPresets: List<WallpaperPreset> = DefaultWallpaperPresets
@@ -265,11 +267,17 @@ class CanvasHomeViewModel @Inject constructor(
                 if (state.currentStreakDays <= previous) return@collect
 
                 val now = System.currentTimeMillis()
+                streakLevelUpConfettiToken.value = now
                 sessionRepository.setStreakLevelUpBanner(
                     streakDays = state.currentStreakDays,
                     shownAtMs = now,
                     expiresAtMs = now + 60 * 60 * 1000L
                 )
+
+                delay(4_000)
+                if (streakLevelUpConfettiToken.value == now) {
+                    streakLevelUpConfettiToken.value = null
+                }
             }
         }
 
@@ -445,8 +453,9 @@ class CanvasHomeViewModel @Inject constructor(
         uiStateBase,
         streakSimulationRepository.simulation,
         showBrushToolGuideState,
-        currentTimeMillis
-    ) { base, streakSimulation, showBrushToolGuide, nowMillis ->
+        currentTimeMillis,
+        streakLevelUpConfettiToken
+    ) { base, streakSimulation, showBrushToolGuide, nowMillis, confettiToken ->
         val bannerExpiresAtMs = base.bootstrapState.streakLevelUpBannerExpiresAtMs
         val showStreakLevelUpBanner =
             bannerExpiresAtMs != null &&
@@ -455,7 +464,8 @@ class CanvasHomeViewModel @Inject constructor(
         base.copy(
             bootstrapState = base.bootstrapState.withDisplayStreakSimulation(streakSimulation),
             showBrushToolGuide = showBrushToolGuide,
-            showStreakLevelUpBanner = showStreakLevelUpBanner
+            showStreakLevelUpBanner = showStreakLevelUpBanner,
+            streakLevelUpConfettiToken = confettiToken
         )
     }.stateIn(
         scope = viewModelScope,
