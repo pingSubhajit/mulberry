@@ -69,6 +69,19 @@ internal object RelationshipWidgetTextBitmapRenderer {
                     captionText = captionText,
                     primaryUsesGradient = primaryUsesGradient
                 )
+            RelationshipTrackerWidgetProvider.RelationshipWidgetSize.LARGE ->
+                renderMediumLike(
+                    context = context,
+                    textBlockWidthDp = LARGE_TEXT_BLOCK_WIDTH_DP,
+                    textBlockHeightDp = LARGE_TEXT_BLOCK_HEIGHT_DP,
+                    primaryTopDp = LARGE_PRIMARY_TOP_DP,
+                    secondaryTopDp = LARGE_SECONDARY_TOP_DP,
+                    captionTopDp = LARGE_CAPTION_TOP_DP,
+                    primaryText = primaryText,
+                    secondaryText = secondaryText,
+                    captionText = captionText,
+                    primaryUsesGradient = primaryUsesGradient
+                )
         }
     }
 

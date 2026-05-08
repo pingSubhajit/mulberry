@@ -11,11 +11,12 @@ import android.graphics.RectF
 import android.graphics.Shader
 import androidx.core.content.res.ResourcesCompat
 import com.subhajit.mulberry.R
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 internal object RelationshipWidgetSquareBitmapRenderer {
-    private const val DESIGN_WIDTH = 306f
-    private const val DESIGN_HEIGHT = 348f
+    private const val DESIGN_WIDTH_DP = 180f
+    private const val DESIGN_HEIGHT_DP = 115f
 
     private val PRIMARY_GRADIENT_START = Color.parseColor("#D81012")
     private val PRIMARY_GRADIENT_END = Color.parseColor("#B31329")
@@ -28,12 +29,17 @@ internal object RelationshipWidgetSquareBitmapRenderer {
         secondaryText: String?,
         progressFraction: Float,
         isCelebratory: Boolean,
-        primaryUsesGradient: Boolean
+        primaryUsesGradient: Boolean,
+        widthDp: Int,
+        heightDp: Int
     ): Bitmap {
-        val layout = LayoutMetrics(width = DESIGN_WIDTH, height = DESIGN_HEIGHT)
+        val density = context.resources.displayMetrics.density
+        val widthPx = (widthDp.coerceAtLeast(1) * density).roundToInt()
+        val heightPx = (heightDp.coerceAtLeast(1) * density).roundToInt()
+        val layout = LayoutMetrics(width = widthPx.toFloat(), height = heightPx.toFloat(), density = density)
         val bitmap = Bitmap.createBitmap(
-            DESIGN_WIDTH.roundToInt(),
-            DESIGN_HEIGHT.roundToInt(),
+            widthPx,
+            heightPx,
             Bitmap.Config.ARGB_8888
         )
         val canvas = Canvas(bitmap)
@@ -70,7 +76,14 @@ internal object RelationshipWidgetSquareBitmapRenderer {
             if (isCelebratory) R.drawable.widget_squee_celebratory_square else R.drawable.widget_squee_default_square
         ) ?: return
 
-        val destination = layout.rectFromDesign(-36f, -20f, 224f, 249f)
+        val squirrelHeight = min(layout.height * 1.36f, layout.dp(158f))
+        val squirrelWidth = squirrelHeight * squirrel.width.toFloat() / squirrel.height.toFloat()
+        val destination = RectF(
+            layout.dp(-25f),
+            layout.height - squirrelHeight + layout.dp(18f),
+            layout.dp(-25f) + squirrelWidth,
+            layout.height + layout.dp(18f)
+        )
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
         canvas.drawBitmap(squirrel, null, destination, paint)
     }
@@ -81,9 +94,9 @@ internal object RelationshipWidgetSquareBitmapRenderer {
         progressFraction: Float,
         layout: LayoutMetrics
     ) {
-        val size = layout.scale(106f)
+        val size = min(min(layout.dp(52f), layout.width * 0.32f), layout.height * 0.48f)
         val left = layout.rightEdge - size
-        val top = layout.y(126f)
+        val top = layout.dp(13f)
         val stroke = size * 0.15f
         val centerX = left + size / 2f
         val centerY = top + size / 2f
@@ -136,7 +149,7 @@ internal object RelationshipWidgetSquareBitmapRenderer {
         val primaryTypeface = ResourcesCompat.getFont(context, R.font.poppins_extrabold)
         val secondaryTypeface = ResourcesCompat.getFont(context, R.font.poppins_bold)
         val rightEdge = layout.rightEdge
-        val maxPrimaryWidth = rightEdge - layout.x(8f)
+        val maxPrimaryWidth = rightEdge - layout.dp(8f)
 
         val primaryPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
             typeface = primaryTypeface
@@ -144,8 +157,8 @@ internal object RelationshipWidgetSquareBitmapRenderer {
         }
         primaryPaint.textSize = fitTextSize(
             paint = primaryPaint,
-            desiredPx = layout.scale(60f),
-            minPx = layout.scale(36f),
+            desiredPx = layout.dp(38f),
+            minPx = layout.dp(24f),
             text = primaryText,
             maxWidthPx = maxPrimaryWidth
         )
@@ -165,7 +178,7 @@ internal object RelationshipWidgetSquareBitmapRenderer {
             primaryPaint.color = PRIMARY_GRADIENT_START
         }
 
-        canvas.drawText(primaryText, rightEdge, layout.y(288f), primaryPaint)
+        canvas.drawText(primaryText, rightEdge, layout.height - layout.dp(27f), primaryPaint)
 
         val secondary = secondaryText.orEmpty()
         if (secondary.isBlank()) return
@@ -177,13 +190,13 @@ internal object RelationshipWidgetSquareBitmapRenderer {
         }
         secondaryPaint.textSize = fitTextSize(
             paint = secondaryPaint,
-            desiredPx = layout.scale(27f),
-            minPx = layout.scale(19f),
+            desiredPx = layout.dp(16f),
+            minPx = layout.dp(12f),
             text = secondary,
             maxWidthPx = maxPrimaryWidth
         )
 
-        canvas.drawText(secondary, rightEdge, layout.y(322f), secondaryPaint)
+        canvas.drawText(secondary, rightEdge, layout.height - layout.dp(10f), secondaryPaint)
     }
 
     private fun fitTextSize(
@@ -201,23 +214,13 @@ internal object RelationshipWidgetSquareBitmapRenderer {
 
     private data class LayoutMetrics(
         val width: Float,
-        val height: Float
+        val height: Float,
+        val density: Float
     ) {
-        private val scale = width / DESIGN_WIDTH
+        private val scale = min(width / DESIGN_WIDTH_DP, height / DESIGN_HEIGHT_DP)
 
-        val rightEdge: Float = width - scale(16f)
+        val rightEdge: Float = width - dp(12f)
 
-        fun scale(value: Float): Float = value * scale
-
-        fun x(value: Float): Float = value * scale
-
-        fun y(value: Float): Float = value * scale
-
-        fun rectFromDesign(
-            left: Float,
-            top: Float,
-            right: Float,
-            bottom: Float
-        ): RectF = RectF(x(left), y(top), x(right), y(bottom))
+        fun dp(value: Float): Float = value * scale.coerceAtMost(density * 1.18f)
     }
 }

@@ -118,9 +118,11 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
         )
 
         appWidgetIds.forEach { appWidgetId ->
-            val renderSize = relationshipWidgetSize
+            val options = appWidgetManager.getAppWidgetOptions(appWidgetId)
+            val renderSize = relationshipWidgetSize.resolveForOptions(options)
             val layoutRes = when (renderSize) {
                 RelationshipWidgetSize.SQUARE -> R.layout.widget_relationship_square
+                RelationshipWidgetSize.LARGE -> R.layout.widget_relationship_large
                 RelationshipWidgetSize.MEDIUM -> if (model.secondaryText.isNullOrBlank()) {
                     R.layout.widget_relationship_medium_compact
                 } else {
@@ -139,7 +141,9 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
                         secondaryText = model.secondaryText,
                         progressFraction = model.anniversaryProgressFraction,
                         isCelebratory = model.isCelebratory,
-                        primaryUsesGradient = model.primaryUsesGradient
+                        primaryUsesGradient = model.primaryUsesGradient,
+                        widthDp = options.widgetWidthDp(DEFAULT_COMPACT_WIDGET_WIDTH_DP),
+                        heightDp = options.widgetHeightDp(DEFAULT_WIDGET_HEIGHT_DP)
                     )
                 )
             } else {
@@ -156,7 +160,7 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
                     R.id.widget_relationship_progress_donut,
                     RelationshipWidgetProgressDonutRenderer.render(
                         context = context,
-                        sizeDp = 72,
+                        sizeDp = if (renderSize == RelationshipWidgetSize.LARGE) 79 else 72,
                         progressFraction = model.anniversaryProgressFraction
                     )
                 )
@@ -238,10 +242,25 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
 
     enum class RelationshipWidgetSize {
         SQUARE,
-        MEDIUM
+        MEDIUM,
+        LARGE;
+
+        fun resolveForOptions(options: Bundle): RelationshipWidgetSize {
+            if (this != MEDIUM) return this
+            return if (options.widgetWidthDp(DEFAULT_MEDIUM_WIDGET_WIDTH_DP) >= LARGE_WIDGET_MIN_WIDTH_DP) {
+                LARGE
+            } else {
+                MEDIUM
+            }
+        }
     }
 
     private companion object {
+        private const val DEFAULT_WIDGET_HEIGHT_DP = 115
+        private const val DEFAULT_COMPACT_WIDGET_WIDTH_DP = 180
+        private const val DEFAULT_MEDIUM_WIDGET_WIDTH_DP = 245
+        private const val LARGE_WIDGET_MIN_WIDTH_DP = 300
+
         private const val ACTION_ALARM_TICK =
             "com.subhajit.mulberry.widget.relationship.action.ALARM_TICK"
         private const val ALARM_SKEW_MS = 5 * 60 * 1000L
@@ -253,6 +272,16 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
             Intent.ACTION_DATE_CHANGED,
             Intent.ACTION_BOOT_COMPLETED
         )
+
+        private fun Bundle.widgetWidthDp(fallback: Int): Int =
+            getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, fallback)
+                .takeIf { it > 0 }
+                ?: fallback
+
+        private fun Bundle.widgetHeightDp(fallback: Int): Int =
+            getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, fallback)
+                .takeIf { it > 0 }
+                ?: fallback
     }
 }
 

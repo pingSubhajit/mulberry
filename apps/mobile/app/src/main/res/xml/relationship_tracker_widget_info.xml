@@ -4,9 +4,11 @@
     android:initialLayout="@layout/widget_relationship_medium"
     android:initialKeyguardLayout="@layout/widget_relationship_medium"
     android:minHeight="115dp"
-    android:minWidth="245dp"
+    android:minResizeWidth="245dp"
+    android:minWidth="320dp"
     android:previewImage="@drawable/widget_relationship_preview"
+    android:resizeMode="horizontal"
     android:targetCellHeight="2"
-    android:targetCellWidth="4"
+    android:targetCellWidth="5"
     android:updatePeriodMillis="0"
     android:widgetCategory="home_screen" />
