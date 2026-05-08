@@ -883,6 +883,13 @@ class CanvasHomeViewModel @Inject constructor(
         }
     }
 
+    fun onEyedropperColorCommitted(colorArgb: Long) {
+        viewModelScope.launch {
+            drawingRepository.setBrushColor(colorArgb)
+            drawingRepository.setTextColor(colorArgb)
+        }
+    }
+
     fun onBrushWidthChanged(width: Float) {
         viewModelScope.launch {
             drawingRepository.setBrushWidth(width)

@@ -108,6 +108,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
@@ -307,6 +308,7 @@ fun CanvasHomeRoute(
         onCanvasTap = viewModel::onCanvasTap,
         onCanvasViewportChanged = viewModel::onCanvasViewportChanged,
         onColorSelected = viewModel::onColorSelected,
+        onEyedropperColorCommitted = viewModel::onEyedropperColorCommitted,
         onBrushWidthChanged = viewModel::onBrushWidthChanged,
         onBrushToggle = viewModel::onBrushToggle,
         onEraserToggle = viewModel::onEraserToggle,
@@ -367,13 +369,14 @@ fun CanvasHomeRoute(
     onCanvasPress: (StrokePoint) -> Unit,
     onCanvasDrag: (StrokePoint) -> Unit,
     onCanvasRelease: () -> Unit,
-    onCanvasTap: (StrokePoint) -> Unit,
-    onCanvasViewportChanged: (Int, Int) -> Unit,
-    onColorSelected: (Long) -> Unit,
-    onBrushWidthChanged: (Float) -> Unit,
-    onBrushToggle: () -> Unit,
-    onEraserToggle: () -> Unit,
-    onTextToggle: () -> Unit,
+	    onCanvasTap: (StrokePoint) -> Unit,
+	    onCanvasViewportChanged: (Int, Int) -> Unit,
+	    onColorSelected: (Long) -> Unit,
+        onEyedropperColorCommitted: (Long) -> Unit,
+	    onBrushWidthChanged: (Float) -> Unit,
+	    onBrushToggle: () -> Unit,
+	    onEraserToggle: () -> Unit,
+	    onTextToggle: () -> Unit,
     onStickerToggle: () -> Unit,
     onStickerPackSelected: (String, Int) -> Unit,
     stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
@@ -675,17 +678,18 @@ fun CanvasHomeRoute(
                     .weight(1f)
             ) { page ->
 	                when (MainAppTab.entries[page]) {
-		                    MainAppTab.Canvas -> CanvasHomePane(
-		                        uiState = uiState,
-                                onBrushToolGuideDismissed = onBrushToolGuideDismissed,
-		                        onInviteRequested = onInviteRequested,
-		                        onJoinCodeRequested = onJoinCodeRequested,
+	                    MainAppTab.Canvas -> CanvasHomePane(
+	                        uiState = uiState,
+                            onBrushToolGuideDismissed = onBrushToolGuideDismissed,
+	                        onInviteRequested = onInviteRequested,
+	                        onJoinCodeRequested = onJoinCodeRequested,
 	                        onCanvasPress = onCanvasPress,
 	                        onCanvasDrag = onCanvasDrag,
 	                        onCanvasRelease = onCanvasRelease,
 	                        onCanvasTap = onCanvasTap,
 	                        onCanvasViewportChanged = onCanvasViewportChanged,
 	                        onColorSelected = onColorSelected,
+                            onEyedropperColorCommitted = onEyedropperColorCommitted,
 	                        onBrushWidthChanged = onBrushWidthChanged,
 	                        onBrushToggle = onBrushToggle,
 	                        onEraserToggle = onEraserToggle,
@@ -898,6 +902,7 @@ private fun StreakPill(
 	    onCanvasTap: (StrokePoint) -> Unit,
 	    onCanvasViewportChanged: (Int, Int) -> Unit,
 	    onColorSelected: (Long) -> Unit,
+        onEyedropperColorCommitted: (Long) -> Unit,
 	    onBrushWidthChanged: (Float) -> Unit,
 	    onBrushToggle: () -> Unit,
 	    onEraserToggle: () -> Unit,
@@ -1013,6 +1018,7 @@ private fun StreakPill(
 	            onCanvasTap = onCanvasTap,
 	            onCanvasViewportChanged = onCanvasViewportChanged,
 	            onColorSelected = onColorSelected,
+                onEyedropperColorCommitted = onEyedropperColorCommitted,
 	            onBrushWidthChanged = onBrushWidthChanged,
 	            onBrushToggle = onBrushToggle,
 	            onEraserToggle = onEraserToggle,
@@ -1051,6 +1057,7 @@ private fun StreakPill(
 	    onCanvasTap: (StrokePoint) -> Unit,
 	    onCanvasViewportChanged: (Int, Int) -> Unit,
 	    onColorSelected: (Long) -> Unit,
+        onEyedropperColorCommitted: (Long) -> Unit,
 	    onBrushWidthChanged: (Float) -> Unit,
 	    onBrushToggle: () -> Unit,
 	    onEraserToggle: () -> Unit,
@@ -1082,12 +1089,55 @@ private fun StreakPill(
 	    var sentReactionOverlay by remember { mutableStateOf<SentReactionOverlayState?>(null) }
 	    var sentReactionToken by remember { mutableStateOf(0L) }
         var viewportTransform by remember { mutableStateOf(CanvasViewportTransform()) }
+        var eyedropperArmed by remember { mutableStateOf(false) }
+        var eyedropperLiveColorArgb by remember { mutableStateOf<Long?>(null) }
+        var eyedropperCommittedColorArgb by remember { mutableStateOf<Long?>(null) }
+        var eyedropperToolBeforeArm by remember { mutableStateOf(DrawingTool.NONE) }
 
 	    LaunchedEffect(sentReactionOverlay) {
 	        if (sentReactionOverlay == null) return@LaunchedEffect
 	        delay(1_050)
 	        sentReactionOverlay = null
 	    }
+
+        LaunchedEffect(isEditorOpen) {
+            if (isEditorOpen) {
+                eyedropperArmed = false
+                eyedropperLiveColorArgb = null
+                eyedropperCommittedColorArgb = null
+            }
+        }
+
+        LaunchedEffect(
+            uiState.toolState.strokeColorArgb,
+            uiState.toolState.textColorArgb,
+            eyedropperCommittedColorArgb,
+            eyedropperArmed
+        ) {
+            val committed = eyedropperCommittedColorArgb ?: return@LaunchedEffect
+            if (eyedropperArmed) return@LaunchedEffect
+            if (
+                uiState.toolState.strokeColorArgb == committed &&
+                uiState.toolState.textColorArgb == committed
+            ) {
+                eyedropperLiveColorArgb = null
+                eyedropperCommittedColorArgb = null
+            }
+        }
+
+        val onEyedropperToggle: () -> Unit = toggle@{
+            if (isEditorOpen) return@toggle
+            if (eyedropperArmed) {
+                eyedropperArmed = false
+                eyedropperLiveColorArgb = null
+                eyedropperCommittedColorArgb = null
+                return@toggle
+            }
+            eyedropperToolBeforeArm = uiState.toolState.activeTool
+            eyedropperArmed = true
+            eyedropperLiveColorArgb = null
+            eyedropperCommittedColorArgb = null
+        }
 
 	    val sendAndAnimate: (ReactionType) -> Unit = { type ->
             coroutineScope.launch {
@@ -1192,6 +1242,32 @@ private fun StreakPill(
 	                    .padding(8.dp)
 	            )
 
+                    EyedropperOverlay(
+                        armed = eyedropperArmed,
+                        enabled = !isEditorOpen,
+                        canvasState = uiState.canvasState,
+                        viewportTransform = viewportTransform,
+                        stickerAssetStore = stickerAssetStore,
+                        backgroundColorArgb = (MaterialTheme.mulberryAppColors.softSurface.toArgb().toLong() and 0xFFFFFFFFL),
+                        onLiveColorArgbChanged = { colorArgb ->
+                            eyedropperLiveColorArgb = colorArgb
+                        },
+                        onCommitColorArgb = { colorArgb ->
+                            eyedropperLiveColorArgb = colorArgb
+                            eyedropperCommittedColorArgb = colorArgb
+                            onEyedropperColorCommitted(colorArgb)
+                            eyedropperArmed = false
+                        },
+                        onCanceled = {
+                            eyedropperArmed = false
+                            eyedropperLiveColorArgb = null
+                            eyedropperCommittedColorArgb = null
+                        },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(8.dp)
+                    )
+
             androidx.compose.animation.AnimatedVisibility(
                 visible = uiState.canvasState.isEmpty,
                 enter = fadeIn(animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)),
@@ -1247,6 +1323,10 @@ private fun StreakPill(
                     },
                     onBrushWidthChanged = onBrushWidthChanged,
                     onColorSelected = onColorSelected,
+                    eyedropperArmed = eyedropperArmed,
+                    eyedropperEnabled = !isEditorOpen,
+                    eyedropperPreviewColorArgb = eyedropperLiveColorArgb,
+                    onEyedropperToggle = onEyedropperToggle,
                     onUndoRequested = onUndoRequested,
                     onRedoRequested = onRedoRequested,
                     onBrushToggle = onBrushToggle,
@@ -1711,12 +1791,12 @@ private fun CanvasActionButton(
     enabled: Boolean = true,
     showSelectedRing: Boolean = selected,
     dimWhenNotSelected: Boolean = true,
+    ringColor: Color = MulberryPrimary.copy(alpha = 0.95f),
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 49.dp
 ) {
     val ringWidth = if (selected) 4.dp else 2.dp
-    val ringColor = MulberryPrimary.copy(alpha = 0.95f)
     val iconAlpha = when {
         !enabled -> 0.35f
         selected -> 1f
@@ -1877,6 +1957,10 @@ private fun CanvasControlTray(
     onBrushButtonBoundsInRootChanged: (androidx.compose.ui.geometry.Rect) -> Unit,
     onBrushWidthChanged: (Float) -> Unit,
     onColorSelected: (Long) -> Unit,
+    eyedropperArmed: Boolean,
+    eyedropperEnabled: Boolean,
+    eyedropperPreviewColorArgb: Long?,
+    onEyedropperToggle: () -> Unit,
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit,
     onBrushToggle: () -> Unit,
@@ -1897,7 +1981,7 @@ private fun CanvasControlTray(
     // visible becomes half-clipped, hinting that the tray is swipeable.
     val minToolSpacing = baseToolSpacing
     val maxToolSpacing = 40.dp
-    val toolCount = 8
+    val toolCount = 9
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val availableWidth = (maxWidth - trayPadding * 2).coerceAtLeast(0.dp)
@@ -1971,9 +2055,9 @@ private fun CanvasControlTray(
         Box {
             BrushWidthButton(
                 width = uiState.toolState.selectedWidth,
-                accentColor = Color(uiState.toolState.selectedColorArgb),
+                accentColor = Color(eyedropperPreviewColorArgb ?: uiState.toolState.selectedColorArgb),
                 onClick = {
-                    if (uiState.toolState.activeTool == DrawingTool.DRAW) {
+                    if (!eyedropperArmed && uiState.toolState.activeTool == DrawingTool.DRAW) {
                         showWidthPicker = true
                         showColorPicker = false
                     }
@@ -2024,10 +2108,12 @@ private fun CanvasControlTray(
 
         Box {
             ColorDotButton(
-                colorArgb = uiState.toolState.selectedColorArgb,
+                colorArgb = eyedropperPreviewColorArgb ?: uiState.toolState.selectedColorArgb,
                 onClick = {
-                    showColorPicker = true
-                    showWidthPicker = false
+                    if (!eyedropperArmed) {
+                        showColorPicker = true
+                        showWidthPicker = false
+                    }
                 },
                 buttonSize = toolSize
             )
@@ -2089,6 +2175,22 @@ private fun CanvasControlTray(
                 onColorSelected(colorArgb)
                 showCustomColorPicker = false
             }
+        )
+
+        CanvasActionButton(
+            drawableRes = R.drawable.canvas_action_eyedropper,
+            contentDescription = stringResource(R.string.home_canvas_eyedropper_content_description),
+            selected = eyedropperArmed,
+            enabled = eyedropperEnabled,
+            ringColor = Color(eyedropperPreviewColorArgb ?: uiState.toolState.selectedColorArgb),
+            onClick = {
+                showWidthPicker = false
+                showColorPicker = false
+                showCustomColorPicker = false
+                onEyedropperToggle()
+            },
+            modifier = Modifier.testTag(TestTags.EYEDROPPER_BUTTON),
+            size = toolSize
         )
 
         CanvasActionButton(

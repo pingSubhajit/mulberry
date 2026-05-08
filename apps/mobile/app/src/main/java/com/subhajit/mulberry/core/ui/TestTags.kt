@@ -44,6 +44,7 @@ object TestTags {
     const val UNDO_BUTTON = "undo_button"
     const val REDO_BUTTON = "redo_button"
     const val BRUSH_BUTTON = "brush_button"
+    const val EYEDROPPER_BUTTON = "eyedropper_button"
     const val ERASER_BUTTON = "eraser_button"
     const val TEXT_BUTTON = "text_button"
     const val STICKER_BUTTON = "sticker_button"
