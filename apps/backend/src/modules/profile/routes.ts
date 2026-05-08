@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { HttpError } from "../../infra/http/HttpError.js"
 import { requireBearerToken } from "../../infra/http/auth.js"
-import { readRequiredImageUpload } from "../../infra/http/uploads.js"
+import { readRequiredImageUpload, readRequiredPartnerProfileUpdateWithPhoto } from "../../infra/http/uploads.js"
 import type { ProfileService } from "./service.js"
 
 export function registerProfileRoutes(app: FastifyInstance, service: ProfileService): void {
@@ -35,6 +35,15 @@ export function registerProfileRoutes(app: FastifyInstance, service: ProfileServ
     return service.updatePartnerProfile(requireBearerToken(request), {
       partnerDisplayName: body.partnerDisplayName ?? "",
       anniversaryDate: body.anniversaryDate ?? "",
+    })
+  })
+
+  app.put("/me/partner-profile-with-photo", async (request) => {
+    const body = await readRequiredPartnerProfileUpdateWithPhoto(request)
+    return service.updatePartnerProfileWithPhoto(requireBearerToken(request), {
+      partnerDisplayName: body.partnerDisplayName,
+      anniversaryDate: body.anniversaryDate,
+      upload: body.image,
     })
   })
 

@@ -349,6 +349,102 @@ export class ProfileService {
     return this.bootstrapService.buildBootstrap(context.user.id)
   }
 
+  async updatePartnerProfileWithPhoto(
+    accessToken: string,
+    input: {
+      partnerDisplayName: string
+      anniversaryDate: string
+      upload: UploadedProfilePhoto
+    },
+  ): Promise<BootstrapResponse> {
+    const context = await requireSessionContext(this.db, accessToken)
+    const partnerDisplayName = input.partnerDisplayName.trim()
+    const anniversaryDate = input.anniversaryDate.trim()
+    if (!partnerDisplayName || !anniversaryDate) {
+      throw new HttpError(400, "Partner name and relationship anniversary are required")
+    }
+
+    const existing = await getProfileFrom(this.db, context.user.id)
+    const pairSession = await getPairSession(this.db, context.user.id)
+    const enforceCooldown = pairSession !== null
+    const nextUpdateAt = enforceCooldown ? this.partnerProfileNextUpdateAt(existing) : null
+    if (nextUpdateAt) {
+      throw new HttpError(409, `Partner details can be updated again at ${nextUpdateAt}`)
+    }
+
+    const processed = await this.storeProfilePhoto(context.user.id, input.upload)
+    const updatedAt = enforceCooldown ? new Date().toISOString() : null
+    const oldPaths: string[] = []
+
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `
+        INSERT INTO user_profiles (
+          user_id,
+          display_name,
+          partner_display_name,
+          anniversary_date,
+          partner_profile_photo_path,
+          partner_profile_updated_at,
+          updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        ON CONFLICT (user_id) DO UPDATE SET
+          partner_display_name = EXCLUDED.partner_display_name,
+          anniversary_date = EXCLUDED.anniversary_date,
+          partner_profile_photo_path = EXCLUDED.partner_profile_photo_path,
+          partner_profile_updated_at = EXCLUDED.partner_profile_updated_at,
+          updated_at = NOW()
+        `,
+        [
+          context.user.id,
+          existing?.display_name ?? context.user.email,
+          partnerDisplayName,
+          anniversaryDate,
+          processed.path,
+          updatedAt,
+        ],
+      )
+
+      if (pairSession) {
+        const peerUserId = pairSession.user_one_id === context.user.id
+          ? pairSession.user_two_id
+          : pairSession.user_one_id
+        const peerProfile = await getProfileFrom(tx, peerUserId)
+        if (peerProfile?.profile_photo_path) {
+          oldPaths.push(peerProfile.profile_photo_path)
+        }
+        if (existing?.partner_profile_photo_path) {
+          oldPaths.push(existing.partner_profile_photo_path)
+        }
+
+        await tx.query(
+          `
+          INSERT INTO user_profiles (
+            user_id,
+            display_name,
+            anniversary_date,
+            profile_photo_path,
+            updated_at
+          ) VALUES ($1, $2, $3, $4, NOW())
+          ON CONFLICT (user_id) DO UPDATE SET
+            display_name = EXCLUDED.display_name,
+            anniversary_date = EXCLUDED.anniversary_date,
+            profile_photo_path = EXCLUDED.profile_photo_path,
+            updated_at = NOW()
+          `,
+          [peerUserId, partnerDisplayName, anniversaryDate, processed.path],
+        )
+      } else {
+        if (existing?.partner_profile_photo_path) {
+          oldPaths.push(existing.partner_profile_photo_path)
+        }
+      }
+    })
+
+    await this.removeStoredProfilePhotos(oldPaths)
+    return this.bootstrapService.buildBootstrap(context.user.id)
+  }
+
   async updatePartnerProfilePhoto(accessToken: string, upload: UploadedProfilePhoto): Promise<BootstrapResponse> {
     const context = await requireSessionContext(this.db, accessToken)
     const existing = await getProfileFrom(this.db, context.user.id)

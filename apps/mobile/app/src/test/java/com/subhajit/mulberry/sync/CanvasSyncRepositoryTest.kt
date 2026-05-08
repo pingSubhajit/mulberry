@@ -611,6 +611,12 @@ private class FakeMulberryApiService : MulberryApiService {
     override suspend fun updatePartnerProfile(request: PartnerProfileRequest): BootstrapResponse =
         error("unused")
 
+    override suspend fun updatePartnerProfileWithPhoto(
+        partnerDisplayName: okhttp3.RequestBody,
+        anniversaryDate: okhttp3.RequestBody,
+        image: MultipartBody.Part
+    ): BootstrapResponse = error("unused")
+
     override suspend fun updatePartnerProfilePhoto(image: MultipartBody.Part): BootstrapResponse =
         error("unused")
 

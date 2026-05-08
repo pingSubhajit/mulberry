@@ -213,9 +213,21 @@ fun SettingsRoute(
         partnerVisibilitySheetOpen = partnerVisibilitySheetOpen,
         onPartnerVisibilitySheetOpenChanged = { partnerVisibilitySheetOpen = it },
         onNavigateBack = {
-            if (pane == SettingsPane.Home) onNavigateBack() else pane = SettingsPane.Home
+            if (pane == SettingsPane.Home) {
+                onNavigateBack()
+            } else {
+                if (pane == SettingsPane.Partner) {
+                    viewModel.onPartnerProfileEditDismissed()
+                }
+                pane = SettingsPane.Home
+            }
         },
-        onPaneSelected = { pane = it },
+        onPaneSelected = {
+            if (pane == SettingsPane.Partner && it != SettingsPane.Partner) {
+                viewModel.onPartnerProfileEditDismissed()
+            }
+            pane = it
+        },
         onWallpaperSyncEnabledChanged = viewModel::onWallpaperSyncEnabledChanged,
         onCanvasStrokeRenderModeChanged = viewModel::onCanvasStrokeRenderModeChanged,
         onDisplayNameSave = viewModel::onDisplayNameSave,
@@ -1393,6 +1405,7 @@ private fun PartnerPane(
         null
     }
     val canEditPartner = !uiState.isBusy && cooldownText == null
+    val partnerPhotoUrl = uiState.pendingPartnerProfilePhotoUri?.toString() ?: uiState.bootstrapState.partnerPhotoUrl
 
     SettingsDetailScaffold(
         title = "Partner settings",
@@ -1419,7 +1432,8 @@ private fun PartnerPane(
                         anniversaryDate.isCompleteAnniversaryDate() &&
                         (
                             partnerName.trim() != uiState.bootstrapState.partnerDisplayName.orEmpty() ||
-                                anniversaryDate != uiState.bootstrapState.anniversaryDate.toMaskedAnniversaryDate()
+                                anniversaryDate != uiState.bootstrapState.anniversaryDate.toMaskedAnniversaryDate() ||
+                                uiState.pendingPartnerProfilePhotoUri != null
                             ),
                     onClick = { onPartnerProfileSave(partnerName.trim(), anniversaryDate.trim()) }
                 )
@@ -1430,7 +1444,7 @@ private fun PartnerPane(
         Spacer(modifier = Modifier.height(54.dp))
         Box(contentAlignment = Alignment.Center) {
             EditableProfileAvatar(
-                photoUrl = uiState.bootstrapState.partnerPhotoUrl,
+                photoUrl = partnerPhotoUrl,
                 displayName = uiState.bootstrapState.partnerDisplayName,
                 size = 90.dp,
                 borderWidth = 0.dp,

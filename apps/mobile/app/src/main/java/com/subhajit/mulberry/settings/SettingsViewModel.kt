@@ -78,6 +78,7 @@ data class SettingsUiState(
     val syncMetadata: SyncMetadata = SyncMetadata(),
     val fcmRegistered: Boolean = false,
     val wallpaperSyncEnabled: Boolean = true,
+    val pendingPartnerProfilePhotoUri: Uri? = null,
     val isBusy: Boolean = false
 ) {
     val pendingOperationCount: Int
@@ -126,6 +127,7 @@ class SettingsViewModel @Inject constructor(
 
     private val busyState = kotlinx.coroutines.flow.MutableStateFlow(false)
     private val versionTapCount = kotlinx.coroutines.flow.MutableStateFlow(0)
+    private val pendingPartnerProfilePhotoUri = kotlinx.coroutines.flow.MutableStateFlow<Uri?>(null)
 
     private val baseUiStateCoreWithoutCanvasDebug = combine(
         repository.state,
@@ -178,9 +180,14 @@ class SettingsViewModel @Inject constructor(
     val uiState = combine(
         baseUiStateWithWallpaperSync,
         canvasSyncRepository.syncState,
-        busyState
-    ) { base, syncState, isBusy ->
-        base.copy(syncState = syncState, isBusy = isBusy)
+        busyState,
+        pendingPartnerProfilePhotoUri
+    ) { base, syncState, isBusy, pendingPartnerPhoto ->
+        base.copy(
+            syncState = syncState,
+            isBusy = isBusy,
+            pendingPartnerProfilePhotoUri = pendingPartnerPhoto
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -418,23 +425,33 @@ class SettingsViewModel @Inject constructor(
 
     fun onPartnerProfileSave(partnerDisplayName: String, anniversaryDate: String) {
         viewModelScope.launchWithBusy {
-            val bootstrap = apiService.updatePartnerProfile(
-                PartnerProfileRequest(
-                    partnerDisplayName = partnerDisplayName,
-                    anniversaryDate = anniversaryDate.toBackendAnniversaryDate()
+            val pendingUri = pendingPartnerProfilePhotoUri.value
+            val bootstrap = if (pendingUri != null) {
+                apiService.updatePartnerProfileWithPhoto(
+                    partnerDisplayName = partnerDisplayName.toTextPart(),
+                    anniversaryDate = anniversaryDate.toBackendAnniversaryDate().toTextPart(),
+                    image = pendingUri.toImagePart()
                 )
-            ).toDomainBootstrap()
+            } else {
+                apiService.updatePartnerProfile(
+                    PartnerProfileRequest(
+                        partnerDisplayName = partnerDisplayName,
+                        anniversaryDate = anniversaryDate.toBackendAnniversaryDate()
+                    )
+                )
+            }.toDomainBootstrap()
             sessionRepository.cacheBootstrap(bootstrap)
+            pendingPartnerProfilePhotoUri.value = null
             _effects.emit(SettingsEffect.Message("Partner details updated"))
         }
     }
 
     fun onPartnerProfilePhotoSelected(uri: Uri) {
-        viewModelScope.launchWithBusy {
-            val bootstrap = apiService.updatePartnerProfilePhoto(uri.toImagePart()).toDomainBootstrap()
-            sessionRepository.cacheBootstrap(bootstrap)
-            _effects.emit(SettingsEffect.Message("Partner photo updated"))
-        }
+        pendingPartnerProfilePhotoUri.value = uri
+    }
+
+    fun onPartnerProfileEditDismissed() {
+        pendingPartnerProfilePhotoUri.value = null
     }
 
     fun onSeedDemoSession() {
@@ -536,6 +553,9 @@ class SettingsViewModel @Inject constructor(
         val requestBody = bytes.toRequestBody(contentType.toMediaType())
         return MultipartBody.Part.createFormData("image", "profile-photo", requestBody)
     }
+
+    private fun String.toTextPart(): okhttp3.RequestBody =
+        toRequestBody("text/plain".toMediaType())
 
     private companion object {
         const val DEVELOPER_UNLOCK_TAPS = 5

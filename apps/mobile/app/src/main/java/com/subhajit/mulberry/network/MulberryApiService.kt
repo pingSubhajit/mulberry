@@ -10,6 +10,7 @@ import retrofit2.http.PUT
 import retrofit2.http.Query
 import retrofit2.http.Path
 import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.Response
 
@@ -47,6 +48,14 @@ interface MulberryApiService {
 
     @PUT("/me/partner-profile")
     suspend fun updatePartnerProfile(@Body request: PartnerProfileRequest): BootstrapResponse
+
+    @Multipart
+    @PUT("/me/partner-profile-with-photo")
+    suspend fun updatePartnerProfileWithPhoto(
+        @Part("partnerDisplayName") partnerDisplayName: RequestBody,
+        @Part("anniversaryDate") anniversaryDate: RequestBody,
+        @Part image: MultipartBody.Part
+    ): BootstrapResponse
 
     @Multipart
     @PUT("/me/partner-profile-photo")
