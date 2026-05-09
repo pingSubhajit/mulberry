@@ -5,13 +5,17 @@ import android.graphics.Movie
 import androidx.annotation.RawRes
 import com.google.android.play.core.assetpacks.AssetPackManager
 import com.google.android.play.core.assetpacks.AssetPackManagerFactory
+import com.google.android.play.core.assetpacks.model.AssetPackStatus
 import com.subhajit.mulberry.R
 import java.io.File
 import java.io.InputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
-private const val REACTION_ASSET_PACK = "reaction_pack"
+internal const val REACTION_ASSET_PACK = "reaction_pack"
 
 object ReactionGifAssets {
+    private val fastFollowRequestStarted = AtomicBoolean(false)
+
     @RawRes
     private fun rawResFor(type: ReactionType): Int? = when (type) {
         ReactionType.HEART -> R.raw.reaction_heart
@@ -19,9 +23,21 @@ object ReactionGifAssets {
     }
 
     fun requestFastFollowPack(context: Context) {
-        val manager = createAssetPackManager(context) ?: return
+        val manager = createReactionAssetPackManager(context) ?: return
         if (manager.getPackLocation(REACTION_ASSET_PACK) != null) return
+        if (!fastFollowRequestStarted.compareAndSet(false, true)) return
         runCatching { manager.fetch(listOf(REACTION_ASSET_PACK)) }
+            .onFailure { fastFollowRequestStarted.set(false) }
+    }
+
+    internal fun onFastFollowPackStatus(status: Int) {
+        if (
+            status == AssetPackStatus.FAILED ||
+            status == AssetPackStatus.CANCELED ||
+            status == AssetPackStatus.NOT_INSTALLED
+        ) {
+            fastFollowRequestStarted.set(false)
+        }
     }
 
     fun decodeMovie(context: Context, type: ReactionType): Movie? {
@@ -45,7 +61,7 @@ object ReactionGifAssets {
         type: ReactionType
     ): (() -> InputStream)? {
         val relativePath = type.assetPackRelativePath()
-        val manager = createAssetPackManager(context)
+        val manager = createReactionAssetPackManager(context)
         val assetsPath = manager
             ?.getPackLocation(REACTION_ASSET_PACK)
             ?.assetsPath()
@@ -72,5 +88,5 @@ private fun ReactionType.assetPackRelativePath(): String = when (this) {
     ReactionType.SPARKLE -> "reactions/reaction_sparkles.gif"
 }
 
-private fun createAssetPackManager(context: Context): AssetPackManager? =
+internal fun createReactionAssetPackManager(context: Context): AssetPackManager? =
     runCatching { AssetPackManagerFactory.getInstance(context.applicationContext) }.getOrNull()
