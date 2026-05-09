@@ -83,6 +83,9 @@ data class SettingsUiState(
     val fcmRegistered: Boolean = false,
     val wallpaperSyncEnabled: Boolean = true,
     val pendingPartnerProfilePhotoUri: Uri? = null,
+    val feedbackSsoToken: String? = null,
+    val feedbackLoading: Boolean = false,
+    val feedbackError: String? = null,
     val isBusy: Boolean = false
 ) {
     val pendingOperationCount: Int
@@ -132,6 +135,7 @@ class SettingsViewModel @Inject constructor(
     private val busyState = kotlinx.coroutines.flow.MutableStateFlow(false)
     private val versionTapCount = kotlinx.coroutines.flow.MutableStateFlow(0)
     private val pendingPartnerProfilePhotoUri = kotlinx.coroutines.flow.MutableStateFlow<Uri?>(null)
+    private val feedbackState = kotlinx.coroutines.flow.MutableStateFlow(FeedbackState())
 
     private val baseUiStateCoreWithoutCanvasDebug = combine(
         combine(
@@ -196,12 +200,16 @@ class SettingsViewModel @Inject constructor(
         baseUiStateWithWallpaperSync,
         canvasSyncRepository.syncState,
         busyState,
-        pendingPartnerProfilePhotoUri
-    ) { base, syncState, isBusy, pendingPartnerPhoto ->
+        pendingPartnerProfilePhotoUri,
+        feedbackState
+    ) { base, syncState, isBusy, pendingPartnerPhoto, feedback ->
         base.copy(
             syncState = syncState,
             isBusy = isBusy,
-            pendingPartnerProfilePhotoUri = pendingPartnerPhoto
+            pendingPartnerProfilePhotoUri = pendingPartnerPhoto,
+            feedbackSsoToken = feedback.ssoToken,
+            feedbackLoading = feedback.loading,
+            feedbackError = feedback.error
         )
     }.stateIn(
         scope = viewModelScope,
@@ -286,6 +294,20 @@ class SettingsViewModel @Inject constructor(
             if (error != null) {
                 _effects.emit(SettingsEffect.Message(error))
             }
+        }
+    }
+
+    fun onFeedbackSheetOpened(forceRefresh: Boolean = false) {
+        if (!forceRefresh && (feedbackState.value.ssoToken != null || feedbackState.value.loading)) return
+        viewModelScope.launch {
+            feedbackState.value = FeedbackState(loading = true)
+            runCatching { apiService.getCannySsoToken().token }
+                .onSuccess { token ->
+                    feedbackState.value = FeedbackState(ssoToken = token)
+                }
+                .onFailure { error ->
+                    feedbackState.value = FeedbackState(error = error.toUserFacingMessage())
+                }
         }
     }
 
@@ -626,6 +648,12 @@ private data class SettingsCoreInputs(
     val flags: FeatureFlags,
     val developerOptionsEnabled: Boolean,
     val streakSimulation: com.subhajit.mulberry.streak.StreakSimulation?,
+)
+
+private data class FeedbackState(
+    val ssoToken: String? = null,
+    val loading: Boolean = false,
+    val error: String? = null
 )
 
 private fun String.toBackendAnniversaryDate(): String =

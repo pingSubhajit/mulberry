@@ -137,4 +137,7 @@ interface MulberryApiService {
 
     @GET("/whats-new/latest.md")
     suspend fun getLatestWhatsNewMarkdown(): Response<ResponseBody>
+
+    @GET("/feedback/canny-sso-token")
+    suspend fun getCannySsoToken(): CannySsoTokenResponse
 }

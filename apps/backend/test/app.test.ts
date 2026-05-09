@@ -1,4 +1,5 @@
 import { newDb } from "pg-mem"
+import { createHmac } from "node:crypto"
 import type { FastifyInstance } from "fastify"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createApp } from "../src/app/createApp.js"
@@ -55,6 +56,7 @@ describe("Mulberry backend", () => {
         googleClientId: "",
         allowDevGoogleTokens: true,
         wallpaperAdminPassword: "admin-password",
+        cannySsoPrivateKey: "test-canny-secret",
       },
     })
     await app.ready()
@@ -1940,6 +1942,36 @@ describe("Mulberry backend", () => {
       ["fcm-token-1"],
     )
     expect(tokenRows.rows[0].revoked_at).toBeTruthy()
+  })
+
+  it("issues a Canny SSO token for the signed-in user", async () => {
+    const auth = await signIn("feedback@elaris.dev", "Feedback Google", "https://example.com/avatar.png")
+    await completeProfile(auth.accessToken, "Feedback User", "Partner", "2026-01-01")
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/feedback/canny-sso-token",
+      headers: bearer(auth.accessToken),
+    })
+
+    expect(response.statusCode).toBe(200)
+    const token = response.json().token as string
+    const [encodedHeader, encodedPayload, signature] = token.split(".")
+    expect(signature).toBe(
+      createHmac("sha256", "test-canny-secret")
+        .update(`${encodedHeader}.${encodedPayload}`)
+        .digest("base64url"),
+    )
+    expect(JSON.parse(Buffer.from(encodedHeader, "base64url").toString("utf8"))).toMatchObject({
+      alg: "HS256",
+      typ: "JWT",
+    })
+    expect(JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"))).toMatchObject({
+      avatarURL: "https://example.com/avatar.png",
+      email: "feedback@elaris.dev",
+      id: auth.userId,
+      name: "Feedback User",
+    })
   })
 
   it("dispatches canvas update pushes to only the paired peer for durable milestones", async () => {

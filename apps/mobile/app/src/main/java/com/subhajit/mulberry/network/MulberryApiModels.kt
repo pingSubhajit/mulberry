@@ -232,6 +232,10 @@ data class DeviceTokenResponse(
     val revokedAt: String?
 )
 
+data class CannySsoTokenResponse(
+    val token: String
+)
+
 data class DebugActionResponse(
     val ok: Boolean
 )

@@ -24,6 +24,7 @@ export interface AppConfig {
   wallpaperAdminPassword?: string
   supabaseStickerBucket?: string
   stickerAdminPassword?: string
+  cannySsoPrivateKey?: string
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -69,6 +70,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     wallpaperAdminPassword: env.WALLPAPER_ADMIN_PASSWORD,
     supabaseStickerBucket: env.SUPABASE_STICKER_BUCKET ?? env.SUPABASE_WALLPAPER_BUCKET,
     stickerAdminPassword: env.STICKER_ADMIN_PASSWORD ?? env.WALLPAPER_ADMIN_PASSWORD,
+    cannySsoPrivateKey: env.CANNY_SSO_PRIVATE_KEY?.trim() ? env.CANNY_SSO_PRIVATE_KEY : undefined,
   }
 }
 

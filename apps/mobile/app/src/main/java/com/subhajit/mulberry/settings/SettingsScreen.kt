@@ -5,6 +5,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
+import android.net.Uri
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -20,6 +26,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -37,6 +44,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -51,6 +59,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -82,6 +91,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -110,6 +120,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+
+private const val CANNY_FEEDBACK_BOARD_TOKEN = "6a631c96-1dd3-3c43-0653-b53d1edd0828"
 
 private enum class SettingsPane {
     Home,
@@ -258,6 +270,8 @@ fun SettingsRoute(
         onTriggerInAppUpdate = viewModel::onTriggerInAppUpdateClicked,
         onPreviewLatestWhatsNew = viewModel::onPreviewLatestWhatsNewClicked,
         onWhatsNew = viewModel::onWhatsNewClicked,
+        onFeedbackRequested = { viewModel.onFeedbackSheetOpened() },
+        onFeedbackRetry = { viewModel.onFeedbackSheetOpened(forceRefresh = true) },
         onClearStickerAssets = viewModel::onClearStickerAssets,
         onClearStickerCatalogCache = viewModel::onClearStickerCatalogCache,
         onSetStreakSimulation = viewModel::onSetStreakSimulation,
@@ -302,6 +316,8 @@ private fun SettingsScreen(
     onTriggerInAppUpdate: () -> Unit,
     onPreviewLatestWhatsNew: () -> Unit,
     onWhatsNew: () -> Unit,
+    onFeedbackRequested: () -> Unit,
+    onFeedbackRetry: () -> Unit,
     onClearStickerAssets: () -> Unit,
     onClearStickerCatalogCache: () -> Unit,
     onSetStreakSimulation: (StreakSimulationPreset?) -> Unit,
@@ -326,6 +342,8 @@ private fun SettingsScreen(
                 onWallpaperSyncEnabledChanged = onWallpaperSyncEnabledChanged,
                 onCanvasStrokeRenderModeChanged = onCanvasStrokeRenderModeChanged,
                 onWhatsNew = onWhatsNew,
+                onFeedbackRequested = onFeedbackRequested,
+                onFeedbackRetry = onFeedbackRetry,
                 partnerVisibilitySheetOpen = partnerVisibilitySheetOpen,
                 onPartnerVisibilitySheetOpenChanged = onPartnerVisibilitySheetOpenChanged,
                 onLogout = onLogout,
@@ -423,6 +441,8 @@ private fun SettingsRootPage(
     onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
     onCanvasStrokeRenderModeChanged: (Boolean) -> Unit,
     onWhatsNew: () -> Unit,
+    onFeedbackRequested: () -> Unit,
+    onFeedbackRetry: () -> Unit,
     partnerVisibilitySheetOpen: Boolean,
     onPartnerVisibilitySheetOpenChanged: (Boolean) -> Unit,
     onLogout: () -> Unit,
@@ -432,6 +452,7 @@ private fun SettingsRootPage(
     val partnerName = uiState.bootstrapState.partnerDisplayName
     val userName = uiState.bootstrapState.userDisplayName ?: "Mulberry user"
     var showLogoutConfirmation by remember { mutableStateOf(false) }
+    var feedbackSheetOpen by remember { mutableStateOf(false) }
     var wallpaperDoodlesInfoSheetOpen by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
     val partnerVisibility = remember(uiState.bootstrapState.pairingStatus, uiState.bootstrapState.partnerWallpaperStatus) {
@@ -442,6 +463,13 @@ private fun SettingsRootPage(
     }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val wallpaperDoodlesInfoSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val feedbackSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val feedbackUrl = uiState.feedbackSsoToken?.takeIf { it.isNotBlank() }?.let(::cannyFeedbackUrl)
+    val feedbackWebView = rememberPreloadedCannyFeedbackWebView(feedbackUrl)
+
+    LaunchedEffect(Unit) {
+        onFeedbackRequested()
+    }
 
     Column(
         modifier = modifier
@@ -508,6 +536,10 @@ private fun SettingsRootPage(
             onWallpaperSyncEnabledChanged = onWallpaperSyncEnabledChanged,
             onCanvasStrokeRenderModeChanged = onCanvasStrokeRenderModeChanged,
             onWhatsNew = onWhatsNew,
+            onFeedbackRequested = {
+                feedbackSheetOpen = true
+                onFeedbackRequested()
+            },
             onWallpaperDoodlesInfoRequested = { wallpaperDoodlesInfoSheetOpen = true },
             onLogoutRequested = { showLogoutConfirmation = true }
         )
@@ -567,6 +599,26 @@ private fun SettingsRootPage(
         ) {
             WallpaperDoodlesInfoSheetContent(
                 onDismiss = { wallpaperDoodlesInfoSheetOpen = false }
+            )
+        }
+    }
+
+    if (feedbackSheetOpen) {
+        LaunchedEffect(feedbackSheetOpen, feedbackSheetState) {
+            feedbackSheetState.expand()
+        }
+        ModalBottomSheet(
+            onDismissRequest = { feedbackSheetOpen = false },
+            sheetState = feedbackSheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            FeedbackSheetContent(
+                ssoToken = uiState.feedbackSsoToken,
+                webView = feedbackWebView,
+                loading = uiState.feedbackLoading,
+                error = uiState.feedbackError,
+                onRetry = onFeedbackRetry
             )
         }
     }
@@ -679,6 +731,7 @@ private fun SettingsRootMenu(
     onWallpaperSyncEnabledChanged: (Boolean) -> Unit,
     onCanvasStrokeRenderModeChanged: (Boolean) -> Unit,
     onWhatsNew: () -> Unit,
+    onFeedbackRequested: () -> Unit,
     onWallpaperDoodlesInfoRequested: () -> Unit,
     onLogoutRequested: () -> Unit
 ) {
@@ -736,6 +789,11 @@ private fun SettingsRootMenu(
             showChevron = false,
             trailingContent = { RootMulberryRedDot() },
             onClick = onWhatsNew
+        )
+        SettingsRootRow(
+            icon = SettingsRootIcon.Feedback,
+            title = "Send feedback",
+            onClick = onFeedbackRequested
         )
         if (uiState.developerOptionsEnabled) {
             SettingsRootRow(
@@ -1060,6 +1118,138 @@ private fun WallpaperDoodlesInfoSheetContent(onDismiss: () -> Unit) {
 }
 
 @Composable
+private fun FeedbackSheetContent(
+    ssoToken: String?,
+    webView: WebView?,
+    loading: Boolean,
+    error: String?,
+    onRetry: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.9f)
+            .padding(top = 4.dp)
+    ) {
+        when {
+            loading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = MulberryPrimary)
+                }
+            }
+            error != null -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = error,
+                        color = MaterialTheme.mulberryAppColors.mutedText,
+                        fontFamily = PoppinsFontFamily,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    SettingsSaveButton(text = "Try again", enabled = true, onClick = onRetry)
+                }
+            }
+            !ssoToken.isNullOrBlank() && webView != null -> {
+                CannyFeedbackWebView(
+                    webView = webView,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(MaterialTheme.colorScheme.background)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CannyFeedbackWebView(
+    webView: WebView,
+    modifier: Modifier = Modifier
+) {
+    AndroidView(
+        modifier = modifier,
+        factory = {
+            webView.detachFromParent()
+            webView
+        },
+        update = {}
+    )
+}
+
+@Composable
+private fun rememberPreloadedCannyFeedbackWebView(url: String?): WebView {
+    val context = LocalContext.current
+    val webView = remember(context) {
+        WebView(context).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            webViewClient = WebViewClient()
+            setOnTouchListener { view, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN,
+                    MotionEvent.ACTION_MOVE -> view.requestAncestorsDisallowIntercept(true)
+                    MotionEvent.ACTION_UP,
+                    MotionEvent.ACTION_CANCEL -> view.requestAncestorsDisallowIntercept(false)
+                }
+                false
+            }
+        }
+    }
+
+    LaunchedEffect(webView, url) {
+        if (!url.isNullOrBlank() && webView.url != url) {
+            webView.loadUrl(url)
+        }
+    }
+
+    DisposableEffect(webView) {
+        onDispose {
+            webView.detachFromParent()
+            webView.destroy()
+        }
+    }
+
+    return webView
+}
+
+private fun WebView.detachFromParent() {
+    (parent as? ViewGroup)?.removeView(this)
+}
+
+private fun View.requestAncestorsDisallowIntercept(disallow: Boolean) {
+    var currentParent = parent
+    while (currentParent != null) {
+        currentParent.requestDisallowInterceptTouchEvent(disallow)
+        currentParent = currentParent.parent
+    }
+}
+
+private fun cannyFeedbackUrl(ssoToken: String): String =
+    Uri.Builder()
+        .scheme("https")
+        .authority("webview.canny.io")
+        .appendQueryParameter("boardToken", CANNY_FEEDBACK_BOARD_TOKEN)
+        .appendQueryParameter("ssoToken", ssoToken)
+        .appendQueryParameter("theme", "auto")
+        .build()
+        .toString()
+
+@Composable
 private fun RootCloseButton(onClick: () -> Unit) {
     val strokeColor = MaterialTheme.colorScheme.onBackground
     Canvas(
@@ -1235,6 +1425,7 @@ private enum class SettingsRootIcon {
     BrushStyle,
     About,
     WhatsNew,
+    Feedback,
     Logout
 }
 
@@ -1248,6 +1439,7 @@ private fun SettingsRootIcon.drawableRes(): Int = when (this) {
     SettingsRootIcon.BrushStyle -> R.drawable.settings_icon_edit_pencil
     SettingsRootIcon.About -> R.drawable.settings_icon_about
     SettingsRootIcon.WhatsNew -> R.drawable.settings_icon_megaphone
+    SettingsRootIcon.Feedback -> R.drawable.settings_icon_feedback
     SettingsRootIcon.Logout -> R.drawable.settings_icon_logout
 }
 
