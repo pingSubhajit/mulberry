@@ -1,0 +1,22 @@
+name: macOS Smoke
+
+on:
+  pull_request:
+    paths:
+      - "apps/macos/**"
+      - ".github/workflows/macos-smoke.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/macos/**"
+      - ".github/workflows/macos-smoke.yml"
+
+jobs:
+  macos-smoke:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run macOS smoke target
+        run: ./Scripts/smoke-test.sh
+        working-directory: apps/macos

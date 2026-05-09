@@ -1,0 +1,12 @@
+{
+  "name": "@mulberry/macos",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "dev": "./Scripts/run-dev.sh",
+    "build": "./Scripts/build-app.sh",
+    "smoke": "./Scripts/smoke-test.sh",
+    "start": "open .build/app/Mulberry.app"
+  }
+}
