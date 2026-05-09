@@ -46,17 +46,20 @@ class CanvasFontResolver(
         else -> assetTypefaceFor(font) ?: fallbackTypeface
     }
 
-    fun fontFamilyFor(font: CanvasTextFont): FontFamily = when (font) {
-        CanvasTextFont.POPPINS -> PoppinsFontFamily
-        CanvasTextFont.VIRGIL -> VirgilFontFamily
-        else -> assetFontFamilyCache.getOrPut(font) {
-            val typeface = assetTypefaceFor(font) ?: return@getOrPut PoppinsFontFamily
-            FontFamily(typeface)
+    fun fontFamilyFor(font: CanvasTextFont): FontFamily {
+        return when (font) {
+            CanvasTextFont.POPPINS -> PoppinsFontFamily
+            CanvasTextFont.VIRGIL -> VirgilFontFamily
+            else -> {
+                assetFontFamilyCache[font]?.let { return it }
+                val typeface = assetTypefaceFor(font) ?: return PoppinsFontFamily
+                FontFamily(typeface).also { assetFontFamilyCache[font] = it }
+            }
         }
     }
 
     fun requestFastFollowPack() {
-        val manager = assetPackManager ?: return
+        val manager = currentAssetPackManager() ?: return
         if (manager.getPackLocation(CANVAS_FONTS_ASSET_PACK) != null) return
         runCatching { manager.fetch(listOf(CANVAS_FONTS_ASSET_PACK)) }
     }
@@ -68,6 +71,7 @@ class CanvasFontResolver(
         val typeface = if (file != null) {
             runCatching { Typeface.createFromFile(file) }.getOrNull()
         } else {
+            requestFastFollowPack()
             runCatching { Typeface.createFromAsset(appContext.assets, relativePath) }.getOrNull()
         } ?: return null
         assetTypefaceCache[font] = typeface
@@ -75,12 +79,17 @@ class CanvasFontResolver(
     }
 
     private fun assetFileFor(relativePath: String): File? {
-        val assetsPath = assetPackManager
+        val assetsPath = currentAssetPackManager()
             ?.getPackLocation(CANVAS_FONTS_ASSET_PACK)
             ?.assetsPath()
             ?: return null
         return File(assetsPath, relativePath).takeIf(File::isFile)
     }
+
+    private fun currentAssetPackManager(): AssetPackManager? =
+        assetPackManager
+            ?.takeIf { manager -> manager.getPackLocation(CANVAS_FONTS_ASSET_PACK) != null }
+            ?: createAssetPackManager(appContext)
 
     companion object {
         fun create(context: Context): CanvasFontResolver = CanvasFontResolver(context)

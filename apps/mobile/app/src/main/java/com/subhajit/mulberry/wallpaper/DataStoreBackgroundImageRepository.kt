@@ -86,10 +86,10 @@ class DataStoreBackgroundImageRepository @Inject constructor(
     override suspend fun importPresetBackground(preset: WallpaperPreset) {
         withContext(Dispatchers.IO) {
             val sourceFile = wallpaperPackAssetResolver.fileFor(preset)
+                ?: wallpaperPackAssetResolver.awaitFileFor(preset)
             val canOpenDebugAsset = sourceFile == null &&
                 wallpaperPackAssetResolver.openAssetStream(preset)?.use { true } == true
             if (sourceFile == null && !canOpenDebugAsset) {
-                wallpaperPackAssetResolver.requestFastFollowPack()
                 error("Wallpaper assets are still downloading. Please try again in a moment.")
             }
             val backgroundFile = WallpaperFiles.backgroundFile(context)
