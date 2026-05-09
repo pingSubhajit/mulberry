@@ -410,7 +410,9 @@ class MulberryWallpaperService : WallpaperService() {
         private fun getReactionMovie(type: ReactionType): Movie? {
             if (reactionMovieCache.containsKey(type)) return reactionMovieCache[type]
             val movie = ReactionGifAssets.decodeMovie(this@MulberryWallpaperService, type)
-            reactionMovieCache[type] = movie
+            if (movie != null) {
+                reactionMovieCache[type] = movie
+            }
             return movie
         }
 

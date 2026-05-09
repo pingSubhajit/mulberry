@@ -22,8 +22,15 @@ fun ReactionGif(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val movie = remember(type) { ReactionGifAssets.decodeMovie(context, type) }
+    var decodeAttempt by remember(type) { mutableLongStateOf(0L) }
+    val movie = remember(type, decodeAttempt) { ReactionGifAssets.decodeMovie(context, type) }
     var elapsedMs by remember(type) { mutableLongStateOf(0L) }
+
+    LaunchedEffect(movie, type, decodeAttempt) {
+        if (movie != null || type == ReactionType.HEART) return@LaunchedEffect
+        delay(1_000)
+        decodeAttempt += 1
+    }
 
     LaunchedEffect(movie, type) {
         if (movie == null) return@LaunchedEffect

@@ -66,7 +66,7 @@ android {
     }
 
     flavorDimensions += "environment"
-    assetPacks += listOf(":canvas_fonts", ":wallpaper_pack")
+    assetPacks += listOf(":canvas_fonts", ":wallpaper_pack", ":reaction_pack")
 
     productFlavors {
         create("dev") {
@@ -134,7 +134,8 @@ android {
         getByName("debug") {
             assets.srcDirs(
                 "../canvas_fonts/src/main/assets",
-                "../wallpaper_pack/src/main/assets"
+                "../wallpaper_pack/src/main/assets",
+                "../reaction_pack/src/main/assets"
             )
         }
     }
