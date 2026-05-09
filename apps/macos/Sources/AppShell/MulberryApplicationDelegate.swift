@@ -1,8 +1,11 @@
 import AppKit
+import Overlay
 import SwiftUI
 
 @MainActor
 public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate {
+    private let router = AppRouter()
+    private let overlayController = PlaceholderOverlayController()
     private var statusItem: NSStatusItem?
     private var mainWindowController: MainWindowController?
 
@@ -12,6 +15,9 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        // TODO: When Mulberry is packaged and launched at login, add OS-level
+        // duplicate-launch handling so a second app invocation activates the
+        // existing process instead of allowing parallel app instances.
         installStatusItem()
     }
 
@@ -23,23 +29,26 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Mulberry"
         item.button?.toolTip = "Mulberry"
+        statusItem = item
+        refreshStatusMenu()
+    }
 
+    private func refreshStatusMenu() {
         let menu = NSMenu()
         menu.addItem(disabledItem("Not paired"))
         menu.addItem(disabledItem("Offline"))
         menu.addItem(.separator())
         menu.addItem(menuItem("Open Mulberry", action: #selector(openMulberry)))
         menu.addItem(quickDrawMenuItem())
-        menu.addItem(menuItem("Send Heart", action: #selector(sendHeart)))
+        menu.addItem(disabledItem("Send Heart"))
         menu.addItem(.separator())
-        menu.addItem(disabledItem("Streak: --"))
+        menu.addItem(menuItem("Streak: --", action: #selector(openStreak)))
         menu.addItem(overlayMenu())
         menu.addItem(.separator())
         menu.addItem(menuItem("Settings...", action: #selector(openSettings)))
         menu.addItem(menuItem("Quit Mulberry", action: #selector(quitMulberry)))
 
-        item.menu = menu
-        statusItem = item
+        statusItem?.menu = menu
     }
 
     private func menuItem(_ title: String, action: Selector) -> NSMenuItem {
@@ -52,6 +61,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         let item = NSMenuItem(title: "Quick Draw", action: #selector(quickDraw), keyEquivalent: "m")
         item.keyEquivalentModifierMask = [.command, .control]
         item.target = self
+        item.isEnabled = false
         return item
     }
 
@@ -64,40 +74,59 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     private func overlayMenu() -> NSMenuItem {
         let item = NSMenuItem(title: "Overlay", action: nil, keyEquivalent: "")
         let submenu = NSMenu(title: "Overlay")
-        submenu.addItem(disabledItem("Show Overlay"))
+        let toggleTitle = overlayController.isVisible ? "Hide Overlay" : "Show Overlay"
+        submenu.addItem(menuItem(toggleTitle, action: #selector(toggleOverlay)))
         submenu.addItem(disabledItem("Choose Display"))
-        submenu.addItem(disabledItem("Reset Position"))
+        submenu.addItem(menuItem("Reset Position", action: #selector(resetOverlayPosition)))
         item.submenu = submenu
         return item
     }
 
     @objc private func openMulberry() {
-        showMainWindow()
+        showMainWindow(route: .canvasHome)
     }
 
     @objc private func quickDraw() {
-        showMainWindow()
+        // Disabled until Phase 3, when Quick Draw becomes an overlay mode.
     }
 
     @objc private func sendHeart() {
-        showMainWindow()
+        // Disabled until reactions and authenticated networking land.
+    }
+
+    @objc private func openStreak() {
+        showMainWindow(route: .streak)
+    }
+
+    @objc private func toggleOverlay() {
+        overlayController.toggle()
+        refreshStatusMenu()
+    }
+
+    @objc private func resetOverlayPosition() {
+        overlayController.resetPosition()
+        refreshStatusMenu()
     }
 
     @objc private func openSettings() {
-        showMainWindow()
+        showMainWindow(route: .settings)
     }
 
     @objc private func quitMulberry() {
         NSApp.terminate(nil)
     }
 
-    private func showMainWindow() {
+    private func showMainWindow(route: AppRoute) {
         if mainWindowController == nil {
-            mainWindowController = MainWindowController { [weak self] in
+            mainWindowController = MainWindowController(
+                router: router,
+                overlayController: overlayController
+            ) { [weak self] in
                 self?.returnToAccessoryMode()
             }
         }
 
+        router.open(route)
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         mainWindowController?.showWindow(nil)
@@ -113,9 +142,13 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let onWindowClosed: () -> Void
 
-    init(onWindowClosed: @escaping () -> Void) {
+    init(
+        router: AppRouter,
+        overlayController: PlaceholderOverlayController,
+        onWindowClosed: @escaping () -> Void
+    ) {
         self.onWindowClosed = onWindowClosed
-        let view = MainWindowView()
+        let view = MainWindowView(router: router, overlayController: overlayController)
         let hostingController = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hostingController)
         window.title = "Mulberry"
@@ -133,18 +166,5 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         onWindowClosed()
-    }
-}
-
-private struct MainWindowView: View {
-    var body: some View {
-        VStack(spacing: 12) {
-            Text("Mulberry")
-                .font(.system(size: 32, weight: .semibold, design: .rounded))
-            Text("macOS app foundation")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-        }
-        .frame(minWidth: 720, minHeight: 480)
     }
 }

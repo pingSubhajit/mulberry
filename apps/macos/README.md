@@ -50,3 +50,15 @@ The Phase 1 shell intentionally contains only the permanent app foundation:
 - bundle metadata, entitlements placeholders, and local build scripts.
 
 Overlay behavior, Google Sign-In, sync, persistence, canvas rendering, and packaging/notarization are later PRD phases.
+
+## Phase 2 Shell Behavior
+
+The app shell now includes the initial routing and window model:
+
+- the main app window has a typed route model and a sidebar for Canvas, Overlay, Pairing, Streak, and Settings;
+- Settings is a route inside the main app window;
+- the status menu reuses one main window and one overlay window;
+- Quick Draw and Send Heart are visible but disabled until their later phases;
+- Overlay > Show/Hide Overlay toggles a transparent click-through placeholder overlay;
+- Overlay > Reset Position recenters the in-memory placeholder overlay;
+- the overlay defaults to a 9:20 portrait frame, sized for desktop at 450 x 1000 points before display clamping.
