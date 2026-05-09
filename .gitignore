@@ -1,18 +1,51 @@
-/.idea
-*/**/.idea
+# OS and editor files
 .DS_Store
-**/.DS_Store
-node_modules
-dist
-.next
-.turbo
+.idea/
+.vscode/
+*.iml
+
+# JavaScript and Turborepo
+node_modules/
+dist/
+.next/
+.turbo/
 *.tsbuildinfo
-**/.kotlin/
 
 # Environment files
 .env*
 !.env.example
-/apps/mobile/app/src/dev/google-services.json
-/apps/mobile/app/src/prod/google-services.json
-/temp/
-/secrets
+
+# Android, Kotlin, and Gradle
+.gradle/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+google-services.json
+
+# Swift, SwiftPM, and Xcode
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.moved-aside
+*.hmap
+*.dSYM/
+*.ipa
+
+# LaTeX generated intermediates
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.xdv
+
+# Local scratch and secrets
+temp/
+secrets/

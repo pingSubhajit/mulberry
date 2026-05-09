@@ -1,0 +1,455 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{titlesec}
+
+\definecolor{MulberryInk}{HTML}{1B1B1F}
+\definecolor{MulberryMuted}{HTML}{5F6268}
+\definecolor{MulberryRule}{HTML}{D8D9DE}
+\definecolor{MulberryAccent}{HTML}{D84672}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=MulberryAccent,
+  urlcolor=MulberryAccent,
+  citecolor=MulberryAccent
+}
+\titleformat{\section}{\Large\bfseries\color{MulberryInk}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\color{MulberryInk}}{\thesubsection}{0.7em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{MulberryInk}}{\thesubsubsection}{0.7em}{}
+\setlist[itemize]{leftmargin=1.6em,itemsep=0.2em,topsep=0.3em}
+\setlist[enumerate]{leftmargin=1.8em,itemsep=0.25em,topsep=0.3em}
+\renewcommand{\arraystretch}{1.18}
+
+\title{\textbf{Mulberry for macOS v1 Architecture}\\
+\large Native Swift Client, Canvas Sync, Overlay Windowing, and Release Engineering}
+\author{Mulberry Engineering}
+\date{May 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document specifies the v1 architecture for Mulberry's native macOS client. It intentionally removes architectural ambiguity for implementers: platform APIs, module boundaries, persistence shape, sync behavior, canvas operation handling, windowing behavior, testing obligations, packaging, and backend changes are fixed here. The app is a first-class Mulberry client, not a viewer. It signs in with Google, joins the same pair session as Android, applies and emits the same ordered canvas operations, and adds macOS-native presence through a passive desktop overlay and temporary Quick Draw mode.
+\end{abstract}
+
+\section{System Overview}
+
+The macOS client is a native Swift application with three presentation surfaces:
+\begin{enumerate}
+  \item a status bar menu that owns ambient commands and state;
+  \item a full SwiftUI app window for sign-in, canvas editing, settings, sticker browsing, troubleshooting, and account management;
+  \item an AppKit overlay panel for passive desktop consumption and Quick Draw.
+\end{enumerate}
+
+The client communicates with the existing Fastify backend through REST and WebSocket APIs. The backend remains the authority for authentication, pair membership, operation ordering, server revisions, recovery, profile state, invites, sticker catalog, wallpaper catalog where reused, reactions, and streaks.
+
+\section{Repository and Target Layout}
+
+The production target must live under \texttt{apps/macos}. The overlay proof of concept is intentionally kept outside the monorepo app slot at \texttt{prototypes/macos-overlay-poc}; production code must be organized as an app bundle target rather than a single-file executable.
+
+\subsection{Required Package Layout}
+
+\begin{verbatim}
+apps/macos/
+  MulberryMac.xcodeproj or Package.swift
+  Sources/
+    MulberryMacApp/
+    AppShell/
+    Auth/
+    Networking/
+    Sync/
+    CanvasCore/
+    CanvasRendering/
+    Persistence/
+    Overlay/
+    QuickDraw/
+    Stickers/
+    Reactions/
+    Notifications/
+    Settings/
+    Diagnostics/
+  Tests/
+    CanvasCoreTests/
+    SyncTests/
+    PersistenceTests/
+    OverlayTests/
+    NetworkingTests/
+  Resources/
+    Assets.xcassets
+    Fonts/
+\end{verbatim}
+
+The app may start as a Swift Package for speed, but the release candidate must produce a signed app bundle and DMG. If Swift Package Manager blocks app bundle capabilities, migrate to an Xcode project while preserving the module folders.
+
+\section{Module Responsibilities}
+
+\begin{longtable}{p{0.22\linewidth} p{0.68\linewidth}}
+\toprule
+\textbf{Module} & \textbf{Responsibilities} \\
+\midrule
+MulberryMacApp & App entry point, dependency graph, app lifecycle, scene/window registration. \\
+AppShell & Status bar item, menu model, full app window routing, activation policy, single-instance behavior. \\
+Auth & Google sign-in, session refresh, sign-out, Keychain token storage. \\
+Networking & REST client, request signing, retry policy, DTO decoding, backend error mapping. \\
+Sync & WebSocket client, HELLO/READY/ACK handling, reconnect, outbound queue, REST recovery. \\
+CanvasCore & Platform-independent Swift canvas domain models and operation reducer. \\
+CanvasRendering & Core Graphics/SwiftUI rendering for strokes, text, stickers, active strokes, and snapshots. \\
+Persistence & SQLite-backed local store, migrations, operation ledger, snapshot cache, settings store. \\
+Overlay & Passive overlay panel, display selection, frame persistence, window levels, Spaces behavior. \\
+QuickDraw & Global hotkey, raised overlay mode, tool palette, Quick Draw lifecycle, fullscreen guard. \\
+Stickers & Sticker pack catalog client, asset cache, signed URL loading, render metadata. \\
+Reactions & Send reaction, receive/lease reaction playback if supported, local feedback. \\
+Notifications & User-visible notifications, permission state, notification routing, login item reconnect messaging. \\
+Settings & Preferences for overlay, login item, notifications, account, diagnostics. \\
+Diagnostics & Logs, sync debug state, recovery actions, exportable diagnostic bundle. \\
+\bottomrule
+\end{longtable}
+
+\section{Platform Decisions}
+
+\subsection{Language and UI}
+
+Use Swift 6 or newer and SwiftUI for primary UI. Use AppKit for status bar, overlay panels, global hotkey integration, window levels, and any drawing/input behavior where SwiftUI window abstractions are insufficient. Do not use Electron, Tauri, Catalyst, or a web view shell for v1.
+
+\subsection{Minimum macOS Version}
+
+Target macOS 14 or newer. macOS 15 or newer is acceptable if a concrete implementation dependency justifies it, but the default floor is macOS 14 to keep the first release reasonably reachable while using modern SwiftUI, Service Management login item APIs, and AppKit behavior.
+
+\subsection{Global Hotkey}
+
+Use Carbon's registered hotkey API for Command-Control-M in v1. Do not use an \texttt{NSEvent} global monitor as the primary hotkey mechanism because it is not a reliable universal shortcut primitive and can be gated by permissions. Detect hotkey registration failure and display a Settings warning.
+
+\subsection{Login Item}
+
+Use \texttt{SMAppService} for login item registration. The default should be opt-in during onboarding with clear copy. Once enabled, launch at login into accessory mode, restore overlay, and begin sync.
+
+\section{Windowing Architecture}
+
+\subsection{Passive Overlay}
+
+Implement the passive overlay as an AppKit \texttt{NSPanel} subclass. It must be borderless, transparent, shadowless, and click-through.
+
+Required configuration:
+\begin{itemize}
+  \item \texttt{styleMask = [.borderless]}
+  \item \texttt{backgroundColor = .clear}
+  \item \texttt{isOpaque = false}
+  \item \texttt{hasShadow = false}
+  \item \texttt{ignoresMouseEvents = true}
+  \item \texttt{collectionBehavior} includes \texttt{.canJoinAllSpaces}, \texttt{.stationary}, and \texttt{.ignoresCycle}
+  \item \texttt{level = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)}
+\end{itemize}
+
+Do not promise exact layering against desktop icons, Stage Manager thumbnails, desktop widgets, or Finder private windows. The contract is below normal application windows and above the wallpaper where macOS permits.
+
+\subsection{Display Selection}
+
+Only one overlay window exists. It is pinned to one selected display. Persist:
+\begin{itemize}
+  \item display identifier where available;
+  \item last known display frame;
+  \item overlay frame in display-relative coordinates;
+  \item whether overlay is visible.
+\end{itemize}
+
+On display changes:
+\begin{enumerate}
+  \item try to resolve the stored display identifier;
+  \item if unavailable, choose the main display;
+  \item clamp the overlay frame inside the visible frame;
+  \item log a diagnostic event if the display changed.
+\end{enumerate}
+
+\subsection{Quick Draw Mode}
+
+Quick Draw reuses the same overlay panel and adds a tool palette panel. It is not a persistent always-on-top mode.
+
+On entry:
+\begin{itemize}
+  \item verify not currently inside another app's fullscreen Space;
+  \item activate Mulberry;
+  \item set overlay level to \texttt{.floating};
+  \item set \texttt{ignoresMouseEvents = false};
+  \item show the tool palette adjacent to the overlay;
+  \item make the overlay key;
+  \item begin a Quick Draw session in app state.
+\end{itemize}
+
+On exit:
+\begin{itemize}
+  \item finish or cancel the active stroke based on pointer state;
+  \item flush queued operations;
+  \item hide tool palette;
+  \item lower overlay to passive level;
+  \item set \texttt{ignoresMouseEvents = true};
+  \item end the Quick Draw session.
+\end{itemize}
+
+Quick Draw must expose full drawing-canvas feature parity. It cannot be a reduced brush-only surface. The tool palette and any secondary popovers must support brush, color, width, eraser, undo, redo, clear, text creation and editing, sticker insertion, element selection, transform affordances, and Done. If the compact palette cannot fit every control at once, use segmented tool groups and popovers; do not redirect the user to the full app for a canvas operation that the full app supports.
+
+\section{Authentication Architecture}
+
+Use Google Sign-In only for v1. The preferred implementation is a browser-based OAuth flow using \texttt{ASWebAuthenticationSession} with the same server-side Google ID token verification model as Android. If the Google SDK is selected, it must still produce an ID token acceptable to the existing backend.
+
+\subsection{Token Storage}
+
+Store refresh tokens and long-lived credentials in Keychain. Store access token expiry and non-secret bootstrap state in SQLite or app settings. Never store access tokens in UserDefaults. On sign-out, delete Keychain entries, local pending operations, local snapshots, cached partner state, and notification tokens.
+
+\section{Networking}
+
+\subsection{REST Client}
+
+Use \texttt{URLSession}. Define typed request/response DTOs matching the backend. All authenticated REST calls pass \texttt{Authorization: Bearer <accessToken>}. On 401, refresh once and retry. If refresh fails, transition to signed-out and stop sync.
+
+Required endpoints:
+\begin{itemize}
+  \item \texttt{POST /auth/google}
+  \item \texttt{POST /auth/refresh}
+  \item \texttt{POST /auth/logout}
+  \item \texttt{GET /bootstrap}
+  \item \texttt{GET /streak}
+  \item \texttt{PUT /me/display-name}
+  \item \texttt{PUT /me/profile}
+  \item \texttt{PUT /me/partner-profile}
+  \item \texttt{POST /reactions/send}
+  \item \texttt{GET /canvas/ops}
+  \item \texttt{POST /canvas/ops/batch}
+  \item \texttt{GET /canvas/snapshot}
+  \item \texttt{GET /stickers/packs}
+  \item \texttt{GET /stickers/packs/:packKey}
+  \item \texttt{GET /stickers/assets/url}
+\end{itemize}
+
+\subsection{WebSocket Client}
+
+Use \texttt{URLSessionWebSocketTask}. The client sends \texttt{HELLO} after opening:
+\begin{verbatim}
+{
+  "type": "HELLO",
+  "accessToken": "...",
+  "pairSessionId": "...",
+  "lastAppliedServerRevision": 123
+}
+\end{verbatim}
+
+The client must handle ready, ack, batch ack, server operation, server operation batch, flow control, error, and pong messages. Prefer batches for stroke append throughput.
+
+\section{Persistence Architecture}
+
+Use SQLite through GRDB or a thin SQLite wrapper. GRDB is preferred for migrations, typed queries, and testability. Do not use Core Data for v1 because the operation ledger is append-heavy, revision-ordered, and benefits from explicit SQL constraints.
+
+\subsection{Tables}
+
+\begin{longtable}{p{0.24\linewidth} p{0.62\linewidth}}
+\toprule
+\textbf{Table} & \textbf{Purpose} \\
+\midrule
+app\_metadata & schema version, installation ID, last migration time. \\
+session\_state & non-secret auth metadata, user ID, email, display name, pair session ID. \\
+bootstrap\_cache & latest bootstrap payload, partner state, streak summary. \\
+canvas\_operations & accepted server operations by pair session and revision. \\
+pending\_operations & local operations not yet accepted by server. \\
+canvas\_snapshot & latest server or locally materialized snapshot. \\
+sticker\_packs & sticker pack metadata keyed by pack key and version. \\
+sticker\_assets & local asset paths, signed URL expiry, cache status. \\
+overlay\_settings & visibility, selected display, frame, passive opacity policy. \\
+app\_settings & login item, notifications, hotkey preference, diagnostics. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Operation Constraints}
+
+\begin{itemize}
+  \item \texttt{canvas\_operations} has a unique index on \texttt{(pairSessionId, serverRevision)}.
+  \item \texttt{canvas\_operations} has a unique index on \texttt{clientOperationId}.
+  \item \texttt{pending\_operations} has a unique index on \texttt{clientOperationId}.
+  \item Reapplying an accepted operation with an already-known revision is a no-op.
+  \item Reapplying an accepted operation with an already-known client operation ID is a no-op if payload matches; payload mismatch is a diagnostic error.
+\end{itemize}
+
+\section{Canvas Core}
+
+CanvasCore is the deterministic reducer for canvas state. It must not depend on SwiftUI, AppKit windows, URLSession, Keychain, or SQLite. It may depend on Foundation and CoreGraphics.
+
+\subsection{Domain Types}
+
+Required Swift models:
+\begin{itemize}
+  \item \texttt{CanvasState}: committed strokes, elements, active local stroke, remote active strokes, revision, snapshot metadata.
+  \item \texttt{CanvasStroke}: ID, color ARGB, width, points, createdAt.
+  \item \texttt{CanvasPoint}: normalized x/y Float values in the canonical canvas coordinate system.
+  \item \texttt{CanvasElement}: enum with text and sticker cases.
+  \item \texttt{CanvasTextElement}: ID, text, createdAt, center, rotation, scale, boxWidth, colorArgb, backgroundPillEnabled, font, alignment.
+  \item \texttt{CanvasStickerElement}: ID, createdAt, center, rotation, scale, packKey, packVersion, stickerId.
+  \item \texttt{CanvasOperation}: local and server forms with clientOperationId, type, strokeId, payload, clientCreatedAt, local date, serverRevision.
+\end{itemize}
+
+\subsection{Operation Reducer}
+
+The reducer implements the existing operation names exactly:
+\begin{itemize}
+  \item ADD\_STROKE
+  \item APPEND\_POINTS
+  \item FINISH\_STROKE
+  \item DELETE\_STROKE
+  \item CLEAR\_CANVAS
+  \item ADD\_TEXT\_ELEMENT
+  \item UPDATE\_TEXT\_ELEMENT
+  \item DELETE\_TEXT\_ELEMENT
+  \item ADD\_STICKER\_ELEMENT
+  \item UPDATE\_STICKER\_ELEMENT
+  \item DELETE\_STICKER\_ELEMENT
+\end{itemize}
+
+All coordinates stored and transmitted by macOS are normalized to the canonical canvas surface, not raw window pixels. Rendering maps normalized coordinates to the current view rectangle. This keeps Android, overlay, and full app surfaces interoperable.
+
+\section{Rendering Architecture}
+
+Use Core Graphics for deterministic drawing and SwiftUI wrappers for presentation. Passive overlay and full app must share the same renderer. The renderer receives a \texttt{CanvasRenderInput} with state, viewport, scale, asset resolver, and render mode.
+
+\subsection{Render Order}
+
+The render order is fixed:
+\begin{enumerate}
+  \item optional local background if the surface needs one;
+  \item committed strokes in operation order;
+  \item active remote strokes;
+  \item active local stroke;
+  \item text and sticker elements in element order;
+  \item transient reaction overlay if active;
+  \item selection handles only on interactive surfaces.
+\end{enumerate}
+
+Passive overlay must render transparent background and full-opacity content. Quick Draw and the full app may render an editing surface background.
+
+\section{Sync State Machine}
+
+\begin{longtable}{p{0.2\linewidth} p{0.62\linewidth}}
+\toprule
+\textbf{State} & \textbf{Meaning} \\
+\midrule
+SignedOut & No session. Sync stopped. \\
+Bootstrapping & Authenticated, fetching bootstrap and local state. \\
+Disconnected & Authenticated and paired, no active WebSocket. \\
+Connecting & Opening WebSocket and sending HELLO. \\
+Recovering & Fetching missed operations or snapshot fallback. \\
+Connected & WebSocket ready; live operations flow. \\
+Backoff & Connection failed; waiting before retry. \\
+Error & User-visible issue requiring action. \\
+\bottomrule
+\end{longtable}
+
+Reconnect backoff starts at 1 second, doubles up to 60 seconds, and resets after a stable connection of 30 seconds. A network reachability change triggers an immediate retry if not signed out.
+
+\section{Backend Changes}
+
+\subsection{Device Platform}
+
+Extend device platform support from Android-only to include macOS. The server type should accept \texttt{ANDROID}, \texttt{MACOS}, and future Apple platforms without needing another migration. Add app environment, app version, device name, and optional push token type.
+
+\subsection{Push and Notifications}
+
+V1 can ship without APNs silent push if the login item keeps the app running. However, the backend schema should not block APNs later. Store push provider and token separately:
+\begin{itemize}
+  \item platform: ANDROID or MACOS;
+  \item pushProvider: FCM, APNS, or NONE;
+  \item token: nullable;
+  \item appEnvironment: dev or prod;
+  \item deviceInstanceId;
+  \item revokedAt.
+\end{itemize}
+
+\subsection{Canvas Protocol}
+
+No new canvas operation types are required for v1. The only backend sync requirement is to preserve support for multiple active connections for the same user in the same pair session and to keep operation acceptance idempotent.
+
+\section{Testing Strategy}
+
+\subsection{Unit Tests}
+
+Required unit suites:
+\begin{itemize}
+  \item Canvas operation reducer for every operation type.
+  \item JSON encode/decode compatibility for WebSocket and REST DTOs.
+  \item SQLite migrations and constraint behavior.
+  \item Outbound queue idempotency and retry ordering.
+  \item Display selection and frame clamping logic.
+  \item Hotkey registration success and failure wrapper behavior.
+\end{itemize}
+
+\subsection{Integration Tests}
+
+Required integration suites:
+\begin{itemize}
+  \item local backend sync from Mac to Android-compatible protocol fixtures;
+  \item recovery after dropped WebSocket;
+  \item app restart with pending outbound operations;
+  \item sticker asset cache invalidation;
+  \item sign-in refresh and sign-out cleanup.
+\end{itemize}
+
+\subsection{Manual QA Matrix}
+
+Manual QA must include:
+\begin{itemize}
+  \item macOS 14 and latest macOS, or macOS 15 and latest macOS if the minimum is raised;
+  \item one display and two displays;
+  \item all-Spaces overlay behavior;
+  \item Mission Control and Stage Manager if enabled;
+  \item fullscreen app Quick Draw prompt;
+  \item sleep/wake;
+  \item network offline/online;
+  \item login restart;
+  \item hotkey conflict;
+  \item Android and Mac drawing simultaneously.
+\end{itemize}
+
+\section{Release Engineering}
+
+Direct DMG distribution is v1. The release pipeline must produce:
+\begin{itemize}
+  \item signed app bundle;
+  \item notarized DMG;
+  \item versioned build number;
+  \item release notes;
+  \item crash/log symbol retention;
+  \item rollback path to previous DMG.
+\end{itemize}
+
+Do not require an Apple Developer Program account for local development. Release signing and notarization can be added when credentials exist.
+
+\section{Security and Privacy}
+
+\begin{itemize}
+  \item Store secrets only in Keychain.
+  \item Redact access tokens, refresh tokens, Google ID tokens, signed sticker URLs, emails, and canvas text content from logs.
+  \item Diagnostics export must omit canvas content by default.
+  \item Notifications must not display sensitive canvas text unless the user opts in.
+  \item Overlay content is visible on the user's desktop; onboarding must explain this plainly.
+\end{itemize}
+
+\section{Implementation Invariants}
+
+The following decisions are fixed for v1:
+\begin{enumerate}
+  \item Native Swift/SwiftUI plus AppKit, not Electron/Tauri.
+  \item Google Sign-In only.
+  \item Pairing remains user-to-user.
+  \item Mac devices participate equally with Android devices.
+  \item Passive overlay is below normal windows and click-through.
+  \item Quick Draw temporarily floats and takes focus.
+  \item Quick Draw is not supported over another app's fullscreen Space.
+  \item Canvas sync uses the existing operation protocol.
+  \item Coordinates are normalized, not pixel-bound.
+  \item SQLite is the local source of truth for canvas ledger and cache; Keychain is the source of truth for secrets.
+\end{enumerate}
+
+\end{document}
