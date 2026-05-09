@@ -15,6 +15,8 @@ Run the app directly:
 pnpm --dir apps/macos run dev
 ```
 
+The app starts in menu-bar mode without a Dock icon. Choose **Open Mulberry** from the menu bar item to show the main window; while that window is open, Mulberry appears in the Dock.
+
 Build and assemble a local app bundle:
 
 ```bash

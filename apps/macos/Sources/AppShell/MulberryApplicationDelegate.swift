@@ -93,18 +93,28 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
 
     private func showMainWindow() {
         if mainWindowController == nil {
-            mainWindowController = MainWindowController()
+            mainWindowController = MainWindowController { [weak self] in
+                self?.returnToAccessoryMode()
+            }
         }
 
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         mainWindowController?.showWindow(nil)
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
     }
+
+    private func returnToAccessoryMode() {
+        NSApp.setActivationPolicy(.accessory)
+    }
 }
 
 @MainActor
-final class MainWindowController: NSWindowController {
-    init() {
+final class MainWindowController: NSWindowController, NSWindowDelegate {
+    private let onWindowClosed: () -> Void
+
+    init(onWindowClosed: @escaping () -> Void) {
+        self.onWindowClosed = onWindowClosed
         let view = MainWindowView()
         let hostingController = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hostingController)
@@ -114,10 +124,15 @@ final class MainWindowController: NSWindowController {
         window.center()
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        window.delegate = self
     }
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onWindowClosed()
     }
 }
 
