@@ -39,10 +39,7 @@ enum class CanvasTextFont {
     BANGERS,
     PERMANENT_MARKER,
     KALAM,
-    CAVEAT,
-    MERRIWEATHER,
-    OSWALD,
-    BALOO_2
+    OSWALD
 }
 
 enum class CanvasTextAlign {

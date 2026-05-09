@@ -61,7 +61,6 @@ import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.metadata.AppSystemBarStyle
 import com.subhajit.mulberry.network.StreakResponse
-import com.subhajit.mulberry.ui.theme.KalamFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import java.time.LocalDate
 import kotlin.math.absoluteValue
@@ -458,7 +457,7 @@ private fun StreakPill(
             Text(
                 text = label,
                 color = Color.White,
-                fontFamily = KalamFontFamily,
+                fontFamily = PoppinsFontFamily,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
                 fontWeight = FontWeight.Bold,

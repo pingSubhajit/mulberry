@@ -66,6 +66,7 @@ android {
     }
 
     flavorDimensions += "environment"
+    assetPacks += listOf(":canvas_fonts")
 
     productFlavors {
         create("dev") {
@@ -180,6 +181,7 @@ dependencies {
     implementation(libs.play.app.update.ktx)
     implementation(libs.play.review)
     implementation(libs.play.review.ktx)
+    implementation(libs.play.asset.delivery)
     implementation(libs.coil.compose)
     implementation(libs.commonmark)
     implementation(libs.androidx.ink.strokes)

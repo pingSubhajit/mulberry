@@ -19,47 +19,6 @@ val VirgilFontFamily = FontFamily(
     Font(R.font.virgil_regular, FontWeight.Normal)
 )
 
-val DmSansFontFamily = FontFamily(
-    Font(R.font.dm_sans_regular, FontWeight.Normal)
-)
-
-val SpaceMonoFontFamily = FontFamily(
-    Font(R.font.space_mono_regular, FontWeight.Normal)
-)
-
-val PlayfairDisplayFontFamily = FontFamily(
-    Font(R.font.playfair_display_regular, FontWeight.Normal)
-)
-
-val BangersFontFamily = FontFamily(
-    Font(R.font.bangers_regular, FontWeight.Normal)
-)
-
-val PermanentMarkerFontFamily = FontFamily(
-    Font(R.font.permanent_marker_regular, FontWeight.Normal)
-)
-
-val KalamFontFamily = FontFamily(
-    Font(R.font.kalam_regular, FontWeight.Normal),
-    Font(R.font.kalam_bold, FontWeight.Bold)
-)
-
-val CaveatFontFamily = FontFamily(
-    Font(R.font.caveat_regular, FontWeight.Normal)
-)
-
-val MerriweatherFontFamily = FontFamily(
-    Font(R.font.merriweather_regular, FontWeight.Normal)
-)
-
-val OswaldFontFamily = FontFamily(
-    Font(R.font.oswald_regular, FontWeight.Normal)
-)
-
-val Baloo2FontFamily = FontFamily(
-    Font(R.font.baloo2_regular, FontWeight.Normal)
-)
-
 val MulberrySecondaryFontFamily: FontFamily = PoppinsFontFamily
 
 val MulberryTypography = Typography(

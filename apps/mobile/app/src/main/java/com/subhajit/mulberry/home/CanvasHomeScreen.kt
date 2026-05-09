@@ -166,7 +166,6 @@ import com.subhajit.mulberry.review.InAppReviewLauncher
 import com.subhajit.mulberry.reactions.ReactionType
 import com.subhajit.mulberry.reactions.ReactionGif
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
-import com.subhajit.mulberry.ui.theme.KalamFontFamily
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.VirgilFontFamily
 import com.subhajit.mulberry.ui.animation.rememberBobbingOffsetDp
@@ -888,7 +887,7 @@ private fun StreakPill(
             Text(
                 text = label,
                 color = textColor,
-                fontFamily = KalamFontFamily,
+                fontFamily = PoppinsFontFamily,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
                 fontWeight = FontWeight.Bold,

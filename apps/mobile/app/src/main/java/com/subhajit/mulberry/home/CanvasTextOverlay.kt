@@ -1,7 +1,6 @@
 package com.subhajit.mulberry.home
 
 import android.graphics.RectF
-import android.graphics.Typeface
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -66,7 +65,6 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
@@ -78,7 +76,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.core.content.res.ResourcesCompat
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.Image
 import com.subhajit.mulberry.R
@@ -89,22 +86,13 @@ import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
+import com.subhajit.mulberry.drawing.text.canvasDisplayName
+import com.subhajit.mulberry.drawing.text.rememberCanvasFontResolver
 import com.subhajit.mulberry.reactions.ReactionType
 import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerAssetVariant
 import com.subhajit.mulberry.stickers.resolveStickerRenderSizePx
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
-import com.subhajit.mulberry.ui.theme.VirgilFontFamily
-import com.subhajit.mulberry.ui.theme.DmSansFontFamily
-import com.subhajit.mulberry.ui.theme.SpaceMonoFontFamily
-import com.subhajit.mulberry.ui.theme.PlayfairDisplayFontFamily
-import com.subhajit.mulberry.ui.theme.BangersFontFamily
-import com.subhajit.mulberry.ui.theme.PermanentMarkerFontFamily
-import com.subhajit.mulberry.ui.theme.KalamFontFamily
-import com.subhajit.mulberry.ui.theme.CaveatFontFamily
-import com.subhajit.mulberry.ui.theme.MerriweatherFontFamily
-import com.subhajit.mulberry.ui.theme.OswaldFontFamily
-import com.subhajit.mulberry.ui.theme.Baloo2FontFamily
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import java.util.UUID
@@ -165,13 +153,16 @@ fun CanvasTextOverlay(
     isEditorOpen: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val density = LocalDensity.current
+    val fontResolver = rememberCanvasFontResolver()
     val coroutineScope = rememberCoroutineScope()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var liveTransformPreview by remember { mutableStateOf<CanvasElement?>(null) }
     val stickerBitmaps = remember { mutableStateMapOf<String, android.graphics.Bitmap>() }
     val textLayoutCache = remember { mutableMapOf<String, CachedTextLayout>() }
+    LaunchedEffect(fontResolver) {
+        textLayoutCache.clear()
+    }
     var lastNoToolTapUpAtMs by remember { mutableStateOf<Long?>(null) }
     var pendingNoToolTapJob by remember { mutableStateOf<Job?>(null) }
 
@@ -205,18 +196,6 @@ fun CanvasTextOverlay(
         }
     }
 
-    val poppinsTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.poppins_regular) ?: Typeface.DEFAULT }
-    val virgilTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.virgil_regular) ?: Typeface.DEFAULT }
-    val dmSansTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.dm_sans_regular) ?: Typeface.DEFAULT }
-    val spaceMonoTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.space_mono_regular) ?: Typeface.DEFAULT }
-    val playfairTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.playfair_display_regular) ?: Typeface.DEFAULT }
-    val bangersTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.bangers_regular) ?: Typeface.DEFAULT }
-    val permanentMarkerTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.permanent_marker_regular) ?: Typeface.DEFAULT }
-    val kalamTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.kalam_regular) ?: Typeface.DEFAULT }
-    val caveatTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.caveat_regular) ?: Typeface.DEFAULT }
-    val merriweatherTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.merriweather_regular) ?: Typeface.DEFAULT }
-    val oswaldTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.oswald_regular) ?: Typeface.DEFAULT }
-    val baloo2Typeface = remember(context) { ResourcesCompat.getFont(context, R.font.baloo2_regular) ?: Typeface.DEFAULT }
     val baseTextSizePx = with(density) { 34.sp.toPx() }
     var isTransformInProgress by remember { mutableStateOf(false) }
     val pillBackgroundPaint = remember { android.graphics.Paint().apply { isAntiAlias = true } }
@@ -263,20 +242,7 @@ fun CanvasTextOverlay(
             return cached
         }
 
-        val typeface = when (element.font) {
-            CanvasTextFont.POPPINS -> poppinsTypeface
-            CanvasTextFont.VIRGIL -> virgilTypeface
-            CanvasTextFont.DM_SANS -> dmSansTypeface
-            CanvasTextFont.SPACE_MONO -> spaceMonoTypeface
-            CanvasTextFont.PLAYFAIR_DISPLAY -> playfairTypeface
-            CanvasTextFont.BANGERS -> bangersTypeface
-            CanvasTextFont.PERMANENT_MARKER -> permanentMarkerTypeface
-            CanvasTextFont.KALAM -> kalamTypeface
-            CanvasTextFont.CAVEAT -> caveatTypeface
-            CanvasTextFont.MERRIWEATHER -> merriweatherTypeface
-            CanvasTextFont.OSWALD -> oswaldTypeface
-            CanvasTextFont.BALOO_2 -> baloo2Typeface
-        }
+        val typeface = fontResolver.typefaceFor(element.font)
 
         val paint = TextPaint().apply {
             isAntiAlias = true
@@ -1117,6 +1083,7 @@ fun TextEditorOverlay(
     var panel by remember(element.id) { mutableStateOf(TextEditorPanel.NONE) }
     var enter by remember(element.id) { mutableStateOf(false) }
     var showCustomColorPicker by remember(element.id) { mutableStateOf(false) }
+    val fontResolver = rememberCanvasFontResolver()
 
     LaunchedEffect(element.id) {
         enter = true
@@ -1265,20 +1232,7 @@ fun TextEditorOverlay(
                     cursorBrush = SolidColor(textColor),
                     textStyle = TextStyle(
                         color = textColor,
-                        fontFamily = when (font) {
-                            CanvasTextFont.POPPINS -> PoppinsFontFamily
-                            CanvasTextFont.VIRGIL -> VirgilFontFamily
-                            CanvasTextFont.DM_SANS -> DmSansFontFamily
-                            CanvasTextFont.SPACE_MONO -> SpaceMonoFontFamily
-                            CanvasTextFont.PLAYFAIR_DISPLAY -> PlayfairDisplayFontFamily
-                            CanvasTextFont.BANGERS -> BangersFontFamily
-                            CanvasTextFont.PERMANENT_MARKER -> PermanentMarkerFontFamily
-                            CanvasTextFont.KALAM -> KalamFontFamily
-                            CanvasTextFont.CAVEAT -> CaveatFontFamily
-                            CanvasTextFont.MERRIWEATHER -> MerriweatherFontFamily
-                            CanvasTextFont.OSWALD -> OswaldFontFamily
-                            CanvasTextFont.BALOO_2 -> Baloo2FontFamily
-                        },
+                        fontFamily = fontResolver.fontFamilyFor(font),
                         fontSize = (34f * scale).coerceIn(12f, 160f).sp,
                         fontWeight = FontWeight.Medium,
                         textAlign = when (alignment) {
@@ -1326,101 +1280,15 @@ fun TextEditorOverlay(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        FontOption(
-                            label = "Poppins",
-                            fontFamily = PoppinsFontFamily,
-                            selected = font == CanvasTextFont.POPPINS
-                        ) {
-                            font = CanvasTextFont.POPPINS
-                            focusRequester.requestFocus()
-                        }
-                        FontOption(
-                            label = "Virgil",
-                            fontFamily = VirgilFontFamily,
-                            selected = font == CanvasTextFont.VIRGIL
-                        ) {
-                            font = CanvasTextFont.VIRGIL
-                            focusRequester.requestFocus()
-                        }
-                        FontOption(
-                            label = "DM Sans",
-                            fontFamily = DmSansFontFamily,
-                            selected = font == CanvasTextFont.DM_SANS
-                        ) {
-                            font = CanvasTextFont.DM_SANS
-                            focusRequester.requestFocus()
-                        }
-                        FontOption(
-                            label = "Space Mono",
-                            fontFamily = SpaceMonoFontFamily,
-                            selected = font == CanvasTextFont.SPACE_MONO
-                        ) {
-                            font = CanvasTextFont.SPACE_MONO
-                            focusRequester.requestFocus()
-                        }
-                        FontOption(
-                            label = "Playfair",
-                            fontFamily = PlayfairDisplayFontFamily,
-                            selected = font == CanvasTextFont.PLAYFAIR_DISPLAY
-                        ) {
-                            font = CanvasTextFont.PLAYFAIR_DISPLAY
-                            focusRequester.requestFocus()
-                        }
-                        FontOption(
-                            label = "Bangers",
-                            fontFamily = BangersFontFamily,
-                            selected = font == CanvasTextFont.BANGERS
-                        ) {
-                            font = CanvasTextFont.BANGERS
-                            focusRequester.requestFocus()
-                        }
-                        FontOption(
-                            label = "Marker",
-                            fontFamily = PermanentMarkerFontFamily,
-                            selected = font == CanvasTextFont.PERMANENT_MARKER
-                        ) {
-                            font = CanvasTextFont.PERMANENT_MARKER
-                            focusRequester.requestFocus()
-                        }
-                        FontOption(
-                            label = "Kalam",
-                            fontFamily = KalamFontFamily,
-                            selected = font == CanvasTextFont.KALAM
-                        ) {
-                            font = CanvasTextFont.KALAM
-                            focusRequester.requestFocus()
-                        }
-                        FontOption(
-                            label = "Caveat",
-                            fontFamily = CaveatFontFamily,
-                            selected = font == CanvasTextFont.CAVEAT
-                        ) {
-                            font = CanvasTextFont.CAVEAT
-                            focusRequester.requestFocus()
-                        }
-                        FontOption(
-                            label = "Merri",
-                            fontFamily = MerriweatherFontFamily,
-                            selected = font == CanvasTextFont.MERRIWEATHER
-                        ) {
-                            font = CanvasTextFont.MERRIWEATHER
-                            focusRequester.requestFocus()
-                        }
-                        FontOption(
-                            label = "Oswald",
-                            fontFamily = OswaldFontFamily,
-                            selected = font == CanvasTextFont.OSWALD
-                        ) {
-                            font = CanvasTextFont.OSWALD
-                            focusRequester.requestFocus()
-                        }
-                        FontOption(
-                            label = "Baloo 2",
-                            fontFamily = Baloo2FontFamily,
-                            selected = font == CanvasTextFont.BALOO_2
-                        ) {
-                            font = CanvasTextFont.BALOO_2
-                            focusRequester.requestFocus()
+                        CanvasTextFont.entries.forEach { option ->
+                            FontOption(
+                                label = option.canvasDisplayName(),
+                                fontFamily = fontResolver.fontFamilyFor(option),
+                                selected = font == option
+                            ) {
+                                font = option
+                                focusRequester.requestFocus()
+                            }
                         }
                     }
                 }

@@ -6,12 +6,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Point
 import android.graphics.RectF
-import android.graphics.Typeface
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import androidx.core.graphics.createBitmap
-import androidx.core.content.res.ResourcesCompat
 import androidx.room.withTransaction
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
@@ -27,11 +25,10 @@ import com.subhajit.mulberry.drawing.geometry.denormalizeToSurface
 import com.subhajit.mulberry.drawing.model.CanvasTextAlign
 import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
-import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
 import com.subhajit.mulberry.drawing.render.committedStrokeBitmapRenderer
-import com.subhajit.mulberry.R
+import com.subhajit.mulberry.drawing.text.CanvasFontResolver
 import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerAssetVariant
 import com.subhajit.mulberry.stickers.resolveStickerRenderSizePx
@@ -191,19 +188,7 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
         val baseTextSizePx = 34f * density
         val pillPaddingPx = 12f * density
         val pillCornerPx = 18f * density
-
-        val poppins = loadTypeface(R.font.poppins_regular) ?: Typeface.DEFAULT
-        val virgil = loadTypeface(R.font.virgil_regular) ?: Typeface.DEFAULT
-        val dmSans = loadTypeface(R.font.dm_sans_regular) ?: Typeface.DEFAULT
-        val spaceMono = loadTypeface(R.font.space_mono_regular) ?: Typeface.DEFAULT
-        val playfair = loadTypeface(R.font.playfair_display_regular) ?: Typeface.DEFAULT
-        val bangers = loadTypeface(R.font.bangers_regular) ?: Typeface.DEFAULT
-        val permanentMarker = loadTypeface(R.font.permanent_marker_regular) ?: Typeface.DEFAULT
-        val kalam = loadTypeface(R.font.kalam_regular) ?: Typeface.DEFAULT
-        val caveat = loadTypeface(R.font.caveat_regular) ?: Typeface.DEFAULT
-        val merriweather = loadTypeface(R.font.merriweather_regular) ?: Typeface.DEFAULT
-        val oswald = loadTypeface(R.font.oswald_regular) ?: Typeface.DEFAULT
-        val baloo2 = loadTypeface(R.font.baloo2_regular) ?: Typeface.DEFAULT
+        val fontResolver = CanvasFontResolver.create(context)
 
         var missingStickerAssets = false
         var textIndex = 0
@@ -226,20 +211,7 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
                     offsetY = placement.offsetY
                 )
                 val wrapWidth = (element.boxWidth * placement.viewport.width).toInt().coerceAtLeast(1)
-                val typeface = when (element.font) {
-                    CanvasTextFont.POPPINS -> poppins
-                    CanvasTextFont.VIRGIL -> virgil
-                    CanvasTextFont.DM_SANS -> dmSans
-                    CanvasTextFont.SPACE_MONO -> spaceMono
-                    CanvasTextFont.PLAYFAIR_DISPLAY -> playfair
-                    CanvasTextFont.BANGERS -> bangers
-                    CanvasTextFont.PERMANENT_MARKER -> permanentMarker
-                    CanvasTextFont.KALAM -> kalam
-                    CanvasTextFont.CAVEAT -> caveat
-                    CanvasTextFont.MERRIWEATHER -> merriweather
-                    CanvasTextFont.OSWALD -> oswald
-                    CanvasTextFont.BALOO_2 -> baloo2
-                }
+                val typeface = fontResolver.typefaceFor(element.font)
                 val backgroundColor = element.colorArgb.toInt()
                 val textColor = if (element.backgroundPillEnabled) {
                     if (luminance(backgroundColor) > 0.55f) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
@@ -359,9 +331,6 @@ class DefaultCanvasSnapshotRenderer @Inject constructor(
 
         return missingStickerAssets
     }
-
-    private fun loadTypeface(fontResId: Int): Typeface? =
-        runCatching { ResourcesCompat.getFont(context, fontResId) }.getOrNull()
 
     private fun luminance(color: Int): Float {
         val r = ((color shr 16) and 0xFF) / 255f

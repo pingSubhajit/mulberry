@@ -2,7 +2,6 @@ package com.subhajit.mulberry.home
 
 import android.graphics.Bitmap
 import android.graphics.RectF
-import android.graphics.Typeface
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -22,13 +21,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.res.ResourcesCompat
-import com.subhajit.mulberry.R
 import com.subhajit.mulberry.drawing.engine.StrokeHitTester
 import com.subhajit.mulberry.drawing.geometry.denormalizeToSurface
 import com.subhajit.mulberry.drawing.model.CanvasElement
@@ -38,6 +34,7 @@ import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.CanvasState
 import com.subhajit.mulberry.drawing.model.StrokePoint
+import com.subhajit.mulberry.drawing.text.rememberCanvasFontResolver
 import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerAssetVariant
 import com.subhajit.mulberry.stickers.resolveStickerRenderSizePx
@@ -62,8 +59,8 @@ fun EyedropperOverlay(
 ) {
     if (!armed || !enabled) return
 
-    val context = LocalContext.current
     val density = LocalDensity.current
+    val fontResolver = rememberCanvasFontResolver()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val strokeHitTester = remember { StrokeHitTester() }
     val stickerBitmaps = remember { mutableStateMapOf<String, Bitmap>() }
@@ -77,32 +74,8 @@ fun EyedropperOverlay(
     val latestOnCommit by rememberUpdatedState(onCommitColorArgb)
     val latestOnCanceled by rememberUpdatedState(onCanceled)
 
-    val poppinsTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.poppins_regular) ?: Typeface.DEFAULT }
-    val virgilTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.virgil_regular) ?: Typeface.DEFAULT }
-    val dmSansTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.dm_sans_regular) ?: Typeface.DEFAULT }
-    val spaceMonoTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.space_mono_regular) ?: Typeface.DEFAULT }
-    val playfairTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.playfair_display_regular) ?: Typeface.DEFAULT }
-    val bangersTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.bangers_regular) ?: Typeface.DEFAULT }
-    val permanentMarkerTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.permanent_marker_regular) ?: Typeface.DEFAULT }
-    val kalamTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.kalam_regular) ?: Typeface.DEFAULT }
-    val caveatTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.caveat_regular) ?: Typeface.DEFAULT }
-    val merriweatherTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.merriweather_regular) ?: Typeface.DEFAULT }
-    val oswaldTypeface = remember(context) { ResourcesCompat.getFont(context, R.font.oswald_regular) ?: Typeface.DEFAULT }
-    val baloo2Typeface = remember(context) { ResourcesCompat.getFont(context, R.font.baloo2_regular) ?: Typeface.DEFAULT }
-
-    fun getTypeface(font: CanvasTextFont): Typeface = when (font) {
-        CanvasTextFont.POPPINS -> poppinsTypeface
-        CanvasTextFont.VIRGIL -> virgilTypeface
-        CanvasTextFont.DM_SANS -> dmSansTypeface
-        CanvasTextFont.SPACE_MONO -> spaceMonoTypeface
-        CanvasTextFont.PLAYFAIR_DISPLAY -> playfairTypeface
-        CanvasTextFont.BANGERS -> bangersTypeface
-        CanvasTextFont.PERMANENT_MARKER -> permanentMarkerTypeface
-        CanvasTextFont.KALAM -> kalamTypeface
-        CanvasTextFont.CAVEAT -> caveatTypeface
-        CanvasTextFont.MERRIWEATHER -> merriweatherTypeface
-        CanvasTextFont.OSWALD -> oswaldTypeface
-        CanvasTextFont.BALOO_2 -> baloo2Typeface
+    LaunchedEffect(fontResolver) {
+        textLayoutCache.clear()
     }
 
     fun getAlignment(align: CanvasTextAlign): Layout.Alignment = when (align) {
@@ -126,7 +99,7 @@ fun EyedropperOverlay(
         }
 
         val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
-            typeface = getTypeface(element.font)
+            typeface = fontResolver.typefaceFor(element.font)
             textSize = baseTextSizePx
         }
 
