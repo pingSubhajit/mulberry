@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 rootProject.name = "Mulberry"
 include(":app")
 include(":canvas_fonts")
+include(":wallpaper_pack")

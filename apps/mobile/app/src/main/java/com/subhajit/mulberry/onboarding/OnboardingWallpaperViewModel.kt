@@ -1,7 +1,6 @@
 package com.subhajit.mulberry.onboarding
 
 import android.net.Uri
-import androidx.annotation.DrawableRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.subhajit.mulberry.R
@@ -31,7 +30,7 @@ data class OnboardingWallpaperUiState(
     val bootstrapState: SessionBootstrapState = SessionBootstrapState(),
     val wallpaperStatus: WallpaperStatusState = WallpaperStatusState(),
     val backgroundImageState: BackgroundImageState = BackgroundImageState(),
-    @DrawableRes val selectedPresetResId: Int? = null,
+    val selectedPresetId: String? = null,
     val selectedRemoteWallpaperId: String? = null,
     val applyingRemoteWallpaperId: String? = null,
     val recentRemoteWallpapers: List<RemoteWallpaper> = emptyList(),
@@ -84,7 +83,7 @@ class OnboardingWallpaperViewModel @Inject constructor(
             bootstrapState = baseState.bootstrapState,
             wallpaperStatus = baseState.wallpaperStatus,
             backgroundImageState = baseState.backgroundState,
-            selectedPresetResId = baseState.backgroundState.selectedPresetResId,
+            selectedPresetId = baseState.backgroundState.selectedPresetId,
             selectedRemoteWallpaperId = baseState.backgroundState.selectedRemoteWallpaperId,
             applyingRemoteWallpaperId = applyingRemoteWallpaperId,
             recentRemoteWallpapers = recentRemoteWallpapers,
@@ -120,10 +119,10 @@ class OnboardingWallpaperViewModel @Inject constructor(
         }
     }
 
-    fun onPresetSelected(@DrawableRes drawableResId: Int) {
+    fun onPresetSelected(preset: WallpaperPreset) {
         viewModelScope.launch {
             runBackgroundUpdate {
-                backgroundImageRepository.importBundledBackground(drawableResId)
+                backgroundImageRepository.importPresetBackground(preset)
             }
         }
     }

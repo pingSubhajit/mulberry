@@ -158,7 +158,7 @@ private fun OnboardingWallpaperScreen(
     onNavigateToWallpaperHelp: () -> Unit,
     onViewMoreWallpapers: () -> Unit,
     onUploadFromGallery: () -> Unit,
-    onPresetSelected: (Int) -> Unit,
+    onPresetSelected: (WallpaperPreset) -> Unit,
     onRemoteWallpaperSelected: (com.subhajit.mulberry.wallpaper.RemoteWallpaper) -> Unit,
     onAllDone: () -> Unit,
     onSkipWithoutSetup: () -> Unit
@@ -200,10 +200,10 @@ private fun OnboardingWallpaperScreen(
             )
 
             val selectedPreviewResId = presets
-                .firstOrNull { it.drawableResId == uiState.selectedPresetResId }
+                .firstOrNull { it.id == uiState.selectedPresetId }
                 ?.previewDrawableResId
                 ?: R.drawable.wallpaper_default_bg_preview
-            val previewAssetPath = if (uiState.selectedPresetResId == null) {
+            val previewAssetPath = if (uiState.selectedPresetId == null) {
                 uiState.backgroundImageState.assetPath
             } else {
                 null
@@ -267,7 +267,7 @@ private fun OnboardingWallpaperScreen(
                 WallpaperBackgroundSelectionSection(
                     remoteWallpapers = uiState.recentRemoteWallpapers,
                     presets = presets,
-                    selectedPresetResId = uiState.selectedPresetResId,
+                    selectedPresetId = uiState.selectedPresetId,
                     selectedRemoteWallpaperId = uiState.selectedRemoteWallpaperId,
                     applyingRemoteWallpaperId = uiState.applyingRemoteWallpaperId,
                     onUploadFromGallery = onUploadFromGallery,

@@ -63,14 +63,18 @@ class CanvasFontResolver(
 
     private fun assetTypefaceFor(font: CanvasTextFont): Typeface? {
         assetTypefaceCache[font]?.let { return it }
-        val file = assetFileFor(font) ?: return null
-        val typeface = runCatching { Typeface.createFromFile(file) }.getOrNull() ?: return null
+        val relativePath = font.assetPackRelativePath() ?: return null
+        val file = assetFileFor(relativePath)
+        val typeface = if (file != null) {
+            runCatching { Typeface.createFromFile(file) }.getOrNull()
+        } else {
+            runCatching { Typeface.createFromAsset(appContext.assets, relativePath) }.getOrNull()
+        } ?: return null
         assetTypefaceCache[font] = typeface
         return typeface
     }
 
-    private fun assetFileFor(font: CanvasTextFont): File? {
-        val relativePath = font.assetPackRelativePath() ?: return null
+    private fun assetFileFor(relativePath: String): File? {
         val assetsPath = assetPackManager
             ?.getPackLocation(CANVAS_FONTS_ASSET_PACK)
             ?.assetsPath()

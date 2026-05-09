@@ -31,6 +31,11 @@ class DataStoreBackgroundImageRepository @Inject constructor(
     private val dataStore: DataStore<Preferences>
 ) : BackgroundImageRepository {
     private val publicHttpClient = OkHttpClient()
+    private val wallpaperPackAssetResolver = WallpaperPackAssetResolver.create(context)
+
+    init {
+        wallpaperPackAssetResolver.requestFastFollowPack()
+    }
 
     override val backgroundState: Flow<BackgroundImageState> = dataStore.data
         .map { preferences ->
@@ -39,8 +44,7 @@ class DataStoreBackgroundImageRepository @Inject constructor(
                 lastUpdatedAt = preferences[PreferenceStorage.backgroundImageUpdatedAt]
                     ?.toLongOrNull()
                     ?: 0L,
-                selectedPresetResId = preferences[PreferenceStorage.backgroundImagePresetResId]
-                    ?.toIntOrNull(),
+                selectedPresetId = preferences[PreferenceStorage.backgroundImagePresetId],
                 selectedRemoteWallpaperId =
                     preferences[PreferenceStorage.backgroundImageRemoteWallpaperId]
             )
@@ -58,7 +62,7 @@ class DataStoreBackgroundImageRepository @Inject constructor(
             )
             persistSelection(
                 assetPath = backgroundFile.absolutePath,
-                selectedPresetResId = null,
+                selectedPresetId = null,
                 selectedRemoteWallpaperId = null
             )
         }
@@ -73,7 +77,29 @@ class DataStoreBackgroundImageRepository @Inject constructor(
             )
             persistSelection(
                 assetPath = backgroundFile.absolutePath,
-                selectedPresetResId = drawableResId,
+                selectedPresetId = null,
+                selectedRemoteWallpaperId = null
+            )
+        }
+    }
+
+    override suspend fun importPresetBackground(preset: WallpaperPreset) {
+        withContext(Dispatchers.IO) {
+            val sourceFile = wallpaperPackAssetResolver.fileFor(preset)
+            val canOpenDebugAsset = sourceFile == null &&
+                wallpaperPackAssetResolver.openAssetStream(preset)?.use { true } == true
+            if (sourceFile == null && !canOpenDebugAsset) {
+                wallpaperPackAssetResolver.requestFastFollowPack()
+                error("Wallpaper assets are still downloading. Please try again in a moment.")
+            }
+            val backgroundFile = WallpaperFiles.backgroundFile(context)
+            storeOptimizedBackground(
+                destination = backgroundFile,
+                loadBitmap = { decodeScaledPresetBitmap(preset, sourceFile) }
+            )
+            persistSelection(
+                assetPath = backgroundFile.absolutePath,
+                selectedPresetId = preset.id,
                 selectedRemoteWallpaperId = null
             )
         }
@@ -113,7 +139,7 @@ class DataStoreBackgroundImageRepository @Inject constructor(
 
             persistSelection(
                 assetPath = backgroundFile.absolutePath,
-                selectedPresetResId = null,
+                selectedPresetId = null,
                 selectedRemoteWallpaperId = remoteWallpaper.id
             )
         }
@@ -126,6 +152,7 @@ class DataStoreBackgroundImageRepository @Inject constructor(
                 preferences.remove(PreferenceStorage.backgroundImagePath)
                 preferences.remove(PreferenceStorage.backgroundImageUpdatedAt)
                 preferences.remove(PreferenceStorage.backgroundImagePresetResId)
+                preferences.remove(PreferenceStorage.backgroundImagePresetId)
                 preferences.remove(PreferenceStorage.backgroundImageRemoteWallpaperId)
             }
         }
@@ -133,17 +160,18 @@ class DataStoreBackgroundImageRepository @Inject constructor(
 
     private suspend fun persistSelection(
         assetPath: String,
-        selectedPresetResId: Int?,
+        selectedPresetId: String?,
         selectedRemoteWallpaperId: String?
     ) {
         val now = System.currentTimeMillis()
         dataStore.edit { preferences ->
             preferences[PreferenceStorage.backgroundImagePath] = assetPath
             preferences[PreferenceStorage.backgroundImageUpdatedAt] = now.toString()
-            if (selectedPresetResId == null) {
-                preferences.remove(PreferenceStorage.backgroundImagePresetResId)
+            preferences.remove(PreferenceStorage.backgroundImagePresetResId)
+            if (selectedPresetId == null) {
+                preferences.remove(PreferenceStorage.backgroundImagePresetId)
             } else {
-                preferences[PreferenceStorage.backgroundImagePresetResId] = selectedPresetResId.toString()
+                preferences[PreferenceStorage.backgroundImagePresetId] = selectedPresetId
             }
             if (selectedRemoteWallpaperId == null) {
                 preferences.remove(PreferenceStorage.backgroundImageRemoteWallpaperId)
@@ -204,6 +232,26 @@ class DataStoreBackgroundImageRepository @Inject constructor(
             targetHeight = targetSize.height
         ) ?: BitmapFactory.decodeResource(context.resources, drawableResId))?.let { bitmap ->
             scaleForTarget(bitmap, targetSize)
+        }
+    }
+
+    private fun decodeScaledPresetBitmap(preset: WallpaperPreset, file: File?): Bitmap? {
+        val targetSize = optimizedTargetSize()
+        val bitmap = if (file != null) {
+            decodeSampledBitmapFromFile(
+                path = file.absolutePath,
+                targetWidth = targetSize.width,
+                targetHeight = targetSize.height
+            ) ?: decodeFullFileBitmap(file)
+        } else {
+            decodeSampledBitmap(
+                openStream = { wallpaperPackAssetResolver.openAssetStream(preset) },
+                targetWidth = targetSize.width,
+                targetHeight = targetSize.height
+            ) ?: wallpaperPackAssetResolver.openAssetStream(preset)?.use(BitmapFactory::decodeStream)
+        }
+        return bitmap?.let { decoded ->
+            scaleForTarget(decoded, targetSize)
         }
     }
 

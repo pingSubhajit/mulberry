@@ -116,11 +116,11 @@ fun WallpaperLockScreenPreview(
 fun WallpaperBackgroundSelectionSection(
     remoteWallpapers: List<RemoteWallpaper>,
     presets: List<WallpaperPreset>,
-    @DrawableRes selectedPresetResId: Int?,
+    selectedPresetId: String?,
     selectedRemoteWallpaperId: String?,
     applyingRemoteWallpaperId: String?,
     onUploadFromGallery: () -> Unit,
-    onPresetSelected: (Int) -> Unit,
+    onPresetSelected: (WallpaperPreset) -> Unit,
     onRemoteWallpaperSelected: (RemoteWallpaper) -> Unit,
     onViewMoreWallpapers: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -149,7 +149,7 @@ fun WallpaperBackgroundSelectionSection(
                         when (item) {
                             is WallpaperSelectionItem.Preset -> PresetCard(
                                 preset = item.preset,
-                                isSelected = selectedPresetResId == item.preset.drawableResId,
+                                isSelected = selectedPresetId == item.preset.id,
                                 onClick = { previewItem = WallpaperPreviewItem.Preset(item.preset) },
                                 modifier = Modifier.weight(1f)
                             )
@@ -180,7 +180,7 @@ fun WallpaperBackgroundSelectionSection(
             onDismiss = { previewItem = null },
             onSetAsWallpaper = {
                 when (selected) {
-                    is WallpaperPreviewItem.Preset -> onPresetSelected(selected.preset.drawableResId)
+                    is WallpaperPreviewItem.Preset -> onPresetSelected(selected.preset)
                     is WallpaperPreviewItem.Remote -> onRemoteWallpaperSelected(selected.wallpaper)
                 }
             }

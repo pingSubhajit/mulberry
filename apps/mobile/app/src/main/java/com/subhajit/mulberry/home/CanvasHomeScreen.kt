@@ -363,7 +363,7 @@ fun CanvasHomeRoute(
 	    onSetUpWallpaper: () -> Unit,
     onViewMoreWallpapers: () -> Unit,
     onUploadWallpaperBackground: () -> Unit,
-    onWallpaperPresetSelected: (Int) -> Unit,
+    onWallpaperPresetSelected: (WallpaperPreset) -> Unit,
     onRemoteWallpaperSelected: (RemoteWallpaper) -> Unit,
     onCanvasPress: (StrokePoint) -> Unit,
     onCanvasDrag: (StrokePoint) -> Unit,
@@ -2366,14 +2366,14 @@ private fun WallpaperHomePane(
     onNavigateToWallpaperHelp: () -> Unit,
     onViewMoreWallpapers: () -> Unit,
     onUploadFromGallery: () -> Unit,
-    onPresetSelected: (Int) -> Unit,
+    onPresetSelected: (WallpaperPreset) -> Unit,
     onRemoteWallpaperSelected: (RemoteWallpaper) -> Unit
 ) {
     val selectedPreviewResId = presets
-        .firstOrNull { it.drawableResId == uiState.selectedWallpaperPresetResId }
+        .firstOrNull { it.id == uiState.selectedWallpaperPresetId }
         ?.previewDrawableResId
         ?: R.drawable.wallpaper_default_bg_preview
-    val previewAssetPath = if (uiState.selectedWallpaperPresetResId == null) {
+    val previewAssetPath = if (uiState.selectedWallpaperPresetId == null) {
         uiState.backgroundImageState.assetPath
     } else {
         null
@@ -2459,7 +2459,7 @@ private fun WallpaperHomePane(
                 WallpaperBackgroundSelectionSection(
                     remoteWallpapers = uiState.recentRemoteWallpapers,
                     presets = presets,
-                    selectedPresetResId = uiState.selectedWallpaperPresetResId,
+                    selectedPresetId = uiState.selectedWallpaperPresetId,
                     selectedRemoteWallpaperId = uiState.selectedRemoteWallpaperId,
                     applyingRemoteWallpaperId = uiState.applyingRemoteWallpaperId,
                     onUploadFromGallery = onUploadFromGallery,

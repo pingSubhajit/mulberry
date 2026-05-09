@@ -52,6 +52,7 @@ object PreferenceStorage {
     val backgroundImagePath = stringPreferencesKey("background_image_path")
     val backgroundImageUpdatedAt = stringPreferencesKey("background_image_updated_at")
     val backgroundImagePresetResId = stringPreferencesKey("background_image_preset_res_id")
+    val backgroundImagePresetId = stringPreferencesKey("background_image_preset_id")
     val backgroundImageRemoteWallpaperId =
         stringPreferencesKey("background_image_remote_wallpaper_id")
     val wallpaperSyncEnabled = booleanPreferencesKey("wallpaper_sync_enabled")

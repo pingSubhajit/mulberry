@@ -145,7 +145,7 @@ data class CanvasHomeUiState(
     val joinCode: JoinCodeUiState = JoinCodeUiState(),
     val partnerDetailsForm: PartnerDetailsFormUiState = PartnerDetailsFormUiState(),
     val pairingConfirmation: PairingConfirmationUiState = PairingConfirmationUiState(),
-    val selectedWallpaperPresetResId: Int? = null,
+    val selectedWallpaperPresetId: String? = null,
     val selectedRemoteWallpaperId: String? = null,
     val applyingRemoteWallpaperId: String? = null,
     val recentRemoteWallpapers: List<RemoteWallpaper> = emptyList(),
@@ -426,7 +426,7 @@ class CanvasHomeViewModel @Inject constructor(
             joinCode = inviteControls.joinCode,
             partnerDetailsForm = inviteControls.partnerDetailsForm,
             pairingConfirmation = inviteControls.confirmation,
-            selectedWallpaperPresetResId = baseState.backgroundState.selectedPresetResId,
+            selectedWallpaperPresetId = baseState.backgroundState.selectedPresetId,
             selectedRemoteWallpaperId = baseState.backgroundState.selectedRemoteWallpaperId,
             applyingRemoteWallpaperId = wallpaperControls.applyingRemoteWallpaperId,
             recentRemoteWallpapers = wallpaperControls.recentRemoteWallpapers,
@@ -1234,10 +1234,10 @@ class CanvasHomeViewModel @Inject constructor(
         }
     }
 
-    fun onWallpaperPresetSelected(drawableResId: Int) {
+    fun onWallpaperPresetSelected(preset: WallpaperPreset) {
         viewModelScope.launch {
             runWallpaperUpdate {
-                backgroundImageRepository.importBundledBackground(drawableResId)
+                backgroundImageRepository.importPresetBackground(preset)
             }
         }
     }
