@@ -1,11 +1,15 @@
 import AppKit
+import Combine
 import Overlay
+import QuickDraw
 import SwiftUI
 
 @MainActor
 public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate {
     private let router = AppRouter()
-    private let overlayController = PlaceholderOverlayController()
+    private let overlayController = OverlayController()
+    private var quickDrawController: QuickDrawController?
+    private var overlayStateCancellable: AnyCancellable?
     private var statusItem: NSStatusItem?
     private var mainWindowController: MainWindowController?
 
@@ -18,11 +22,23 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         // TODO: When Mulberry is packaged and launched at login, add OS-level
         // duplicate-launch handling so a second app invocation activates the
         // existing process instead of allowing parallel app instances.
+        let quickDrawController = QuickDrawController(overlayController: overlayController)
+        self.quickDrawController = quickDrawController
+        quickDrawController.start()
+        overlayStateCancellable = overlayController.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.refreshStatusMenu()
+            }
+        }
         installStatusItem()
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    public func applicationWillTerminate(_ notification: Notification) {
+        quickDrawController?.stop()
     }
 
     private func installStatusItem() {
@@ -58,10 +74,10 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     }
 
     private func quickDrawMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "Quick Draw", action: #selector(quickDraw), keyEquivalent: "m")
+        let title = overlayController.isQuickDrawActive ? "Exit Quick Draw" : "Quick Draw"
+        let item = NSMenuItem(title: title, action: #selector(quickDraw), keyEquivalent: "m")
         item.keyEquivalentModifierMask = [.command, .control]
         item.target = self
-        item.isEnabled = false
         return item
     }
 
@@ -76,7 +92,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         let submenu = NSMenu(title: "Overlay")
         let toggleTitle = overlayController.isVisible ? "Hide Overlay" : "Show Overlay"
         submenu.addItem(menuItem(toggleTitle, action: #selector(toggleOverlay)))
-        submenu.addItem(disabledItem("Choose Display"))
+        submenu.addItem(menuItem("Choose Display...", action: #selector(openOverlayDisplaySettings)))
         submenu.addItem(menuItem("Reset Position", action: #selector(resetOverlayPosition)))
         item.submenu = submenu
         return item
@@ -87,7 +103,12 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     }
 
     @objc private func quickDraw() {
-        // Disabled until Phase 3, when Quick Draw becomes an overlay mode.
+        if overlayController.isQuickDrawActive {
+            quickDrawController?.exitQuickDraw()
+        } else {
+            quickDrawController?.enterQuickDraw()
+        }
+        refreshStatusMenu()
     }
 
     @objc private func sendHeart() {
@@ -106,6 +127,10 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     @objc private func resetOverlayPosition() {
         overlayController.resetPosition()
         refreshStatusMenu()
+    }
+
+    @objc private func openOverlayDisplaySettings() {
+        showMainWindow(route: .overlayStatus)
     }
 
     @objc private func openSettings() {
@@ -144,7 +169,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     init(
         router: AppRouter,
-        overlayController: PlaceholderOverlayController,
+        overlayController: OverlayController,
         onWindowClosed: @escaping () -> Void
     ) {
         self.onWindowClosed = onWindowClosed

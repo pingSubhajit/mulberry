@@ -3,7 +3,7 @@ import SwiftUI
 
 struct MainWindowView: View {
     @ObservedObject var router: AppRouter
-    @ObservedObject var overlayController: PlaceholderOverlayController
+    @ObservedObject var overlayController: OverlayController
 
     var body: some View {
         HStack(spacing: 0) {
@@ -14,19 +14,13 @@ struct MainWindowView: View {
             NavigationStack(path: $router.path) {
                 RoutePlaceholderView(
                     route: router.selectedRoute,
-                    overlayVisible: overlayController.isVisible,
-                    onShowOverlay: overlayController.show,
-                    onHideOverlay: overlayController.hide,
-                    onResetOverlay: overlayController.resetPosition,
+                    overlayController: overlayController,
                     onPush: router.push
                 )
                 .navigationDestination(for: AppRoute.self) { route in
                     RoutePlaceholderView(
                         route: route,
-                        overlayVisible: overlayController.isVisible,
-                        onShowOverlay: overlayController.show,
-                        onHideOverlay: overlayController.hide,
-                        onResetOverlay: overlayController.resetPosition,
+                        overlayController: overlayController,
                         onPush: router.push
                     )
                 }
@@ -86,10 +80,7 @@ struct MainWindowView: View {
 
 private struct RoutePlaceholderView: View {
     let route: AppRoute
-    let overlayVisible: Bool
-    let onShowOverlay: () -> Void
-    let onHideOverlay: () -> Void
-    let onResetOverlay: () -> Void
+    @ObservedObject var overlayController: OverlayController
     let onPush: (AppRoute) -> Void
 
     var body: some View {
@@ -119,11 +110,44 @@ private struct RoutePlaceholderView: View {
                 onPush(.canvasSurface)
             }
         case .overlayStatus:
-            HStack {
-                Button(overlayVisible ? "Hide Overlay" : "Show Overlay") {
-                    overlayVisible ? onHideOverlay() : onShowOverlay()
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Button(overlayController.isVisible ? "Hide Overlay" : "Show Overlay") {
+                        overlayController.isVisible ? overlayController.hide() : overlayController.show()
+                    }
+                    Button("Reset Position", action: overlayController.resetPosition)
                 }
-                Button("Reset Position", action: onResetOverlay)
+
+                Divider()
+
+                Text("Selected display: \(overlayController.selectedDisplayName)")
+                    .font(.headline)
+                let selectedDisplayID = overlayController.selectedDisplayID ?? overlayController.displays.first?.id
+                ForEach(overlayController.displays) { display in
+                    Button {
+                        overlayController.selectDisplay(id: display.id)
+                    } label: {
+                        HStack {
+                            Image(systemName: selectedDisplayID == display.id ? "checkmark.circle.fill" : "circle")
+                            VStack(alignment: .leading) {
+                                Text(display.name)
+                                Text(display.frameDescription)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Divider()
+
+                Text("Frame: \(overlayController.currentFrameDescription)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Hotkey: \(overlayController.hotKeyStatus.message)")
+                    .font(.caption)
+                    .foregroundStyle(overlayController.hotKeyStatus.isRegistered ? Color.secondary : Color.orange)
             }
         case .pairingHub:
             Button("Enter Invite Code") {
@@ -161,7 +185,7 @@ private struct RoutePlaceholderView: View {
         case .canvasSurface:
             "Placeholder for the full drawing surface."
         case .overlayStatus:
-            "Overlay is \(overlayVisible ? "visible" : "hidden"). Phase 2 uses a transparent click-through placeholder window; production display selection and persistence land in Phase 3."
+            "Overlay is \(overlayController.isVisible ? "visible" : "hidden"). Passive mode is transparent, click-through, below normal windows, and pinned to the selected display across Spaces."
         case .overlayDisplay:
             "Placeholder for choosing the display that hosts the overlay."
         case .overlayHelp:
