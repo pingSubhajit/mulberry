@@ -1,4 +1,7 @@
+import AppKit
 import Auth
+import CanvasCore
+import CanvasEditing
 import CanvasRendering
 import Overlay
 import Sync
@@ -113,59 +116,42 @@ private struct RoutePlaceholderView: View {
     @ObservedObject var overlayController: OverlayController
     let onOpen: (AppRoute) -> Void
     let onPush: (AppRoute) -> Void
-    @StateObject private var canvasModel = CanvasRenderModel(
-        state: CanvasRenderFixture.previewState().state,
-        diagnostics: CanvasRenderFixture.previewState().diagnostics
-    )
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(route.title)
-                .font(.largeTitle.weight(.semibold))
+        Group {
+            if route.isFullAppCanvasRoute {
+                FullAppCanvasEditor(
+                    authController: authController,
+                    appStateController: appStateController,
+                    syncController: syncController
+                )
+                .padding(20)
+            } else {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text(route.title)
+                        .font(.largeTitle.weight(.semibold))
 
-            Text(description)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                    Text(description)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-            controls
+                    controls
 
-            Spacer()
+                    Spacer()
+                }
+                .padding(32)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(32)
         .navigationTitle(route.title)
     }
 
     @ViewBuilder
     private var controls: some View {
         switch route {
-        case .canvasHome:
-            VStack(alignment: .leading, spacing: 12) {
-                if let bootstrap = appStateController.loadState.bootstrap {
-                    Text("Partner: \(bootstrap.partnerTitle)")
-                    Text("Pair status: \(bootstrap.pairingStatus)")
-                    Text("Partner can see latest drawings: \(bootstrap.partnerPresence.canSeeLatestDrawings ? "Yes" : "Not confirmed")")
-                        .foregroundStyle(.secondary)
-                }
-                syncStatusBlock
-                Button("Open Canvas Surface") {
-                    onPush(.canvasSurface)
-                }
-            }
-        case .canvasSurface:
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Spacer(minLength: 0)
-                    syncedCanvasSurface
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                Text("Diagnostics: \(syncController.diagnostics.count)")
-                    .font(.caption)
-                    .foregroundStyle(syncController.diagnostics.isEmpty ? Color.secondary : Color.orange)
-            }
+        case .canvasHome, .canvasSurface:
+            EmptyView()
         case .authLanding:
             VStack(alignment: .leading, spacing: 12) {
                 Text(authController.state.statusDetail)
@@ -319,30 +305,6 @@ private struct RoutePlaceholderView: View {
         }
     }
 
-    private var syncedCanvasSurface: some View {
-        CanvasRenderSurfaceView(
-            model: canvasModel,
-            surface: .fullApp,
-            showsEditingBackground: true
-        )
-        .aspectRatio(9.0 / 20.0, contentMode: .fit)
-        .frame(maxHeight: .infinity)
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.secondary.opacity(0.24), lineWidth: 1)
-        }
-        .onAppear {
-            canvasModel.state = syncController.canvasState
-            canvasModel.diagnostics = syncController.diagnostics
-        }
-        .onReceive(syncController.objectWillChange) { _ in
-            DispatchQueue.main.async {
-                canvasModel.state = syncController.canvasState
-                canvasModel.diagnostics = syncController.diagnostics
-            }
-        }
-    }
-
     private var description: String {
         switch route {
         case .bootstrap:
@@ -362,9 +324,9 @@ private struct RoutePlaceholderView: View {
         case .inviteAcceptance:
             "Placeholder for accepting an inbound invite."
         case .canvasHome:
-            "Live account, pair, streak, and partner presence state now come from bootstrap. The drawing surface lands in the next canvas phases."
+            "Draw from this Mac using the same canvas operation model as Android."
         case .canvasSurface:
-            "Placeholder for the full drawing surface."
+            "Full app drawing surface."
         case .overlayStatus:
             "Overlay is \(overlayController.isVisible ? "visible" : "hidden"). Passive mode is transparent, click-through, below normal windows, and pinned to the selected display across Spaces."
         case .overlayDisplay:
@@ -378,5 +340,528 @@ private struct RoutePlaceholderView: View {
         case .settings:
             "Placeholder for app settings inside the main Mulberry window."
         }
+    }
+}
+
+private struct FullAppCanvasEditor: View {
+    @ObservedObject var authController: AuthSessionController
+    @ObservedObject var appStateController: AppStateController
+    @ObservedObject var syncController: CanvasSyncController
+
+    @StateObject private var canvasModel = CanvasRenderModel()
+    @State private var editor = CanvasStrokeEditingEngine()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            canvasStatusHeader
+
+            HStack(alignment: .top, spacing: 18) {
+                canvasSurface
+
+                VStack(alignment: .leading, spacing: 12) {
+                    toolTray
+                    Divider()
+                    syncSummary
+                }
+                .frame(width: 230)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onAppear(perform: syncCanvasModel)
+        .onReceive(syncController.objectWillChange) { _ in
+            DispatchQueue.main.async {
+                syncCanvasModel()
+            }
+        }
+        .alert("Clear canvas?", isPresented: clearBinding) {
+            Button("Cancel", role: .cancel) {
+                editor.cancelClearCanvas()
+            }
+            Button("Clear", role: .destructive) {
+                submit(editor.confirmClearCanvas(pairSessionId: syncController.status.pairSessionID))
+            }
+        } message: {
+            Text("This removes every stroke, text item, and sticker from the shared canvas.")
+        }
+    }
+
+    private var canvasStatusHeader: some View {
+        HStack(spacing: 12) {
+            if let bootstrap = appStateController.loadState.bootstrap {
+                Text(bootstrap.isPaired ? "Paired with \(bootstrap.partnerTitle)" : "Not paired")
+                    .font(.headline)
+            }
+            Text("Sync: \(syncController.connectionState.title)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if syncController.status.pendingCount + syncController.status.inFlightCount > 0 {
+                Text("\(syncController.status.pendingCount) pending")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private var canvasSurface: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                CanvasRenderSurfaceView(
+                    model: canvasModel,
+                    surface: .fullApp,
+                    showsEditingBackground: true
+                )
+                .scaleEffect(editor.viewportTransform.scale, anchor: .topLeading)
+                .offset(
+                    x: editor.viewportTransform.offset.x,
+                    y: editor.viewportTransform.offset.y
+                )
+
+                CanvasInputOverlayView(
+                    activeTool: editor.toolState.activeTool,
+                    editingIsEnabled: editingIsEnabled,
+                    onDrawStart: { point in
+                        submit(editor.startStroke(
+                            at: point,
+                            surfaceSize: proxy.size,
+                            pairSessionId: syncController.status.pairSessionID
+                        ))
+                    },
+                    onDrawMove: { point in
+                        submit(editor.appendStrokePoint(
+                            at: point,
+                            surfaceSize: proxy.size,
+                            pairSessionId: syncController.status.pairSessionID
+                        ))
+                    },
+                    onDrawEnd: {
+                        submit(editor.finishStroke(pairSessionId: syncController.status.pairSessionID))
+                    },
+                    onErase: { point in
+                        submit(editor.eraseStroke(
+                            at: point,
+                            in: syncController.canvasState,
+                            surfaceSize: proxy.size,
+                            pairSessionId: syncController.status.pairSessionID
+                        ))
+                    },
+                    onEyedropper: { point in
+                        sampleEyedropper(at: point, surfaceSize: proxy.size)
+                    },
+                    onPan: { delta in
+                        panViewport(by: delta, surfaceSize: proxy.size)
+                    },
+                    onZoom: { factor, anchor in
+                        editor.viewportTransform = editor.viewportTransform.zoomed(by: factor, around: anchor)
+                    },
+                    onCancel: {
+                        if editor.toolState.activeTool == .eyedropper {
+                            editor.toolState.setActiveTool(editor.toolState.lastNonNoneTool)
+                        }
+                    }
+                )
+
+                if editingIsEnabled == false {
+                    Text(editingDisabledMessage)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(14)
+                        .allowsHitTesting(false)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.24), lineWidth: 1)
+            }
+        }
+        .aspectRatio(9.0 / 20.0, contentMode: .fit)
+        .frame(maxHeight: .infinity)
+    }
+
+    private var toolTray: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                toolButton("Brush", systemImage: "paintbrush.pointed", tool: .draw)
+                toolButton("Erase", systemImage: "eraser", tool: .erase)
+                toolButton("Pick", systemImage: "eyedropper", tool: .eyedropper)
+            }
+
+            HStack {
+                Button {
+                    submit(editor.undo(pairSessionId: syncController.status.pairSessionID))
+                } label: {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
+                }
+                .disabled(editor.canUndo == false)
+                .keyboardShortcut("z", modifiers: .command)
+
+                Button {
+                    submit(editor.redo(pairSessionId: syncController.status.pairSessionID))
+                } label: {
+                    Label("Redo", systemImage: "arrow.uturn.forward")
+                }
+                .disabled(editor.canRedo == false)
+                .keyboardShortcut("Z", modifiers: [.command, .shift])
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Width")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Slider(
+                    value: Binding(
+                        get: { Double(editor.toolState.selectedBrushWidthPx) },
+                        set: { editor.toolState.setBrushWidth(Float($0)) }
+                    ),
+                    in: Double(CanvasEditingDefaults.minBrushWidthPx)...Double(CanvasEditingDefaults.maxBrushWidthPx)
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Color")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(24), spacing: 8), count: 5), spacing: 8) {
+                    ForEach(CanvasEditingDefaults.palette, id: \.self) { color in
+                        Button {
+                            editor.toolState.setSelectedColor(color)
+                        } label: {
+                            Circle()
+                                .fill(Color(argb: color))
+                                .frame(width: 22, height: 22)
+                                .overlay {
+                                    Circle()
+                                        .stroke(editor.toolState.selectedColorArgb == color ? Color.primary : Color.clear, lineWidth: 2)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            HStack {
+                Button {
+                    editor.viewportTransform = editor.viewportTransform.zoomed(by: 1.2, around: CGPoint(x: 160, y: 280))
+                } label: {
+                    Label("Zoom In", systemImage: "plus.magnifyingglass")
+                }
+                .keyboardShortcut("=", modifiers: .command)
+
+                Button {
+                    editor.viewportTransform = editor.viewportTransform.zoomed(by: 1 / 1.2, around: CGPoint(x: 160, y: 280))
+                } label: {
+                    Label("Zoom Out", systemImage: "minus.magnifyingglass")
+                }
+                .keyboardShortcut("-", modifiers: .command)
+            }
+
+            Button {
+                editor.viewportTransform = CanvasViewportTransform()
+            } label: {
+                Label("Reset Zoom", systemImage: "arrow.counterclockwise")
+            }
+            .keyboardShortcut("0", modifiers: .command)
+
+            Button(role: .destructive) {
+                editor.requestClearCanvas()
+            } label: {
+                Label("Clear", systemImage: "trash")
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+    }
+
+    private var syncSummary: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Revision: \(syncController.status.lastAppliedServerRevision) / \(syncController.status.latestKnownServerRevision)")
+            Text("Outbox: \(syncController.status.pendingCount) pending, \(syncController.status.inFlightCount) in flight")
+            Text("Diagnostics: \(syncController.diagnostics.count)")
+                .foregroundStyle(syncController.diagnostics.isEmpty ? Color.secondary : Color.orange)
+            if let lastError = syncController.status.lastError {
+                Text(lastError)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+
+    private var clearBinding: Binding<Bool> {
+        Binding(
+            get: { editor.clearConfirmationRequested },
+            set: { requested in
+                if requested == false {
+                    editor.cancelClearCanvas()
+                }
+            }
+        )
+    }
+
+    private func toolButton(_ title: String, systemImage: String, tool: CanvasEditingTool) -> some View {
+        Button {
+            editor.toolState.setActiveTool(tool)
+        } label: {
+            Label(title, systemImage: systemImage)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(editor.toolState.activeTool == tool ? .accentColor : .gray)
+    }
+
+    private var editingIsEnabled: Bool {
+        let bootstrap = appStateController.loadState.bootstrap
+        return CanvasEditingAvailabilityPolicy().availability(for: CanvasEditingAvailabilityInput(
+            isAuthenticated: authController.state.isSignedIn,
+            isPaired: bootstrap?.isPaired ?? false,
+            pairSessionID: bootstrap?.pairSessionID ?? syncController.status.pairSessionID,
+            hasUsableCanvasState: true,
+            hasHardLocalStateError: false
+        )).isEnabled
+    }
+
+    private var editingDisabledMessage: String {
+        let bootstrap = appStateController.loadState.bootstrap
+        let availability = CanvasEditingAvailabilityPolicy().availability(for: CanvasEditingAvailabilityInput(
+            isAuthenticated: authController.state.isSignedIn,
+            isPaired: bootstrap?.isPaired ?? false,
+            pairSessionID: bootstrap?.pairSessionID ?? syncController.status.pairSessionID,
+            hasUsableCanvasState: true,
+            hasHardLocalStateError: false
+        ))
+        switch availability {
+        case .enabled:
+            return ""
+        case .disabled(.signedOut):
+            return "Sign in to draw"
+        case .disabled(.unpaired):
+            return "Pair with your partner to draw"
+        case .disabled(.missingPairSession):
+            return "Waiting for pair session"
+        case .disabled(.waitingForCanvasState):
+            return "Loading canvas"
+        case .disabled(.localStateError):
+            return "Local canvas state needs recovery"
+        }
+    }
+
+    private func submit(_ operations: [CanvasOperation]) {
+        guard operations.isEmpty == false else { return }
+        operations.forEach(syncController.submitLocalOperation)
+        syncCanvasModel()
+    }
+
+    private func sampleEyedropper(at renderedPoint: CGPoint, surfaceSize: CGSize) {
+        let contentPoint = editor.viewportTransform.contentPoint(fromRenderedPoint: renderedPoint)
+        guard let color = CanvasOffscreenRenderer.sampleColor(
+            input: CanvasRenderInput(
+                state: syncController.canvasState,
+                viewport: CGRect(origin: .zero, size: surfaceSize),
+                strokeRenderMode: canvasModel.strokeRenderMode,
+                surface: .fullApp,
+                showsEditingBackground: false
+            ),
+            at: contentPoint
+        ) else {
+            return
+        }
+        editor.toolState.commitEyedropperColor(color)
+    }
+
+    private func panViewport(by delta: CGSize, surfaceSize: CGSize) {
+        guard editor.viewportTransform.scale > CanvasEditingDefaults.minViewportScale else { return }
+        let scale = editor.viewportTransform.scale
+        let minX = -surfaceSize.width * (scale - 1)
+        let minY = -surfaceSize.height * (scale - 1)
+        let nextOffset = CGPoint(
+            x: (editor.viewportTransform.offset.x + delta.width).clamped(to: minX...0),
+            y: (editor.viewportTransform.offset.y + delta.height).clamped(to: minY...0)
+        )
+        editor.viewportTransform = CanvasViewportTransform(scale: scale, offset: nextOffset)
+    }
+
+    private func syncCanvasModel() {
+        canvasModel.state = syncController.canvasState
+        canvasModel.diagnostics = syncController.diagnostics
+    }
+}
+
+private struct CanvasInputOverlayView: NSViewRepresentable {
+    var activeTool: CanvasEditingTool
+    var editingIsEnabled: Bool
+    var onDrawStart: (CGPoint) -> Void
+    var onDrawMove: (CGPoint) -> Void
+    var onDrawEnd: () -> Void
+    var onErase: (CGPoint) -> Void
+    var onEyedropper: (CGPoint) -> Void
+    var onPan: (CGSize) -> Void
+    var onZoom: (CGFloat, CGPoint) -> Void
+    var onCancel: () -> Void
+
+    func makeNSView(context: Context) -> InputView {
+        let view = InputView()
+        view.configuration = configuration
+        return view
+    }
+
+    func updateNSView(_ nsView: InputView, context: Context) {
+        nsView.configuration = configuration
+    }
+
+    private var configuration: InputView.Configuration {
+        InputView.Configuration(
+            activeTool: activeTool,
+            editingIsEnabled: editingIsEnabled,
+            onDrawStart: onDrawStart,
+            onDrawMove: onDrawMove,
+            onDrawEnd: onDrawEnd,
+            onErase: onErase,
+            onEyedropper: onEyedropper,
+            onPan: onPan,
+            onZoom: onZoom,
+            onCancel: onCancel
+        )
+    }
+
+    final class InputView: NSView {
+        struct Configuration {
+            var activeTool: CanvasEditingTool = .none
+            var editingIsEnabled: Bool = false
+            var onDrawStart: (CGPoint) -> Void = { _ in }
+            var onDrawMove: (CGPoint) -> Void = { _ in }
+            var onDrawEnd: () -> Void = {}
+            var onErase: (CGPoint) -> Void = { _ in }
+            var onEyedropper: (CGPoint) -> Void = { _ in }
+            var onPan: (CGSize) -> Void = { _ in }
+            var onZoom: (CGFloat, CGPoint) -> Void = { _, _ in }
+            var onCancel: () -> Void = {}
+        }
+
+        var configuration = Configuration()
+        private var isDrawing = false
+        private var isSpaceDown = false
+        private var lastPanPoint: CGPoint?
+
+        override var acceptsFirstResponder: Bool { true }
+        override var isFlipped: Bool { true }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.makeFirstResponder(self)
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            window?.makeFirstResponder(self)
+            guard configuration.editingIsEnabled else { return }
+            let point = convert(event.locationInWindow, from: nil)
+            if isSpaceDown {
+                lastPanPoint = point
+                return
+            }
+            switch configuration.activeTool {
+            case .draw:
+                isDrawing = true
+                configuration.onDrawStart(point)
+            case .eyedropper:
+                configuration.onEyedropper(point)
+            default:
+                break
+            }
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard configuration.editingIsEnabled else { return }
+            let point = convert(event.locationInWindow, from: nil)
+            if isSpaceDown {
+                if let lastPanPoint {
+                    configuration.onPan(CGSize(width: point.x - lastPanPoint.x, height: point.y - lastPanPoint.y))
+                }
+                lastPanPoint = point
+                return
+            }
+            if configuration.activeTool == .draw, isDrawing {
+                configuration.onDrawMove(point)
+            }
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            guard configuration.editingIsEnabled else {
+                isDrawing = false
+                lastPanPoint = nil
+                return
+            }
+            let point = convert(event.locationInWindow, from: nil)
+            switch configuration.activeTool {
+            case .draw:
+                if isDrawing {
+                    configuration.onDrawEnd()
+                }
+            case .erase:
+                configuration.onErase(point)
+            default:
+                break
+            }
+            isDrawing = false
+            lastPanPoint = nil
+        }
+
+        override func scrollWheel(with event: NSEvent) {
+            if event.modifierFlags.contains(.command) {
+                let factor = event.scrollingDeltaY > 0 ? 1.08 : 1 / 1.08
+                configuration.onZoom(factor, convert(event.locationInWindow, from: nil))
+            } else {
+                configuration.onPan(CGSize(width: event.scrollingDeltaX, height: event.scrollingDeltaY))
+            }
+        }
+
+        override func magnify(with event: NSEvent) {
+            configuration.onZoom(1 + event.magnification, convert(event.locationInWindow, from: nil))
+        }
+
+        override func keyDown(with event: NSEvent) {
+            if event.keyCode == 53 {
+                configuration.onCancel()
+                return
+            }
+            if event.keyCode == 49 {
+                isSpaceDown = true
+                return
+            }
+            super.keyDown(with: event)
+        }
+
+        override func keyUp(with event: NSEvent) {
+            if event.keyCode == 49 {
+                isSpaceDown = false
+                lastPanPoint = nil
+                return
+            }
+            super.keyUp(with: event)
+        }
+    }
+}
+
+private extension Color {
+    init(argb: UInt32) {
+        let alpha = Double((argb >> 24) & 0xFF) / 255
+        let red = Double((argb >> 16) & 0xFF) / 255
+        let green = Double((argb >> 8) & 0xFF) / 255
+        let blue = Double(argb & 0xFF) / 255
+        self.init(.sRGB, red: red, green: green, blue: blue, opacity: alpha)
+    }
+}
+
+private extension AppRoute {
+    var isFullAppCanvasRoute: Bool {
+        self == .canvasHome || self == .canvasSurface
+    }
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }

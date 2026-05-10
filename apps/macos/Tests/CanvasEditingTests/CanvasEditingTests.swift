@@ -179,11 +179,155 @@ import Testing
     #expect(loaded.lastViewportHeightPx == 900)
 }
 
+@Test func brushEmitsAddAppendAndFinishInOrderWithFinalFlush() throws {
+    var engine = makeStrokeEngine(appendBatchSize: 10)
+    engine.toolState.setActiveTool(.draw)
+    let surface = CGSize(width: 400, height: 800)
+    let date = try fixedDate()
+
+    var operations = engine.startStroke(at: CGPoint(x: 40, y: 80), surfaceSize: surface, date: date)
+    operations += engine.appendStrokePoint(at: CGPoint(x: 80, y: 120), surfaceSize: surface, date: date)
+    #expect(operations.map(\.type) == [.addStroke])
+
+    operations += engine.finishStroke(date: date)
+    #expect(operations.map(\.type) == [.addStroke, .appendPoints, .finishStroke])
+    #expect(Set(operations.map(\.clientOperationId)).count == 3)
+
+    guard case let .appendPoints(payload) = operations[1].payload else {
+        Issue.record("Expected append points payload")
+        return
+    }
+    #expect(payload.points == [CanvasPoint(x: 0.2, y: 0.15)])
+}
+
+@Test func eraserChoosesTopmostHitStrokeAndEmitsDelete() throws {
+    var engine = makeStrokeEngine()
+    engine.toolState.setActiveTool(.erase)
+    let bottom = CanvasStroke(
+        id: "bottom",
+        colorArgb: 0xFF111111,
+        width: 0.02,
+        points: [CanvasPoint(x: 0.1, y: 0.1), CanvasPoint(x: 0.9, y: 0.9)],
+        createdAt: 1
+    )
+    let top = CanvasStroke(
+        id: "top",
+        colorArgb: 0xFF222222,
+        width: 0.02,
+        points: [CanvasPoint(x: 0.1, y: 0.1), CanvasPoint(x: 0.9, y: 0.9)],
+        createdAt: 2
+    )
+    let state = CanvasState(committedStrokes: [bottom, top])
+
+    let operations = engine.eraseStroke(
+        at: CGPoint(x: 200, y: 400),
+        in: state,
+        surfaceSize: CGSize(width: 400, height: 800)
+    )
+
+    #expect(operations.map(\.type) == [.deleteStroke])
+    #expect(operations.first?.strokeId == "top")
+}
+
+@Test func clearRequiresRequestAndOnlyConfirmEmitsClear() {
+    var engine = makeStrokeEngine()
+    #expect(engine.clearConfirmationRequested == false)
+
+    engine.requestClearCanvas()
+    #expect(engine.clearConfirmationRequested)
+
+    engine.cancelClearCanvas()
+    #expect(engine.clearConfirmationRequested == false)
+
+    engine.requestClearCanvas()
+    let operations = engine.confirmClearCanvas()
+    #expect(operations.map(\.type) == [.clearCanvas])
+    #expect(engine.clearConfirmationRequested == false)
+    #expect(engine.canUndo == false)
+    #expect(engine.canRedo == false)
+}
+
+@Test func undoDrawEmitsDeleteAndRedoReplaysWithNewStrokeID() throws {
+    var engine = makeStrokeEngine(appendBatchSize: 1)
+    engine.toolState.setActiveTool(.draw)
+    let surface = CGSize(width: 400, height: 800)
+    let date = try fixedDate()
+
+    _ = engine.startStroke(at: CGPoint(x: 40, y: 80), surfaceSize: surface, date: date)
+    _ = engine.appendStrokePoint(at: CGPoint(x: 80, y: 120), surfaceSize: surface, date: date)
+    _ = engine.finishStroke(date: date)
+
+    let undo = engine.undo(date: date)
+    #expect(undo.map(\.type) == [.deleteStroke])
+    #expect(undo.first?.strokeId == "stroke-1")
+
+    let redo = engine.redo(date: date)
+    #expect(redo.map(\.type) == [.addStroke, .appendPoints, .finishStroke])
+    #expect(redo.first?.strokeId == "stroke-2")
+    #expect(redo.last?.strokeId == "stroke-2")
+}
+
+@Test func undoEraseReplaysDeletedStrokeWithNewID() throws {
+    var engine = makeStrokeEngine()
+    engine.toolState.setActiveTool(.erase)
+    let stroke = CanvasStroke(
+        id: "deleted",
+        colorArgb: 0xFF111111,
+        width: 0.02,
+        points: [CanvasPoint(x: 0.1, y: 0.1), CanvasPoint(x: 0.2, y: 0.2)],
+        createdAt: 1
+    )
+    let state = CanvasState(committedStrokes: [stroke])
+
+    _ = engine.eraseStroke(
+        at: CGPoint(x: 40, y: 80),
+        in: state,
+        surfaceSize: CGSize(width: 400, height: 800),
+        date: try fixedDate()
+    )
+
+    let undo = engine.undo(date: try fixedDate())
+    #expect(undo.map(\.type) == [.addStroke, .appendPoints, .finishStroke])
+    #expect(undo.first?.strokeId == "stroke-1")
+}
+
 private func makeDatabase() throws -> MulberryDatabase {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("mulberry-canvas-editing-tests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return try MulberryDatabase(databaseURL: directory.appendingPathComponent("test.sqlite"))
+}
+
+private func makeStrokeEngine(appendBatchSize: Int = 4) -> CanvasStrokeEditingEngine {
+    let operationIndex = SequenceCounter()
+    let strokeIndex = SequenceCounter()
+    return CanvasStrokeEditingEngine(
+        appendBatchSize: appendBatchSize,
+        operationFactory: CanvasEditingOperationFactory(
+            uuidProvider: {
+                UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", operationIndex.next()))!
+            },
+            nowProvider: {
+                DateFormatter.testISO.date(from: "2026-05-10T12:34:56.789Z")!
+            }
+        ),
+        strokeIDProvider: {
+            "stroke-\(strokeIndex.next())"
+        }
+    )
+}
+
+private final class SequenceCounter: @unchecked Sendable {
+    private var value = 0
+
+    func next() -> Int {
+        value += 1
+        return value
+    }
+}
+
+private func fixedDate() throws -> Date {
+    try #require(DateFormatter.testISO.date(from: "2026-05-10T12:34:56.789Z"))
 }
 
 private extension DateFormatter {

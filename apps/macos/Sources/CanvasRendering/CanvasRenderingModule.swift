@@ -717,6 +717,57 @@ public enum CanvasOffscreenRenderer {
         input: CanvasRenderInput,
         renderer: CanvasRenderer = CanvasRenderer()
     ) -> (data: Data, diagnostics: [CanvasDiagnostic])? {
+        guard let output = renderBitmap(input: input, renderer: renderer) else { return nil }
+        let bitmap = output.bitmap
+        let result = output.result
+        guard let data = bitmap.representation(using: .png, properties: [:]) else {
+            return nil
+        }
+        return (data, result.diagnostics)
+    }
+
+    public static func sampleColor(
+        input: CanvasRenderInput,
+        at point: CGPoint,
+        renderer: CanvasRenderer = CanvasRenderer()
+    ) -> UInt32? {
+        guard let output = renderBitmap(input: input, renderer: renderer) else { return nil }
+        let bitmap = output.bitmap
+        let x = Int(point.x.rounded(.down))
+        let y = Int(point.y.rounded(.down))
+        guard x >= 0, y >= 0, x < bitmap.pixelsWide, y < bitmap.pixelsHigh,
+              let sampled = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+              sampled.alphaComponent > 0.02 else {
+            return nil
+        }
+        let alpha = UInt32((sampled.alphaComponent * 255).rounded().clamped(to: 0...255))
+        let red = UInt32((sampled.redComponent * 255).rounded().clamped(to: 0...255))
+        let green = UInt32((sampled.greenComponent * 255).rounded().clamped(to: 0...255))
+        let blue = UInt32((sampled.blueComponent * 255).rounded().clamped(to: 0...255))
+        return (alpha << 24) | (red << 16) | (green << 8) | blue
+    }
+
+    public static func hasVisiblePixels(_ data: Data) -> Bool {
+        guard let image = NSImage(data: data),
+              let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff) else {
+            return false
+        }
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                guard let color = bitmap.colorAt(x: x, y: y), color.alphaComponent > 0.02 else {
+                    continue
+                }
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func renderBitmap(
+        input: CanvasRenderInput,
+        renderer: CanvasRenderer
+    ) -> (bitmap: NSBitmapImageRep, result: CanvasRenderResult)? {
         let width = Int(input.viewport.width.rounded(.up))
         let height = Int(input.viewport.height.rounded(.up))
         guard width > 0, height > 0,
@@ -740,27 +791,7 @@ public enum CanvasOffscreenRenderer {
         context.clear(CGRect(x: 0, y: 0, width: width, height: height))
         let result = renderer.render(input, in: context)
         NSGraphicsContext.restoreGraphicsState()
-        guard let data = bitmap.representation(using: .png, properties: [:]) else {
-            return nil
-        }
-        return (data, result.diagnostics)
-    }
-
-    public static func hasVisiblePixels(_ data: Data) -> Bool {
-        guard let image = NSImage(data: data),
-              let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff) else {
-            return false
-        }
-        for y in 0..<bitmap.pixelsHigh {
-            for x in 0..<bitmap.pixelsWide {
-                guard let color = bitmap.colorAt(x: x, y: y), color.alphaComponent > 0.02 else {
-                    continue
-                }
-                return true
-            }
-        }
-        return false
+        return (bitmap, result)
     }
 }
 
