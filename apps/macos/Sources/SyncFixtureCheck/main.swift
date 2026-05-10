@@ -8,9 +8,62 @@ import Sync
 enum SyncFixtureCheck {
     @MainActor
     static func main() async throws {
+        try await sessionAloneDoesNotOpenSocket()
+        try await repeatedForegroundDemandIsNoOp()
+        try await repeatedSessionUpdateDoesNotReconnect()
         try await readyMissedOperationsApplyRemoteTail()
         try await debugLocalOperationsAreDurableBeforeSendAndClearedOnAck()
         print("SyncFixtureCheck passed")
+    }
+
+    @MainActor
+    private static func sessionAloneDoesNotOpenSocket() async throws {
+        let fakeTransport = FakeCanvasSyncTransport()
+        let controller = try makeController(transport: fakeTransport)
+        controller.updateSession(userID: "mac-user", pairSessionID: "pair", shouldSync: true)
+        try await pause()
+
+        try expect(controller.demand == .idle, "session should not imply foreground sync demand")
+        try expect(fakeTransport.connectedPairSessionID == nil, "session update opened a WebSocket without demand")
+
+        controller.updateDemand(.foregroundWebSocket)
+        try await pause()
+        try expect(fakeTransport.connectedPairSessionID == "pair", "foreground demand did not open WebSocket")
+    }
+
+    @MainActor
+    private static func repeatedForegroundDemandIsNoOp() async throws {
+        let fakeTransport = FakeCanvasSyncTransport()
+        let controller = try makeController(transport: fakeTransport)
+        controller.updateSession(userID: "mac-user", pairSessionID: "pair", shouldSync: true)
+        controller.updateDemand(.foregroundWebSocket)
+        try await pause()
+
+        let connects = fakeTransport.connectCount
+        let disconnects = fakeTransport.disconnectCount
+        controller.updateDemand(.foregroundWebSocket)
+        controller.updateDemand(.foregroundWebSocket)
+        controller.updateDemand(.foregroundWebSocket)
+        try await pause()
+
+        try expect(fakeTransport.connectCount == connects, "same foreground demand reconnected WebSocket")
+        try expect(fakeTransport.disconnectCount == disconnects, "same foreground demand disconnected WebSocket")
+    }
+
+    @MainActor
+    private static func repeatedSessionUpdateDoesNotReconnect() async throws {
+        let fakeTransport = FakeCanvasSyncTransport()
+        let controller = try makeController(transport: fakeTransport)
+        controller.updateSession(userID: "mac-user", pairSessionID: "pair", shouldSync: true)
+        controller.updateDemand(.foregroundWebSocket)
+        try await pause()
+
+        let connects = fakeTransport.connectCount
+        controller.updateSession(userID: "mac-user", pairSessionID: "pair", shouldSync: true)
+        controller.updateSession(userID: "mac-user", pairSessionID: "pair", shouldSync: true)
+        try await pause()
+
+        try expect(fakeTransport.connectCount == connects, "same session update reconnected WebSocket")
     }
 
     @MainActor
@@ -18,6 +71,7 @@ enum SyncFixtureCheck {
         let fakeTransport = FakeCanvasSyncTransport()
         let controller = try makeController(transport: fakeTransport)
         controller.updateSession(userID: "mac-user", pairSessionID: "pair", shouldSync: true)
+        controller.updateDemand(.foregroundWebSocket)
         try await pause()
 
         fakeTransport.emit(.ready(
@@ -39,6 +93,7 @@ enum SyncFixtureCheck {
         let fakeTransport = FakeCanvasSyncTransport()
         let controller = try makeController(transport: fakeTransport)
         controller.updateSession(userID: "mac-user", pairSessionID: "pair", shouldSync: true)
+        controller.updateDemand(.foregroundWebSocket)
         try await pause()
         fakeTransport.emit(.ready(pairSessionID: "pair", userID: "mac-user", latestRevision: 0, missedOperations: []))
         try await pause()
@@ -94,9 +149,12 @@ private final class FakeCanvasSyncTransport: CanvasSyncTransport {
     var onMessage: ((CanvasSyncMessage) -> Void)?
     var connectedPairSessionID: String?
     var connectedLastAppliedRevision: Int64?
+    var connectCount = 0
+    var disconnectCount = 0
     var sentBatches: [SentBatch] = []
 
     func connect(accessToken: String, pairSessionID: String, lastAppliedServerRevision: Int64) {
+        connectCount += 1
         connectedPairSessionID = pairSessionID
         connectedLastAppliedRevision = lastAppliedServerRevision
     }
@@ -108,7 +166,11 @@ private final class FakeCanvasSyncTransport: CanvasSyncTransport {
 
     func sendPing() {}
 
-    func disconnect() {}
+    func disconnect() {
+        disconnectCount += 1
+        connectedPairSessionID = nil
+        connectedLastAppliedRevision = nil
+    }
 
     func emit(_ message: CanvasSyncMessage) {
         onMessage?(message)

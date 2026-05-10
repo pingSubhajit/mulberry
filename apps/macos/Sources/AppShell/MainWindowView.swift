@@ -276,7 +276,7 @@ private struct RoutePlaceholderView: View {
                     Button("Queue Test Stroke") {
                         syncController.submitDebugStroke()
                     }
-                    .disabled(syncController.connectionState != .connected)
+                    .disabled(syncController.demand != .foregroundWebSocket || syncController.connectionState != .connected)
                     if authController.state.isSignedIn {
                         Button("Sign Out") {
                             Task {
@@ -296,12 +296,20 @@ private struct RoutePlaceholderView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Sync: \(syncController.connectionState.title)")
                 .font(.headline)
+            Text("Mode: \(syncController.demand.title)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Text("Revision: \(syncController.status.lastAppliedServerRevision) / \(syncController.status.latestKnownServerRevision)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text("Outbox: \(syncController.status.pendingCount) pending, \(syncController.status.inFlightCount) in flight")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let recoveredAt = syncController.status.lastSuccessfulRecoveryAt {
+                Text("Last recovery: \(recoveredAt.formatted(date: .omitted, time: .standard))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if let lastError = syncController.status.lastError {
                 Text(lastError)
                     .font(.caption)

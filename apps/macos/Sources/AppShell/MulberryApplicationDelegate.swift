@@ -43,6 +43,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     private var syncStateCancellable: AnyCancellable?
     private var statusItem: NSStatusItem?
     private var mainWindowController: MainWindowController?
+    private var lastOverlayPresenceReportSignature: OverlayPresenceReportSignature?
 
     public override init() {
         super.init()
@@ -63,6 +64,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         overlayStateCancellable = overlayController.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self else { return }
+                self.updateSyncDemand()
                 self.refreshStatusMenu()
                 self.reportCurrentOverlayPresence()
             }
@@ -84,6 +86,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.syncCurrentSession()
+                self.updateSyncDemand()
                 self.refreshStatusMenu()
             }
         }
@@ -264,6 +267,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         } else {
             quickDrawController?.enterQuickDraw()
         }
+        updateSyncDemand()
         refreshStatusMenu()
     }
 
@@ -277,6 +281,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
 
     @objc private func toggleOverlay() {
         overlayController.toggle()
+        updateSyncDemand()
         refreshStatusMenu()
     }
 
@@ -315,10 +320,12 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         NSApp.activate(ignoringOtherApps: true)
         mainWindowController?.showWindow(nil)
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        updateSyncDemand()
     }
 
     private func returnToAccessoryMode() {
         NSApp.setActivationPolicy(.accessory)
+        updateSyncDemand()
     }
 
     private func defaultRouteForCurrentAuth() -> AppRoute {
@@ -384,7 +391,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         if let lastError = syncController.status.lastError, syncController.connectionState != .connected {
             return "\(syncController.connectionState.title): \(lastError)"
         }
-        return "\(syncController.connectionState.title) · rev \(revision)/\(latest)"
+        return "\(syncController.demand.title) · \(syncController.connectionState.title) · rev \(revision)/\(latest)"
     }
 
     private func syncCurrentSession() {
@@ -394,6 +401,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
               let pairSessionID = bootstrap.pairSessionID
         else {
             syncController.updateSession(userID: nil, pairSessionID: nil, shouldSync: false)
+            lastOverlayPresenceReportSignature = nil
             return
         }
         syncController.updateSession(
@@ -401,10 +409,44 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
             pairSessionID: pairSessionID,
             shouldSync: true
         )
+        updateSyncDemand()
+    }
+
+    private func updateSyncDemand() {
+        guard authController.state.isSignedIn,
+              appStateController.loadState.bootstrap?.isPaired == true
+        else {
+            syncController.updateDemand(.idle)
+            return
+        }
+
+        if mainWindowController?.window?.isVisible == true || overlayController.isQuickDrawActive {
+            syncController.updateDemand(.foregroundWebSocket)
+        } else if overlayController.isVisible {
+            syncController.updateDemand(.overlayRecovery)
+        } else {
+            syncController.updateDemand(.idle)
+        }
     }
 
     private func reportCurrentOverlayPresence() {
         guard let bootstrap = appStateController.loadState.bootstrap else { return }
+        let signature = OverlayPresenceReportSignature(
+            pairSessionID: bootstrap.pairSessionID,
+            overlayVisible: overlayController.isVisible,
+            selectedDisplayName: overlayController.selectedDisplayName,
+            canSeeLatestDrawings: syncController.canReportOverlayCanSeeLatestDrawings(
+                isOverlayVisible: overlayController.isVisible
+            ),
+            demand: syncController.demand,
+            connectionState: syncController.connectionState,
+            lastAppliedServerRevision: syncController.status.lastAppliedServerRevision,
+            latestKnownServerRevision: syncController.status.latestKnownServerRevision,
+            lastSuccessfulRecoveryAt: syncController.status.lastSuccessfulRecoveryAt
+        )
+        guard signature != lastOverlayPresenceReportSignature else { return }
+        lastOverlayPresenceReportSignature = signature
+
         Task {
             await appStateController.reportOverlayPresenceIfNeeded(
                 bootstrap: BootstrapDTO(
@@ -423,6 +465,18 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
             )
         }
     }
+}
+
+private struct OverlayPresenceReportSignature: Equatable {
+    let pairSessionID: String?
+    let overlayVisible: Bool
+    let selectedDisplayName: String
+    let canSeeLatestDrawings: Bool
+    let demand: CanvasSyncDemand
+    let connectionState: MacSyncConnectionState
+    let lastAppliedServerRevision: Int64
+    let latestKnownServerRevision: Int64
+    let lastSuccessfulRecoveryAt: Date?
 }
 
 @MainActor
@@ -464,6 +518,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        onWindowClosed()
+        DispatchQueue.main.async { [onWindowClosed] in
+            onWindowClosed()
+        }
     }
 }

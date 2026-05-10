@@ -200,9 +200,12 @@ public final class AppStateController: ObservableObject {
                     details: [
                         "overlayVisible": .bool(overlayController.isVisible),
                         "selectedDisplayName": .string(overlayController.selectedDisplayName),
+                        "syncDemand": .string(syncController.demand.title),
                         "syncState": .string(syncController.connectionState.title),
                         "lastAppliedServerRevision": .number(Double(syncController.status.lastAppliedServerRevision)),
-                        "latestKnownServerRevision": .number(Double(syncController.status.latestKnownServerRevision))
+                        "latestKnownServerRevision": .number(Double(syncController.status.latestKnownServerRevision)),
+                        "lastSuccessfulRecoveryAt": syncController.status.lastSuccessfulRecoveryAt
+                            .map { .string(ISO8601DateFormatter().string(from: $0)) } ?? .null
                     ]
                 ),
                 authorizer: makeAuthorizer()

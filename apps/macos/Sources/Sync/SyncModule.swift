@@ -29,12 +29,27 @@ public enum MacSyncConnectionState: Equatable, Sendable {
     }
 }
 
+public enum CanvasSyncDemand: Equatable, Sendable {
+    case foregroundWebSocket
+    case overlayRecovery
+    case idle
+
+    public var title: String {
+        switch self {
+        case .foregroundWebSocket: "Foreground WebSocket"
+        case .overlayRecovery: "Overlay recovery"
+        case .idle: "Idle"
+        }
+    }
+}
+
 public struct MacSyncStatusSnapshot: Equatable, Sendable {
     public let pairSessionID: String?
     public let lastAppliedServerRevision: Int64
     public let latestKnownServerRevision: Int64
     public let pendingCount: Int
     public let inFlightCount: Int
+    public let lastSuccessfulRecoveryAt: Date?
     public let lastError: String?
 
     public init(
@@ -43,6 +58,7 @@ public struct MacSyncStatusSnapshot: Equatable, Sendable {
         latestKnownServerRevision: Int64 = 0,
         pendingCount: Int = 0,
         inFlightCount: Int = 0,
+        lastSuccessfulRecoveryAt: Date? = nil,
         lastError: String? = nil
     ) {
         self.pairSessionID = pairSessionID
@@ -50,6 +66,7 @@ public struct MacSyncStatusSnapshot: Equatable, Sendable {
         self.latestKnownServerRevision = latestKnownServerRevision
         self.pendingCount = pendingCount
         self.inFlightCount = inFlightCount
+        self.lastSuccessfulRecoveryAt = lastSuccessfulRecoveryAt
         self.lastError = lastError
     }
 
@@ -134,9 +151,13 @@ public protocol CanvasSyncTransport: AnyObject {
 @MainActor
 public final class CanvasSyncController: ObservableObject {
     @Published public private(set) var connectionState: MacSyncConnectionState = .signedOut
+    @Published public private(set) var demand: CanvasSyncDemand = .idle
     @Published public private(set) var status = MacSyncStatusSnapshot()
     @Published public private(set) var canvasState = CanvasState()
     @Published public private(set) var diagnostics: [CanvasDiagnostic] = []
+
+    public static let defaultOverlayRecoveryIntervalNanoseconds: UInt64 = 3_000_000_000
+    public static let defaultOverlayFreshnessWindow: TimeInterval = 6
 
     private let configuration: MacAppConfiguration
     private let database: MulberryDatabase
@@ -144,6 +165,8 @@ public final class CanvasSyncController: ObservableObject {
     private let authorizer: AuthenticatedRequestAuthorizer
     private let transport: CanvasSyncTransport
     private let recoveryPolicy: CanvasRecoveryPolicy
+    private let overlayRecoveryIntervalNanoseconds: UInt64
+    private let overlayFreshnessWindow: TimeInterval
     private let reducer = CanvasReducer()
     private var revisionBuffer: [Int64: CanvasOperation] = [:]
     private var localOptimisticOperationIDs = Set<String>()
@@ -151,18 +174,22 @@ public final class CanvasSyncController: ObservableObject {
     private var sendTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
     private var pingTask: Task<Void, Never>?
+    private var overlayRecoveryTask: Task<Void, Never>?
     private var activeUserID: String?
     private var activePairSessionID: String?
     private var desiredSync = false
     private var currentBackoffSeconds = 1
     private var usesRealCanvasState = false
+    private var lastSuccessfulRecoveryAt: Date?
 
     public init(
         configuration: MacAppConfiguration,
         database: MulberryDatabase,
         authorizer: AuthenticatedRequestAuthorizer,
         transport: CanvasSyncTransport? = nil,
-        recoveryPolicy: CanvasRecoveryPolicy = CanvasRecoveryPolicy()
+        recoveryPolicy: CanvasRecoveryPolicy = CanvasRecoveryPolicy(),
+        overlayRecoveryIntervalNanoseconds: UInt64 = CanvasSyncController.defaultOverlayRecoveryIntervalNanoseconds,
+        overlayFreshnessWindow: TimeInterval = CanvasSyncController.defaultOverlayFreshnessWindow
     ) {
         self.configuration = configuration
         self.database = database
@@ -170,6 +197,8 @@ public final class CanvasSyncController: ObservableObject {
         self.apiClient = CanvasAPIClient(configuration: configuration)
         self.transport = transport ?? URLSessionCanvasSyncTransport(configuration: configuration)
         self.recoveryPolicy = recoveryPolicy
+        self.overlayRecoveryIntervalNanoseconds = overlayRecoveryIntervalNanoseconds
+        self.overlayFreshnessWindow = overlayFreshnessWindow
         self.transport.onMessage = { [weak self] message in
             Task { @MainActor in
                 await self?.handle(message)
@@ -179,12 +208,18 @@ public final class CanvasSyncController: ObservableObject {
     }
 
     public func updateSession(userID: String?, pairSessionID: String?, shouldSync: Bool) {
+        let previousDesiredSync = desiredSync
+        let previousUserID = activeUserID
+        let previousPairSessionID = activePairSessionID
         desiredSync = shouldSync
         guard shouldSync, let userID, let pairSessionID else {
             stop(reason: shouldSync ? "missing_session" : "signed_out")
             return
         }
 
+        let sessionChanged = previousDesiredSync != shouldSync ||
+            previousUserID != userID ||
+            previousPairSessionID != pairSessionID
         activeUserID = userID
         if activePairSessionID != pairSessionID {
             activePairSessionID = pairSessionID
@@ -199,23 +234,24 @@ public final class CanvasSyncController: ObservableObject {
             rebuildCanvasStateFromPersistence(pairSessionID: pairSessionID)
         }
 
-        if case .connected = connectionState {
-            return
+        if sessionChanged {
+            reconcileDemand(reason: "session_update")
         }
-        if case .connecting = connectionState {
-            return
-        }
-        connect(reason: "session_update")
+    }
+
+    public func updateDemand(_ nextDemand: CanvasSyncDemand) {
+        guard demand != nextDemand else { return }
+        demand = nextDemand
+        reconcileDemand(reason: "demand_changed")
     }
 
     public func stop(reason: String = "stop") {
         desiredSync = false
         activeUserID = nil
         activePairSessionID = nil
-        sendTask?.cancel()
-        reconnectTask?.cancel()
-        pingTask?.cancel()
-        transport.disconnect()
+        demand = .idle
+        overlayRecoveryTask?.cancel()
+        disconnectLiveSocket(resetInFlight: true)
         revisionBuffer.removeAll()
         inFlightBatchIDs.removeAll()
         try? database.resetInFlightPendingOperations()
@@ -225,6 +261,7 @@ public final class CanvasSyncController: ObservableObject {
 
     public func reset() {
         stop(reason: "signed_out")
+        lastSuccessfulRecoveryAt = nil
         try? database.updateSyncMetadata(
             pairSessionID: nil,
             lastAppliedServerRevision: 0,
@@ -304,17 +341,94 @@ public final class CanvasSyncController: ObservableObject {
     }
 
     public func canReportOverlayCanSeeLatestDrawings(isOverlayVisible: Bool) -> Bool {
-        guard isOverlayVisible, usesRealCanvasState, diagnostics.contains(where: { $0.severity == .error }) == false else {
+        let hasBlockingDiagnostic = diagnostics.contains { diagnostic in
+            diagnostic.severity == .error && diagnostic.code != "sync_error"
+        }
+        guard isOverlayVisible, usesRealCanvasState, hasBlockingDiagnostic == false, status.lastError == nil else {
             return false
         }
-        guard case .connected = connectionState else {
+        guard status.isFresh else {
             return false
         }
-        return status.isFresh
+        switch demand {
+        case .foregroundWebSocket:
+            if case .connected = connectionState {
+                return true
+            }
+            return false
+        case .overlayRecovery:
+            guard let lastSuccessfulRecoveryAt else { return false }
+            return Date().timeIntervalSince(lastSuccessfulRecoveryAt) <= overlayFreshnessWindow
+        case .idle:
+            return false
+        }
+    }
+
+    private var shouldMaintainWebSocket: Bool {
+        desiredSync && demand == .foregroundWebSocket && activePairSessionID != nil
+    }
+
+    private var shouldRunOverlayRecovery: Bool {
+        desiredSync && demand == .overlayRecovery && activePairSessionID != nil
+    }
+
+    private func reconcileDemand(reason: String) {
+        guard desiredSync, activePairSessionID != nil else {
+            connectionState = activePairSessionID == nil ? .signedOut : .disconnected
+            return
+        }
+
+        switch demand {
+        case .foregroundWebSocket:
+            overlayRecoveryTask?.cancel()
+            if case .connected = connectionState {
+                schedulePendingSend()
+                return
+            }
+            if case .connecting = connectionState {
+                return
+            }
+            connect(reason: reason)
+        case .overlayRecovery:
+            disconnectLiveSocket(resetInFlight: true)
+            connectionState = .disconnected
+            startOverlayRecoveryLoop()
+        case .idle:
+            overlayRecoveryTask?.cancel()
+            disconnectLiveSocket(resetInFlight: true)
+            connectionState = .disconnected
+        }
+        refreshStatusFromStore()
+    }
+
+    private func disconnectLiveSocket(resetInFlight: Bool) {
+        sendTask?.cancel()
+        reconnectTask?.cancel()
+        pingTask?.cancel()
+        transport.disconnect()
+        if resetInFlight {
+            inFlightBatchIDs.removeAll()
+            try? database.resetInFlightPendingOperations()
+        }
+    }
+
+    private func startOverlayRecoveryLoop() {
+        guard shouldRunOverlayRecovery else { return }
+        if overlayRecoveryTask?.isCancelled == false {
+            return
+        }
+        overlayRecoveryTask?.cancel()
+        overlayRecoveryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while Task.isCancelled == false {
+                await self.recoverFromServer(reason: .resyncRequired)
+                try? await Task.sleep(nanoseconds: self.overlayRecoveryIntervalNanoseconds)
+            }
+        }
     }
 
     private func connect(reason: String) {
-        guard desiredSync, let pairSessionID = activePairSessionID else { return }
+        guard shouldMaintainWebSocket, let pairSessionID = activePairSessionID else { return }
         Task {
             guard let accessToken = await authorizer.currentAccessToken() else {
                 recordError("No access token is available for canvas sync.")
@@ -383,7 +497,7 @@ public final class CanvasSyncController: ObservableObject {
             recordError(message)
             scheduleReconnect(reason: "socket_error")
         case .closed:
-            if desiredSync {
+            if shouldMaintainWebSocket {
                 connectionState = .disconnected
                 scheduleReconnect(reason: "socket_closed")
             }
@@ -424,6 +538,7 @@ public final class CanvasSyncController: ObservableObject {
                 await applyRecoveryOperations(missedOperations)
             }
             connectionState = .connected
+            lastSuccessfulRecoveryAt = Date()
             try database.updateSyncMetadata(pairSessionID: pairSessionID, clearsLastError: true)
             refreshStatusFromStore()
             schedulePendingSend()
@@ -563,13 +678,21 @@ public final class CanvasSyncController: ObservableObject {
             } else {
                 await applyRecoveryOperations(operations)
             }
-            if desiredSync {
+            lastSuccessfulRecoveryAt = Date()
+            try? database.updateSyncMetadata(pairSessionID: activePairSessionID, clearsLastError: true)
+            if shouldMaintainWebSocket {
                 connectionState = .connected
+            } else if shouldRunOverlayRecovery {
+                connectionState = .disconnected
+            } else {
+                connectionState = activePairSessionID == nil ? .signedOut : .disconnected
             }
             refreshStatusFromStore()
         } catch {
             recordError("Unable to recover canvas operations: \(error.localizedDescription)")
-            scheduleReconnect(reason: "rest_recovery_failed")
+            if shouldMaintainWebSocket {
+                scheduleReconnect(reason: "rest_recovery_failed")
+            }
         }
     }
 
@@ -604,6 +727,7 @@ public final class CanvasSyncController: ObservableObject {
                 )
                 await applyRecoveryOperations(tail)
             }
+            lastSuccessfulRecoveryAt = Date()
         } catch {
             recordError("Unable to recover canvas snapshot: \(error.localizedDescription)")
         }
@@ -654,7 +778,7 @@ public final class CanvasSyncController: ObservableObject {
     }
 
     private func scheduleReconnect(reason: String) {
-        guard desiredSync else { return }
+        guard shouldMaintainWebSocket else { return }
         transport.disconnect()
         sendTask?.cancel()
         pingTask?.cancel()
@@ -715,6 +839,7 @@ public final class CanvasSyncController: ObservableObject {
             latestKnownServerRevision: metadata?.latestKnownServerRevision ?? 0,
             pendingCount: summary?.pending ?? 0,
             inFlightCount: summary?.inFlight ?? 0,
+            lastSuccessfulRecoveryAt: lastSuccessfulRecoveryAt,
             lastError: metadata?.lastError
         )
     }
