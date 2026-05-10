@@ -19,6 +19,7 @@ let package = Package(
         .library(name: "Sync", targets: ["Sync"]),
         .library(name: "CanvasCore", targets: ["CanvasCore"]),
         .library(name: "CanvasRendering", targets: ["CanvasRendering"]),
+        .library(name: "CanvasEditing", targets: ["CanvasEditing"]),
         .library(name: "Persistence", targets: ["Persistence"]),
         .library(name: "Overlay", targets: ["Overlay"]),
         .library(name: "QuickDraw", targets: ["QuickDraw"]),
@@ -62,6 +63,7 @@ let package = Package(
                 "Sync",
                 "CanvasCore",
                 "CanvasRendering",
+                "CanvasEditing",
                 "Persistence",
                 "Overlay",
                 "QuickDraw",
@@ -77,6 +79,7 @@ let package = Package(
         .target(name: "Sync", dependencies: ["CanvasCore", "Networking", "Persistence"]),
         .target(name: "CanvasCore"),
         .target(name: "CanvasRendering", dependencies: ["CanvasCore"]),
+        .target(name: "CanvasEditing", dependencies: ["CanvasCore", "Persistence"]),
         .target(
             name: "Persistence",
             dependencies: [
@@ -103,6 +106,10 @@ let package = Package(
         .testTarget(
             name: "CanvasRenderingTests",
             dependencies: ["CanvasRendering"]
+        ),
+        .testTarget(
+            name: "CanvasEditingTests",
+            dependencies: ["CanvasEditing"]
         )
     ]
 )

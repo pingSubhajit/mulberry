@@ -119,6 +119,34 @@ public struct PersistedCanvasSnapshot: Sendable, Equatable {
     }
 }
 
+public struct PersistedCanvasEditingMetadata: Sendable, Equatable {
+    public let selectedBrushColorArgb: UInt32
+    public let selectedTextColorArgb: UInt32
+    public let selectedBrushWidthPx: Float
+    public let selectedTool: String
+    public let lastNonNoneTool: String
+    public let lastViewportWidthPx: Int
+    public let lastViewportHeightPx: Int
+
+    public init(
+        selectedBrushColorArgb: UInt32 = 0xFFB31329,
+        selectedTextColorArgb: UInt32 = 0xFFB31329,
+        selectedBrushWidthPx: Float = 10,
+        selectedTool: String = "NONE",
+        lastNonNoneTool: String = "DRAW",
+        lastViewportWidthPx: Int = 0,
+        lastViewportHeightPx: Int = 0
+    ) {
+        self.selectedBrushColorArgb = selectedBrushColorArgb
+        self.selectedTextColorArgb = selectedTextColorArgb
+        self.selectedBrushWidthPx = selectedBrushWidthPx
+        self.selectedTool = selectedTool
+        self.lastNonNoneTool = lastNonNoneTool
+        self.lastViewportWidthPx = max(0, lastViewportWidthPx)
+        self.lastViewportHeightPx = max(0, lastViewportHeightPx)
+    }
+}
+
 public final class MulberryDatabase: @unchecked Sendable {
     private let writer: DatabaseQueue
     private let operationEncoder = JSONEncoder()
@@ -611,6 +639,79 @@ public final class MulberryDatabase: @unchecked Sendable {
         }
     }
 
+    public func persistedCanvasEditingMetadata() throws -> PersistedCanvasEditingMetadata {
+        try writer.read { database in
+            guard let row = try Row.fetchOne(
+                database,
+                sql: """
+                SELECT
+                    selected_brush_color_argb,
+                    selected_text_color_argb,
+                    selected_brush_width_px,
+                    selected_tool,
+                    last_non_none_tool,
+                    last_viewport_width_px,
+                    last_viewport_height_px
+                FROM canvas_editing_metadata
+                WHERE id = 'singleton'
+                """
+            ) else {
+                return PersistedCanvasEditingMetadata()
+            }
+            let selectedBrushColorRaw: Int64 = row["selected_brush_color_argb"]
+            let selectedTextColorRaw: Int64 = row["selected_text_color_argb"]
+
+            return PersistedCanvasEditingMetadata(
+                selectedBrushColorArgb: UInt32(bitPattern: Int32(truncatingIfNeeded: selectedBrushColorRaw)),
+                selectedTextColorArgb: UInt32(bitPattern: Int32(truncatingIfNeeded: selectedTextColorRaw)),
+                selectedBrushWidthPx: row["selected_brush_width_px"],
+                selectedTool: row["selected_tool"],
+                lastNonNoneTool: row["last_non_none_tool"],
+                lastViewportWidthPx: row["last_viewport_width_px"],
+                lastViewportHeightPx: row["last_viewport_height_px"]
+            )
+        }
+    }
+
+    public func savePersistedCanvasEditingMetadata(_ metadata: PersistedCanvasEditingMetadata) throws {
+        try writer.write { database in
+            try database.execute(
+                sql: """
+                INSERT INTO canvas_editing_metadata (
+                    id,
+                    selected_brush_color_argb,
+                    selected_text_color_argb,
+                    selected_brush_width_px,
+                    selected_tool,
+                    last_non_none_tool,
+                    last_viewport_width_px,
+                    last_viewport_height_px,
+                    updated_at
+                ) VALUES ('singleton', ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    selected_brush_color_argb = excluded.selected_brush_color_argb,
+                    selected_text_color_argb = excluded.selected_text_color_argb,
+                    selected_brush_width_px = excluded.selected_brush_width_px,
+                    selected_tool = excluded.selected_tool,
+                    last_non_none_tool = excluded.last_non_none_tool,
+                    last_viewport_width_px = excluded.last_viewport_width_px,
+                    last_viewport_height_px = excluded.last_viewport_height_px,
+                    updated_at = excluded.updated_at
+                """,
+                arguments: [
+                    Int64(Int32(bitPattern: metadata.selectedBrushColorArgb)),
+                    Int64(Int32(bitPattern: metadata.selectedTextColorArgb)),
+                    metadata.selectedBrushWidthPx,
+                    metadata.selectedTool,
+                    metadata.lastNonNoneTool,
+                    metadata.lastViewportWidthPx,
+                    metadata.lastViewportHeightPx,
+                    Date()
+                ]
+            )
+        }
+    }
+
     private static func makeMigrator() -> DatabaseMigrator {
         var migrator = DatabaseMigrator()
         migrator.registerMigration("v1_app_state") { database in
@@ -689,6 +790,19 @@ public final class MulberryDatabase: @unchecked Sendable {
                 table.column("snapshot_revision", .integer).notNull()
                 table.column("latest_revision", .integer).notNull()
                 table.column("state_json", .text).notNull()
+                table.column("updated_at", .datetime).notNull()
+            }
+        }
+        migrator.registerMigration("v3_canvas_editing_metadata") { database in
+            try database.create(table: "canvas_editing_metadata", ifNotExists: true) { table in
+                table.column("id", .text).primaryKey()
+                table.column("selected_brush_color_argb", .integer).notNull()
+                table.column("selected_text_color_argb", .integer).notNull()
+                table.column("selected_brush_width_px", .double).notNull()
+                table.column("selected_tool", .text).notNull()
+                table.column("last_non_none_tool", .text).notNull()
+                table.column("last_viewport_width_px", .integer).notNull().defaults(to: 0)
+                table.column("last_viewport_height_px", .integer).notNull().defaults(to: 0)
                 table.column("updated_at", .datetime).notNull()
             }
         }
