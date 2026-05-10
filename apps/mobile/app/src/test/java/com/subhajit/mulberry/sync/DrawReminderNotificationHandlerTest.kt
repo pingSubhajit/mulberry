@@ -95,6 +95,12 @@ private class TestSessionBootstrapRepository(initial: SessionBootstrapState) : S
 
     override suspend fun markBrushToolGuideShown(userId: String) = Unit
 
+    override suspend fun setStreakLevelUpBanner(streakDays: Int, shownAtMs: Long, expiresAtMs: Long) = Unit
+
+    override suspend fun dismissStreakLevelUpBanner(dismissedAtMs: Long) = Unit
+
+    override suspend fun clearStreakLevelUpBanner() = Unit
+
     override suspend fun seedDemoSession() = Unit
     override suspend fun reset() = Unit
 }

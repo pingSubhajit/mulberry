@@ -19,6 +19,7 @@ import com.subhajit.mulberry.network.CanvasOpsResponse
 import com.subhajit.mulberry.network.CanvasPointPayload
 import com.subhajit.mulberry.network.CanvasSnapshotPayload
 import com.subhajit.mulberry.network.CanvasSnapshotResponse
+import com.subhajit.mulberry.network.CannySsoTokenResponse
 import com.subhajit.mulberry.network.ClearStreakActivityDayRequest
 import com.subhajit.mulberry.network.CreateInviteResponse
 import com.subhajit.mulberry.network.DebugActionResponse
@@ -527,6 +528,12 @@ private class FakeSessionBootstrapRepository : SessionBootstrapRepository {
 
     override suspend fun markBrushToolGuideShown(userId: String) = Unit
 
+    override suspend fun setStreakLevelUpBanner(streakDays: Int, shownAtMs: Long, expiresAtMs: Long) = Unit
+
+    override suspend fun dismissStreakLevelUpBanner(dismissedAtMs: Long) = Unit
+
+    override suspend fun clearStreakLevelUpBanner() = Unit
+
     override suspend fun seedDemoSession() = Unit
 
     override suspend fun reset() {
@@ -706,4 +713,6 @@ private class FakeMulberryApiService : MulberryApiService {
     override suspend fun getWhatsNewMarkdown(version: String): Response<ResponseBody> = error("unused")
 
     override suspend fun getLatestWhatsNewMarkdown(): Response<ResponseBody> = error("unused")
+
+    override suspend fun getCannySsoToken(): CannySsoTokenResponse = error("unused")
 }

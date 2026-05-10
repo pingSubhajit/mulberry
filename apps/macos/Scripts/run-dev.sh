@@ -2,4 +2,6 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-swift run MulberryMac
+
+./Scripts/build-app.sh
+open .build/app/Mulberry.app

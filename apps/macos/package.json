@@ -5,6 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "./Scripts/run-dev.sh",
+    "generate-icons": "node ./Scripts/generate-icons.mjs",
     "build": "./Scripts/build-app.sh",
     "smoke": "./Scripts/smoke-test.sh",
     "start": "open .build/app/Mulberry.app"

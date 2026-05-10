@@ -43,6 +43,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        installApplicationIcon()
         // TODO: When Mulberry is packaged and launched at login, add OS-level
         // duplicate-launch handling so a second app invocation activates the
         // existing process instead of allowing parallel app instances.
@@ -76,6 +77,25 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         installStatusItem()
     }
 
+    private func installApplicationIcon() {
+        guard let image = loadApplicationIconImage() else {
+            return
+        }
+        NSApp.applicationIconImage = image
+    }
+
+    private func loadApplicationIconImage() -> NSImage? {
+        if let image = NSImage(named: "AppIcon") {
+            return image
+        }
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns") {
+            return NSImage(contentsOf: url)
+        }
+        let developmentURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Resources/AppIcon.icns")
+        return NSImage(contentsOf: developmentURL)
+    }
+
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
@@ -85,11 +105,30 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     }
 
     private func installStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "Mulberry"
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if let image = loadStatusBarImage() {
+            image.isTemplate = true
+            image.size = NSSize(width: 18, height: 18)
+            item.button?.image = image
+            item.button?.imagePosition = .imageOnly
+        } else {
+            item.button?.title = "Mulberry"
+        }
         item.button?.toolTip = "Mulberry"
         statusItem = item
         refreshStatusMenu()
+    }
+
+    private func loadStatusBarImage() -> NSImage? {
+        if let image = NSImage(named: "MenuBarIconTemplate") {
+            return image
+        }
+        if let url = Bundle.main.url(forResource: "MenuBarIconTemplate", withExtension: "png") {
+            return NSImage(contentsOf: url)
+        }
+        let developmentURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Resources/MenuBarIconTemplate.png")
+        return NSImage(contentsOf: developmentURL)
     }
 
     private func refreshStatusMenu() {

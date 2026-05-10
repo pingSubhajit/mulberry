@@ -643,6 +643,8 @@ public struct SessionTokens: Codable, Sendable {
 }
 
 public final class KeychainSessionStore {
+    private static let invalidOwnerEditStatus: OSStatus = -25244
+
     private let service = "com.mulberry.mac.session"
     private let account = "mulberry-session-tokens"
     private let encoder = JSONEncoder()
@@ -652,39 +654,43 @@ public final class KeychainSessionStore {
 
     public func save(_ tokens: SessionTokens) throws {
         let data = try encoder.encode(tokens)
-        try clear()
-        let query = saveQuery(data: data, useDataProtectionKeychain: true)
-        let fallbackQuery = saveQuery(data: data, useDataProtectionKeychain: false)
-        let status = SecItemAdd(query as CFDictionary, nil)
-        if status == errSecMissingEntitlement {
-            let fallbackStatus = SecItemAdd(fallbackQuery as CFDictionary, nil)
-            guard fallbackStatus == errSecSuccess else {
-                throw KeychainError.unhandledStatus(fallbackStatus)
-            }
+        let query = baseQuery(useDataProtectionKeychain: false)
+        let update: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+
+        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        switch updateStatus {
+        case errSecSuccess:
             return
-        }
-        guard status == errSecSuccess else {
-            throw KeychainError.unhandledStatus(status)
+        case errSecItemNotFound:
+            let addStatus = SecItemAdd(saveQuery(data: data, useDataProtectionKeychain: false) as CFDictionary, nil)
+            guard addStatus == errSecSuccess else {
+                throw KeychainError.unhandledStatus(addStatus)
+            }
+        default:
+            throw KeychainError.unhandledStatus(updateStatus)
         }
     }
 
     public func loadTokens() throws -> SessionTokens? {
-        try loadTokens(useDataProtectionKeychain: true)
-            ?? loadTokens(useDataProtectionKeychain: false)
+        if let tokens = try loadTokens(useDataProtectionKeychain: false) {
+            return tokens
+        }
+        return try loadTokens(useDataProtectionKeychain: true)
     }
 
     public func clear() throws {
-        try clear(useDataProtectionKeychain: true)
         try clear(useDataProtectionKeychain: false)
+        try clear(useDataProtectionKeychain: true)
     }
 
-    private func saveQuery(data: Data, useDataProtectionKeychain: Bool) -> [String: Any] {
+    private func baseQuery(useDataProtectionKeychain: Bool) -> [String: Any] {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            kSecAttrAccount as String: account
         ]
         if useDataProtectionKeychain {
             query[kSecUseDataProtectionKeychain as String] = true
@@ -692,20 +698,24 @@ public final class KeychainSessionStore {
         return query
     }
 
+    private func saveQuery(data: Data, useDataProtectionKeychain: Bool) -> [String: Any] {
+        var query = baseQuery(useDataProtectionKeychain: useDataProtectionKeychain)
+        query.merge([
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]) { _, new in new }
+        return query
+    }
+
     private func loadTokens(useDataProtectionKeychain: Bool) throws -> SessionTokens? {
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+        var query = baseQuery(useDataProtectionKeychain: useDataProtectionKeychain)
+        query.merge([
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        if useDataProtectionKeychain {
-            query[kSecUseDataProtectionKeychain as String] = true
-        }
+        ]) { _, new in new }
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound || status == errSecMissingEntitlement {
+        if status == errSecItemNotFound || isUnavailableLegacyKeychainStatus(status) {
             return nil
         }
         guard status == errSecSuccess else {
@@ -718,18 +728,15 @@ public final class KeychainSessionStore {
     }
 
     private func clear(useDataProtectionKeychain: Bool) throws {
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        if useDataProtectionKeychain {
-            query[kSecUseDataProtectionKeychain as String] = true
-        }
+        let query = baseQuery(useDataProtectionKeychain: useDataProtectionKeychain)
         let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound || status == errSecMissingEntitlement else {
+        guard status == errSecSuccess || status == errSecItemNotFound || isUnavailableLegacyKeychainStatus(status) else {
             throw KeychainError.unhandledStatus(status)
         }
+    }
+
+    private func isUnavailableLegacyKeychainStatus(_ status: OSStatus) -> Bool {
+        status == errSecMissingEntitlement || status == Self.invalidOwnerEditStatus
     }
 }
 
