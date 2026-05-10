@@ -1,0 +1,21 @@
+{
+  "operations": [
+    {
+      "clientOperationId": "legacy-op-1",
+      "actorUserId": "user-a",
+      "pairSessionId": "pair-1",
+      "type": "ADD_STROKE",
+      "strokeId": "legacy-stroke",
+      "payload": {
+        "id": "legacy-stroke",
+        "colorArgb": 4278190080,
+        "width": 8,
+        "createdAt": 1,
+        "firstPoint": { "x": 240, "y": 320 }
+      },
+      "clientCreatedAt": "2026-01-01T00:00:00.000Z",
+      "serverRevision": 1,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}

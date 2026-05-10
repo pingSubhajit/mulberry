@@ -30,6 +30,10 @@ let package = Package(
         .executable(
             name: "OverlayRegressionCheck",
             targets: ["OverlayRegressionCheck"]
+        ),
+        .executable(
+            name: "CanvasRenderFixtureCheck",
+            targets: ["CanvasRenderFixtureCheck"]
         )
     ],
     dependencies: [
@@ -72,13 +76,23 @@ let package = Package(
                 .product(name: "GRDB", package: "GRDB.swift")
             ]
         ),
-        .target(name: "Overlay"),
+        .target(name: "Overlay", dependencies: ["CanvasRendering"]),
         .target(name: "QuickDraw", dependencies: ["Overlay", "CanvasCore"]),
         .target(name: "Stickers", dependencies: ["Networking", "Persistence"]),
         .target(name: "Reactions", dependencies: ["Networking"]),
         .target(name: "Notifications"),
         .target(name: "Settings", dependencies: ["Persistence"]),
         .target(name: "Diagnostics"),
-        .executableTarget(name: "OverlayRegressionCheck", dependencies: ["Overlay"])
+        .executableTarget(name: "OverlayRegressionCheck", dependencies: ["Overlay"]),
+        .executableTarget(name: "CanvasRenderFixtureCheck", dependencies: ["CanvasRendering"]),
+        .testTarget(
+            name: "CanvasCoreTests",
+            dependencies: ["CanvasCore"],
+            exclude: ["README.md"]
+        ),
+        .testTarget(
+            name: "CanvasRenderingTests",
+            dependencies: ["CanvasRendering"]
+        )
     ]
 )

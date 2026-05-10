@@ -1,0 +1,198 @@
+{
+  "operations": [
+    {
+      "clientOperationId": "op-1-add-stroke",
+      "actorUserId": "user-a",
+      "pairSessionId": "pair-1",
+      "type": "ADD_STROKE",
+      "strokeId": "stroke-1",
+      "payload": {
+        "id": "stroke-1",
+        "colorArgb": 4279314315,
+        "width": 0.03,
+        "createdAt": 1,
+        "firstPoint": { "x": 0.1, "y": 0.12 }
+      },
+      "clientCreatedAt": "2026-01-01T00:00:00.000Z",
+      "serverRevision": 1,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "clientOperationId": "op-2-append",
+      "actorUserId": "user-a",
+      "pairSessionId": "pair-1",
+      "type": "APPEND_POINTS",
+      "strokeId": "stroke-1",
+      "payload": {
+        "points": [
+          { "x": 0.25, "y": 0.22 },
+          { "x": 0.42, "y": 0.18 },
+          { "x": 0.62, "y": 0.36 }
+        ]
+      },
+      "clientCreatedAt": "2026-01-01T00:00:00.100Z",
+      "serverRevision": 2,
+      "createdAt": "2026-01-01T00:00:00.100Z"
+    },
+    {
+      "clientOperationId": "op-3-finish",
+      "actorUserId": "user-a",
+      "pairSessionId": "pair-1",
+      "type": "FINISH_STROKE",
+      "strokeId": "stroke-1",
+      "payload": {},
+      "clientCreatedAt": "2026-01-01T00:00:00.200Z",
+      "serverRevision": 3,
+      "createdAt": "2026-01-01T00:00:00.200Z"
+    },
+    {
+      "clientOperationId": "op-4-text",
+      "actorUserId": "user-b",
+      "pairSessionId": "pair-1",
+      "type": "ADD_TEXT_ELEMENT",
+      "strokeId": "text-1",
+      "payload": {
+        "id": "text-1",
+        "text": "hi there",
+        "createdAt": 4,
+        "center": { "x": 0.5, "y": 0.55 },
+        "rotationRad": 0.1,
+        "scale": 1.0,
+        "boxWidth": 0.6,
+        "colorArgb": 4278190080,
+        "backgroundPillEnabled": false,
+        "font": "POPPINS",
+        "alignment": "CENTER"
+      },
+      "clientCreatedAt": "2026-01-01T00:00:00.300Z",
+      "serverRevision": 4,
+      "createdAt": "2026-01-01T00:00:00.300Z"
+    },
+    {
+      "clientOperationId": "op-5-update-text",
+      "actorUserId": "user-b",
+      "pairSessionId": "pair-1",
+      "type": "UPDATE_TEXT_ELEMENT",
+      "strokeId": "text-1",
+      "payload": {
+        "id": "text-1",
+        "text": "hi there",
+        "createdAt": 4,
+        "center": { "x": 0.52, "y": 0.58 },
+        "rotationRad": -0.15,
+        "scale": 1.08,
+        "boxWidth": 0.62,
+        "colorArgb": 4294955366,
+        "backgroundPillEnabled": true,
+        "font": "VIRGIL",
+        "alignment": "CENTER"
+      },
+      "clientCreatedAt": "2026-01-01T00:00:00.400Z",
+      "serverRevision": 5,
+      "createdAt": "2026-01-01T00:00:00.400Z"
+    },
+    {
+      "clientOperationId": "op-6-sticker",
+      "actorUserId": "user-b",
+      "pairSessionId": "pair-1",
+      "type": "ADD_STICKER_ELEMENT",
+      "strokeId": "sticker-1",
+      "payload": {
+        "id": "sticker-1",
+        "createdAt": 6,
+        "center": { "x": 0.36, "y": 0.76 },
+        "rotationRad": 0.18,
+        "scale": 0.2,
+        "packKey": "fixture-pack",
+        "packVersion": 1,
+        "stickerId": "heart"
+      },
+      "clientCreatedAt": "2026-01-01T00:00:00.500Z",
+      "serverRevision": 6,
+      "createdAt": "2026-01-01T00:00:00.500Z"
+    },
+    {
+      "clientOperationId": "op-7-update-sticker",
+      "actorUserId": "user-b",
+      "pairSessionId": "pair-1",
+      "type": "UPDATE_STICKER_ELEMENT",
+      "strokeId": "sticker-1",
+      "payload": {
+        "id": "sticker-1",
+        "createdAt": 6,
+        "center": { "x": 0.68, "y": 0.72 },
+        "rotationRad": -0.22,
+        "scale": 0.24,
+        "packKey": "fixture-pack",
+        "packVersion": 1,
+        "stickerId": "heart"
+      },
+      "clientCreatedAt": "2026-01-01T00:00:00.600Z",
+      "serverRevision": 7,
+      "createdAt": "2026-01-01T00:00:00.600Z"
+    },
+    {
+      "clientOperationId": "op-8-delete-text",
+      "actorUserId": "user-a",
+      "pairSessionId": "pair-1",
+      "type": "DELETE_TEXT_ELEMENT",
+      "strokeId": "text-1",
+      "payload": {},
+      "clientCreatedAt": "2026-01-01T00:00:00.700Z",
+      "serverRevision": 8,
+      "createdAt": "2026-01-01T00:00:00.700Z"
+    },
+    {
+      "clientOperationId": "op-9-clear",
+      "actorUserId": "user-a",
+      "pairSessionId": "pair-1",
+      "type": "CLEAR_CANVAS",
+      "strokeId": null,
+      "payload": {},
+      "clientCreatedAt": "2026-01-01T00:00:00.800Z",
+      "serverRevision": 9,
+      "createdAt": "2026-01-01T00:00:00.800Z"
+    },
+    {
+      "clientOperationId": "op-10-add-stroke",
+      "actorUserId": "user-a",
+      "pairSessionId": "pair-1",
+      "type": "ADD_STROKE",
+      "strokeId": "stroke-2",
+      "payload": {
+        "id": "stroke-2",
+        "colorArgb": 4278242559,
+        "width": 0.02,
+        "createdAt": 10,
+        "firstPoint": { "x": 0.2, "y": 0.2 }
+      },
+      "clientCreatedAt": "2026-01-01T00:00:00.900Z",
+      "serverRevision": 10,
+      "createdAt": "2026-01-01T00:00:00.900Z"
+    },
+    {
+      "clientOperationId": "op-11-append-missing",
+      "actorUserId": "user-a",
+      "pairSessionId": "pair-1",
+      "type": "APPEND_POINTS",
+      "strokeId": "missing-stroke",
+      "payload": {
+        "points": [{ "x": 0.4, "y": 0.4 }]
+      },
+      "clientCreatedAt": "2026-01-01T00:00:01.000Z",
+      "serverRevision": 11,
+      "createdAt": "2026-01-01T00:00:01.000Z"
+    },
+    {
+      "clientOperationId": "op-12-finish",
+      "actorUserId": "user-a",
+      "pairSessionId": "pair-1",
+      "type": "FINISH_STROKE",
+      "strokeId": "stroke-2",
+      "payload": {},
+      "clientCreatedAt": "2026-01-01T00:00:01.100Z",
+      "serverRevision": 12,
+      "createdAt": "2026-01-01T00:00:01.100Z"
+    }
+  ]
+}

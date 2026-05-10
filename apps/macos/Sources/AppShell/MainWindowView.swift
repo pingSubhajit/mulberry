@@ -1,4 +1,5 @@
 import Auth
+import CanvasRendering
 import Overlay
 import SwiftUI
 
@@ -107,6 +108,10 @@ private struct RoutePlaceholderView: View {
     @ObservedObject var overlayController: OverlayController
     let onOpen: (AppRoute) -> Void
     let onPush: (AppRoute) -> Void
+    @StateObject private var canvasModel = CanvasRenderModel(
+        state: CanvasRenderFixture.previewState().state,
+        diagnostics: CanvasRenderFixture.previewState().diagnostics
+    )
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -141,6 +146,23 @@ private struct RoutePlaceholderView: View {
                 Button("Open Canvas Surface") {
                     onPush(.canvasSurface)
                 }
+            }
+        case .canvasSurface:
+            VStack(alignment: .leading, spacing: 12) {
+                CanvasRenderSurfaceView(
+                    model: canvasModel,
+                    surface: .fullApp,
+                    showsEditingBackground: true
+                )
+                .frame(minHeight: 520)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.24), lineWidth: 1)
+                }
+
+                Text("Fixture diagnostics: \(canvasModel.diagnostics.count)")
+                    .font(.caption)
+                    .foregroundStyle(canvasModel.diagnostics.isEmpty ? Color.secondary : Color.orange)
             }
         case .authLanding:
             VStack(alignment: .leading, spacing: 12) {

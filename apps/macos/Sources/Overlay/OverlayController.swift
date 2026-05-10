@@ -1,4 +1,5 @@
 import AppKit
+import CanvasRendering
 import SwiftUI
 
 public enum OverlayMode: Equatable, Sendable {
@@ -26,6 +27,7 @@ public final class OverlayController: NSObject, ObservableObject {
     private let settingsStore: OverlaySettingsStore
     private var panel: OverlayPanel?
     private var palettePanel: OverlayPanel?
+    private let canvasModel: CanvasRenderModel
     private let debugModel = OverlayDebugDrawingModel()
     private let passiveLevel = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)
     private let quickDrawLevel = NSWindow.Level.floating
@@ -35,6 +37,12 @@ public final class OverlayController: NSObject, ObservableObject {
         let settings = settingsStore.load()
         self.isVisible = settings.isVisible
         self.selectedDisplayID = settings.selectedDisplayID
+        let preview = CanvasRenderFixture.previewState()
+        self.canvasModel = CanvasRenderModel(
+            state: preview.state,
+            strokeRenderMode: .dryBrush,
+            diagnostics: preview.diagnostics
+        )
         super.init()
         updateFrameDescription()
         observeDisplayChanges()
@@ -164,7 +172,11 @@ public final class OverlayController: NSObject, ObservableObject {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
-        panel.contentView = OverlayDebugCanvasView(model: debugModel)
+        panel.contentView = CanvasRenderView(
+            model: canvasModel,
+            surface: .passiveOverlay,
+            showsEditingBackground: false
+        )
         configurePassivePanel(panel)
         return panel
     }
