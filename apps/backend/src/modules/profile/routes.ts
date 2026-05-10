@@ -79,4 +79,36 @@ export function registerProfileRoutes(app: FastifyInstance, service: ProfileServ
       wallpaperSelectedOnLock: body.wallpaperSelectedOnLock,
     })
   })
+
+  app.put("/me/presence-surfaces/:surfaceType", async (request) => {
+    const params = request.params as { surfaceType?: string }
+    const body = request.body as {
+      deviceInstanceId?: unknown
+      configured?: unknown
+      enabled?: unknown
+      canSeeLatestDrawings?: unknown
+      details?: unknown
+    }
+    if (typeof body?.deviceInstanceId !== "string") {
+      throw new HttpError(400, "deviceInstanceId must be a string")
+    }
+    if (typeof body?.configured !== "boolean") {
+      throw new HttpError(400, "configured must be a boolean")
+    }
+    if (typeof body?.enabled !== "boolean") {
+      throw new HttpError(400, "enabled must be a boolean")
+    }
+    if (typeof body?.canSeeLatestDrawings !== "boolean") {
+      throw new HttpError(400, "canSeeLatestDrawings must be a boolean")
+    }
+    return service.updatePresenceSurface(requireBearerToken(request), params.surfaceType, {
+      deviceInstanceId: body.deviceInstanceId,
+      configured: body.configured,
+      enabled: body.enabled,
+      canSeeLatestDrawings: body.canSeeLatestDrawings,
+      details: body.details && typeof body.details === "object" && !Array.isArray(body.details)
+        ? body.details as Record<string, unknown>
+        : undefined,
+    })
+  })
 }

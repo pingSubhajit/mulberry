@@ -3,7 +3,12 @@ import sharp from "sharp"
 import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import type { BootstrapResponse } from "../../contracts/bootstrap.js"
-import type { ProfileRecord, UserWallpaperStatusRow } from "../../contracts/dbRecords.js"
+import type { ProfileRecord, UserPresenceSurfaceRow, UserWallpaperStatusRow } from "../../contracts/dbRecords.js"
+import {
+  PresenceSurfaceTypes,
+  type PresenceSurfaceType,
+  type UpdatePresenceSurfaceRequest,
+} from "../../contracts/presence.js"
 import type { UpdateWallpaperStatusRequest } from "../../contracts/profile.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
 import { requireSessionContext } from "../_shared/session.js"
@@ -115,6 +120,18 @@ export class ProfileService {
       ],
     )
     const persisted = rows.rows[0]
+    await this.upsertPresenceSurface(context.user.id, pairSession.id, {
+      surfaceType: "ANDROID_WALLPAPER",
+      deviceInstanceId: "android-wallpaper",
+      configured: wallpaperSelectedOnHome || wallpaperSelectedOnLock,
+      enabled: wallpaperSyncEnabled,
+      canSeeLatestDrawings,
+      details: {
+        wallpaperSyncEnabled,
+        wallpaperSelectedOnHome,
+        wallpaperSelectedOnLock,
+      },
+    })
 
     if (shouldNotifyPeer) {
       const profile = await getProfileFrom(this.db, context.user.id)
@@ -132,6 +149,35 @@ export class ProfileService {
     }
 
     return { ok: true }
+  }
+
+  async updatePresenceSurface(
+    accessToken: string,
+    surfaceType: unknown,
+    request: UpdatePresenceSurfaceRequest,
+  ): Promise<BootstrapResponse> {
+    const context = await requireSessionContext(this.db, accessToken)
+    const pairSession = await getPairSession(this.db, context.user.id)
+    if (!pairSession) {
+      throw new HttpError(400, "User is not paired")
+    }
+
+    const parsedSurfaceType = parsePresenceSurfaceType(surfaceType)
+    const deviceInstanceId = request.deviceInstanceId?.trim()
+    if (!deviceInstanceId) {
+      throw new HttpError(400, "deviceInstanceId is required")
+    }
+
+    await this.upsertPresenceSurface(context.user.id, pairSession.id, {
+      surfaceType: parsedSurfaceType,
+      deviceInstanceId,
+      configured: Boolean(request.configured),
+      enabled: Boolean(request.enabled),
+      canSeeLatestDrawings: Boolean(request.canSeeLatestDrawings),
+      details: sanitizePresenceDetails(request.details),
+    })
+
+    return this.bootstrapService.buildBootstrap(context.user.id)
   }
 
   async updateProfile(
@@ -595,6 +641,83 @@ export class ProfileService {
     )
     return rows.rows[0] ?? null
   }
+
+  private async upsertPresenceSurface(
+    userId: string,
+    pairSessionId: string,
+    input: {
+      surfaceType: PresenceSurfaceType
+      deviceInstanceId: string
+      configured: boolean
+      enabled: boolean
+      canSeeLatestDrawings: boolean
+      details: Record<string, unknown>
+    },
+  ): Promise<UserPresenceSurfaceRow> {
+    const rows = await this.db.query<UserPresenceSurfaceRow>(
+      `
+      INSERT INTO user_presence_surfaces (
+        user_id,
+        pair_session_id,
+        device_instance_id,
+        surface_type,
+        configured,
+        enabled,
+        can_see_latest_drawings,
+        has_ever_been_able_to_see,
+        details_json,
+        updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, NOW())
+      ON CONFLICT (user_id, surface_type, device_instance_id) DO UPDATE SET
+        pair_session_id = EXCLUDED.pair_session_id,
+        configured = EXCLUDED.configured,
+        enabled = EXCLUDED.enabled,
+        can_see_latest_drawings = EXCLUDED.can_see_latest_drawings,
+        has_ever_been_able_to_see = (
+          user_presence_surfaces.has_ever_been_able_to_see OR EXCLUDED.has_ever_been_able_to_see
+        ),
+        details_json = EXCLUDED.details_json,
+        updated_at = NOW()
+      RETURNING
+        user_id,
+        pair_session_id,
+        device_instance_id,
+        surface_type,
+        configured,
+        enabled,
+        can_see_latest_drawings,
+        has_ever_been_able_to_see,
+        details_json,
+        updated_at
+      `,
+      [
+        userId,
+        pairSessionId,
+        input.deviceInstanceId,
+        input.surfaceType,
+        input.configured,
+        input.enabled,
+        input.canSeeLatestDrawings,
+        input.canSeeLatestDrawings,
+        JSON.stringify(input.details),
+      ],
+    )
+    return rows.rows[0]
+  }
+}
+
+function parsePresenceSurfaceType(value: unknown): PresenceSurfaceType {
+  if (typeof value !== "string" || !PresenceSurfaceTypes.includes(value as PresenceSurfaceType)) {
+    throw new HttpError(400, "Unsupported presence surface type")
+  }
+  return value as PresenceSurfaceType
+}
+
+function sanitizePresenceDetails(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {}
+  }
+  return value as Record<string, unknown>
 }
 
 function parseCanvasStrokeRenderMode(raw: unknown): "dry" | "round" {

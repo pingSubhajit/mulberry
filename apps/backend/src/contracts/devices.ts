@@ -1,4 +1,4 @@
-export const DevicePlatforms = ["ANDROID"] as const
+export const DevicePlatforms = ["ANDROID", "MACOS"] as const
 export type DevicePlatform = (typeof DevicePlatforms)[number]
 
 export interface RegisterFcmTokenRequest {
@@ -16,4 +16,3 @@ export interface DeviceTokenRecord {
   lastSeenAt: string
   revokedAt: string | null
 }
-

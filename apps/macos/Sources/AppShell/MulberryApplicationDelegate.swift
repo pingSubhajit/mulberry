@@ -3,22 +3,37 @@ import Auth
 import Combine
 import Networking
 import Overlay
+import Persistence
 import QuickDraw
 import SwiftUI
 
 @MainActor
 public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate {
+    private let configuration = MacAppConfiguration.current
+    private lazy var database: MulberryDatabase = {
+        do {
+            return try MulberryDatabase()
+        } catch {
+            fatalError("Unable to open Mulberry local database: \(error)")
+        }
+    }()
     private let router = AppRouter()
     private lazy var authController = AuthSessionController(
-        configuration: MacAppConfiguration.current,
+        configuration: configuration,
         presentationAnchorProvider: { [weak self] in
             self?.mainWindowController?.window ?? NSApp.keyWindow ?? NSApp.windows.first
         }
+    )
+    private lazy var appStateController = AppStateController(
+        authController: authController,
+        database: database,
+        configuration: configuration
     )
     private let overlayController = OverlayController()
     private var quickDrawController: QuickDrawController?
     private var overlayStateCancellable: AnyCancellable?
     private var authStateCancellable: AnyCancellable?
+    private var appStateCancellable: AnyCancellable?
     private var statusItem: NSStatusItem?
     private var mainWindowController: MainWindowController?
 
@@ -34,6 +49,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         let quickDrawController = QuickDrawController(overlayController: overlayController)
         self.quickDrawController = quickDrawController
         quickDrawController.start()
+        appStateController.restoreCachedBootstrap()
         authController.restoreSessionOnLaunch()
         overlayStateCancellable = overlayController.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
@@ -42,7 +58,18 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         }
         authStateCancellable = authController.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
+                if let self {
+                    self.appStateController.acceptAuthState(
+                        self.authController.state,
+                        overlayController: self.overlayController
+                    )
+                }
                 self?.syncRouteWithAuthState()
+                self?.refreshStatusMenu()
+            }
+        }
+        appStateCancellable = appStateController.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
                 self?.refreshStatusMenu()
             }
         }
@@ -67,14 +94,15 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
 
     private func refreshStatusMenu() {
         let menu = NSMenu()
-        menu.addItem(disabledItem(authController.state.statusTitle))
+        let bootstrap = appStateController.loadState.bootstrap
+        menu.addItem(disabledItem(bootstrap?.partnerTitle ?? authController.state.statusTitle))
         menu.addItem(disabledItem(authController.state.statusDetail))
         menu.addItem(.separator())
         menu.addItem(menuItem("Open Mulberry", action: #selector(openMulberry)))
         menu.addItem(quickDrawMenuItem())
         menu.addItem(disabledItem("Send Heart"))
         menu.addItem(.separator())
-        menu.addItem(menuItem("Streak: --", action: #selector(openStreak)))
+        menu.addItem(menuItem(bootstrap?.streakTitle ?? "Streak: --", action: #selector(openStreak)))
         menu.addItem(overlayMenu())
         menu.addItem(.separator())
         menu.addItem(menuItem("Settings...", action: #selector(openSettings)))
@@ -162,6 +190,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
             mainWindowController = MainWindowController(
                 router: router,
                 authController: authController,
+                appStateController: appStateController,
                 overlayController: overlayController
             ) { [weak self] in
                 self?.returnToAccessoryMode()
@@ -225,6 +254,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     init(
         router: AppRouter,
         authController: AuthSessionController,
+        appStateController: AppStateController,
         overlayController: OverlayController,
         onWindowClosed: @escaping () -> Void
     ) {
@@ -232,6 +262,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let view = MainWindowView(
             router: router,
             authController: authController,
+            appStateController: appStateController,
             overlayController: overlayController
         )
         let hostingController = NSHostingController(rootView: view)

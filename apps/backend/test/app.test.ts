@@ -741,6 +741,104 @@ describe("Mulberry backend", () => {
     expect(pushSender.sentMessages).toHaveLength(0)
   })
 
+  it("mirrors Android wallpaper status into aggregate partner presence without changing legacy bootstrap", async () => {
+    const { inviter, recipient } = await pairUsers()
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/me/wallpaper-status",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        wallpaperSyncEnabled: true,
+        wallpaperSelectedOnHome: false,
+        wallpaperSelectedOnLock: true,
+      },
+    })
+    expect(response.statusCode).toBe(200)
+
+    const bootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().partnerWallpaperStatus).toMatchObject({
+      wallpaperSyncEnabled: true,
+      wallpaperSelectedOnHome: false,
+      wallpaperSelectedOnLock: true,
+      canSeeLatestDrawings: true,
+    })
+    expect(bootstrap.json().partnerPresence).toMatchObject({
+      canSeeLatestDrawings: true,
+      surfaces: [
+        {
+          surfaceType: "ANDROID_WALLPAPER",
+          deviceInstanceId: "android-wallpaper",
+          configured: true,
+          enabled: true,
+          canSeeLatestDrawings: true,
+          hasEverBeenAbleToSee: true,
+        },
+      ],
+    })
+    expect(bootstrap.json().partnerPresence.surfaces[0].details).toMatchObject({
+      wallpaperSyncEnabled: true,
+      wallpaperSelectedOnHome: false,
+      wallpaperSelectedOnLock: true,
+    })
+  })
+
+  it("records macOS overlay presence separately from Android wallpaper status", async () => {
+    const { inviter, recipient } = await pairUsers()
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/me/presence-surfaces/MACOS_OVERLAY",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        deviceInstanceId: "macbook-pro",
+        configured: true,
+        enabled: true,
+        canSeeLatestDrawings: false,
+        details: {
+          selectedDisplayName: "Built-in Display",
+          overlayVisible: true,
+        },
+      },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json().ownPresence).toMatchObject({
+      canSeeLatestDrawings: false,
+      surfaces: [
+        {
+          surfaceType: "MACOS_OVERLAY",
+          deviceInstanceId: "macbook-pro",
+          configured: true,
+          enabled: true,
+          canSeeLatestDrawings: false,
+          hasEverBeenAbleToSee: false,
+        },
+      ],
+    })
+
+    const peerBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(peerBootstrap.statusCode).toBe(200)
+    expect(peerBootstrap.json().partnerWallpaperStatus).toBeNull()
+    expect(peerBootstrap.json().partnerPresence.surfaces).toEqual([
+      expect.objectContaining({
+        surfaceType: "MACOS_OVERLAY",
+        deviceInstanceId: "macbook-pro",
+        configured: true,
+        enabled: true,
+        canSeeLatestDrawings: false,
+      }),
+    ])
+  })
+
   it("pushes partner visibility after the user loses and regains drawing visibility", async () => {
     const { inviter, recipient } = await pairUsers()
     await registerFcmToken(recipient.accessToken, "recipient-token")

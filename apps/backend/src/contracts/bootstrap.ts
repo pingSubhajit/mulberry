@@ -1,5 +1,6 @@
 import type { AuthStatus } from "./auth.js"
 import type { InviteSummary, PairingStatus } from "./pairing.js"
+import type { PresenceSummary } from "./presence.js"
 import type { StreakWeekDay } from "./streak.js"
 
 export interface PartnerWallpaperStatus {
@@ -30,6 +31,8 @@ export interface BootstrapResponse {
   pairingStatus: PairingStatus
   pairSessionId: string | null
   invite: InviteSummary | null
+  ownPresence: PresenceSummary
+  partnerPresence: PresenceSummary
 }
 
 export interface StreakResponseWithWeek {

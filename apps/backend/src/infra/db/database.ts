@@ -196,6 +196,23 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS user_presence_surfaces (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      pair_session_id TEXT REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      device_instance_id TEXT NOT NULL,
+      surface_type TEXT NOT NULL,
+      configured BOOLEAN NOT NULL,
+      enabled BOOLEAN NOT NULL,
+      can_see_latest_drawings BOOLEAN NOT NULL,
+      has_ever_been_able_to_see BOOLEAN NOT NULL DEFAULT FALSE,
+      details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, surface_type, device_instance_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS user_presence_surfaces_pair_idx
+      ON user_presence_surfaces(pair_session_id, user_id);
+
     CREATE TABLE IF NOT EXISTS wallpapers (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,

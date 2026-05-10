@@ -1,6 +1,12 @@
 import type { Database } from "../../infra/db/database.js"
 import type { BootstrapResponse } from "../../contracts/bootstrap.js"
-import type { InviteRecord, ProfileRecord, UserWallpaperStatusRow } from "../../contracts/dbRecords.js"
+import type {
+  InviteRecord,
+  ProfileRecord,
+  UserPresenceSurfaceRow,
+  UserWallpaperStatusRow,
+} from "../../contracts/dbRecords.js"
+import type { PresenceSummary, PresenceSurfaceStatus } from "../../contracts/presence.js"
 import { requireSessionContext, getUserById } from "../_shared/session.js"
 import { getProfileFrom } from "../_shared/profiles.js"
 import { getPairSession } from "../_shared/pairs.js"
@@ -35,6 +41,10 @@ export class BootstrapService {
         )
       : null
     const partnerWallpaperStatus = partnerUser ? await this.getUserWallpaperStatus(partnerUser.id) : null
+    const ownPresence = pairSession ? await this.getPresenceSummary(userId, pairSession.id) : emptyPresenceSummary()
+    const partnerPresence = partnerUser && pairSession
+      ? await this.getPresenceSummary(partnerUser.id, pairSession.id)
+      : emptyPresenceSummary()
     const pendingInvite = await this.getPendingInvite(userId)
     let onboardingCompleted = Boolean(profile?.onboarding_completed_at)
     if (pendingInvite && !onboardingCompleted) {
@@ -97,6 +107,8 @@ export class BootstrapService {
             status: "REDEEMED",
           }
         : null,
+      ownPresence,
+      partnerPresence,
     }
   }
 
@@ -141,6 +153,34 @@ export class BootstrapService {
       [userId],
     )
     return rows.rows[0] ?? null
+  }
+
+  private async getPresenceSummary(userId: string, pairSessionId: string): Promise<PresenceSummary> {
+    const rows = await this.db.query<UserPresenceSurfaceRow>(
+      `
+      SELECT
+        user_id,
+        pair_session_id,
+        device_instance_id,
+        surface_type,
+        configured,
+        enabled,
+        can_see_latest_drawings,
+        has_ever_been_able_to_see,
+        details_json,
+        updated_at
+      FROM user_presence_surfaces
+      WHERE user_id = $1
+        AND pair_session_id = $2
+      ORDER BY surface_type ASC, updated_at DESC, device_instance_id ASC
+      `,
+      [userId, pairSessionId],
+    )
+    const surfaces = rows.rows.map(presenceSurfaceToResponse)
+    return {
+      canSeeLatestDrawings: surfaces.some((surface) => surface.canSeeLatestDrawings),
+      surfaces,
+    }
   }
 
   private async getPendingInvite(userId: string): Promise<InviteRecord | null> {
@@ -197,5 +237,45 @@ export class BootstrapService {
         recipientProfile?.onboarding_completed_at ?? null,
       ],
     )
+  }
+}
+
+function emptyPresenceSummary(): PresenceSummary {
+  return {
+    canSeeLatestDrawings: false,
+    surfaces: [],
+  }
+}
+
+function presenceSurfaceToResponse(row: UserPresenceSurfaceRow): PresenceSurfaceStatus {
+  return {
+    surfaceType: row.surface_type,
+    deviceInstanceId: row.device_instance_id,
+    configured: row.configured,
+    enabled: row.enabled,
+    canSeeLatestDrawings: row.can_see_latest_drawings,
+    hasEverBeenAbleToSee: row.has_ever_been_able_to_see,
+    details: normalizeDetails(row.details_json),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  }
+}
+
+function normalizeDetails(details: unknown): Record<string, unknown> {
+  if (!details) return {}
+  if (typeof details === "string") {
+    const parsed = safeJsonParse(details)
+    return normalizeDetails(parsed)
+  }
+  if (typeof details === "object" && !Array.isArray(details)) {
+    return details as Record<string, unknown>
+  }
+  return {}
+}
+
+function safeJsonParse(value: string): unknown {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return {}
   }
 }

@@ -136,6 +136,8 @@ public struct BootstrapDTO: Codable, Sendable {
     public let pairingStatus: String?
     public let pairSessionId: String?
     public let invite: InviteDTO?
+    public let ownPresence: PresenceSummaryDTO?
+    public let partnerPresence: PresenceSummaryDTO?
 
     public init(
         authStatus: String? = nil,
@@ -155,7 +157,9 @@ public struct BootstrapDTO: Codable, Sendable {
         currentStreakDays: Int? = nil,
         pairingStatus: String? = nil,
         pairSessionId: String? = nil,
-        invite: InviteDTO? = nil
+        invite: InviteDTO? = nil,
+        ownPresence: PresenceSummaryDTO? = nil,
+        partnerPresence: PresenceSummaryDTO? = nil
     ) {
         self.authStatus = authStatus
         self.onboardingCompleted = onboardingCompleted
@@ -175,6 +179,8 @@ public struct BootstrapDTO: Codable, Sendable {
         self.pairingStatus = pairingStatus
         self.pairSessionId = pairSessionId
         self.invite = invite
+        self.ownPresence = ownPresence
+        self.partnerPresence = partnerPresence
     }
 }
 
@@ -190,6 +196,68 @@ public struct InviteDTO: Codable, Sendable {
     public let code: String?
     public let expiresAt: String?
     public let inviterDisplayName: String?
+}
+
+public struct PresenceSummaryDTO: Codable, Sendable {
+    public let canSeeLatestDrawings: Bool
+    public let surfaces: [PresenceSurfaceDTO]
+}
+
+public struct PresenceSurfaceDTO: Codable, Sendable {
+    public let surfaceType: String
+    public let deviceInstanceId: String
+    public let configured: Bool
+    public let enabled: Bool
+    public let canSeeLatestDrawings: Bool
+    public let hasEverBeenAbleToSee: Bool
+    public let details: [String: JSONValue]
+    public let updatedAt: String
+}
+
+public enum JSONValue: Codable, Sendable, Equatable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case null
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([String: JSONValue].self) {
+            self = .object(value)
+        } else if let value = try? container.decode([JSONValue].self) {
+            self = .array(value)
+        } else {
+            self = .null
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case let .string(value):
+            try container.encode(value)
+        case let .number(value):
+            try container.encode(value)
+        case let .bool(value):
+            try container.encode(value)
+        case let .object(value):
+            try container.encode(value)
+        case let .array(value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        }
+    }
 }
 
 public struct AuthResponseDTO: Codable, Sendable {
@@ -298,20 +366,21 @@ public final class AuthAPIClient: Sendable {
     }
 }
 
-public struct AuthenticatedRequestAuthorizer: Sendable {
-    public let currentAccessToken: @Sendable () async -> String?
-    public let refreshAccessToken: @Sendable () async throws -> String
+public struct AuthenticatedRequestAuthorizer {
+    public let currentAccessToken: () async -> String?
+    public let refreshAccessToken: () async throws -> String
 
     public init(
-        currentAccessToken: @escaping @Sendable () async -> String?,
-        refreshAccessToken: @escaping @Sendable () async throws -> String
+        currentAccessToken: @escaping () async -> String?,
+        refreshAccessToken: @escaping () async throws -> String
     ) {
         self.currentAccessToken = currentAccessToken
         self.refreshAccessToken = refreshAccessToken
     }
 }
 
-public final class MulberryAPIClient: Sendable {
+@MainActor
+public final class MulberryAPIClient {
     private let session: URLSession
 
     public init(session: URLSession = .shared) {
@@ -343,6 +412,81 @@ public final class MulberryAPIClient: Sendable {
             throw APIError.invalidResponse
         }
         return (data, httpResponse)
+    }
+}
+
+@MainActor
+public final class BootstrapAPIClient {
+    private let baseURL: URL
+    private let apiClient: MulberryAPIClient
+    private let decoder = JSONDecoder()
+    private let encoder = JSONEncoder()
+
+    public init(configuration: MacAppConfiguration, apiClient: MulberryAPIClient = MulberryAPIClient()) {
+        self.baseURL = configuration.normalizedAPIBaseURL
+        self.apiClient = apiClient
+    }
+
+    public func getBootstrap(authorizer: AuthenticatedRequestAuthorizer) async throws -> BootstrapDTO {
+        var request = URLRequest(url: baseURL.appendingPathComponent("bootstrap"))
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await apiClient.authenticatedData(for: request, authorizer: authorizer)
+        guard (200..<300).contains(response.statusCode) else {
+            throw APIError.httpStatus(response.statusCode, serverMessage(from: data))
+        }
+        return try decoder.decode(BootstrapDTO.self, from: data)
+    }
+
+    public func updatePresenceSurface(
+        surfaceType: String,
+        request body: PresenceSurfaceUpdateRequest,
+        authorizer: AuthenticatedRequestAuthorizer
+    ) async throws -> BootstrapDTO {
+        var request = URLRequest(url: baseURL.appendingPathComponent("me/presence-surfaces/\(surfaceType)"))
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = try encoder.encode(body)
+        let (data, response) = try await apiClient.authenticatedData(for: request, authorizer: authorizer)
+        guard (200..<300).contains(response.statusCode) else {
+            throw APIError.httpStatus(response.statusCode, serverMessage(from: data))
+        }
+        return try decoder.decode(BootstrapDTO.self, from: data)
+    }
+
+    private func serverMessage(from data: Data) -> String {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let message = object["message"] as? String
+                ?? object["error_description"] as? String
+                ?? object["error"] as? String
+        else {
+            return String(data: data, encoding: .utf8) ?? ""
+        }
+        return message
+    }
+}
+
+public struct PresenceSurfaceUpdateRequest: Codable, Sendable {
+    public let deviceInstanceId: String
+    public let configured: Bool
+    public let enabled: Bool
+    public let canSeeLatestDrawings: Bool
+    public let details: [String: JSONValue]
+
+    public init(
+        deviceInstanceId: String,
+        configured: Bool,
+        enabled: Bool,
+        canSeeLatestDrawings: Bool,
+        details: [String: JSONValue] = [:]
+    ) {
+        self.deviceInstanceId = deviceInstanceId
+        self.configured = configured
+        self.enabled = enabled
+        self.canSeeLatestDrawings = canSeeLatestDrawings
+        self.details = details
     }
 }
 

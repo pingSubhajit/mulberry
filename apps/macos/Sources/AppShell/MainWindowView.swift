@@ -5,6 +5,7 @@ import SwiftUI
 struct MainWindowView: View {
     @ObservedObject var router: AppRouter
     @ObservedObject var authController: AuthSessionController
+    @ObservedObject var appStateController: AppStateController
     @ObservedObject var overlayController: OverlayController
 
     var body: some View {
@@ -17,6 +18,7 @@ struct MainWindowView: View {
                 RoutePlaceholderView(
                     route: router.selectedRoute,
                     authController: authController,
+                    appStateController: appStateController,
                     overlayController: overlayController,
                     onOpen: openRoute,
                     onPush: router.push
@@ -25,6 +27,7 @@ struct MainWindowView: View {
                     RoutePlaceholderView(
                         route: route,
                         authController: authController,
+                        appStateController: appStateController,
                         overlayController: overlayController,
                         onOpen: openRoute,
                         onPush: router.push
@@ -100,6 +103,7 @@ struct MainWindowView: View {
 private struct RoutePlaceholderView: View {
     let route: AppRoute
     @ObservedObject var authController: AuthSessionController
+    @ObservedObject var appStateController: AppStateController
     @ObservedObject var overlayController: OverlayController
     let onOpen: (AppRoute) -> Void
     let onPush: (AppRoute) -> Void
@@ -127,8 +131,16 @@ private struct RoutePlaceholderView: View {
     private var controls: some View {
         switch route {
         case .canvasHome:
-            Button("Open Canvas Surface") {
-                onPush(.canvasSurface)
+            VStack(alignment: .leading, spacing: 12) {
+                if let bootstrap = appStateController.loadState.bootstrap {
+                    Text("Partner: \(bootstrap.partnerTitle)")
+                    Text("Pair status: \(bootstrap.pairingStatus)")
+                    Text("Partner can see latest drawings: \(bootstrap.partnerPresence.canSeeLatestDrawings ? "Yes" : "Not confirmed")")
+                        .foregroundStyle(.secondary)
+                }
+                Button("Open Canvas Surface") {
+                    onPush(.canvasSurface)
+                }
             }
         case .authLanding:
             VStack(alignment: .leading, spacing: 12) {
@@ -196,8 +208,24 @@ private struct RoutePlaceholderView: View {
                     .foregroundStyle(overlayController.hotKeyStatus.isRegistered ? Color.secondary : Color.orange)
             }
         case .pairingHub:
-            Button("Enter Invite Code") {
-                onPush(.inviteCodeEntry)
+            VStack(alignment: .leading, spacing: 12) {
+                if let bootstrap = appStateController.loadState.bootstrap {
+                    Text(bootstrap.isPaired ? "Paired with \(bootstrap.partnerTitle)" : "Not paired")
+                        .font(.headline)
+                    if let pairSessionID = bootstrap.pairSessionID {
+                        Text("Pair session: \(pairSessionID)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Button("Enter Invite Code") {
+                    onPush(.inviteCodeEntry)
+                }
+            }
+        case .streak:
+            if let bootstrap = appStateController.loadState.bootstrap {
+                Text(bootstrap.streakTitle)
+                    .font(.title3.weight(.semibold))
             }
         case .settings:
             VStack(alignment: .leading, spacing: 12) {
@@ -206,6 +234,11 @@ private struct RoutePlaceholderView: View {
                 Text(authController.state.statusDetail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let bootstrap = appStateController.loadState.bootstrap {
+                    Text("Partner: \(bootstrap.partnerTitle)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 HStack {
                     Button("Overlay Settings") {
@@ -245,7 +278,7 @@ private struct RoutePlaceholderView: View {
         case .inviteAcceptance:
             "Placeholder for accepting an inbound invite."
         case .canvasHome:
-            "Placeholder for the main Mulberry home surface. This will become the primary app UI that mirrors the mobile canvas experience."
+            "Live account, pair, streak, and partner presence state now come from bootstrap. The drawing surface lands in the next canvas phases."
         case .canvasSurface:
             "Placeholder for the full drawing surface."
         case .overlayStatus:
@@ -257,7 +290,7 @@ private struct RoutePlaceholderView: View {
         case .pairingHelp:
             "Placeholder for pairing help."
         case .streak:
-            "Placeholder for streak summary. Current hardcoded state is --."
+            "Streak state is loaded from bootstrap and will expand into the richer mobile-style streak surface later."
         case .settings:
             "Placeholder for app settings inside the main Mulberry window."
         }

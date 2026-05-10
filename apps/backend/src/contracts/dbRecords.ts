@@ -1,6 +1,7 @@
 import type { CanvasOperationType } from "./canvas.js"
 import type { DevicePlatform } from "./devices.js"
 import type { InviteStatus } from "./pairing.js"
+import type { PresenceSurfaceType } from "./presence.js"
 
 export interface UserRecord {
   id: string
@@ -75,5 +76,18 @@ export interface UserWallpaperStatusRow {
   wallpaper_selected_on_lock: boolean
   can_see_latest_drawings: boolean
   has_ever_been_able_to_see: boolean
+  updated_at: Date | string
+}
+
+export interface UserPresenceSurfaceRow {
+  user_id: string
+  pair_session_id: string | null
+  device_instance_id: string
+  surface_type: PresenceSurfaceType
+  configured: boolean
+  enabled: boolean
+  can_see_latest_drawings: boolean
+  has_ever_been_able_to_see: boolean
+  details_json: unknown
   updated_at: Date | string
 }

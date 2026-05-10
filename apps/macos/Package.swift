@@ -28,6 +28,9 @@ let package = Package(
         .library(name: "Settings", targets: ["Settings"]),
         .library(name: "Diagnostics", targets: ["Diagnostics"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.10.0")
+    ],
     targets: [
         .executableTarget(
             name: "MulberryMacApp",
@@ -58,7 +61,13 @@ let package = Package(
         .target(name: "Sync", dependencies: ["CanvasCore", "Networking", "Persistence"]),
         .target(name: "CanvasCore"),
         .target(name: "CanvasRendering", dependencies: ["CanvasCore"]),
-        .target(name: "Persistence", dependencies: ["CanvasCore"]),
+        .target(
+            name: "Persistence",
+            dependencies: [
+                "CanvasCore",
+                .product(name: "GRDB", package: "GRDB.swift")
+            ]
+        ),
         .target(name: "Overlay"),
         .target(name: "QuickDraw", dependencies: ["Overlay", "CanvasCore"]),
         .target(name: "Stickers", dependencies: ["Networking", "Persistence"]),
