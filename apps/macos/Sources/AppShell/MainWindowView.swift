@@ -1,8 +1,10 @@
+import Auth
 import Overlay
 import SwiftUI
 
 struct MainWindowView: View {
     @ObservedObject var router: AppRouter
+    @ObservedObject var authController: AuthSessionController
     @ObservedObject var overlayController: OverlayController
 
     var body: some View {
@@ -14,13 +16,17 @@ struct MainWindowView: View {
             NavigationStack(path: $router.path) {
                 RoutePlaceholderView(
                     route: router.selectedRoute,
+                    authController: authController,
                     overlayController: overlayController,
+                    onOpen: openRoute,
                     onPush: router.push
                 )
                 .navigationDestination(for: AppRoute.self) { route in
                     RoutePlaceholderView(
                         route: route,
+                        authController: authController,
                         overlayController: overlayController,
+                        onOpen: openRoute,
                         onPush: router.push
                     )
                 }
@@ -41,9 +47,9 @@ struct MainWindowView: View {
                 .font(.headline)
                 .padding(.bottom, 12)
 
-            ForEach(AppRoute.sidebarRoutes) { route in
+            ForEach(sidebarRoutes) { route in
                 Button {
-                    router.open(route)
+                    openRoute(route)
                 } label: {
                     Label(route.title, systemImage: iconName(for: route))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -66,8 +72,21 @@ struct MainWindowView: View {
         .background(Color(nsColor: .controlBackgroundColor))
     }
 
+    private var sidebarRoutes: [AppRoute] {
+        authController.state.isSignedIn ? AppRoute.sidebarRoutes : [.authLanding, .settings]
+    }
+
+    private func openRoute(_ route: AppRoute) {
+        if authController.state.isSignedIn || route == .settings || route == .authLanding {
+            router.open(route)
+        } else {
+            router.open(.authLanding)
+        }
+    }
+
     private func iconName(for route: AppRoute) -> String {
         switch route {
+        case .authLanding: "person.crop.circle"
         case .canvasHome: "scribble"
         case .overlayStatus: "rectangle.on.rectangle"
         case .pairingHub: "person.2"
@@ -80,7 +99,9 @@ struct MainWindowView: View {
 
 private struct RoutePlaceholderView: View {
     let route: AppRoute
+    @ObservedObject var authController: AuthSessionController
     @ObservedObject var overlayController: OverlayController
+    let onOpen: (AppRoute) -> Void
     let onPush: (AppRoute) -> Void
 
     var body: some View {
@@ -108,6 +129,31 @@ private struct RoutePlaceholderView: View {
         case .canvasHome:
             Button("Open Canvas Surface") {
                 onPush(.canvasSurface)
+            }
+        case .authLanding:
+            VStack(alignment: .leading, spacing: 12) {
+                Text(authController.state.statusDetail)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    Task {
+                        await authController.signIn()
+                        if authController.state.isSignedIn {
+                            onOpen(.canvasHome)
+                        }
+                    }
+                } label: {
+                    Label(authController.state.isBusy ? "Signing In..." : "Sign in with Google", systemImage: "person.crop.circle.badge.checkmark")
+                }
+                .disabled(authController.state.isBusy)
+
+                if case let .failed(failure) = authController.state {
+                    Text(failure.message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         case .overlayStatus:
             VStack(alignment: .leading, spacing: 14) {
@@ -154,8 +200,26 @@ private struct RoutePlaceholderView: View {
                 onPush(.inviteCodeEntry)
             }
         case .settings:
-            Button("Overlay Settings") {
-                onPush(.overlayStatus)
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Account: \(authController.state.statusTitle)")
+                    .font(.headline)
+                Text(authController.state.statusDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Button("Overlay Settings") {
+                        onPush(.overlayStatus)
+                    }
+                    if authController.state.isSignedIn {
+                        Button("Sign Out") {
+                            Task {
+                                await authController.signOut()
+                                onOpen(.authLanding)
+                            }
+                        }
+                    }
+                }
             }
         default:
             EmptyView()
@@ -167,7 +231,7 @@ private struct RoutePlaceholderView: View {
         case .bootstrap:
             "Placeholder for the startup resolver that will choose auth, onboarding, pairing, or canvas once real bootstrap services land."
         case .authLanding:
-            "Placeholder for Google Sign-In."
+            "Use your Google account to connect this Mac to Mulberry."
         case .onboardingName:
             "Placeholder for name onboarding."
         case .onboardingDetails:

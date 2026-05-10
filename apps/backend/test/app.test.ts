@@ -54,6 +54,7 @@ describe("Mulberry backend", () => {
         port: 8080,
         databaseUrl: "postgres://unused",
         googleClientId: "",
+        googleAllowedClientIds: [],
         allowDevGoogleTokens: true,
         wallpaperAdminPassword: "admin-password",
         cannySsoPrivateKey: "test-canny-secret",

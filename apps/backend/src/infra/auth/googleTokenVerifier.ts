@@ -13,10 +13,26 @@ export interface GoogleTokenVerifier {
   verify(idToken: string): Promise<GoogleIdentity>
 }
 
-export class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
-  private readonly client = new OAuth2Client()
+interface GoogleIdTokenClient {
+  verifyIdToken(options: { idToken: string; audience: string | string[] }): Promise<{
+    getPayload(): {
+      sub?: string
+      email?: string
+      name?: string
+      picture?: string
+    } | undefined
+  }>
+}
 
-  constructor(private readonly config: AppConfig) {}
+export class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
+  private readonly client: GoogleIdTokenClient
+
+  constructor(
+    private readonly config: AppConfig,
+    client: GoogleIdTokenClient = new OAuth2Client(),
+  ) {
+    this.client = client
+  }
 
   async verify(idToken: string): Promise<GoogleIdentity> {
     if (this.config.allowDevGoogleTokens && idToken.startsWith("dev-google:")) {
@@ -33,14 +49,12 @@ export class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
       }
     }
 
-    if (!this.config.googleClientId) {
+    const audiences = this.allowedAudiences()
+    if (audiences.length === 0) {
       throw new HttpError(500, "Google client id is not configured")
     }
 
-    const ticket = await this.client.verifyIdToken({
-      idToken,
-      audience: this.config.googleClientId,
-    })
+    const ticket = await this.verifyGoogleIDToken(idToken, audiences)
     const payload = ticket.getPayload()
 
     if (!payload?.sub || !payload.email) {
@@ -54,5 +68,26 @@ export class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
       pictureUrl: payload.picture ?? null,
     }
   }
-}
 
+  private allowedAudiences(): string[] {
+    return Array.from(
+      new Set(
+        [this.config.googleClientId, ...this.config.googleAllowedClientIds]
+          .map((audience) => audience.trim())
+          .filter((audience) => audience.length > 0),
+      ),
+    )
+  }
+
+  private async verifyGoogleIDToken(idToken: string, audiences: string[]) {
+    try {
+      return await this.client.verifyIdToken({
+        idToken,
+        audience: audiences,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new HttpError(401, `Invalid Google token: ${message}`)
+    }
+  }
+}

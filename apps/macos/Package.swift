@@ -53,7 +53,7 @@ let package = Package(
                 "Diagnostics"
             ]
         ),
-        .target(name: "Auth"),
+        .target(name: "Auth", dependencies: ["Networking"]),
         .target(name: "Networking"),
         .target(name: "Sync", dependencies: ["CanvasCore", "Networking", "Persistence"]),
         .target(name: "CanvasCore"),

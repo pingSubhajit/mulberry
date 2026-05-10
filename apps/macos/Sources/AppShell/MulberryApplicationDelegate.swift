@@ -1,5 +1,7 @@
 import AppKit
+import Auth
 import Combine
+import Networking
 import Overlay
 import QuickDraw
 import SwiftUI
@@ -7,9 +9,16 @@ import SwiftUI
 @MainActor
 public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate {
     private let router = AppRouter()
+    private lazy var authController = AuthSessionController(
+        configuration: MacAppConfiguration.current,
+        presentationAnchorProvider: { [weak self] in
+            self?.mainWindowController?.window ?? NSApp.keyWindow ?? NSApp.windows.first
+        }
+    )
     private let overlayController = OverlayController()
     private var quickDrawController: QuickDrawController?
     private var overlayStateCancellable: AnyCancellable?
+    private var authStateCancellable: AnyCancellable?
     private var statusItem: NSStatusItem?
     private var mainWindowController: MainWindowController?
 
@@ -25,8 +34,15 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         let quickDrawController = QuickDrawController(overlayController: overlayController)
         self.quickDrawController = quickDrawController
         quickDrawController.start()
+        authController.restoreSessionOnLaunch()
         overlayStateCancellable = overlayController.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
+                self?.refreshStatusMenu()
+            }
+        }
+        authStateCancellable = authController.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.syncRouteWithAuthState()
                 self?.refreshStatusMenu()
             }
         }
@@ -51,8 +67,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
 
     private func refreshStatusMenu() {
         let menu = NSMenu()
-        menu.addItem(disabledItem("Not paired"))
-        menu.addItem(disabledItem("Offline"))
+        menu.addItem(disabledItem(authController.state.statusTitle))
+        menu.addItem(disabledItem(authController.state.statusDetail))
         menu.addItem(.separator())
         menu.addItem(menuItem("Open Mulberry", action: #selector(openMulberry)))
         menu.addItem(quickDrawMenuItem())
@@ -99,7 +115,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     }
 
     @objc private func openMulberry() {
-        showMainWindow(route: .canvasHome)
+        showMainWindow(route: defaultRouteForCurrentAuth())
     }
 
     @objc private func quickDraw() {
@@ -145,13 +161,14 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         if mainWindowController == nil {
             mainWindowController = MainWindowController(
                 router: router,
+                authController: authController,
                 overlayController: overlayController
             ) { [weak self] in
                 self?.returnToAccessoryMode()
             }
         }
 
-        router.open(route)
+        router.open(normalizedRoute(route))
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         mainWindowController?.showWindow(nil)
@@ -161,6 +178,44 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     private func returnToAccessoryMode() {
         NSApp.setActivationPolicy(.accessory)
     }
+
+    private func defaultRouteForCurrentAuth() -> AppRoute {
+        switch authController.state {
+        case .signedIn:
+            .canvasHome
+        case .refreshing:
+            .bootstrap
+        case .signedOut, .signingIn, .failed:
+            .authLanding
+        }
+    }
+
+    private func normalizedRoute(_ route: AppRoute) -> AppRoute {
+        switch authController.state {
+        case .signedIn, .refreshing:
+            route
+        case .signedOut, .signingIn, .failed:
+            route == .settings ? .settings : .authLanding
+        }
+    }
+
+    private func syncRouteWithAuthState() {
+        guard mainWindowController?.window?.isVisible == true else {
+            return
+        }
+        switch authController.state {
+        case .signedIn:
+            if router.selectedRoute == .bootstrap || router.selectedRoute == .authLanding {
+                router.open(.canvasHome)
+            }
+        case .signedOut, .failed:
+            if router.selectedRoute != .settings && router.selectedRoute != .authLanding {
+                router.open(.authLanding)
+            }
+        case .signingIn, .refreshing:
+            break
+        }
+    }
 }
 
 @MainActor
@@ -169,11 +224,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     init(
         router: AppRouter,
+        authController: AuthSessionController,
         overlayController: OverlayController,
         onWindowClosed: @escaping () -> Void
     ) {
         self.onWindowClosed = onWindowClosed
-        let view = MainWindowView(router: router, overlayController: overlayController)
+        let view = MainWindowView(
+            router: router,
+            authController: authController,
+            overlayController: overlayController
+        )
         let hostingController = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hostingController)
         window.title = "Mulberry"

@@ -28,6 +28,10 @@ if [ -d "Resources" ]; then
   rsync -a --exclude ".DS_Store" Resources/ "${RESOURCES_DIR}/"
 fi
 
+if [ -f ".env" ]; then
+  cp ".env" "${RESOURCES_DIR}/.env"
+fi
+
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${BUNDLE_ID}" "${INFO_PLIST_PATH}" >/dev/null
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable MulberryMac" "${INFO_PLIST_PATH}" >/dev/null
 

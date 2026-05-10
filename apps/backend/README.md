@@ -41,7 +41,11 @@ Then fill in:
 
 ```text
 GOOGLE_SERVER_CLIENT_ID=your-google-oauth-server-client-id
+GOOGLE_ALLOWED_CLIENT_IDS=optional-native-or-web-client-id,optional-second-client-id
 ```
+
+`GOOGLE_ALLOWED_CLIENT_IDS` is for additional OAuth clients such as the macOS
+native client. The original `GOOGLE_SERVER_CLIENT_ID` remains supported.
 
 ## Firebase Cloud Messaging
 
