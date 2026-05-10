@@ -1,3 +1,4 @@
+import CanvasCore
 import Foundation
 
 public enum NetworkingModule {
@@ -488,6 +489,306 @@ public struct PresenceSurfaceUpdateRequest: Codable, Sendable {
         self.canSeeLatestDrawings = canSeeLatestDrawings
         self.details = details
     }
+}
+
+public struct CanvasOpsResponseDTO: Codable, Sendable {
+    public let operations: [CanvasOperation]
+}
+
+public struct CanvasOperationBatchRequestDTO: Encodable, Sendable {
+    public let batchId: String
+    public let operations: [ClientCanvasOperationRequestDTO]
+    public let clientCreatedAt: String
+
+    public init(batchId: String, operations: [CanvasOperation], clientCreatedAt: String) {
+        self.batchId = batchId
+        self.operations = operations.map(ClientCanvasOperationRequestDTO.init(operation:))
+        self.clientCreatedAt = clientCreatedAt
+    }
+}
+
+public struct ClientCanvasOperationRequestDTO: Encodable, Sendable {
+    public let clientOperationId: String
+    public let type: CanvasOperationType
+    public let strokeId: String?
+    public let payload: CanvasOperationPayload
+    public let clientCreatedAt: String
+    public let clientLocalDate: String?
+
+    public init(operation: CanvasOperation) {
+        self.clientOperationId = operation.clientOperationId
+        self.type = operation.type
+        self.strokeId = operation.strokeId
+        self.payload = operation.payload
+        self.clientCreatedAt = operation.clientCreatedAt
+        self.clientLocalDate = operation.clientLocalDate ?? Self.localDate(from: operation.clientCreatedAt)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case clientOperationId
+        case type
+        case strokeId
+        case payload
+        case clientCreatedAt
+        case clientLocalDate
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(clientOperationId, forKey: .clientOperationId)
+        try container.encode(type, forKey: .type)
+        try container.encodeIfPresent(strokeId, forKey: .strokeId)
+        try container.encode(clientCreatedAt, forKey: .clientCreatedAt)
+        try container.encodeIfPresent(clientLocalDate, forKey: .clientLocalDate)
+        switch payload {
+        case let .addStroke(payload):
+            try container.encode(payload, forKey: .payload)
+        case let .appendPoints(payload):
+            try container.encode(payload, forKey: .payload)
+        case .finishStroke, .deleteStroke, .clearCanvas, .deleteTextElement, .deleteStickerElement:
+            try container.encode([String: String](), forKey: .payload)
+        case let .addTextElement(element), let .updateTextElement(element):
+            try container.encode(element, forKey: .payload)
+        case let .addStickerElement(element), let .updateStickerElement(element):
+            try container.encode(element, forKey: .payload)
+        }
+    }
+
+    private static func localDate(from isoString: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = formatter.date(from: isoString) ?? ISO8601DateFormatter().date(from: isoString) ?? Date()
+        return DateFormatter.localDateFormatter.string(from: date)
+    }
+}
+
+public struct CanvasSnapshotResponseDTO: Decodable, Sendable {
+    public let pairSessionId: String
+    public let revision: Int64
+    public let snapshotRevision: Int64
+    public let latestRevision: Int64
+    public let snapshot: CanvasSnapshotPayloadDTO
+    public let updatedAt: String?
+
+    public var state: CanvasState {
+        CanvasState(
+            committedStrokes: snapshot.strokes.map(\.stroke),
+            committedElements: snapshot.unifiedElements,
+            revision: snapshotRevision
+        )
+    }
+}
+
+public struct CanvasSnapshotPayloadDTO: Decodable, Sendable {
+    public let strokes: [CanvasSnapshotStrokeDTO]
+    public let textElements: [CanvasSnapshotTextElementDTO]
+    public let elements: [CanvasSnapshotElementDTO]?
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        strokes = try container.decodeIfPresent([CanvasSnapshotStrokeDTO].self, forKey: .strokes) ?? []
+        textElements = try container.decodeIfPresent([CanvasSnapshotTextElementDTO].self, forKey: .textElements) ?? []
+        elements = try container.decodeIfPresent([CanvasSnapshotElementDTO].self, forKey: .elements)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case strokes
+        case textElements
+        case elements
+    }
+
+    public var unifiedElements: [CanvasElement] {
+        if let elements, elements.isEmpty == false {
+            return elements.compactMap(\.element)
+        }
+        return textElements.map { .text($0.textElement) }
+    }
+}
+
+public struct CanvasSnapshotStrokeDTO: Decodable, Sendable {
+    public let id: String
+    public let colorArgb: UInt32
+    public let width: Float
+    public let createdAt: Int64
+    public let points: [CanvasPoint]
+
+    public var stroke: CanvasStroke {
+        CanvasStroke(id: id, colorArgb: colorArgb, width: width, points: points, createdAt: createdAt)
+    }
+}
+
+public struct CanvasSnapshotTextElementDTO: Decodable, Sendable {
+    public let id: String
+    public let text: String
+    public let createdAt: Int64
+    public let center: CanvasPoint
+    public let rotationRad: Float
+    public let scale: Float
+    public let boxWidth: Float
+    public let colorArgb: UInt32
+    public let backgroundPillEnabled: Bool
+    public let font: CanvasTextFont
+    public let alignment: CanvasTextAlign
+
+    public var textElement: CanvasTextElement {
+        CanvasTextElement(
+            id: id,
+            text: text,
+            createdAt: createdAt,
+            center: center,
+            rotationRad: rotationRad,
+            scale: scale,
+            boxWidth: boxWidth,
+            colorArgb: colorArgb,
+            backgroundPillEnabled: backgroundPillEnabled,
+            font: font,
+            alignment: alignment
+        )
+    }
+}
+
+public struct CanvasSnapshotElementDTO: Decodable, Sendable {
+    public let kind: String
+    public let id: String
+    public let createdAt: Int64
+    public let center: CanvasPoint
+    public let rotationRad: Float
+    public let scale: Float
+    public let text: String?
+    public let boxWidth: Float?
+    public let colorArgb: UInt32?
+    public let backgroundPillEnabled: Bool?
+    public let font: CanvasTextFont?
+    public let alignment: CanvasTextAlign?
+    public let packKey: String?
+    public let packVersion: Int?
+    public let stickerId: String?
+
+    public var element: CanvasElement? {
+        switch kind {
+        case "TEXT":
+            return .text(CanvasTextElement(
+                id: id,
+                text: text ?? "",
+                createdAt: createdAt,
+                center: center,
+                rotationRad: rotationRad,
+                scale: scale,
+                boxWidth: boxWidth ?? 0.7,
+                colorArgb: colorArgb ?? 0xFF111111,
+                backgroundPillEnabled: backgroundPillEnabled ?? false,
+                font: font ?? .poppins,
+                alignment: alignment ?? .center
+            ))
+        case "STICKER":
+            guard let packKey, let stickerId, let packVersion, packVersion > 0 else {
+                return nil
+            }
+            return .sticker(CanvasStickerElement(
+                id: id,
+                createdAt: createdAt,
+                center: center,
+                rotationRad: rotationRad,
+                scale: scale,
+                packKey: packKey,
+                packVersion: packVersion,
+                stickerId: stickerId
+            ))
+        default:
+            return nil
+        }
+    }
+}
+
+@MainActor
+public final class CanvasAPIClient {
+    private let baseURL: URL
+    private let apiClient: MulberryAPIClient
+    private let decoder = JSONDecoder()
+    private let encoder = JSONEncoder()
+
+    public init(configuration: MacAppConfiguration, apiClient: MulberryAPIClient = MulberryAPIClient()) {
+        self.baseURL = configuration.normalizedAPIBaseURL
+        self.apiClient = apiClient
+    }
+
+    public func getCanvasOperations(
+        afterRevision: Int64,
+        authorizer: AuthenticatedRequestAuthorizer
+    ) async throws -> [CanvasOperation] {
+        var components = URLComponents(url: baseURL.appendingPathComponent("canvas/ops"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "afterRevision", value: String(afterRevision))]
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await apiClient.authenticatedData(for: request, authorizer: authorizer)
+        guard (200..<300).contains(response.statusCode) else {
+            throw APIError.httpStatus(response.statusCode, serverMessage(from: data))
+        }
+        return try decoder.decode(CanvasOpsResponseDTO.self, from: data).operations
+    }
+
+    public func postCanvasOperationBatch(
+        batchID: String,
+        operations: [CanvasOperation],
+        authorizer: AuthenticatedRequestAuthorizer
+    ) async throws -> [CanvasOperation] {
+        var request = URLRequest(url: baseURL.appendingPathComponent("canvas/ops/batch"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try encoder.encode(CanvasOperationBatchRequestDTO(
+            batchId: batchID,
+            operations: operations,
+            clientCreatedAt: DateFormatter.iso8601WithMilliseconds.string(from: Date())
+        ))
+        let (data, response) = try await apiClient.authenticatedData(for: request, authorizer: authorizer)
+        guard (200..<300).contains(response.statusCode) else {
+            throw APIError.httpStatus(response.statusCode, serverMessage(from: data))
+        }
+        return try decoder.decode(CanvasOpsResponseDTO.self, from: data).operations
+    }
+
+    public func getCanvasSnapshot(authorizer: AuthenticatedRequestAuthorizer) async throws -> CanvasSnapshotResponseDTO {
+        var request = URLRequest(url: baseURL.appendingPathComponent("canvas/snapshot"))
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await apiClient.authenticatedData(for: request, authorizer: authorizer)
+        guard (200..<300).contains(response.statusCode) else {
+            throw APIError.httpStatus(response.statusCode, serverMessage(from: data))
+        }
+        return try decoder.decode(CanvasSnapshotResponseDTO.self, from: data)
+    }
+
+    private func serverMessage(from data: Data) -> String {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let message = object["message"] as? String
+                ?? object["error_description"] as? String
+                ?? object["error"] as? String
+        else {
+            return String(data: data, encoding: .utf8) ?? ""
+        }
+        return message
+    }
+}
+
+private extension DateFormatter {
+    static let iso8601WithMilliseconds: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+        return formatter
+    }()
+
+    static let localDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 }
 
 private struct GoogleAuthRequest: Codable {

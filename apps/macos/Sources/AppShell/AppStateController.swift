@@ -3,6 +3,7 @@ import Foundation
 import Networking
 import Overlay
 import Persistence
+import Sync
 
 public struct MacBootstrapState: Sendable, Equatable {
     public let authStatus: String
@@ -121,44 +122,65 @@ public final class AppStateController: ObservableObject {
         }
     }
 
-    public func acceptAuthState(_ authState: AuthSessionState, overlayController: OverlayController) {
+    public func acceptAuthState(
+        _ authState: AuthSessionState,
+        overlayController: OverlayController,
+        syncController: CanvasSyncController
+    ) {
         switch authState {
         case let .signedIn(session):
             if lastLoadedUserID == session.userID, loadState.bootstrap != nil {
+                updateSyncSession(authState, syncController: syncController)
                 return
             }
             lastLoadedUserID = session.userID
             cacheAndPublish(session.bootstrap)
+            updateSyncSession(authState, syncController: syncController)
             Task {
-                await refreshBootstrapAndReportOverlay(overlayController: overlayController)
+                await refreshBootstrapAndReportOverlay(
+                    overlayController: overlayController,
+                    syncController: syncController
+                )
             }
         case .refreshing, .signingIn:
             if loadState.bootstrap == nil {
                 loadState = .loading
             }
+            updateSyncSession(authState, syncController: syncController)
         case .signedOut:
             lastLoadedUserID = nil
             loadState = .idle
             try? database.clearSessionState()
+            syncController.reset()
         case let .failed(failure):
             loadState = .failed(failure.message)
+            updateSyncSession(authState, syncController: syncController)
         }
     }
 
-    public func refreshBootstrapAndReportOverlay(overlayController: OverlayController) async {
+    public func refreshBootstrapAndReportOverlay(
+        overlayController: OverlayController,
+        syncController: CanvasSyncController
+    ) async {
         loadState = loadState.bootstrap == nil ? .loading : loadState
         do {
             let bootstrap = try await apiClient.getBootstrap(authorizer: makeAuthorizer())
             cacheAndPublish(bootstrap)
-            await reportOverlayPresenceIfNeeded(bootstrap: bootstrap, overlayController: overlayController)
+            updateSyncSession(authController.state, syncController: syncController)
+            await reportOverlayPresenceIfNeeded(
+                bootstrap: bootstrap,
+                overlayController: overlayController,
+                syncController: syncController
+            )
         } catch {
             loadState = .failed(userFacingMessage(for: error))
         }
     }
 
-    private func reportOverlayPresenceIfNeeded(
+    public func reportOverlayPresenceIfNeeded(
         bootstrap: BootstrapDTO,
-        overlayController: OverlayController
+        overlayController: OverlayController,
+        syncController: CanvasSyncController
     ) async {
         guard bootstrap.pairingStatus == "PAIRED" else {
             return
@@ -172,10 +194,15 @@ public final class AppStateController: ObservableObject {
                     deviceInstanceId: deviceInstanceID,
                     configured: true,
                     enabled: overlayController.isVisible,
-                    canSeeLatestDrawings: false,
+                    canSeeLatestDrawings: syncController.canReportOverlayCanSeeLatestDrawings(
+                        isOverlayVisible: overlayController.isVisible
+                    ),
                     details: [
                         "overlayVisible": .bool(overlayController.isVisible),
-                        "selectedDisplayName": .string(overlayController.selectedDisplayName)
+                        "selectedDisplayName": .string(overlayController.selectedDisplayName),
+                        "syncState": .string(syncController.connectionState.title),
+                        "lastAppliedServerRevision": .number(Double(syncController.status.lastAppliedServerRevision)),
+                        "latestKnownServerRevision": .number(Double(syncController.status.latestKnownServerRevision))
                     ]
                 ),
                 authorizer: makeAuthorizer()
@@ -204,6 +231,22 @@ public final class AppStateController: ObservableObject {
         } catch {
             loadState = .failed("Unable to save app state.")
         }
+    }
+
+    private func updateSyncSession(_ authState: AuthSessionState, syncController: CanvasSyncController) {
+        guard case let .signedIn(session) = authState,
+              let bootstrap = loadState.bootstrap ?? Optional(MacBootstrapState(dto: session.bootstrap)),
+              bootstrap.isPaired,
+              let pairSessionID = bootstrap.pairSessionID
+        else {
+            syncController.updateSession(userID: nil, pairSessionID: nil, shouldSync: false)
+            return
+        }
+        syncController.updateSession(
+            userID: session.userID,
+            pairSessionID: pairSessionID,
+            shouldSync: true
+        )
     }
 
     private func makeAuthorizer() -> AuthenticatedRequestAuthorizer {

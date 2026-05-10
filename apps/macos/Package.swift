@@ -34,6 +34,14 @@ let package = Package(
         .executable(
             name: "CanvasRenderFixtureCheck",
             targets: ["CanvasRenderFixtureCheck"]
+        ),
+        .executable(
+            name: "PersistenceFixtureCheck",
+            targets: ["PersistenceFixtureCheck"]
+        ),
+        .executable(
+            name: "SyncFixtureCheck",
+            targets: ["SyncFixtureCheck"]
         )
     ],
     dependencies: [
@@ -65,7 +73,7 @@ let package = Package(
             ]
         ),
         .target(name: "Auth", dependencies: ["Networking"]),
-        .target(name: "Networking"),
+        .target(name: "Networking", dependencies: ["CanvasCore"]),
         .target(name: "Sync", dependencies: ["CanvasCore", "Networking", "Persistence"]),
         .target(name: "CanvasCore"),
         .target(name: "CanvasRendering", dependencies: ["CanvasCore"]),
@@ -85,6 +93,8 @@ let package = Package(
         .target(name: "Diagnostics"),
         .executableTarget(name: "OverlayRegressionCheck", dependencies: ["Overlay"]),
         .executableTarget(name: "CanvasRenderFixtureCheck", dependencies: ["CanvasRendering"]),
+        .executableTarget(name: "PersistenceFixtureCheck", dependencies: ["Persistence"]),
+        .executableTarget(name: "SyncFixtureCheck", dependencies: ["Sync"]),
         .testTarget(
             name: "CanvasCoreTests",
             dependencies: ["CanvasCore"],

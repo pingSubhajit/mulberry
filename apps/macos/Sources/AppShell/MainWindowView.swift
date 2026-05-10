@@ -1,12 +1,14 @@
 import Auth
 import CanvasRendering
 import Overlay
+import Sync
 import SwiftUI
 
 struct MainWindowView: View {
     @ObservedObject var router: AppRouter
     @ObservedObject var authController: AuthSessionController
     @ObservedObject var appStateController: AppStateController
+    @ObservedObject var syncController: CanvasSyncController
     @ObservedObject var overlayController: OverlayController
 
     var body: some View {
@@ -20,6 +22,7 @@ struct MainWindowView: View {
                     route: router.selectedRoute,
                     authController: authController,
                     appStateController: appStateController,
+                    syncController: syncController,
                     overlayController: overlayController,
                     onOpen: openRoute,
                     onPush: router.push
@@ -29,6 +32,7 @@ struct MainWindowView: View {
                         route: route,
                         authController: authController,
                         appStateController: appStateController,
+                        syncController: syncController,
                         overlayController: overlayController,
                         onOpen: openRoute,
                         onPush: router.push
@@ -105,6 +109,7 @@ private struct RoutePlaceholderView: View {
     let route: AppRoute
     @ObservedObject var authController: AuthSessionController
     @ObservedObject var appStateController: AppStateController
+    @ObservedObject var syncController: CanvasSyncController
     @ObservedObject var overlayController: OverlayController
     let onOpen: (AppRoute) -> Void
     let onPush: (AppRoute) -> Void
@@ -143,6 +148,7 @@ private struct RoutePlaceholderView: View {
                     Text("Partner can see latest drawings: \(bootstrap.partnerPresence.canSeeLatestDrawings ? "Yes" : "Not confirmed")")
                         .foregroundStyle(.secondary)
                 }
+                syncStatusBlock
                 Button("Open Canvas Surface") {
                     onPush(.canvasSurface)
                 }
@@ -151,24 +157,14 @@ private struct RoutePlaceholderView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Spacer(minLength: 0)
-                    CanvasRenderSurfaceView(
-                        model: canvasModel,
-                        surface: .fullApp,
-                        showsEditingBackground: true
-                    )
-                    .aspectRatio(9.0 / 20.0, contentMode: .fit)
-                    .frame(maxHeight: .infinity)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.secondary.opacity(0.24), lineWidth: 1)
-                    }
+                    syncedCanvasSurface
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                Text("Fixture diagnostics: \(canvasModel.diagnostics.count)")
+                Text("Diagnostics: \(syncController.diagnostics.count)")
                     .font(.caption)
-                    .foregroundStyle(canvasModel.diagnostics.isEmpty ? Color.secondary : Color.orange)
+                    .foregroundStyle(syncController.diagnostics.isEmpty ? Color.secondary : Color.orange)
             }
         case .authLanding:
             VStack(alignment: .leading, spacing: 12) {
@@ -267,11 +263,20 @@ private struct RoutePlaceholderView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                syncStatusBlock
 
                 HStack {
                     Button("Overlay Settings") {
                         onPush(.overlayStatus)
                     }
+                    Button("Recover Canvas Now") {
+                        syncController.recoverNow()
+                    }
+                    .disabled(authController.state.isSignedIn == false)
+                    Button("Queue Test Stroke") {
+                        syncController.submitDebugStroke()
+                    }
+                    .disabled(syncController.connectionState != .connected)
                     if authController.state.isSignedIn {
                         Button("Sign Out") {
                             Task {
@@ -284,6 +289,49 @@ private struct RoutePlaceholderView: View {
             }
         default:
             EmptyView()
+        }
+    }
+
+    private var syncStatusBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Sync: \(syncController.connectionState.title)")
+                .font(.headline)
+            Text("Revision: \(syncController.status.lastAppliedServerRevision) / \(syncController.status.latestKnownServerRevision)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Outbox: \(syncController.status.pendingCount) pending, \(syncController.status.inFlightCount) in flight")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let lastError = syncController.status.lastError {
+                Text(lastError)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var syncedCanvasSurface: some View {
+        CanvasRenderSurfaceView(
+            model: canvasModel,
+            surface: .fullApp,
+            showsEditingBackground: true
+        )
+        .aspectRatio(9.0 / 20.0, contentMode: .fit)
+        .frame(maxHeight: .infinity)
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.secondary.opacity(0.24), lineWidth: 1)
+        }
+        .onAppear {
+            canvasModel.state = syncController.canvasState
+            canvasModel.diagnostics = syncController.diagnostics
+        }
+        .onReceive(syncController.objectWillChange) { _ in
+            DispatchQueue.main.async {
+                canvasModel.state = syncController.canvasState
+                canvasModel.diagnostics = syncController.diagnostics
+            }
         }
     }
 

@@ -1,4 +1,5 @@
 import AppKit
+import CanvasCore
 import CanvasRendering
 import SwiftUI
 
@@ -53,6 +54,16 @@ public final class OverlayController: NSObject, ObservableObject {
 
     public func updateHotKeyStatus(_ status: OverlayHotKeyStatus) {
         hotKeyStatus = status
+    }
+
+    public func updateCanvasState(
+        _ state: CanvasCore.CanvasState,
+        strokeRenderMode: CanvasCore.CanvasStrokeRenderMode = .dryBrush,
+        diagnostics: [CanvasCore.CanvasDiagnostic] = []
+    ) {
+        canvasModel.state = state
+        canvasModel.strokeRenderMode = strokeRenderMode
+        canvasModel.diagnostics = diagnostics
     }
 
     public func show() {

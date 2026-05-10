@@ -218,7 +218,7 @@ extension CanvasElement: Codable {
     }
 }
 
-public struct CanvasState: Equatable, Sendable {
+public struct CanvasState: Codable, Equatable, Sendable {
     public var committedStrokes: [CanvasStroke]
     public var committedElements: [CanvasElement]
     public var localActiveStroke: CanvasStroke?
