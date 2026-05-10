@@ -169,6 +169,7 @@ Required endpoints:
 - `POST /auth/logout`
 - `GET /bootstrap`
 - `GET /streak`
+- `PUT /me/presence-surfaces/:surfaceType`
 - `PUT /me/display-name`
 - `PUT /me/profile`
 - `PUT /me/partner-profile`
@@ -207,6 +208,7 @@ Use SQLite through GRDB or a thin SQLite wrapper. GRDB is preferred for migratio
 | app_metadata | schema version, installation ID, last migration time. |
 | session_state | non-secret auth metadata, user ID, email, display name, pair session ID. |
 | bootstrap_cache | latest bootstrap payload, partner state, streak summary. |
+| presence_surfaces | latest local view of own and partner Android wallpaper and macOS overlay presence. |
 | canvas_operations | accepted server operations by pair session and revision. |
 | pending_operations | local operations not yet accepted by server. |
 | canvas_snapshot | latest server or locally materialized snapshot. |
@@ -294,6 +296,30 @@ Reconnect backoff starts at 1 second, doubles up to 60 seconds, and resets after
 
 Extend device platform support from Android-only to include macOS. The server type should accept `ANDROID`, `MACOS`, and future Apple platforms without needing another migration. Add app environment, app version, device name, and optional push token type.
 
+### Presence Surfaces
+
+Add a platform-aware presence-surface model rather than adding user-level `overlayConfigured` columns. Presence is per user, pair session, device instance, and surface type. Required surface types for v1 are:
+- `ANDROID_WALLPAPER`
+- `MACOS_OVERLAY`
+
+The table should support at least:
+- user ID;
+- pair session ID;
+- device instance ID;
+- surface type;
+- configured state;
+- enabled or visible state;
+- `canSeeLatestDrawings`;
+- `hasEverBeenAbleToSee`;
+- details JSON for surface-specific facts such as Android home/lock selection or macOS display/overlay visibility;
+- updated timestamp.
+
+The backend computes aggregate partner visibility from these rows. A partner can see latest drawings if any active configured surface can see latest drawings. Per-surface status remains available for settings, diagnostics, and targeted troubleshooting.
+
+The existing `user_wallpaper_status` contract must remain backward compatible for Android. Android `PUT /me/wallpaper-status`, bootstrap `partnerWallpaperStatus`, and the `PARTNER_VISIBILITY_CHANGED` push payload must keep their current behavior while the new presence table is introduced. Android wallpaper status writes should also update the `ANDROID_WALLPAPER` presence surface so the aggregate model stays current.
+
+macOS reports `MACOS_OVERLAY` using a stable installation/device instance ID. Phase 5 may report configured and enabled metadata once the user has authenticated and bootstrap has completed, but it must not report `canSeeLatestDrawings = true` until the app can render the latest canvas through Phase 6 and stay current through Phase 7 sync/recovery.
+
 ### Push and Notifications
 
 V1 can ship without APNs silent push if the login item keeps the app running. However, the backend schema should not block APNs later. Store push provider and token separately:
@@ -303,6 +329,8 @@ V1 can ship without APNs silent push if the login item keeps the app running. Ho
 - appEnvironment: dev or prod;
 - deviceInstanceId;
 - revokedAt.
+
+Add a surface-aware notification payload, `PARTNER_PRESENCE_CHANGED`, for future clients that understand cross-platform presence. Do not replace the Android `PARTNER_VISIBILITY_CHANGED` payload in v1; Android notifications for wallpaper visibility must continue to fire with the legacy fields and timing.
 
 ### Canvas Protocol
 
@@ -316,6 +344,7 @@ Required unit suites:
 - Canvas operation reducer for every operation type.
 - JSON encode/decode compatibility for WebSocket and REST DTOs.
 - SQLite migrations and constraint behavior.
+- Backend presence-surface aggregation and legacy Android wallpaper compatibility.
 - Outbound queue idempotency and retry ordering.
 - Display selection and frame clamping logic.
 - Hotkey registration success and failure wrapper behavior.
@@ -376,3 +405,4 @@ The following decisions are fixed for v1:
 1. Canvas sync uses the existing operation protocol.
 1. Coordinates are normalized, not pixel-bound.
 1. SQLite is the local source of truth for canvas ledger and cache; Keychain is the source of truth for secrets.
+1. Partner visibility is surface-aware: aggregate visibility is true when any configured active surface can show latest drawings, while Android wallpaper compatibility remains intact.

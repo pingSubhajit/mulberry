@@ -140,7 +140,11 @@ V1 must support:
 
 ## Backend and Cross-Platform Requirements
 
-Pairing remains user-to-user. Device registration must become platform-aware. The backend currently models Android push tokens and canvas operations; macOS v1 requires device records that can represent macOS, APNs token readiness later, app version, app environment, and device instance identity.
+Pairing remains user-to-user. Device registration must become platform-aware. The backend currently models Android push tokens, Android wallpaper visibility, and canvas operations; macOS v1 requires device records that can represent macOS, APNs token readiness later, app version, app environment, and device instance identity.
+
+The backend must distinguish visibility surfaces. Android users see partner drawings through live wallpaper setup; macOS users see partner drawings through the transparent overlay. A user may have both Android and macOS clients, so the server must not collapse these into a single "wallpaper configured" boolean. Instead, v1 should introduce an additive presence-surface model that can record per-device surface status such as `ANDROID_WALLPAPER` and `MACOS_OVERLAY`.
+
+For product messaging, "your partner can see your latest drawings" is true if any active configured surface for that partner can currently show latest drawings. Per-surface details remain available for troubleshooting. This prevents false warnings when, for example, a partner's Android wallpaper is not configured but their Mac overlay is live.
 
 ### Required Server Behavior
 
@@ -151,6 +155,9 @@ Pairing remains user-to-user. Device registration must become platform-aware. Th
 - Operation acceptance must remain idempotent by client operation ID.
 - Recovery endpoints must return all operations after a revision and a snapshot fallback.
 - Device token registration should evolve from Android-only to platform-aware, but APNs silent push is not required for v1 launch if the login item is running.
+- Bootstrap must expose platform-aware partner presence while preserving the existing Android `partnerWallpaperStatus` contract for Android clients.
+- Android wallpaper visibility reporting and `PARTNER_VISIBILITY_CHANGED` push payloads must remain backward compatible. Their current behavior must not regress: no push on the first-ever "can see" report, and notify only after a previously visible partner loses or regains Android wallpaper visibility.
+- macOS overlay status must be reported as a separate `MACOS_OVERLAY` surface keyed by a stable device instance. During Phase 5, macOS may report configured/enabled metadata, but it must not mark `canSeeLatestDrawings` true until canvas rendering and live or recovered sync state are implemented.
 
 ## Functional Acceptance Criteria
 
@@ -158,7 +165,7 @@ Pairing remains user-to-user. Device registration must become platform-aware. Th
 | **Area** | **Acceptance criteria** |
 | --- | --- |
 | Sign-in | A new Mac install can authenticate with Google, store tokens securely, refresh tokens, sign out, and recover from expired access tokens. |
-| Bootstrap | A paired user lands directly in the live canvas state; an unpaired user sees the same account/pairing state semantics as Android. |
+| Bootstrap | A paired user lands directly in the live canvas state; an unpaired user sees the same account/pairing state semantics as Android. Bootstrap includes aggregate partner visibility plus per-surface Android wallpaper and macOS overlay presence where available. |
 | Passive overlay | The overlay is visible on the selected desktop when uncovered, below normal windows, click-through, transparent around content, and present across Spaces on the selected display. |
 | Quick Draw | Command-Control-M opens Quick Draw from another normal app; overlay raises, accepts drawing, shows tools, and returns passive on Escape or Done. |
 | Sync | Drawing on Mac appears on Android and partner devices; drawing on Android appears on Mac without requiring manual refresh. |
@@ -197,9 +204,11 @@ Add Google Sign-In through a native browser-based OAuth flow or Google SDK choic
 
 ### Phase 5: Bootstrap and Local Domain Model
 
-Implement bootstrap REST client, typed DTOs, domain mapping, pair state, profile state, streak state, and local observable app state. Add schema versioning for local persistence.
+Implement bootstrap REST client, typed DTOs, domain mapping, pair state, profile state, streak state, cross-platform presence-surface state, and local observable app state. Add schema versioning for local persistence.
 
-**Acceptance:** the app displays real account, partner, pair, and streak state from the backend.
+Phase 5 also establishes the backend presence-surface contract. Add the database/API groundwork for per-device `ANDROID_WALLPAPER` and `MACOS_OVERLAY` visibility, compute an aggregate "can see latest drawings" state across all configured surfaces, and preserve the existing Android wallpaper bootstrap and push behavior as a compatibility layer.
+
+**Acceptance:** the app displays real account, partner, pair, streak, and partner presence state from the backend. Existing Android partner-visibility notifications and `partnerWallpaperStatus` semantics remain compatible.
 
 ### Phase 6: Canvas Operation Model and Renderer
 

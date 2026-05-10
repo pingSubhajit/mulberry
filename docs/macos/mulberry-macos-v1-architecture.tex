@@ -216,6 +216,7 @@ Required endpoints:
   \item \texttt{POST /auth/logout}
   \item \texttt{GET /bootstrap}
   \item \texttt{GET /streak}
+  \item \texttt{PUT /me/presence-surfaces/:surfaceType}
   \item \texttt{PUT /me/display-name}
   \item \texttt{PUT /me/profile}
   \item \texttt{PUT /me/partner-profile}
@@ -255,6 +256,7 @@ Use SQLite through GRDB or a thin SQLite wrapper. GRDB is preferred for migratio
 app\_metadata & schema version, installation ID, last migration time. \\
 session\_state & non-secret auth metadata, user ID, email, display name, pair session ID. \\
 bootstrap\_cache & latest bootstrap payload, partner state, streak summary. \\
+presence\_surfaces & latest local view of own and partner Android wallpaper and macOS overlay presence. \\
 canvas\_operations & accepted server operations by pair session and revision. \\
 pending\_operations & local operations not yet accepted by server. \\
 canvas\_snapshot & latest server or locally materialized snapshot. \\
@@ -355,6 +357,42 @@ Reconnect backoff starts at 1 second, doubles up to 60 seconds, and resets after
 
 Extend device platform support from Android-only to include macOS. The server type should accept \texttt{ANDROID}, \texttt{MACOS}, and future Apple platforms without needing another migration. Add app environment, app version, device name, and optional push token type.
 
+\subsection{Presence Surfaces}
+
+Add a platform-aware presence-surface model rather than adding user-level \texttt{overlayConfigured} columns. Presence is per user, pair session, device instance, and surface type. Required surface types for v1 are:
+\begin{itemize}
+  \item \texttt{ANDROID\_WALLPAPER}
+  \item \texttt{MACOS\_OVERLAY}
+\end{itemize}
+
+The table should support at least:
+\begin{itemize}
+  \item user ID;
+  \item pair session ID;
+  \item device instance ID;
+  \item surface type;
+  \item configured state;
+  \item enabled or visible state;
+  \item \texttt{canSeeLatestDrawings};
+  \item \texttt{hasEverBeenAbleToSee};
+  \item details JSON for surface-specific facts such as Android home/lock selection or macOS display/overlay visibility;
+  \item updated timestamp.
+\end{itemize}
+
+The backend computes aggregate partner visibility from these rows. A partner can see latest drawings if any active configured surface can see latest drawings. Per-surface status remains available for settings, diagnostics, and targeted troubleshooting.
+
+The existing Android wallpaper contract must remain backward compatible while the new presence table is introduced:
+\begin{itemize}
+  \item keep {\footnotesize\texttt{user\_wallpaper\_status}};
+  \item keep Android {\footnotesize\texttt{PUT /me/wallpaper-status}};
+  \item keep bootstrap {\footnotesize\texttt{partnerWallpaperStatus}};
+  \item keep the {\footnotesize\texttt{PARTNER\_VISIBILITY\_CHANGED}} push payload and timing.
+\end{itemize}
+
+Android wallpaper status writes should also update the {\footnotesize\texttt{ANDROID\_WALLPAPER}} presence surface so the aggregate model stays current.
+
+macOS reports \texttt{MACOS\_OVERLAY} using a stable installation/device instance ID. Phase 5 may report configured and enabled metadata once the user has authenticated and bootstrap has completed, but it must not report {\footnotesize\texttt{canSeeLatestDrawings = true}} until the app can render the latest canvas through Phase 6 and stay current through Phase 7 sync/recovery.
+
 \subsection{Push and Notifications}
 
 V1 can ship without APNs silent push if the login item keeps the app running. However, the backend schema should not block APNs later. Store push provider and token separately:
@@ -366,6 +404,8 @@ V1 can ship without APNs silent push if the login item keeps the app running. Ho
   \item deviceInstanceId;
   \item revokedAt.
 \end{itemize}
+
+Add a surface-aware notification payload, {\footnotesize\texttt{PARTNER\_PRESENCE\_CHANGED}}, for future clients that understand cross-platform presence. Do not replace the Android {\footnotesize\texttt{PARTNER\_VISIBILITY\_CHANGED}} payload in v1; Android notifications for wallpaper visibility must continue to fire with the legacy fields and timing.
 
 \subsection{Canvas Protocol}
 
@@ -380,6 +420,7 @@ Required unit suites:
   \item Canvas operation reducer for every operation type.
   \item JSON encode/decode compatibility for WebSocket and REST DTOs.
   \item SQLite migrations and constraint behavior.
+  \item Backend presence-surface aggregation and legacy Android wallpaper compatibility.
   \item Outbound queue idempotency and retry ordering.
   \item Display selection and frame clamping logic.
   \item Hotkey registration success and failure wrapper behavior.
@@ -450,6 +491,7 @@ The following decisions are fixed for v1:
   \item Canvas sync uses the existing operation protocol.
   \item Coordinates are normalized, not pixel-bound.
   \item SQLite is the local source of truth for canvas ledger and cache; Keychain is the source of truth for secrets.
+  \item Partner visibility is surface-aware: aggregate visibility is true when any configured active surface can show latest drawings, while Android wallpaper compatibility remains intact.
 \end{enumerate}
 
 \end{document}
