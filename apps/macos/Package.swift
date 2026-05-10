@@ -26,7 +26,11 @@ let package = Package(
         .library(name: "Reactions", targets: ["Reactions"]),
         .library(name: "Notifications", targets: ["Notifications"]),
         .library(name: "Settings", targets: ["Settings"]),
-        .library(name: "Diagnostics", targets: ["Diagnostics"])
+        .library(name: "Diagnostics", targets: ["Diagnostics"]),
+        .executable(
+            name: "OverlayRegressionCheck",
+            targets: ["OverlayRegressionCheck"]
+        )
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.10.0")
@@ -74,6 +78,7 @@ let package = Package(
         .target(name: "Reactions", dependencies: ["Networking"]),
         .target(name: "Notifications"),
         .target(name: "Settings", dependencies: ["Persistence"]),
-        .target(name: "Diagnostics")
+        .target(name: "Diagnostics"),
+        .executableTarget(name: "OverlayRegressionCheck", dependencies: ["Overlay"])
     ]
 )

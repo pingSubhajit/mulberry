@@ -44,6 +44,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         installApplicationIcon()
+        installMainMenu()
         // TODO: When Mulberry is packaged and launched at login, add OS-level
         // duplicate-launch handling so a second app invocation activates the
         // existing process instead of allowing parallel app instances.
@@ -96,6 +97,46 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         return NSImage(contentsOf: developmentURL)
     }
 
+    private func installMainMenu() {
+        let mainMenu = NSMenu(title: "Main Menu")
+
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu(title: "Mulberry")
+        appMenu.addItem(NSMenuItem(
+            title: "About Mulberry",
+            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            keyEquivalent: ""
+        ))
+        appMenu.addItem(.separator())
+        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        appMenu.addItem(settingsItem)
+        appMenu.addItem(.separator())
+        let quitItem = NSMenuItem(title: "Quit Mulberry", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quitItem.target = NSApp
+        appMenu.addItem(quitItem)
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        let windowMenuItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(NSMenuItem(
+            title: "Minimize",
+            action: #selector(NSWindow.performMiniaturize(_:)),
+            keyEquivalent: "m"
+        ))
+        windowMenu.addItem(NSMenuItem(
+            title: "Close",
+            action: #selector(NSWindow.performClose(_:)),
+            keyEquivalent: "w"
+        ))
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        NSApp.windowsMenu = windowMenu
+
+        NSApp.mainMenu = mainMenu
+    }
+
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
@@ -144,24 +185,32 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         menu.addItem(menuItem(bootstrap?.streakTitle ?? "Streak: --", action: #selector(openStreak)))
         menu.addItem(overlayMenu())
         menu.addItem(.separator())
-        menu.addItem(menuItem("Settings...", action: #selector(openSettings)))
-        menu.addItem(menuItem("Quit Mulberry", action: #selector(quitMulberry)))
+        menu.addItem(menuItem("Settings...", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(menuItem("Quit Mulberry", action: #selector(quitMulberry), keyEquivalent: "q"))
 
         statusItem?.menu = menu
     }
 
-    private func menuItem(_ title: String, action: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+    private func menuItem(
+        _ title: String,
+        action: Selector,
+        keyEquivalent: String = "",
+        modifierMask: NSEvent.ModifierFlags = [.command]
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.keyEquivalentModifierMask = keyEquivalent.isEmpty ? [] : modifierMask
         item.target = self
         return item
     }
 
     private func quickDrawMenuItem() -> NSMenuItem {
         let title = overlayController.isQuickDrawActive ? "Exit Quick Draw" : "Quick Draw"
-        let item = NSMenuItem(title: title, action: #selector(quickDraw), keyEquivalent: "m")
-        item.keyEquivalentModifierMask = [.command, .control]
-        item.target = self
-        return item
+        return menuItem(
+            title,
+            action: #selector(quickDraw),
+            keyEquivalent: "m",
+            modifierMask: [.command, .control]
+        )
     }
 
     private func disabledItem(_ title: String) -> NSMenuItem {

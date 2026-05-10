@@ -29,7 +29,6 @@ public final class OverlayController: NSObject, ObservableObject {
     private let debugModel = OverlayDebugDrawingModel()
     private let passiveLevel = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)
     private let quickDrawLevel = NSWindow.Level.floating
-    private var wasVisibleBeforeQuickDraw = false
 
     public init(settingsStore: OverlaySettingsStore = OverlaySettingsStore()) {
         self.settingsStore = settingsStore
@@ -99,7 +98,6 @@ public final class OverlayController: NSObject, ObservableObject {
             return false
         }
 
-        wasVisibleBeforeQuickDraw = isVisible
         let panel = panel ?? makePanel()
         self.panel = panel
         if !isVisible {
@@ -131,13 +129,8 @@ public final class OverlayController: NSObject, ObservableObject {
         panel?.level = passiveLevel
         panel?.ignoresMouseEvents = true
         panel?.isMovableByWindowBackground = false
-        if wasVisibleBeforeQuickDraw {
-            panel?.orderFrontRegardless()
-            isVisible = true
-        } else {
-            panel?.orderOut(nil)
-            isVisible = false
-        }
+        panel?.orderFrontRegardless()
+        isVisible = true
         persistCurrentSettings()
         updateFrameDescription()
     }
