@@ -149,16 +149,22 @@ private struct RoutePlaceholderView: View {
             }
         case .canvasSurface:
             VStack(alignment: .leading, spacing: 12) {
-                CanvasRenderSurfaceView(
-                    model: canvasModel,
-                    surface: .fullApp,
-                    showsEditingBackground: true
-                )
-                .frame(minHeight: 520)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.secondary.opacity(0.24), lineWidth: 1)
+                HStack {
+                    Spacer(minLength: 0)
+                    CanvasRenderSurfaceView(
+                        model: canvasModel,
+                        surface: .fullApp,
+                        showsEditingBackground: true
+                    )
+                    .aspectRatio(9.0 / 20.0, contentMode: .fit)
+                    .frame(maxHeight: .infinity)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.secondary.opacity(0.24), lineWidth: 1)
+                    }
+                    Spacer(minLength: 0)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 Text("Fixture diagnostics: \(canvasModel.diagnostics.count)")
                     .font(.caption)

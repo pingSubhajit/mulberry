@@ -356,7 +356,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let hostingController = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hostingController)
         window.title = "Mulberry"
-        window.setContentSize(NSSize(width: 920, height: 640))
+        let contentSize = NSSize(width: 920, height: 640)
+        window.setContentSize(contentSize)
+        window.contentAspectRatio = contentSize
+        window.minSize = NSSize(width: 760, height: 529)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.center()
         window.isReleasedWhenClosed = false
