@@ -49,6 +49,7 @@ import com.subhajit.mulberry.network.StreakResponse
 import com.subhajit.mulberry.network.UnregisterFcmTokenRequest
 import com.subhajit.mulberry.network.UpdateWallpaperStatusRequest
 import com.subhajit.mulberry.network.WallpaperCatalogResponse
+import com.subhajit.mulberry.network.WhatsNewListResponse
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -713,6 +714,11 @@ private class FakeMulberryApiService : MulberryApiService {
     override suspend fun getWhatsNewMarkdown(version: String): Response<ResponseBody> = error("unused")
 
     override suspend fun getLatestWhatsNewMarkdown(): Response<ResponseBody> = error("unused")
+
+    override suspend fun getWhatsNewEntries(
+        cursor: String?,
+        limit: Int
+    ): WhatsNewListResponse = error("unused")
 
     override suspend fun getCannySsoToken(): CannySsoTokenResponse = error("unused")
 }

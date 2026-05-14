@@ -19,5 +19,8 @@ class WhatsNewSheetViewModel @Inject constructor(
     fun dismiss() {
         viewModelScope.launch { prompter.onPromptDismissed() }
     }
-}
 
+    fun loadNextHistoryPage() {
+        viewModelScope.launch { prompter.loadNextHistoryPage() }
+    }
+}

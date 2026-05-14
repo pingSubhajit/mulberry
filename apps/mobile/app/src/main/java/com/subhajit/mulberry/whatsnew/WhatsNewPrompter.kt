@@ -11,13 +11,18 @@ import kotlinx.coroutines.sync.withLock
 data class ActiveWhatsNewPrompt(
     val entry: WhatsNewEntry,
     val markSeenVersionName: String?,
-    val source: WhatsNewPromptSource
+    val source: WhatsNewPromptSource,
+    val historyEntries: List<WhatsNewEntry> = emptyList(),
+    val historyNextCursor: String? = null,
+    val historyLoadingMore: Boolean = false,
+    val historyError: String? = null
 )
 
 enum class WhatsNewPromptSource {
     Auto,
     Manual,
-    DeveloperPreview
+    DeveloperPreview,
+    SettingsHistory
 }
 
 @Singleton
@@ -140,6 +145,72 @@ class WhatsNewPrompter @Inject constructor(
                 }
 
                 is WhatsNewFetchResult.Error -> "Unable to fetch what’s new for version $versionName (${result.message})."
+            }
+        }
+    }
+
+    suspend fun openHistory(
+        currentVersionName: String
+    ): String? {
+        mutex.withLock {
+            if (_activePrompt.value != null) return null
+            return when (val result = repository.fetchPage(cursor = null)) {
+                is WhatsNewListFetchResult.Success -> {
+                    _activePrompt.value = ActiveWhatsNewPrompt(
+                        entry = result.entries.firstOrNull() ?: WhatsNewEntry(),
+                        markSeenVersionName = result.entries
+                            .firstOrNull { it.versionName == currentVersionName }
+                            ?.versionName,
+                        source = WhatsNewPromptSource.SettingsHistory,
+                        historyEntries = result.entries,
+                        historyNextCursor = result.nextCursor
+                    )
+                    null
+                }
+
+                is WhatsNewListFetchResult.Error -> "Unable to fetch what’s new (${result.message})."
+            }
+        }
+    }
+
+    suspend fun loadNextHistoryPage(): String? {
+        mutex.withLock {
+            val prompt = _activePrompt.value ?: return null
+            if (prompt.source != WhatsNewPromptSource.SettingsHistory) return null
+            val cursor = prompt.historyNextCursor ?: return null
+            if (prompt.historyLoadingMore) return null
+
+            _activePrompt.value = prompt.copy(historyLoadingMore = true, historyError = null)
+            return when (val result = repository.fetchPage(cursor = cursor)) {
+                is WhatsNewListFetchResult.Success -> {
+                    val current = _activePrompt.value ?: return null
+                    val existingVersions = current.historyEntries.mapNotNull { it.versionName }.toSet()
+                    val newEntries = result.entries.filter { entry ->
+                        val version = entry.versionName
+                        version == null || version !in existingVersions
+                    }
+                    _activePrompt.value = current.copy(
+                        entry = current.entry.takeIf { current.historyEntries.isNotEmpty() }
+                            ?: newEntries.firstOrNull()
+                            ?: WhatsNewEntry(),
+                        historyEntries = current.historyEntries + newEntries,
+                        historyNextCursor = result.nextCursor,
+                        historyLoadingMore = false,
+                        historyError = null
+                    )
+                    null
+                }
+
+                is WhatsNewListFetchResult.Error -> {
+                    val current = _activePrompt.value
+                    if (current != null) {
+                        _activePrompt.value = current.copy(
+                            historyLoadingMore = false,
+                            historyError = "Unable to load more (${result.message})."
+                        )
+                    }
+                    "Unable to load more what’s new entries (${result.message})."
+                }
             }
         }
     }

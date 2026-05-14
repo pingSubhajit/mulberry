@@ -138,6 +138,12 @@ interface MulberryApiService {
     @GET("/whats-new/latest.md")
     suspend fun getLatestWhatsNewMarkdown(): Response<ResponseBody>
 
+    @GET("/whats-new")
+    suspend fun getWhatsNewEntries(
+        @Query("cursor") cursor: String?,
+        @Query("limit") limit: Int
+    ): WhatsNewListResponse
+
     @GET("/feedback/canny-sso-token")
     suspend fun getCannySsoToken(): CannySsoTokenResponse
 }

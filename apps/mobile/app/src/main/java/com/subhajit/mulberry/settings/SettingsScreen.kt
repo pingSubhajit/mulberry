@@ -787,7 +787,11 @@ private fun SettingsRootMenu(
             icon = SettingsRootIcon.WhatsNew,
             title = "What’s new",
             showChevron = false,
-            trailingContent = { RootMulberryRedDot() },
+            trailingContent = if (uiState.hasCurrentVersionWhatsNew) {
+                { RootMulberryRedDot() }
+            } else {
+                null
+            },
             onClick = onWhatsNew
         )
         SettingsRootRow(

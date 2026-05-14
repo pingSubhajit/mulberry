@@ -11,10 +11,21 @@ fun WhatsNewSheetHost(
 ) {
     val prompt by viewModel.activePrompt.collectAsStateWithLifecycle()
     val active = prompt ?: return
-    WhatsNewBottomSheet(
-        entry = active.entry,
-        apiBaseUrl = viewModel.apiBaseUrl,
-        onDismiss = viewModel::dismiss
-    )
+    if (active.source == WhatsNewPromptSource.SettingsHistory) {
+        WhatsNewHistoryBottomSheet(
+            entries = active.historyEntries,
+            apiBaseUrl = viewModel.apiBaseUrl,
+            hasMore = active.historyNextCursor != null,
+            loadingMore = active.historyLoadingMore,
+            error = active.historyError,
+            onLoadMore = viewModel::loadNextHistoryPage,
+            onDismiss = viewModel::dismiss
+        )
+    } else {
+        WhatsNewBottomSheet(
+            entry = active.entry,
+            apiBaseUrl = viewModel.apiBaseUrl,
+            onDismiss = viewModel::dismiss
+        )
+    }
 }
-

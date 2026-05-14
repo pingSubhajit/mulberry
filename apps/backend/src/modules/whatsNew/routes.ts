@@ -8,6 +8,12 @@ type WhatsNewFrontmatter = {
   released_at?: string
 }
 
+type WhatsNewEntryFile = {
+  version: string
+  path: string
+  frontmatter: WhatsNewFrontmatter
+}
+
 export function registerWhatsNewRoutes(
   app: FastifyInstance,
   options: { baseDir?: string } = {},
@@ -15,6 +21,25 @@ export function registerWhatsNewRoutes(
   const backendRoot = resolveBackendRoot()
   const baseDir = options.baseDir ?? join(backendRoot, "whats-new")
   const assetsDir = join(baseDir, "assets")
+
+  app.get("/whats-new", async (request, reply) => {
+    const query = request.query as { cursor?: string; limit?: string }
+    const entries = listWhatsNewEntries(baseDir)
+    const offset = parseCursor(query.cursor)
+    const limit = parseLimit(query.limit)
+    const page = entries.slice(offset, offset + limit)
+    const nextOffset = offset + page.length
+
+    reply
+      .header("Cache-Control", "public, max-age=3600")
+      .send({
+        items: page.map((entry) => ({
+          version: entry.version,
+          rawMarkdown: readFileSync(entry.path, "utf8"),
+        })),
+        nextCursor: nextOffset < entries.length ? String(nextOffset) : null,
+      })
+  })
 
   app.get("/whats-new/latest.md", async (request, reply) => {
     const latest = findLatestWhatsNewVersion(baseDir)
@@ -153,19 +178,23 @@ function serveBinaryFile(
 }
 
 function findLatestWhatsNewVersion(baseDir: string): string | null {
-  if (!existsSync(baseDir)) return null
+  return listWhatsNewEntries(baseDir)[0]?.version ?? null
+}
+
+function listWhatsNewEntries(baseDir: string): WhatsNewEntryFile[] {
+  if (!existsSync(baseDir)) return []
   const entries = readdirSync(baseDir, { withFileTypes: true })
     .filter((dirent) => dirent.isFile() && dirent.name.toLowerCase().endsWith(".md"))
     .map((dirent) => dirent.name)
     .map((name) => ({ name, version: name.slice(0, -3) }))
     .filter(({ version }) => sanitizeVersionKey(version) !== null)
     .map(({ name, version }) => ({
-      name,
       version,
+      path: join(baseDir, name),
       frontmatter: readFrontmatter(join(baseDir, name)),
     }))
 
-  if (entries.length === 0) return null
+  if (entries.length === 0) return []
 
   entries.sort((a, b) => {
     const dateA = parseDateMs(a.frontmatter.released_at)
@@ -174,7 +203,7 @@ function findLatestWhatsNewVersion(baseDir: string): string | null {
     return compareSemverish(b.version, a.version)
   })
 
-  return entries[0]?.version ?? null
+  return entries
 }
 
 function readFrontmatter(path: string): WhatsNewFrontmatter {
@@ -206,6 +235,20 @@ function parseDateMs(value?: string): number {
   return Number.isFinite(ms) ? ms : 0
 }
 
+function parseCursor(raw: string | undefined): number {
+  if (!raw) return 0
+  const value = Number.parseInt(raw, 10)
+  if (!Number.isFinite(value) || value < 0) return 0
+  return value
+}
+
+function parseLimit(raw: string | undefined): number {
+  if (!raw) return 5
+  const value = Number.parseInt(raw, 10)
+  if (!Number.isFinite(value)) return 5
+  return Math.min(Math.max(value, 1), 20)
+}
+
 function compareSemverish(a: string, b: string): number {
   const pa = parseSemverish(a)
   const pb = parseSemverish(b)
@@ -225,4 +268,3 @@ function parseSemverish(version: string): { parts: [number, number, number]; pre
   const patch = Number.isFinite(parts[2]) ? parts[2] : 0
   return { parts: [major, minor, patch], prerelease: version.includes("-") }
 }
-

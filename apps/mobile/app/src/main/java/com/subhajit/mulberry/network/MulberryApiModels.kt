@@ -302,6 +302,16 @@ data class StickerAssetUrlResponse(
     val expiresInSeconds: Int
 )
 
+data class WhatsNewListResponse(
+    val items: List<WhatsNewListItemResponse> = emptyList(),
+    val nextCursor: String?
+)
+
+data class WhatsNewListItemResponse(
+    val version: String,
+    val rawMarkdown: String
+)
+
 data class SendReactionRequest(
     val reactionType: String
 )

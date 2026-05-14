@@ -27,5 +27,5 @@ After the frontmatter, write normal markdown content (headings, paragraphs, bull
 
 - `GET /whats-new/:version.md`
 - `GET /whats-new/latest.md`
+- `GET /whats-new?limit=5&cursor=0`
 - `GET /whats-new/assets/*`
-

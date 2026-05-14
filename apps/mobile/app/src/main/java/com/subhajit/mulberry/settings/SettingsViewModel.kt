@@ -43,6 +43,7 @@ import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
 import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerCatalogCacheStore
 import com.subhajit.mulberry.whatsnew.WhatsNewPrompter
+import com.subhajit.mulberry.whatsnew.WhatsNewRepository
 import com.subhajit.mulberry.widget.relationship.RelationshipWidgetSimulationPreset
 import com.subhajit.mulberry.widget.relationship.RelationshipWidgetSimulationRepository
 import com.subhajit.mulberry.widget.relationship.RelationshipWidgetUpdateRequester
@@ -86,6 +87,7 @@ data class SettingsUiState(
     val feedbackSsoToken: String? = null,
     val feedbackLoading: Boolean = false,
     val feedbackError: String? = null,
+    val hasCurrentVersionWhatsNew: Boolean = false,
     val isBusy: Boolean = false
 ) {
     val pendingOperationCount: Int
@@ -124,6 +126,7 @@ class SettingsViewModel @Inject constructor(
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     private val apiService: MulberryApiService,
     private val whatsNewPrompter: WhatsNewPrompter,
+    private val whatsNewRepository: WhatsNewRepository,
     private val stickerAssetStore: StickerAssetStore,
     private val stickerCatalogCacheStore: StickerCatalogCacheStore,
     @ApplicationContext private val appContext: Context,
@@ -136,6 +139,7 @@ class SettingsViewModel @Inject constructor(
     private val versionTapCount = kotlinx.coroutines.flow.MutableStateFlow(0)
     private val pendingPartnerProfilePhotoUri = kotlinx.coroutines.flow.MutableStateFlow<Uri?>(null)
     private val feedbackState = kotlinx.coroutines.flow.MutableStateFlow(FeedbackState())
+    private val hasCurrentVersionWhatsNew = kotlinx.coroutines.flow.MutableStateFlow(false)
 
     private val baseUiStateCoreWithoutCanvasDebug = combine(
         combine(
@@ -196,7 +200,7 @@ class SettingsViewModel @Inject constructor(
         base.copy(wallpaperSyncEnabled = wallpaperSyncEnabled)
     }
 
-    val uiState = combine(
+    private val uiStateWithoutWhatsNewAvailability = combine(
         baseUiStateWithWallpaperSync,
         canvasSyncRepository.syncState,
         busyState,
@@ -211,6 +215,13 @@ class SettingsViewModel @Inject constructor(
             feedbackLoading = feedback.loading,
             feedbackError = feedback.error
         )
+    }
+
+    val uiState = combine(
+        uiStateWithoutWhatsNewAvailability,
+        hasCurrentVersionWhatsNew
+    ) { base, hasCurrentWhatsNew ->
+        base.copy(hasCurrentVersionWhatsNew = hasCurrentWhatsNew)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -228,6 +239,12 @@ class SettingsViewModel @Inject constructor(
 
     private val sessionRepository = repository
     private val flagsRepository = featureFlagProvider
+
+    init {
+        viewModelScope.launch {
+            hasCurrentVersionWhatsNew.value = whatsNewRepository.hasEntryForVersion(BuildConfig.VERSION_NAME)
+        }
+    }
 
     fun onVersionTapped() {
         if (uiState.value.developerOptionsEnabled) return
@@ -287,10 +304,7 @@ class SettingsViewModel @Inject constructor(
 
     fun onWhatsNewClicked() {
         viewModelScope.launch {
-            val error = whatsNewPrompter.openForVersion(
-                nowMs = System.currentTimeMillis(),
-                versionName = BuildConfig.VERSION_NAME
-            )
+            val error = whatsNewPrompter.openHistory(currentVersionName = BuildConfig.VERSION_NAME)
             if (error != null) {
                 _effects.emit(SettingsEffect.Message(error))
             }

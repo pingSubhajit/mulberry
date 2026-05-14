@@ -41,6 +41,38 @@ describe("whats-new routes", () => {
     expect(response.body).toContain("version: 1.1.0")
   })
 
+  it("lists entries in pages from newest to oldest", async () => {
+    writeFileSync(join(baseDir, "README.md"), "# docs", "utf8")
+    writeFileSync(
+      join(baseDir, "1.0.0.md"),
+      ["---", "version: 1.0.0", "released_at: 2026-01-01", "---", "", "v1"].join("\n"),
+      "utf8",
+    )
+    writeFileSync(
+      join(baseDir, "1.1.0.md"),
+      ["---", "version: 1.1.0", "released_at: 2026-05-06", "---", "", "v1.1"].join("\n"),
+      "utf8",
+    )
+    writeFileSync(
+      join(baseDir, "1.2.0.md"),
+      ["---", "version: 1.2.0", "released_at: 2026-05-07", "---", "", "v1.2"].join("\n"),
+      "utf8",
+    )
+
+    const first = await app.inject({ method: "GET", url: "/whats-new?limit=2" })
+    expect(first.statusCode).toBe(200)
+    const firstBody = first.json()
+    expect(firstBody.items.map((item: { version: string }) => item.version)).toEqual(["1.2.0", "1.1.0"])
+    expect(firstBody.items[0].rawMarkdown).toContain("v1.2")
+    expect(firstBody.nextCursor).toBe("2")
+
+    const second = await app.inject({ method: "GET", url: "/whats-new?limit=2&cursor=2" })
+    expect(second.statusCode).toBe(200)
+    const secondBody = second.json()
+    expect(secondBody.items.map((item: { version: string }) => item.version)).toEqual(["1.0.0"])
+    expect(secondBody.nextCursor).toBeNull()
+  })
+
   it("returns 304 when If-None-Match matches", async () => {
     writeFileSync(
       join(baseDir, "1.0.0.md"),
