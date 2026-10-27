@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and install Mulberry Dev on a paired physical iPhone. No simulator fallback."""
+"""Build and install Mulberry on a paired physical iPhone. No simulator fallback."""
 import argparse
 import json
 import os
@@ -82,7 +82,7 @@ def main():
                         str(app)], env=env, check=True)
         subprocess.run(['xcrun', 'devicectl', 'device', 'process', 'launch', '--device', identifier,
                         'com.subhajit.mulberry.dev'], env=env, check=True)
-        print('Installed Mulberry Dev. Sign in with Google, then choose your wallpaper and add the bundled Shortcut.')
+        print('Installed Mulberry. Sign in with Google, then choose your wallpaper and add the bundled Shortcut.')
         print('APNs enabled.' if args.push else 'Local notification mode: APNs entitlement omitted.')
 
 

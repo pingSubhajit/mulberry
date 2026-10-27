@@ -69,7 +69,7 @@ for mode in ['Debug', 'Release']:
     }))
     target_configs.append(add('target-' + mode, isa='XCBuildConfiguration', name=mode, baseConfigurationReference=debug_config_ref if mode == 'Debug' else config_ref, buildSettings={
         'PRODUCT_NAME': 'MulberryDelivery', 'PRODUCT_BUNDLE_IDENTIFIER': 'com.subhajit.mulberry.dev' if mode == 'Debug' else 'com.subhajit.mulberry',
-        'MULBERRY_DISPLAY_NAME': 'Mulberry Dev' if mode == 'Debug' else 'Mulberry',
+        'MULBERRY_DISPLAY_NAME': 'Mulberry',
         'ASSETCATALOG_COMPILER_APPICON_NAME': 'AppIconDev' if mode == 'Debug' else 'AppIcon',
         'INFOPLIST_FILE': 'Configuration/Info.plist', 'CODE_SIGN_ENTITLEMENTS': '$(MULBERRY_ENTITLEMENTS_FILE)',
         'CODE_SIGN_STYLE': 'Automatic', 'TARGETED_DEVICE_FAMILY': '1', 'SUPPORTED_PLATFORMS': 'iphoneos iphonesimulator',

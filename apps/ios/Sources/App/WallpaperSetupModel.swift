@@ -17,7 +17,7 @@ final class WallpaperSetupModel: ObservableObject {
         guard let user = model.userId else { return nil }
         return try? ProductWallpaperService.shared.journal(user: user, pair: model.bootstrap?.pairSessionId)
     }
-    var shortcutName: String { Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true ? "Mulberry Wallpaper Dev" : "Mulberry Wallpaper" }
+    var shortcutName: String { "Mulberry Sync" }
     var template: URL? { Bundle.main.url(forResource: shortcutName, withExtension: "shortcut", subdirectory: "ShortcutTemplates") }
 
     func refresh() async {

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>WFWorkflowName</key>
-	<string>Mulberry Wallpaper Dev</string>
+	<string>Mulberry Sync</string>
 	<key>WFWorkflowClientVersion</key>
 	<string>5037.111</string>
 	<key>WFWorkflowMinimumClientVersion</key>
@@ -43,7 +43,7 @@
 					<key>BundleIdentifier</key>
 					<string>com.subhajit.mulberry.dev</string>
 					<key>Name</key>
-					<string>Mulberry Dev</string>
+					<string>Mulberry</string>
 					<key>AppIntentIdentifier</key>
 					<string>GetLatestWallpaperIntent</string>
 				</dict>
@@ -92,7 +92,7 @@
 					<key>BundleIdentifier</key>
 					<string>com.subhajit.mulberry.dev</string>
 					<key>Name</key>
-					<string>Mulberry Dev</string>
+					<string>Mulberry</string>
 					<key>AppIntentIdentifier</key>
 					<string>RecordWallpaperResultIntent</string>
 				</dict>
@@ -129,7 +129,7 @@
 					<key>BundleIdentifier</key>
 					<string>com.subhajit.mulberry.dev</string>
 					<key>Name</key>
-					<string>Mulberry Dev</string>
+					<string>Mulberry</string>
 					<key>TeamIdentifier</key>
 					<string>YGJRT89MH9</string>
 				</dict>

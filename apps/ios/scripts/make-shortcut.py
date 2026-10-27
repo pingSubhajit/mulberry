@@ -14,12 +14,12 @@ import subprocess
 parser = argparse.ArgumentParser()
 parser.add_argument('--team-id', default='FAKETEAMID')
 parser.add_argument('--bundle-id', default='com.subhajit.mulberry.dev')
-parser.add_argument('--name', default=None, help='Shortcut name; inferred from development or production bundle')
+parser.add_argument('--name', default=None, help='Shortcut name; defaults to Mulberry Sync')
 parser.add_argument('--unsigned-only', action='store_true')
 parser.add_argument('--manual-only', action='store_true', help='Omit the iOS 27 notification trigger')
 args = parser.parse_args()
-shortcut_name = args.name or ('Mulberry Wallpaper Dev' if args.bundle_id.endswith('.dev') else 'Mulberry Wallpaper')
-app_name = 'Mulberry Dev' if args.bundle_id.endswith('.dev') else 'Mulberry'
+shortcut_name = args.name or 'Mulberry Sync'
+app_name = 'Mulberry'
 root = Path(__file__).resolve().parents[1]
 out = root / 'ShortcutTemplates'
 out.mkdir(exist_ok=True)

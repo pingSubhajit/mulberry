@@ -16,7 +16,7 @@ Run `python3 apps/ios/scripts/test-product.py` from the repository root to check
 
 `apps/ios/scripts/run-simulator.sh` builds and runs the product on iPhone 17 Pro, iOS 27. Set the development team in local configuration or `MULBERRY_TEAM_ID`; keep simulator signing enabled for Keychain. `python3 apps/ios/scripts/run-device.py --team-id YOUR_TEAM_ID` builds, installs and opens the product on a connected physical iPhone. This also regenerates the signed development Shortcut for that team. `--push` requires a push-enabled provisioning profile; the default build supports local delivery tests.
 
-The development template is `ShortcutTemplates/Mulberry Wallpaper Dev.shortcut`. The app shares it from Wallpaper setup. The user selects the target wallpaper and enables its notification automation in Shortcuts. First-run permissions still require iOS prompts. The template does not silently enable automation. A local test and matching completion receipt check the chain; neither proves remote push delivery or reads wallpaper pixels.
+The development template is `ShortcutTemplates/Mulberry Sync.shortcut`. The app shares it from Wallpaper setup. The user selects the target wallpaper and enables its notification automation in Shortcuts. First-run permissions still require iOS prompts. The template does not silently enable automation. A local test and matching completion receipt check the chain; neither proves remote push delivery or reads wallpaper pixels.
 
 The material below records the earlier prototype. Its mock-service commands, lab identifiers and historical test results are not instructions for running the current product.
 
