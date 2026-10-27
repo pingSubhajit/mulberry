@@ -39,15 +39,17 @@ public enum BackendError: Error, LocalizedError, Equatable, Sendable {
 public actor BackendClient {
     public let baseURL: URL
     private let transport: any BackendTransport
+    private let shortTransport: any BackendTransport
     private let tokenStore: any SessionTokenStore
     private var tokens: SessionTokens?
     private var generation = 0
     private var refreshTask: Task<SessionTokens, Error>?
 
-    public init(baseURL: URL, tokenStore: any SessionTokenStore, transport: any BackendTransport = URLSessionTransport()) throws {
+    public init(baseURL: URL, tokenStore: any SessionTokenStore, transport: any BackendTransport = URLSessionTransport(), shortTransport: (any BackendTransport)? = nil) throws {
         self.baseURL = baseURL
         self.tokenStore = tokenStore
         self.transport = transport
+        self.shortTransport = shortTransport ?? transport
         tokens = try tokenStore.load()
     }
 
@@ -85,7 +87,7 @@ public actor BackendClient {
         return tokens.accessToken
     }
 
-    public func bootstrap() async throws -> BootstrapState { try await get("bootstrap") }
+    public func bootstrap(quick: Bool = false) async throws -> BootstrapState { try await get("bootstrap", quick: quick) }
     public func saveProfile(_ draft: ProfileDraft) async throws -> BootstrapState {
         try await json("me/profile", method: "PUT", body: draft)
     }
@@ -121,8 +123,8 @@ public actor BackendClient {
         return result.token
     }
     public func canvasSnapshot() async throws -> DrawingSnapshot { try await get("canvas/snapshot") }
-    public func canvasOperations(after revision: Int64) async throws -> [DrawingOperation] {
-        let result: DrawingOperations = try await get("canvas/ops", query: [.init(name: "afterRevision", value: String(revision))])
+    public func canvasOperations(after revision: Int64, quick: Bool = false) async throws -> [DrawingOperation] {
+        let result: DrawingOperations = try await get("canvas/ops", query: [.init(name: "afterRevision", value: String(revision))], quick: quick)
         return result.operations
     }
     public func submit(_ batch: DrawingBatch) async throws -> [DrawingOperation] {
@@ -146,8 +148,8 @@ public actor BackendClient {
         let _: JSONValue = try await json("devices/fcm-token", method: "DELETE", body: ["token": token])
     }
 
-    private func get<Response: Decodable & Sendable>(_ path: String, query: [URLQueryItem] = [], authenticated: Bool = true) async throws -> Response {
-        try await decode(makeRequest(path, query: query), authenticated: authenticated)
+    private func get<Response: Decodable & Sendable>(_ path: String, query: [URLQueryItem] = [], authenticated: Bool = true, quick: Bool = false) async throws -> Response {
+        try await decode(makeRequest(path, query: query), authenticated: authenticated, quick: quick)
     }
     private func post<Response: Decodable & Sendable>(_ path: String) async throws -> Response {
         try await decode(makeRequest(path, method: "POST"))
@@ -173,9 +175,11 @@ public actor BackendClient {
         return try await decode(request)
     }
 
-    private func decode<Response: Decodable & Sendable>(_ request: URLRequest, authenticated: Bool = true) async throws -> Response {
+    private func decode<Response: Decodable & Sendable>(_ request: URLRequest, authenticated: Bool = true, quick: Bool = false) async throws -> Response {
+        let transport = quick ? shortTransport : transport
         let epoch = generation
         var authorized = request
+        if quick { authorized.timeoutInterval = 3 }
         let usedToken = tokens?.accessToken
         if authenticated {
             guard let usedToken else { throw BackendError.signedOut }
@@ -184,7 +188,7 @@ public actor BackendClient {
         var (data, response) = try await transport.data(for: authorized)
         guard generation == epoch else { throw BackendError.sessionChanged }
         if authenticated && response.statusCode == 401 {
-            let replacement = try await refresh(rejectedAccessToken: usedToken!)
+            let replacement = try await refresh(rejectedAccessToken: usedToken!, transport: transport)
             guard generation == epoch else { throw BackendError.sessionChanged }
             authorized.setValue("Bearer \(replacement)", forHTTPHeaderField: "Authorization")
             (data, response) = try await transport.data(for: authorized)
@@ -194,7 +198,7 @@ public actor BackendClient {
         return try JSONDecoder().decode(Response.self, from: response.statusCode == 204 ? Data("null".utf8) : data)
     }
 
-    private func refresh(rejectedAccessToken: String) async throws -> String {
+    private func refresh(rejectedAccessToken: String, transport: any BackendTransport) async throws -> String {
         guard let current = tokens else { throw BackendError.signedOut }
         if current.accessToken != rejectedAccessToken { return current.accessToken }
         let epoch = generation

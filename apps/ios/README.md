@@ -2,7 +2,7 @@
 
 The iOS 27 product app now opens the real Google sign-in, onboarding, pairing, canvas, wallpaper and settings flow. Android supplies the original artwork, fonts, palette, drawing behavior and content. Native iOS navigation, forms, sheets and photo pickers adapt that design to iPhone. See [the v1 ledger](docs/v1-implementation.md) for tested behavior and remaining work.
 
-`Sources/ProductCore` contains the authenticated backend client, Keychain session store, drawing reducer, durable outbox and WebSocket sync. `Sources/App` contains the product UI and local wallpaper renderer. App Intents fetch the signed-in account's canvas and combine it with that account's private background. The old delivery-lab files remain as reference; they are not the app's root UI.
+`Sources/ProductCore` contains the authenticated backend client, Keychain session store, drawing reducer, durable outbox and WebSocket sync. `Sources/App` contains the product UI and local wallpaper renderer. App Intents refresh the signed-in account's canvas when reachable, then combine saved strokes (including unsent edits) with that account's private background. Offline launch, local wallpaper updates, and later upload are covered in [offline wallpaper testing](docs/offline-wallpaper.md). The old delivery-lab files remain as reference; they are not the app's root UI.
 
 ## Product development
 

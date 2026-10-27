@@ -23,6 +23,9 @@ enum GoogleAuthentication {
     }
 
     static func handle(_ url: URL) -> Bool { GIDSignIn.sharedInstance.handle(url) }
+    static func isCancellation(_ error: Error) -> Bool {
+        (error as NSError).domain == kGIDSignInErrorDomain && (error as NSError).code == GIDSignInError.canceled.rawValue
+    }
     static func signOut() { GIDSignIn.sharedInstance.signOut() }
 }
 

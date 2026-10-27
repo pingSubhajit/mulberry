@@ -59,10 +59,7 @@ struct MulberryRootView: View {
             Button("Clear doodles", role: .destructive) { Task { await model.clearCanvas() } }
         } message: { Text("This removes the shared drawing for both of you.") }
         .task(id: phase) {
-            await model.setActive(phase == .active)
-            if phase == .background, let user = model.userId, let pair = model.bootstrap?.pairSessionId {
-                await ProductWallpaperService.shared.scheduleCanvasUpdate(user: user, pair: pair, revision: model.drawing.revision)
-            }
+            await model.setActive(phase == .active, updateWallpaper: phase == .background)
             guard phase == .active else { return }
             while !Task.isCancelled {
                 await model.refresh()

@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-27",
+  "device": "iPhone 17",
+  "os": "27.0.1",
+  "bundle": "com.subhajit.mulberry.dev",
+  "signedWith": "Personal Team",
+  "backend": "local Docker and existing local PostgreSQL",
+  "remoteAPNsTested": false,
+  "tests": {
+    "backendStoppedDrawAndAutomaticHomeWallpaper": "passed",
+    "coldOfflineLaunchRestoresCanvas": "passed",
+    "offlineUndoRedo": "passed",
+    "manualOfflineBasePhotoChange": "passed",
+    "photoOnlyAutomaticUpdateWhileLocked": "passed",
+    "matchingNotificationCleanup": "passed",
+    "airplaneModeWithWifiOffEraseAndWallpaper": "passed",
+    "backendStoppedClearAndWallpaper": "passed",
+    "reconnectUploadAndAndroidPersistence": "passed"
+  },
+  "firstReconnect": {
+    "revisionBefore": 773,
+    "revisionAfter": 876,
+    "acceptedOperations": 103,
+    "uniqueOperationIDs": 103,
+    "originalPendingOperationsPreserved": 93,
+    "allOriginalPendingAccepted": true,
+    "phonePendingAfter": 0,
+    "androidLastAppliedRevision": 876,
+    "androidStrokeIDsMatchPhone": true
+  },
+  "finalState": {
+    "revision": 878,
+    "phonePending": 0,
+    "testMarksRemoved": true,
+    "originalBaseImageRestored": "Red waves",
+    "airplaneMode": false,
+    "wifiRestored": true,
+    "localBackendRunning": true
+  },
+  "limits": [
+    "USB connected with Device Hub screen sharing; no debugger attached",
+    "Android receiver verified through persisted sync revision and stroke IDs, not an emulator screenshot",
+    "Photo-library import was covered by the simulator harness, not repeated on this physical phone",
+    "Local notification automation only; remote APNs remains untested"
+  ]
+}

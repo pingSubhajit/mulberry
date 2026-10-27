@@ -9,12 +9,15 @@ struct WallpaperExport: Codable {
     let probe: Int?
     let preparedAt: Date
     var drawingsVisible: Bool? = nil
+    var contentSignature: String? = nil
     var filename: String { "mulberry-\(id.uuidString).png" }
 }
 
 @MainActor
 final class ProductWallpaperService {
     static let shared = ProductWallpaperService()
+    private let notifications: any WallpaperNotifications
+    init(notifications: (any WallpaperNotifications)? = nil) { self.notifications = notifications ?? SystemWallpaperNotifications() }
     private var journals: [String: DeliveryJournal] = [:]
     private let exportDirectory = AppRuntime.directory.appendingPathComponent("WallpaperExports", isDirectory: true)
 
@@ -32,15 +35,35 @@ final class ProductWallpaperService {
 
     func prepare() async throws -> URL {
         let api = try AppRuntime.api()
-        let state = try await api.bootstrap()
-        guard let user = state.userId else { throw BackendError.signedOut }
+        guard let user = await api.signedInUserId else { throw BackendError.signedOut }
+        var state = cachedState(user: user)
+        var refreshed = false
+        do {
+            let fresh = try await api.bootstrap(quick: true)
+            guard fresh.userId == user else { throw BackendError.sessionChanged }
+            try cache(fresh)
+            state = fresh
+            refreshed = true
+        } catch {
+            guard WallpaperContent.canUseOfflineCopy(after: error), state != nil else { throw error }
+        }
+        guard let state else { throw BackendError.signedOut }
+        try await validateSession(state)
         let journal = try journal(user: user, pair: state.pairSessionId)
         var canvas = DrawingState()
         if let pair = state.pairSessionId, state.isPaired {
             let document = try await AppRuntime.drawings.load(userId: user, pairSessionId: pair)
-            let operations = try await api.canvasOperations(after: document.confirmed.revision)
-            let updated = try await AppRuntime.drawings.receive(userId: user, pairSessionId: pair, operations: operations)
-            canvas = try updated.visible
+            do {
+                if refreshed {
+                    let operations = try await api.canvasOperations(after: document.confirmed.revision, quick: true)
+                    try await validateSession(state)
+                    _ = try await AppRuntime.drawings.receive(userId: user, pairSessionId: pair, operations: operations)
+                }
+            } catch {
+                guard WallpaperContent.canUseOfflineCopy(after: error) else { throw error }
+            }
+            // Re-read after network awaits so new local edits are included too.
+            canvas = try await AppRuntime.drawings.load(userId: user, pairSessionId: pair).visible
         }
         let background = WallpaperLibrary(); background.load(user: user)
         if let error = background.errorMessage { throw BackendError.rejected(0, error) }
@@ -49,12 +72,12 @@ final class ProductWallpaperService {
                                                 dry: state.canvasStrokeRenderMode == "dry", pixelSize: size,
                                                 displayScale: try WallpaperRenderSize.displayScale())
         guard user == (await api.signedInUserId) else { throw BackendError.sessionChanged }
-        let current = try await api.bootstrap()
-        guard current.userId == user, current.pairSessionId == state.pairSessionId else { throw DrawingError.wrongSession }
+        try await validateSession(state)
         guard let data = rendered.pngData() else { throw WallpaperImageError.invalidImage }
         let history = await journal.all()
         let probe = history.last(where: { $0.stage == "local_notification_scheduled" && Date().timeIntervalSince($0.timestamp) < 120 })?.revision
-        let export = WallpaperExport(id: UUID(), userId: user, pairId: state.pairSessionId, revision: canvas.revision, probe: probe, preparedAt: .now, drawingsVisible: background.showDrawings)
+        let export = WallpaperExport(id: UUID(), userId: user, pairId: state.pairSessionId, revision: canvas.revision, probe: probe, preparedAt: .now, drawingsVisible: background.showDrawings,
+                                     contentSignature: try signature(canvas: canvas, background: background, state: state))
         try FileManager.default.createDirectory(at: exportDirectory, withIntermediateDirectories: true,
                                                 attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
         let file = exportDirectory.appendingPathComponent(export.filename)
@@ -70,7 +93,9 @@ final class ProductWallpaperService {
               let id = UUID(uuidString: String(filename.dropFirst(9).dropLast(4))) else { throw DeliveryError.invalidRevision }
         let export = try JSONDecoder().decode(WallpaperExport.self, from: Data(contentsOf: metadataURL(id)))
         guard export.id == id, Date().timeIntervalSince(export.preparedAt) < 1800 else { throw DeliveryError.invalidRevision }
-        let state = try await AppRuntime.api().bootstrap()
+        guard let user = try await AppRuntime.api().signedInUserId,
+              let state = cachedState(user: user) else { throw BackendError.signedOut }
+        try await validateSession(state)
         guard export.userId == state.userId, export.pairId == state.pairSessionId else { throw DrawingError.wrongSession }
         let journal = try journal(user: export.userId, pair: export.pairId)
         try await journal.append(.init(stage: "shortcut_reported_applied", revision: export.probe,
@@ -78,42 +103,88 @@ final class ProductWallpaperService {
         UserDefaults.standard.set(Date(), forKey: "wallpaperReceipt.\(export.userId).\(export.pairId ?? "unpaired")")
         UserDefaults.standard.set(export.revision, forKey: "wallpaperRevision.\(export.userId).\(export.pairId ?? "unpaired")")
         UserDefaults.standard.set(export.drawingsVisible == true, forKey: "wallpaperDrawingsVisible.\(export.userId).\(export.pairId ?? "unpaired")")
-        let center = UNUserNotificationCenter.current()
-        let delivered = await center.deliveredNotifications()
+        if let signature = export.contentSignature {
+            UserDefaults.standard.set(signature, forKey: "wallpaperContent.\(export.userId).\(export.pairId ?? "unpaired")")
+        }
+        let delivered = await notifications.delivered()
+        try await validateSession(state)
         let identifiers = delivered.compactMap { item -> String? in
-            let info = item.request.content.userInfo
+            let info = item.content.userInfo
             guard info["pairSessionId"] as? String == (export.pairId ?? "unpaired") else { return nil }
             // Remote FCM payloads identify the immutable pair. Local probes also
             // identify the user; neither may clean up another pairing's notice.
             if info["type"] as? String == "CANVAS_UPDATED" {
                 guard let value = info["latestRevision"] as? String, let revision = Int64(value),
                       revision >= 0, revision <= export.revision else { return nil }
-                return item.request.identifier
+                return item.identifier
             }
             guard info["kind"] as? String == "wallpaper_update", info["userId"] as? String == export.userId else { return nil }
-            if let probe = info["probe"] as? Int { return probe == export.probe ? item.request.identifier : nil }
+            if let probe = info["probe"] as? Int { return probe == export.probe ? item.identifier : nil }
+            if let signature = info["contentSignature"] as? String {
+                return signature == export.contentSignature ? item.identifier : nil
+            }
             guard let revision = info["revision"] as? Int64, revision <= export.revision else { return nil }
-            return item.request.identifier
+            return item.identifier
         }
-        center.removeDeliveredNotifications(withIdentifiers: identifiers)
+        notifications.removeDelivered(identifiers)
         try await journal.append(.init(stage: "wallpaper_notifications_removed", revision: export.probe,
                                       detail: "Removed \(identifiers.count) matching delivered wallpaper notifications."))
+        // A newer edit made during this Shortcut must not be marked as applied.
+        await scheduleLocalUpdate()
     }
 
-    func scheduleCanvasUpdate(user: String, pair: String, revision: Int64) async {
-        let receiptKey = "wallpaperReceipt.\(user).\(pair)"
-        // Do not start Shortcuts before the user has completed a run for this pair.
-        guard UserDefaults.standard.object(forKey: receiptKey) != nil else { return }
-        let applied = UserDefaults.standard.object(forKey: "wallpaperRevision.\(user).\(pair)") as? NSNumber
-        guard applied == nil || applied!.int64Value < revision else { return }
-        let content = UNMutableNotificationContent()
-        content.title = "Mulberry canvas updated"
-        content.body = "Your wallpaper update is ready."
-        content.interruptionLevel = .passive
-        content.threadIdentifier = "mulberry-wallpaper"
-        content.userInfo = ["kind": "wallpaper_update", "userId": user, "pairSessionId": pair, "revision": revision]
-        try? await UNUserNotificationCenter.current().add(.init(identifier: "mulberry-canvas-\(pair)", content: content,
-            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 3, repeats: false)))
+    func scheduleLocalUpdate() async {
+        do {
+            guard let user = try await AppRuntime.api().signedInUserId, let state = cachedState(user: user) else { return }
+            let pair = state.pairSessionId ?? "unpaired"
+            guard UserDefaults.standard.object(forKey: "wallpaperReceipt.\(user).\(pair)") != nil else { return }
+            let canvas = try await localCanvas(state)
+            let background = WallpaperLibrary(); background.load(user: user)
+            if background.errorMessage != nil { return }
+            let signature = try signature(canvas: canvas, background: background, state: state)
+            try await validateSession(state)
+            let identifier = "mulberry-canvas-\(pair)"
+            if signature == UserDefaults.standard.string(forKey: "wallpaperContent.\(user).\(pair)") {
+                notifications.removePending([identifier])
+                return
+            }
+            let content = UNMutableNotificationContent()
+            content.title = "Mulberry canvas updated"
+            content.body = "Your wallpaper update is ready."
+            content.interruptionLevel = .passive
+            content.threadIdentifier = "mulberry-wallpaper"
+            content.userInfo = ["kind": "wallpaper_update", "userId": user, "pairSessionId": pair,
+                                "revision": canvas.revision, "contentSignature": signature]
+            try await notifications.add(.init(identifier: identifier, content: content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 3, repeats: false)))
+        } catch { /* Keep the unapplied content dirty; retry on the next background transition. */ }
+    }
+
+    private func cachedState(user: String) -> BootstrapState? {
+        guard let data = UserDefaults.standard.data(forKey: "bootstrap.\(user)"),
+              let state = try? JSONDecoder().decode(BootstrapState.self, from: data), state.userId == user else { return nil }
+        return state
+    }
+
+    private func cache(_ state: BootstrapState) throws {
+        guard let user = state.userId else { throw BackendError.signedOut }
+        UserDefaults.standard.set(try JSONEncoder().encode(state), forKey: "bootstrap.\(user)")
+    }
+
+    private func validateSession(_ state: BootstrapState) async throws {
+        guard let user = state.userId, user == (try await AppRuntime.api().signedInUserId) else { throw BackendError.sessionChanged }
+        guard let current = cachedState(user: user), current.pairSessionId == state.pairSessionId,
+              current.isPaired == state.isPaired else { throw DrawingError.wrongSession }
+    }
+
+    private func localCanvas(_ state: BootstrapState) async throws -> DrawingState {
+        guard let user = state.userId, let pair = state.pairSessionId, state.isPaired else { return DrawingState() }
+        return try await AppRuntime.drawings.load(userId: user, pairSessionId: pair).visible
+    }
+
+    private func signature(canvas: DrawingState, background: WallpaperLibrary, state: BootstrapState) throws -> String {
+        return try WallpaperContent.signature(canvas: canvas, backgroundID: background.choice.id,
+                                       showDrawings: background.showDrawings, renderMode: state.canvasStrokeRenderMode)
     }
 
     private func metadataURL(_ id: UUID) -> URL { exportDirectory.appendingPathComponent("\(id.uuidString).json") }
@@ -151,116 +222,5 @@ enum WallpaperRenderSize {
             throw BackendError.rejected(0, "Open Mulberry once on this phone, then run the Shortcut again.")
         }
         return scale
-    }
-}
-
-@MainActor
-final class WallpaperSetupModel: ObservableObject {
-    @Published private(set) var health = SetupHealth.assess(access: .notRequested, events: [])
-    @Published private(set) var permission = "Not checked"
-    @Published private(set) var allowed = false
-    @Published private(set) var busy = false
-    @Published private(set) var remoteDeliveryMessage: String?
-    @Published var message: String?
-    private var refreshing = false
-    private var lastPresenceSignature: String?
-    private let model: MulberryModel
-    init(model: MulberryModel) { self.model = model }
-    private var journal: DeliveryJournal? {
-        guard let user = model.userId else { return nil }
-        return try? ProductWallpaperService.shared.journal(user: user, pair: model.bootstrap?.pairSessionId)
-    }
-    var shortcutName: String { Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true ? "Mulberry Wallpaper Dev" : "Mulberry Wallpaper" }
-    var template: URL? { Bundle.main.url(forResource: shortcutName, withExtension: "shortcut", subdirectory: "ShortcutTemplates") }
-
-    func refresh() async {
-        guard !refreshing, let journal else { return }
-        refreshing = true; defer { refreshing = false }
-        if UserDefaults.standard.string(forKey: "apnsRegistrationError") != nil || UserDefaults.standard.string(forKey: "pushRegistrationError") != nil {
-            remoteDeliveryMessage = "Remote updates are not connected yet. Local Shortcut tests can still run."
-        } else { remoteDeliveryMessage = nil }
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        let key = "notificationSettings.\(model.userId ?? "")"
-        let signature = "\(settings.authorizationStatus.rawValue):\(settings.notificationCenterSetting.rawValue):\(settings.lockScreenSetting.rawValue):\(settings.alertSetting.rawValue):\(settings.scheduledDeliverySetting.rawValue)"
-        if let previous = UserDefaults.standard.string(forKey: key), previous != signature {
-            try? await journal.append(.init(stage: "notification_settings_changed", detail: "Notification delivery settings changed."))
-        }
-        UserDefaults.standard.set(signature, forKey: key)
-        var access: NotificationAccess
-        switch settings.authorizationStatus {
-        case .authorized, .provisional, .ephemeral: access = .allowed; permission = "Allowed"
-        case .denied: access = .denied; permission = "Off"
-        default: access = .notRequested; permission = "Not requested"
-        }
-        if access == .allowed && settings.notificationCenterSetting != .enabled && settings.lockScreenSetting != .enabled && settings.alertSetting != .enabled { access = .noPresentation }
-        allowed = access == .allowed
-        health = SetupHealth.assess(access: access, events: await journal.all())
-        await reportPresence()
-    }
-
-    private func reportPresence() async {
-        guard !model.busy, let user = model.userId, let pair = model.bootstrap?.pairSessionId else { return }
-        let receipt = UserDefaults.standard.object(forKey: "wallpaperReceipt.\(user).\(pair)") as? Date
-        let revision = (UserDefaults.standard.object(forKey: "wallpaperRevision.\(user).\(pair)") as? NSNumber)?.int64Value
-        let showDrawings = UserDefaults.standard.object(forKey: "showDrawings.\(user)") as? Bool ?? true
-        let configured = receipt != nil
-        let enabled = allowed && configured && showDrawings
-        let renderedDrawings = UserDefaults.standard.bool(forKey: "wallpaperDrawingsVisible.\(user).\(pair)")
-        let canSee = enabled && renderedDrawings && model.drawingConnection == .connected && revision.map { $0 >= model.drawing.revision } == true
-        let signature = "\(user):\(pair):\(configured):\(enabled):\(canSee):\(revision ?? -1):\(health.state)"
-        guard signature != lastPresenceSignature else { return }
-        do {
-            _ = try await model.api.setPresence(deviceId: PushRegistration.deviceId, configured: configured, enabled: enabled,
-                canSeeLatestDrawings: canSee, details: ["lastAppliedRevision": revision.map { .number(Double($0)) } ?? .null,
-                                                     "shortcutState": .string(String(describing: health.state))])
-            guard user == model.userId, pair == model.bootstrap?.pairSessionId else { return }
-            lastPresenceSignature = signature
-        } catch { /* Retry on the next health refresh without interrupting drawing. */ }
-    }
-
-    func requestPermission() async {
-        do {
-            if permission == "Off" { openSettings(); return }
-            if try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { UIApplication.shared.registerForRemoteNotifications() }
-            await refresh()
-        } catch { message = error.localizedDescription }
-    }
-
-    func runShortcut() async {
-        try? await journal?.append(.init(stage: "manual_shortcut_requested", detail: "Manual wallpaper update; not an automatic delivery test."))
-        let scheme = Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true ? "mulberry-dev" : "mulberry"
-        var url = URLComponents(string: "shortcuts://x-callback-url/run-shortcut")!
-        url.queryItems = [.init(name: "name", value: shortcutName), .init(name: "x-success", value: "\(scheme)://wallpaper-return"),
-                          .init(name: "x-error", value: "\(scheme)://shortcut-error"), .init(name: "x-cancel", value: "\(scheme)://shortcut-cancelled")]
-        if !(await UIApplication.shared.open(url.url!)) { message = "Shortcuts could not open. Install Apple’s Shortcuts app, then try again." }
-        await refresh()
-    }
-    func editShortcut() {
-        var url = URLComponents(string: "shortcuts://open-shortcut")!
-        url.queryItems = [.init(name: "name", value: shortcutName)]
-        UIApplication.shared.open(url.url!)
-    }
-    func openSettings() { UIApplication.shared.open(URL(string: UIApplication.openNotificationSettingsURLString)!) }
-
-    func test() async {
-        guard !busy, let user = model.userId, let journal else { return }
-        busy = true; message = nil; defer { busy = false }
-        do {
-            await refresh()
-            guard allowed else { message = "Allow notifications before testing wallpaper updates."; return }
-            let history = await journal.all()
-            let probe = (history.compactMap(\.revision).max() ?? 0) + 1
-            let content = UNMutableNotificationContent()
-            content.title = "Mulberry canvas updated"
-            content.body = "Your wallpaper update is ready."
-            content.interruptionLevel = .passive
-            content.threadIdentifier = "mulberry-wallpaper"
-            content.userInfo = ["kind": "wallpaper_update", "userId": user, "pairSessionId": model.bootstrap?.pairSessionId ?? "unpaired", "probe": probe]
-            try await UNUserNotificationCenter.current().add(.init(identifier: "mulberry-test-\(UUID().uuidString)", content: content,
-                                                                  trigger: UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)))
-            try await journal.append(.init(stage: "local_notification_scheduled", revision: probe, detail: "Local delivery test. Not a remote push test."))
-            message = "Go Home or lock your phone. The test starts in 5 seconds. Return here after the wallpaper changes."
-            await refresh()
-        } catch { message = error.localizedDescription }
     }
 }

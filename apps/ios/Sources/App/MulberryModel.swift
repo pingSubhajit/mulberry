@@ -1,26 +1,4 @@
 import SwiftUI
-import GoogleSignIn
-
-@MainActor
-enum AppRuntime {
-    static let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Mulberry", isDirectory: true)
-    static let drawings = DrawingStore(directory: directory.appendingPathComponent("Drawings", isDirectory: true))
-    private static var backend: BackendClient?
-    static func api() throws -> BackendClient {
-        if let backend { return backend }
-        guard let value = Bundle.main.object(forInfoDictionaryKey: "MulberryAPIBaseURL") as? String,
-              let url = URL(string: value), ["https", "http"].contains(url.scheme), url.host != nil else {
-            throw BackendError.rejected(0, "This build is missing its server address.")
-        }
-        let configuration = URLSessionConfiguration.default
-        // The first local-development request may wait for iOS's network prompt.
-        configuration.waitsForConnectivity = true
-        configuration.timeoutIntervalForResource = 45
-        let client = try BackendClient(baseURL: url, tokenStore: SessionKeychain(service: (Bundle.main.bundleIdentifier ?? "com.subhajit.mulberry") + ".session"), transport: URLSessionTransport(session: URLSession(configuration: configuration)))
-        backend = client
-        return client
-    }
-}
 
 @MainActor
 final class MulberryModel: ObservableObject {
@@ -46,6 +24,9 @@ final class MulberryModel: ObservableObject {
     private var restoringStarted = false
     private var refreshing = false
     private var active = true
+    private var backgrounded = false
+    private let wallpaperService: ProductWallpaperService
+    init(wallpaperService: ProductWallpaperService? = nil) { self.wallpaperService = wallpaperService ?? .shared }
     private var sessionEpoch = 0
     private var drawingVersion: UInt64 = 0
 
@@ -61,11 +42,13 @@ final class MulberryModel: ObservableObject {
             guard let user = await api.signedInUserId else { return }
             if let data = UserDefaults.standard.data(forKey: "bootstrap.\(user)"),
                let cached = try? JSONDecoder().decode(BootstrapState.self, from: data) {
-                // Cached profile is only presentation. Never start a socket until the
-                // server has confirmed the current pairing and account.
-                bootstrap = cached
-                loadDraft(for: cached)
-                showWallpaperOnboarding = !UserDefaults.standard.bool(forKey: "wallpaperVisited.\(user)")
+                // Restore local editing immediately. DrawingSync still verifies the
+                // live account and pair before it sends any saved operations.
+                guard cached.userId == user else { throw DrawingError.wrongSession }
+                await apply(cached)
+                restoring = false
+                Task { await self.refresh() }
+                return
             }
             await apply(try await api.bootstrap())
         } catch { await handle(error) }
@@ -154,6 +137,7 @@ final class MulberryModel: ObservableObject {
         guard let sync, bootstrap?.isPaired == true else { throw DrawingError.wrongSession }
         let document = try await sync.enqueue(operations)
         try acceptDrawing(document)
+        if backgrounded { await wallpaperService.scheduleLocalUpdate() }
     }
 
     func clearCanvas() async {
@@ -163,12 +147,16 @@ final class MulberryModel: ObservableObject {
         }
     }
 
-    func setActive(_ value: Bool) async {
+    func setActive(_ value: Bool, updateWallpaper: Bool = false) async {
         active = value
+        backgrounded = updateWallpaper
         if value {
-            await refresh()
             await sync?.start()
-        } else { await sync?.stop() }
+            await refresh()
+        } else {
+            await sync?.stop()
+            if updateWallpaper { await wallpaperService.scheduleLocalUpdate() }
+        }
     }
 
     func signOut() async {
@@ -208,12 +196,14 @@ final class MulberryModel: ObservableObject {
             showWallpaperOnboarding = state.userId.map { !UserDefaults.standard.bool(forKey: "wallpaperVisited.\($0)") } ?? false
         }
         if let user = state.userId, let data = try? JSONEncoder().encode(state) { UserDefaults.standard.set(data, forKey: "bootstrap.\(user)") }
-        if previousPair != state.pairSessionId || (sync == nil && state.isPaired) {
+        if previousUser != state.userId || previousPair != state.pairSessionId || (sync == nil && state.isPaired) {
             await sync?.stop(); syncObserver?.cancel()
             sync = nil; drawing = DrawingState(); pendingEdits = 0; drawingVersion = 0
             if let user = state.userId, let pair = state.pairSessionId, state.isPaired, let api = try? api {
                 do { try await AppRuntime.drawings.finishInterruptedStrokes(userId: user, pairSessionId: pair) }
                 catch { errorMessage = "Your interrupted drawing could not be recovered. \(error.localizedDescription)" }
+                do { try acceptDrawing(await AppRuntime.drawings.load(userId: user, pairSessionId: pair)) }
+                catch { errorMessage = "Your saved drawing could not be opened. \(error.localizedDescription)" }
                 let newSync = DrawingSync(api: api, store: AppRuntime.drawings, userId: user, pairSessionId: pair)
                 sync = newSync
                 syncObserver = Task { [weak self] in
@@ -256,7 +246,7 @@ final class MulberryModel: ObservableObject {
     }
 
     private func handle(_ error: Error) async {
-        if (error as NSError).domain == kGIDSignInErrorDomain && (error as NSError).code == GIDSignInError.canceled.rawValue { return }
+        if GoogleAuthentication.isCancellation(error) { return }
         if (try? await api.signedInUserId) == nil && bootstrap != nil {
             await sync?.stop(); syncObserver?.cancel(); sync = nil
             bootstrap = nil; drawing = DrawingState()

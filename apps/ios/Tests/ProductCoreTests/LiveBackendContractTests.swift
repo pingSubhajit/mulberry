@@ -14,7 +14,8 @@ private final class ContractTokenStore: SessionTokenStore, @unchecked Sendable {
 func swiftClientPairsDrawsAndUnpairsThroughRealBackendRoutes() async throws {
     let url = URL(string: ProcessInfo.processInfo.environment["MULBERRY_CONTRACT_SERVER"]!)!
     #expect(url.host == "127.0.0.1")
-    let first = try BackendClient(baseURL: url, tokenStore: ContractTokenStore())
+    let firstTransport = ContractNetworkGate()
+    let first = try BackendClient(baseURL: url, tokenStore: ContractTokenStore(), transport: firstTransport)
     let second = try BackendClient(baseURL: url, tokenStore: ContractTokenStore())
     let suffix = UUID().uuidString.lowercased()
     let firstLogin = try await first.signIn(googleIDToken: "dev-google:first-\(suffix)@example.invalid:Alex")
@@ -66,6 +67,33 @@ func swiftClientPairsDrawsAndUnpairsThroughRealBackendRoutes() async throws {
     #expect(localSynced.confirmed.finishedStrokes.contains(liveStroke))
     #expect(remoteSynced.confirmed.finishedStrokes.contains(liveStroke))
     #expect(remoteSynced.confirmed.revision == 6)
+
+    await firstTransport.setOffline(true)
+    let offlineSync = DrawingSync(api: first, store: store, userId: firstPaired.userId!, pairSessionId: paired.pairSessionId)
+    let offlineStroke = DrawingStroke(colorArgb: 0xFF2457D6, width: 0.03, points: [.init(x: 0.3, y: 0.3), .init(x: 0.8, y: 0.9)], finished: true)
+    let offlineOps = try DrawingOperation.restore(offlineStroke)
+    let offlineState = try await offlineSync.enqueue(offlineOps)
+    #expect(try offlineState.visible.finishedStrokes.contains(offlineStroke))
+    #expect(try await second.canvasSnapshot().snapshotRevision == 6)
+    await offlineSync.stop()
+    let reopenedStore = DrawingStore(directory: directory)
+    #expect(try await reopenedStore.load(userId: firstPaired.userId!, pairSessionId: paired.pairSessionId).pending == offlineOps)
+    let resumed = DrawingSync(api: first, store: reopenedStore, userId: firstPaired.userId!, pairSessionId: paired.pairSessionId)
+    let uploaded = Task { () throws -> DrawingDocument in
+        for await event in resumed.events {
+            if case .changed(let document) = event, document.pending.isEmpty,
+               document.confirmed.finishedStrokes.contains(offlineStroke) { return document }
+        }
+        throw CancellationError()
+    }
+    await firstTransport.setOffline(false)
+    await resumed.start()
+    let afterReconnect = try await uploaded.value
+    await resumed.stop()
+    #expect(afterReconnect.confirmed.revision == 9)
+    let partnerAfterReconnect = try await second.canvasSnapshot()
+    #expect(partnerAfterReconnect.snapshotRevision == 9)
+    #expect(partnerAfterReconnect.snapshot.strokes.filter { $0.id == offlineStroke.id } == [offlineStroke])
 
     _ = try await second.setPresence(deviceId: "contract-iphone", configured: true, enabled: true, canSeeLatestDrawings: true, details: ["lastCompletedRevision": .number(3)])
     let visibility = try await first.bootstrap()
@@ -120,4 +148,13 @@ private func waitForTwoStrokes(_ sync: DrawingSync, gate: ConnectionGate) async 
            document.pending.isEmpty && document.confirmed.finishedStrokes.count == 2 { return document }
     }
     throw CancellationError()
+}
+
+private actor ContractNetworkGate: BackendTransport {
+    private var offline = false
+    func setOffline(_ value: Bool) { offline = value }
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        if offline { throw URLError(.cannotConnectToHost) }
+        return try await URLSessionTransport().data(for: request)
+    }
 }

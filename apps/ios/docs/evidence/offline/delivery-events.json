@@ -1,0 +1,82 @@
+[
+  {
+    "time": "2026-10-27T13:47:32.850732+00:00",
+    "stage": "image_ready",
+    "detail": "Prepared canvas revision 773. Wallpaper has not been confirmed."
+  },
+  {
+    "time": "2026-10-27T13:47:33.833227+00:00",
+    "stage": "shortcut_reported_applied",
+    "detail": "Set Wallpaper returned for canvas revision 773. This is not a pixel readback."
+  },
+  {
+    "time": "2026-10-27T13:47:33.837101+00:00",
+    "stage": "wallpaper_notifications_removed",
+    "detail": "Removed 1 matching delivered wallpaper notifications."
+  },
+  {
+    "time": "2026-10-27T13:49:22.013389+00:00",
+    "stage": "manual_shortcut_requested",
+    "detail": "Manual wallpaper update; not an automatic delivery test."
+  },
+  {
+    "time": "2026-10-27T13:49:22.819845+00:00",
+    "stage": "image_ready",
+    "detail": "Prepared canvas revision 773. Wallpaper has not been confirmed."
+  },
+  {
+    "time": "2026-10-27T13:49:24.481626+00:00",
+    "stage": "shortcut_reported_applied",
+    "detail": "Set Wallpaper returned for canvas revision 773. This is not a pixel readback."
+  },
+  {
+    "time": "2026-10-27T13:49:24.485683+00:00",
+    "stage": "wallpaper_notifications_removed",
+    "detail": "Removed 0 matching delivered wallpaper notifications."
+  },
+  {
+    "time": "2026-10-27T13:51:40.101471+00:00",
+    "stage": "image_ready",
+    "detail": "Prepared canvas revision 773. Wallpaper has not been confirmed."
+  },
+  {
+    "time": "2026-10-27T13:51:42.812178+00:00",
+    "stage": "shortcut_reported_applied",
+    "detail": "Set Wallpaper returned for canvas revision 773. This is not a pixel readback."
+  },
+  {
+    "time": "2026-10-27T13:51:42.820951+00:00",
+    "stage": "wallpaper_notifications_removed",
+    "detail": "Removed 1 matching delivered wallpaper notifications."
+  },
+  {
+    "time": "2026-10-27T13:59:59.892974+00:00",
+    "stage": "image_ready",
+    "detail": "Prepared canvas revision 876. Wallpaper has not been confirmed."
+  },
+  {
+    "time": "2026-10-27T14:00:00.807069+00:00",
+    "stage": "shortcut_reported_applied",
+    "detail": "Set Wallpaper returned for canvas revision 876. This is not a pixel readback."
+  },
+  {
+    "time": "2026-10-27T14:00:00.814108+00:00",
+    "stage": "wallpaper_notifications_removed",
+    "detail": "Removed 1 matching delivered wallpaper notifications."
+  },
+  {
+    "time": "2026-10-27T14:04:44.240893+00:00",
+    "stage": "image_ready",
+    "detail": "Prepared canvas revision 877. Wallpaper has not been confirmed."
+  },
+  {
+    "time": "2026-10-27T14:04:44.956665+00:00",
+    "stage": "shortcut_reported_applied",
+    "detail": "Set Wallpaper returned for canvas revision 877. This is not a pixel readback."
+  },
+  {
+    "time": "2026-10-27T14:04:44.960329+00:00",
+    "stage": "wallpaper_notifications_removed",
+    "detail": "Removed 1 matching delivered wallpaper notifications."
+  }
+]
