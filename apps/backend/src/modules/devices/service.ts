@@ -13,7 +13,7 @@ export class DevicesService {
     if (!request.token?.trim()) {
       throw new HttpError(400, "token is required")
     }
-    if (request.platform !== "ANDROID") {
+    if (request.platform !== "ANDROID" && request.platform !== "IOS") {
       throw new HttpError(400, "Unsupported device platform")
     }
     if (!request.appEnvironment?.trim()) {

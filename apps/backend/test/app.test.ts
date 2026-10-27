@@ -839,6 +839,42 @@ describe("Mulberry backend", () => {
     ])
   })
 
+  it("tracks iOS Shortcut visibility without claiming Android wallpaper selection", async () => {
+    const { inviter, recipient } = await pairUsers()
+    for (const enabled of [true, false]) {
+      const response = await app.inject({
+        method: "PUT",
+        url: "/me/presence-surfaces/IOS_SHORTCUT",
+        headers: bearer(inviter.accessToken),
+        payload: {
+          deviceInstanceId: "iphone-test",
+          configured: true,
+          enabled,
+          canSeeLatestDrawings: enabled,
+          details: { lastCompletedRevision: 12, notificationPermissionGranted: enabled },
+        },
+      })
+      expect(response.statusCode).toBe(200)
+      const peer = await app.inject({
+        method: "GET",
+        url: "/bootstrap",
+        headers: bearer(recipient.accessToken),
+      })
+      expect(peer.json().partnerWallpaperStatus).toBeNull()
+      expect(peer.json().partnerPresence).toMatchObject({
+        canSeeLatestDrawings: enabled,
+        surfaces: [{
+          surfaceType: "IOS_SHORTCUT",
+          deviceInstanceId: "iphone-test",
+          configured: true,
+          enabled,
+          canSeeLatestDrawings: enabled,
+          hasEverBeenAbleToSee: true,
+        }],
+      })
+    }
+  })
+
   it("pushes partner visibility after the user loses and regains drawing visibility", async () => {
     const { inviter, recipient } = await pairUsers()
     await registerFcmToken(recipient.accessToken, "recipient-token")
@@ -1997,7 +2033,7 @@ describe("Mulberry backend", () => {
     first.close()
   })
 
-  it("registers and revokes FCM device tokens", async () => {
+  it.each(["ANDROID", "IOS"])("registers and revokes %s FCM device tokens", async (platform) => {
     const auth = await signIn("subhajit@elaris.dev", "Subhajit")
 
     const first = await app.inject({
@@ -2006,7 +2042,7 @@ describe("Mulberry backend", () => {
       headers: bearer(auth.accessToken),
       payload: {
         token: "fcm-token-1",
-        platform: "ANDROID",
+        platform,
         appEnvironment: "dev",
       },
     })
@@ -2016,7 +2052,7 @@ describe("Mulberry backend", () => {
       headers: bearer(auth.accessToken),
       payload: {
         token: "fcm-token-1",
-        platform: "ANDROID",
+        platform,
         appEnvironment: "dev",
       },
     })

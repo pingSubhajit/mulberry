@@ -1,4 +1,4 @@
-export const PresenceSurfaceTypes = ["ANDROID_WALLPAPER", "MACOS_OVERLAY"] as const
+export const PresenceSurfaceTypes = ["ANDROID_WALLPAPER", "MACOS_OVERLAY", "IOS_SHORTCUT"] as const
 export type PresenceSurfaceType = (typeof PresenceSurfaceTypes)[number]
 
 export interface PresenceSurfaceStatus {

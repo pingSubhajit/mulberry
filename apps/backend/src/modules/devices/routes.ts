@@ -6,7 +6,7 @@ export function registerDeviceRoutes(app: FastifyInstance, service: DevicesServi
   app.post("/devices/fcm-token", async (request) => {
     const body = request.body as {
       token?: string
-      platform?: "ANDROID"
+      platform?: "ANDROID" | "IOS"
       appEnvironment?: string
     }
     return service.registerFcmToken(requireBearerToken(request), {
