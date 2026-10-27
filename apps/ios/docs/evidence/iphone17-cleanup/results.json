@@ -1,0 +1,71 @@
+{
+  "device": "iPhone 17",
+  "os": "27.0.1",
+  "date": "2026-10-26",
+  "transport": "local_notification",
+  "quiet_settings": {
+    "notification_center": true,
+    "banners": false,
+    "lock_screen_alerts": false,
+    "sounds": false,
+    "badges": false
+  },
+  "tests": [
+    {
+      "revision": 5,
+      "scheduled": true,
+      "completion": true,
+      "seconds_from_schedule_to_completion": 6.417,
+      "cleanup": "Requested removal of 1 completed update(s); 0 still present at immediate readback. Newer and unrelated notifications kept.",
+      "note": "First passive update; duplicate active copy also errored."
+    },
+    {
+      "revision": 6,
+      "scheduled": true,
+      "completion": true,
+      "seconds_from_schedule_to_completion": 6.346,
+      "cleanup": "Requested removal of 1 completed update(s); 0 still present at immediate readback. Newer and unrelated notifications kept.",
+      "note": "Notification Center-only delivery; no manual action; visual Home Screen pass."
+    },
+    {
+      "revision": 7,
+      "scheduled": true,
+      "completion": true,
+      "seconds_from_schedule_to_completion": 6.422,
+      "cleanup": "Requested removal of 1 completed update(s); 0 still present at immediate readback. Newer and unrelated notifications kept.",
+      "note": "Not a valid disabled test: a third copy was still enabled."
+    },
+    {
+      "revision": 8,
+      "scheduled": true,
+      "completion": true,
+      "seconds_from_schedule_to_completion": 6.326,
+      "cleanup": "Requested removal of 1 completed update(s); 0 still present at immediate readback. Newer and unrelated notifications kept.",
+      "note": "Not a valid disabled test: a third copy was still enabled."
+    },
+    {
+      "revision": 9,
+      "scheduled": true,
+      "completion": true,
+      "seconds_from_schedule_to_completion": 579.664,
+      "cleanup": "Requested removal of 1 completed update(s); 0 still present at immediate readback. Newer and unrelated notifications kept.",
+      "note": "All copies off: no fetch/receipt in diagnostic window; app showed incomplete. Later manual repair fetched and completed this revision. That late manual completion is not automatic success."
+    },
+    {
+      "revision": 10,
+      "scheduled": true,
+      "completion": true,
+      "seconds_from_schedule_to_completion": 9.843,
+      "cleanup": "Requested removal of 1 completed update(s); 0 still present at immediate readback. Newer and unrelated notifications kept.",
+      "note": "Fresh import with first-run permissions; update and cleanup passed. Notification delivered during lock transition (foreground delegate ran), then wallpaper observed on locked screen. Not proof of notification arrival while already locked."
+    }
+  ],
+  "limitations": [
+    "No remote APNs validation",
+    "No already-locked-arrival quiet test",
+    "No Focus/Low Power Mode/reboot/long-term/burst testing",
+    "App cannot inspect saved Shortcut contents or enable switch",
+    "Receipt does not prove actual pixels or correct action order in user-edited shortcuts",
+    "Fresh Shortcut import tested; app notification permission and wallpaper pair already existed"
+  ]
+}

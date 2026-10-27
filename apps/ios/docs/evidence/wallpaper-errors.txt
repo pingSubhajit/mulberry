@@ -1,0 +1,18 @@
+2026-10-26 12:37:58.204 E  PhotosPosterProvider[23070:13ac80] [com.apple.photos.Neutrino:schedule] Rendering failure: NUError Code=1 (Failure) Vision detection failed '(
+ Error Domain=com.apple.Vision Code=9 "Could not create inference context" UserInfo={NSLocalizedDescription=Could not create inference context}
+2026-10-26 12:37:58.204 E  PhotosPosterProvider[23070:13ac80] [com.apple.photos.Neutrino:schedule] respond job 0x600003cb9b00 NUVisionDetectionRequest-4: error NUError Code=1 (Failure) Vision detection failed '(
+ Error Domain=com.apple.Vision Code=9 "Could not create inference context" UserInfo={NSLocalizedDescription=Could not create inference context}
+2026-10-26 12:37:58.204 E  PhotosPosterProvider[23070:13acc0] [com.apple.photos.Neutrino:general] Vision detection failed: NUError Code=1 (Failure) Vision detection failed '(
+ Error Domain=com.apple.Vision Code=9 "Could not create inference context" UserInfo={NSLocalizedDescription=Could not create inference context}
+2026-10-26 12:37:58.821 E  PhotosPosterProvider[23070:13ac80] [com.apple.photos.Neutrino:schedule] Rendering failure: NUError Code=1 (Failure) Vision detection failed '(
+2026-10-26 12:37:58.821 E  PhotosPosterProvider[23070:13ac80] [com.apple.photos.Neutrino:schedule] respond job 0x600003ca8000 NUVisionDetectionRequest-10: error NUError Code=1 (Failure) Vision detection failed '(
+2026-10-26 12:37:58.821 E  PhotosPosterProvider[23070:13acca] [com.apple.photos.Neutrino:general] Failed to run face/saliency detection: NUError Code=1 (Failure) Vision detection failed '(
+2026-10-26 12:38:00.123 E  PhotosPosterProvider[23070:13acca] (PhotoImaging) Failed to load filter named '_PIDynamicLocalLightMapPrepare'
+2026-10-26 12:38:00.637 E  PhotosPosterProvider[23070:13acca] (PhotoImaging) Failed to load filter named '_PIDynamicLocalLightMapPrepare'
+2026-10-26 12:38:01.035 E  PhotosPosterProvider[23070:13ac44] [com.apple.photos.ui:Wallpaper] Failed to compute clock luminance: NUError Code=2 (Invalid) clockArea is empty after mapping to image extent '<CIImage: 0x6000002c62c0 extent [0 0 390 844]>'
+2026-10-26 12:38:01.035 E  PhotosPosterProvider[23070:13ac44] [com.apple.photos.ui:Wallpaper] Failed to compute clock luminance: NUError Code=2 (Invalid) clockArea is empty after mapping to image extent '<CIImage: 0x6000002bd8e0 extent [0 0 390 844]>'
+2026-10-26 12:38:01.035 E  PhotosPosterProvider[23070:13ac44] [com.apple.photos.ui:Wallpaper] Failed to compute clock luminance: NUError Code=2 (Invalid) clockArea is empty after mapping to image extent '<CIImage: 0x600000297640 extent [0 0 390 844]>'
+2026-10-26 12:38:01.035 E  PhotosPosterProvider[23070:13ac44] [com.apple.photos.ui:Wallpaper] Failed to compute clock luminance: NUError Code=2 (Invalid) clockArea is empty after mapping to image extent '<CIImage: 0x6000002bc6a0 extent [0 0 390 844]>'
+2026-10-26 12:38:09.479 E  PhotosPosterProvider[23070:13ad01] (PhotoImaging) Failed to load filter named '_PIDynamicLocalLightMapPrepare'
+2026-10-26 12:38:09.546 E  PhotosPosterProvider[23070:13accb] [com.apple.photos.Neutrino:general] Failed to compute clock material: NUError Code=2 (Invalid) clockArea is empty after mapping to image extent '<CIImage: 0x600000295950 extent [0 0 390 844]>'
+2026-10-26 12:40:29.997 E  PhotosPosterProvider[23220:13c3da] [com.apple.photos.Neutrino:schedule] Rendering failure: NUError Code=1 (Failure) Vision detection failed '(

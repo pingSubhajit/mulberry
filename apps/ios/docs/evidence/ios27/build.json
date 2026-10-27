@@ -1,0 +1,15 @@
+{
+  "CFBundleIdentifier": "com.subhajit.mulberry.deliverylab",
+  "MinimumOSVersion": "27.0",
+  "DTSDKName": "iphonesimulator27.1",
+  "DTXcode": "2710",
+  "DTXcodeBuild": "27A9275",
+  "buildResult": "BUILD SUCCEEDED",
+  "coreTests": 5,
+  "mockTests": 2,
+  "runtimeValidation": "iPhone 17 Pro iOS 27.0: app fetch, signed Shortcut import, manual execution, and notification-triggered execution verified; wallpaper rendered black; physical-device rendering and automation-file import pending",
+  "nonfatalBuildDiagnostic": "App Intents language training: Could not archive SSU artifacts. Intent execution must be checked separately.",
+  "runtime": "iOS 27.0 (24A434)",
+  "device": "iPhone 17 Pro",
+  "deviceUDID": "B24D8F96-67A6-4675-921D-F0E91006DEF3"
+}

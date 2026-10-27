@@ -1,0 +1,55 @@
+{
+  "device": "iPhone 17",
+  "os": "27.0.1",
+  "sdk": "27.1",
+  "signing": "Personal Team",
+  "apnsEnabled": false,
+  "checkedAt": "2026-10-26",
+  "tests": [
+    {
+      "revision": 1,
+      "trigger": "manual Shortcut",
+      "result": "Home Screen visible; completion receipt",
+      "evidence": "manual-r1-home.png"
+    },
+    {
+      "revision": 2,
+      "trigger": "local notification; app background; no notification tap",
+      "result": "Home Screen visible; completion receipt",
+      "fetchToReceiptSeconds": 1.032,
+      "evidence": "notification-r2-home.png"
+    },
+    {
+      "revision": 3,
+      "trigger": "local notification; phone locked; no notification tap",
+      "result": "Lock Screen visible with closed padlock; completion receipt",
+      "fetchToReceiptSeconds": 3.21,
+      "evidence": "notification-r3-locked.png"
+    },
+    {
+      "revision": 4,
+      "trigger": "local notification after importing regenerated bundled template and enabling Automation",
+      "result": "Home Screen visible; completion receipt; no notification tap",
+      "evidence": "imported-template-r4-home.png"
+    }
+  ],
+  "limitations": [
+    "Local notifications are not APNs delivery.",
+    "Device was connected to USB with Device Hub screen sharing; no debugger attached.",
+    "No burst, sustained-rate, Focus, Low Power Mode, or reboot tests yet."
+  ],
+  "templateImport": {
+    "triggerPreserved": true,
+    "enabledOnImport": false,
+    "enabledByTester": true,
+    "postImportDelivery": "revision 4 passed",
+    "wallpaperSelection": "Wallpaper 5 selected in setup and retained after Skip Setup / Replace",
+    "firstInstallCombinedTemplate": "not yet tested; replacement import verified"
+  },
+  "validation": {
+    "signedDeviceBuild": "passed",
+    "swiftCoreTests": 5,
+    "mockHttpTests": 2,
+    "testFailures": 0
+  }
+}

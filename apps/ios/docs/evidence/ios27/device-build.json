@@ -1,0 +1,14 @@
+{
+  "CFBundleIdentifier": "com.subhajit.mulberry.deliverylab",
+  "MinimumOSVersion": "27.0",
+  "DTSDKName": "iphoneos27.1",
+  "DTXcodeBuild": "27A9275",
+  "buildResult": "BUILD SUCCEEDED",
+  "signing": "Personal Team; verified code signature; no APNs entitlement",
+  "physicalInstall": "succeeded on iPhone 17, iOS 27.0.1",
+  "devicePreflight": "Connected physical iPhone verified",
+  "checkedAt": "2026-10-26",
+  "physicalLaunch": "succeeded after owner trusted developer profile",
+  "manualFetch": "revision 1 fetched from Mac LAN mock",
+  "wallpaper": "Physical manual, background local notification, locked local notification, and regenerated template tests passed. See ../iphone17/results.json."
+}

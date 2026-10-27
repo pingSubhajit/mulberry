@@ -1,0 +1,162 @@
+[
+  {
+    "id": "25562701-83A6-4357-BBDF-C98E61BCA634",
+    "timestamp": 814690776.173716,
+    "stage": "fetch_started",
+    "detail": "manual_preview"
+  },
+  {
+    "id": "4A633FFB-FFC3-47DA-A493-D7BDB0F0C279",
+    "revision": 3,
+    "timestamp": 814690776.379991,
+    "stage": "image_ready",
+    "detail": "manual_preview"
+  },
+  {
+    "id": "DF4071AD-B6EE-4D52-9815-14A81B88D3F0",
+    "timestamp": 814690987.978951,
+    "stage": "fetch_started",
+    "detail": "app_intent"
+  },
+  {
+    "id": "8196817C-3B86-44F7-8FFE-8976B8DF78F0",
+    "revision": 3,
+    "timestamp": 814690988.076518,
+    "stage": "image_ready",
+    "detail": "app_intent"
+  },
+  {
+    "id": "08251AE7-AE89-4FD2-85CC-31DF9DDCB738",
+    "revision": 3,
+    "timestamp": 814690995.490235,
+    "stage": "shortcut_reported_applied",
+    "detail": "Set Wallpaper returned. Visual confirmation is separate."
+  },
+  {
+    "id": "FCC84CF8-2A53-4E4E-BE2D-8D8F206025E7",
+    "timestamp": 814691011.581214,
+    "stage": "fetch_started",
+    "detail": "app_intent"
+  },
+  {
+    "id": "5F463636-5D30-43B6-BCB1-D445CC544F15",
+    "revision": 3,
+    "timestamp": 814691011.598084,
+    "stage": "image_ready",
+    "detail": "app_intent"
+  },
+  {
+    "id": "8AA2F575-A710-4063-A134-E7CB52F45795",
+    "revision": 3,
+    "timestamp": 814691015.716426,
+    "stage": "shortcut_reported_applied",
+    "detail": "Set Wallpaper returned. Visual confirmation is separate."
+  },
+  {
+    "id": "5658AB50-84FF-4FFF-AE3F-8A457C5175A6",
+    "timestamp": 814691708.093281,
+    "stage": "apns_registered",
+    "detail": "Device token saved locally"
+  },
+  {
+    "id": "A820DF23-7DB2-46B4-BEE4-569C0D407C6C",
+    "revision": 4,
+    "timestamp": 814691712.975806,
+    "stage": "notification_presented",
+    "detail": "simulator_push"
+  },
+  {
+    "id": "69EA2DC2-751A-45C2-AC97-2742C4570941",
+    "timestamp": 814691794.375684,
+    "stage": "fetch_started",
+    "detail": "app_intent"
+  },
+  {
+    "id": "4D107ABC-F014-42D2-A9CE-94729C480AB3",
+    "revision": 4,
+    "timestamp": 814691794.478465,
+    "stage": "image_ready",
+    "detail": "app_intent"
+  },
+  {
+    "id": "178C5FA7-2EC0-4162-929D-88437401968B",
+    "revision": 4,
+    "timestamp": 814691832.962218,
+    "stage": "shortcut_reported_applied",
+    "detail": "Set Wallpaper returned. Visual confirmation is separate."
+  },
+  {
+    "id": "E2AE2186-6506-4219-8099-666E39413DA7",
+    "timestamp": 814691917.673441,
+    "stage": "fetch_started",
+    "detail": "app_intent"
+  },
+  {
+    "id": "BD69C6C4-6519-43CC-9ED4-CD8DD11691CC",
+    "revision": 5,
+    "timestamp": 814691917.690589,
+    "stage": "image_ready",
+    "detail": "app_intent"
+  },
+  {
+    "id": "BD1A0F53-32FA-4F47-A757-F963C5E41BBA",
+    "revision": 5,
+    "timestamp": 814691918.687202,
+    "stage": "shortcut_reported_applied",
+    "detail": "Set Wallpaper returned. Visual confirmation is separate."
+  },
+  {
+    "id": "7B4E5C0A-B18E-405C-9DDF-FA78849F4CE8",
+    "timestamp": 814691922.66827,
+    "stage": "fetch_started",
+    "detail": "app_intent"
+  },
+  {
+    "id": "F6AEE87C-AD59-4165-96E1-F5DB414A87E3",
+    "revision": 6,
+    "timestamp": 814691922.675331,
+    "stage": "image_ready",
+    "detail": "app_intent"
+  },
+  {
+    "id": "0DE70794-8F0E-4A5E-99EE-D8225A03A867",
+    "revision": 6,
+    "timestamp": 814691923.88793,
+    "stage": "shortcut_reported_applied",
+    "detail": "Set Wallpaper returned. Visual confirmation is separate."
+  },
+  {
+    "id": "57DE56F0-FA10-404A-BF88-E1519A23F14C",
+    "timestamp": 814691927.943994,
+    "stage": "fetch_started",
+    "detail": "app_intent"
+  },
+  {
+    "id": "3D5969BF-D20B-4B01-A24A-FA2C9F0F47DB",
+    "revision": 7,
+    "timestamp": 814691927.949509,
+    "stage": "image_ready",
+    "detail": "app_intent"
+  },
+  {
+    "id": "6F9AAAA9-B3B2-4A4E-A665-E6EEF3B4FC55",
+    "revision": 7,
+    "timestamp": 814691929.190807,
+    "stage": "shortcut_reported_applied",
+    "detail": "Set Wallpaper returned. Visual confirmation is separate."
+  },
+  {
+    "id": "679C4D75-0E49-49B7-9C43-7D2F8D49CA6F",
+    "revision": 8,
+    "timestamp": 814692115.495512,
+    "stage": "local_notification_scheduled",
+    "detail": "5 second delay; this is not APNs delivery"
+  },
+  {
+    "id": "6F748387-0571-4DF4-916B-6F92B225884E",
+    "revision": 8,
+    "timestamp": 814692120.520292,
+    "stage": "notification_presented",
+    "detail": "local_mock"
+  }
+]
