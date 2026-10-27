@@ -1,0 +1,55 @@
+{
+  "name": "ios-design",
+  "version": "uizze-design-v14",
+  "designStack": {
+    "version": "4.6.0",
+    "commit": "8a0e198da34ebc5b936a9d5975fb7a3b1cf353b7",
+    "license": "Apache-2.0"
+  },
+  "designAuthority": "uizze",
+  "evidenceMode": "concrete-need-only",
+  "uizzeGuidance": [
+    "references/uizze-reference-policy.md",
+    "references/uizze-image-to-ui.md"
+  ],
+  "included": [
+    "reference/craft.md",
+    "reference/overdrive.md",
+    "reference/audit.native.md"
+  ],
+  "origins": [
+    {
+      "path": "reference/craft.md",
+      "relationship": "adapted",
+      "repository": "https://github.com/pbakaus/impeccable",
+      "commit": "8a0e198da34ebc5b936a9d5975fb7a3b1cf353b7",
+      "sourcePath": ".agent/skills/impeccable/reference/craft-floor.md",
+      "sourceBlob": "9653b980895fa343127982ba575085c31726eecc",
+      "licenseEvidenceURL": "https://github.com/pbakaus/impeccable/blob/8a0e198da34ebc5b936a9d5975fb7a3b1cf353b7/LICENSE",
+      "sourceURL": "https://github.com/pbakaus/impeccable/blob/8a0e198da34ebc5b936a9d5975fb7a3b1cf353b7/.agent/skills/impeccable/reference/craft-floor.md",
+      "license": "Apache-2.0"
+    },
+    {
+      "path": "reference/overdrive.md",
+      "relationship": "adapted",
+      "repository": "https://github.com/pbakaus/impeccable",
+      "commit": "8a0e198da34ebc5b936a9d5975fb7a3b1cf353b7",
+      "sourcePath": ".agent/skills/impeccable/reference/overdrive.md",
+      "sourceBlob": "76953e24e6dd06b62415fdfe71c7caa9756bd981",
+      "licenseEvidenceURL": "https://github.com/pbakaus/impeccable/blob/8a0e198da34ebc5b936a9d5975fb7a3b1cf353b7/LICENSE",
+      "sourceURL": "https://github.com/pbakaus/impeccable/blob/8a0e198da34ebc5b936a9d5975fb7a3b1cf353b7/.agent/skills/impeccable/reference/overdrive.md",
+      "license": "Apache-2.0"
+    },
+    {
+      "path": "reference/audit.native.md",
+      "relationship": "adapted",
+      "repository": "https://github.com/pbakaus/impeccable",
+      "commit": "8a0e198da34ebc5b936a9d5975fb7a3b1cf353b7",
+      "sourcePath": ".agent/skills/impeccable/reference/audit.native.md",
+      "sourceBlob": "fbccb56f6e6fe64fc6b24d82977f392a6285848e",
+      "licenseEvidenceURL": "https://github.com/pbakaus/impeccable/blob/8a0e198da34ebc5b936a9d5975fb7a3b1cf353b7/LICENSE",
+      "sourceURL": "https://github.com/pbakaus/impeccable/blob/8a0e198da34ebc5b936a9d5975fb7a3b1cf353b7/.agent/skills/impeccable/reference/audit.native.md",
+      "license": "Apache-2.0"
+    }
+  ]
+}
