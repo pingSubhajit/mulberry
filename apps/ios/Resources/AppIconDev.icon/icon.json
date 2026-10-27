@@ -1,0 +1,48 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "automatic-gradient": "srgb:0.48627,0.17255,0.87059,1.00000"
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "automatic-gradient": "srgb:0.10588,0.05490,0.17255,1.00000"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "layers": [
+        {
+          "blend-mode": "normal",
+          "fill": {
+            "linear-gradient": [
+              "display-p3:0.94932,1.00000,0.96897,1.00000",
+              "display-p3:1.00000,0.92211,0.95144,1.00000"
+            ]
+          },
+          "glass": true,
+          "hidden": false,
+          "image-name": "MulberryIconMark.svg",
+          "name": "MulberryIconMark",
+          "opacity": 0.9
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.3
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "iOS"
+    ]
+  }
+}

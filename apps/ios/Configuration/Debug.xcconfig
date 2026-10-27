@@ -1,0 +1,4 @@
+#include "Base.xcconfig"
+MULBERRY_ENTITLEMENTS_FILE = Configuration/LocalDelivery.entitlements
+APS_ENVIRONMENT = development
+#include? "Local.xcconfig"

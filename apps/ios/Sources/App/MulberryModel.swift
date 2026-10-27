@@ -1,0 +1,272 @@
+import SwiftUI
+import GoogleSignIn
+
+@MainActor
+enum AppRuntime {
+    static let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Mulberry", isDirectory: true)
+    static let drawings = DrawingStore(directory: directory.appendingPathComponent("Drawings", isDirectory: true))
+    private static var backend: BackendClient?
+    static func api() throws -> BackendClient {
+        if let backend { return backend }
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "MulberryAPIBaseURL") as? String,
+              let url = URL(string: value), ["https", "http"].contains(url.scheme), url.host != nil else {
+            throw BackendError.rejected(0, "This build is missing its server address.")
+        }
+        let configuration = URLSessionConfiguration.default
+        // The first local-development request may wait for iOS's network prompt.
+        configuration.waitsForConnectivity = true
+        configuration.timeoutIntervalForResource = 45
+        let client = try BackendClient(baseURL: url, tokenStore: SessionKeychain(service: (Bundle.main.bundleIdentifier ?? "com.subhajit.mulberry") + ".session"), transport: URLSessionTransport(session: URLSession(configuration: configuration)))
+        backend = client
+        return client
+    }
+}
+
+@MainActor
+final class MulberryModel: ObservableObject {
+    @Published private(set) var bootstrap: BootstrapState?
+    @Published private(set) var restoring = true
+    @Published private(set) var busy = false
+    @Published var errorMessage: String?
+    @Published var canvasSaveError: String?
+    var retryCanvasSave: (() -> Void)?
+    @Published var draft = ProfileDraft()
+    @Published var showInviteEntry = false
+    @Published var createdInvite: CreatedInvite?
+    @Published var showWallpaperOnboarding = false
+    @Published var tab = 0
+    @Published var showSettings = false
+    @Published var drawing = DrawingState()
+    @Published var drawingConnection: DrawingConnection = .connecting
+    @Published var pendingEdits = 0
+    @Published var appendHz = 30
+    @Published private(set) var canvasClearVersion = 0
+    private var sync: DrawingSync?
+    private var syncObserver: Task<Void, Never>?
+    private var restoringStarted = false
+    private var refreshing = false
+    private var active = true
+    private var sessionEpoch = 0
+    private var drawingVersion: UInt64 = 0
+
+    var userId: String? { bootstrap?.userId }
+    var api: BackendClient { get throws { try AppRuntime.api() } }
+
+    func restore() async {
+        guard !restoringStarted else { return }
+        restoringStarted = true
+        defer { restoring = false }
+        do {
+            let api = try api
+            guard let user = await api.signedInUserId else { return }
+            if let data = UserDefaults.standard.data(forKey: "bootstrap.\(user)"),
+               let cached = try? JSONDecoder().decode(BootstrapState.self, from: data) {
+                // Cached profile is only presentation. Never start a socket until the
+                // server has confirmed the current pairing and account.
+                bootstrap = cached
+                loadDraft(for: cached)
+                showWallpaperOnboarding = !UserDefaults.standard.bool(forKey: "wallpaperVisited.\(user)")
+            }
+            await apply(try await api.bootstrap())
+        } catch { await handle(error) }
+    }
+
+    func signIn() async {
+        await perform {
+            let idToken = try await GoogleAuthentication.signIn()
+            let state = try await self.api.signIn(googleIDToken: idToken)
+            self.sessionEpoch += 1
+            await self.apply(state)
+        }
+    }
+
+    func refresh() async {
+        guard !refreshing, !busy, bootstrap != nil else { return }
+        refreshing = true
+        let epoch = sessionEpoch
+        defer { refreshing = false }
+        do {
+            let state = try await api.bootstrap()
+            guard epoch == sessionEpoch else { return }
+            await apply(state)
+        } catch { if epoch == sessionEpoch { await handle(error) } }
+    }
+
+    func saveDraft() {
+        guard let userId, let data = try? JSONEncoder().encode(draft) else { return }
+        UserDefaults.standard.set(data, forKey: "profileDraft.\(userId)")
+    }
+
+    func submitProfile() async {
+        await perform {
+            let state = try await self.api.saveProfile(.init(displayName: self.draft.displayName.trimmingCharacters(in: .whitespacesAndNewlines), partnerDisplayName: self.draft.partnerDisplayName.trimmingCharacters(in: .whitespacesAndNewlines), anniversaryDate: self.draft.anniversaryDate))
+            if let user = self.userId { UserDefaults.standard.removeObject(forKey: "profileDraft.\(user)") }
+            await self.apply(state)
+        }
+    }
+
+    func redeem(_ code: String) async {
+        await perform {
+            let response = try await self.api.redeemInvite(code: code)
+            self.showInviteEntry = false
+            await self.apply(response.bootstrapState)
+        }
+    }
+
+    func acceptInvite() async {
+        guard let id = bootstrap?.invite?.inviteId else { return }
+        await perform { await self.apply(try await self.api.acceptInvite(id: id).bootstrapState) }
+    }
+
+    func declineInvite() async {
+        guard let id = bootstrap?.invite?.inviteId else { return }
+        await perform { await self.apply(try await self.api.declineInvite(id: id)) }
+    }
+
+    func createInvite() async {
+        await perform { self.createdInvite = try await self.api.createInvite() }
+    }
+
+    func disconnect() async {
+        await perform {
+            let state = try await self.api.disconnect()
+            self.createdInvite = nil
+            await self.apply(state)
+        }
+    }
+
+    func finishWallpaperOnboarding() {
+        guard let userId else { return }
+        UserDefaults.standard.set(true, forKey: "wallpaperVisited.\(userId)")
+        showWallpaperOnboarding = false
+    }
+
+    func updateName(_ name: String) async { await perform { await self.apply(try await self.api.updateDisplayName(name)) } }
+    func updatePhoto(_ jpeg: Data) async { await perform { await self.apply(try await self.api.updatePhoto(jpeg: jpeg)) } }
+    func updatePartner(name: String, anniversary: String, jpeg: Data?) async {
+        await perform { await self.apply(try await self.api.updatePartner(name: name, anniversary: anniversary, jpeg: jpeg)) }
+    }
+    func setDryBrush(_ enabled: Bool) async {
+        await perform { await self.apply(try await self.api.setStrokeRenderMode(enabled ? "dry" : "round")) }
+    }
+
+    func enqueue(_ operations: [DrawingOperation]) async throws {
+        guard let sync, bootstrap?.isPaired == true else { throw DrawingError.wrongSession }
+        let document = try await sync.enqueue(operations)
+        try acceptDrawing(document)
+    }
+
+    func clearCanvas() async {
+        await perform {
+            try await self.enqueue([.init(type: "CLEAR_CANVAS")])
+            self.canvasClearVersion += 1
+        }
+    }
+
+    func setActive(_ value: Bool) async {
+        active = value
+        if value {
+            await refresh()
+            await sync?.start()
+        } else { await sync?.stop() }
+    }
+
+    func signOut() async {
+        guard !busy else { return }
+        busy = true
+        sessionEpoch += 1
+        await sync?.stop()
+        syncObserver?.cancel(); syncObserver = nil; sync = nil
+        _ = try? await api.setPresence(deviceId: PushRegistration.deviceId, configured: false, enabled: false, canSeeLatestDrawings: false, details: ["signedOut": .bool(true)])
+        await PushRegistration.shared.signOut()
+        do { try await api.signOut() }
+        catch {
+            if (try? await api.signedInUserId) != nil {
+                errorMessage = error.localizedDescription
+                if let state = bootstrap { await apply(state) }
+                busy = false
+                return
+            }
+        }
+        GoogleAuthentication.signOut()
+        HomeQuickActions.shared.pending = nil
+        bootstrap = nil; drawing = DrawingState(); draft = ProfileDraft()
+        createdInvite = nil; showSettings = false; showInviteEntry = false
+        showWallpaperOnboarding = false; errorMessage = nil; busy = false
+        canvasSaveError = nil; retryCanvasSave = nil
+    }
+
+    private func apply(_ state: BootstrapState) async {
+        let previousPair = bootstrap?.pairSessionId
+        let previousUser = bootstrap?.userId
+        if previousPair != state.pairSessionId || previousUser != state.userId {
+            canvasSaveError = nil; retryCanvasSave = nil
+        }
+        bootstrap = state
+        if previousUser != state.userId {
+            loadDraft(for: state)
+            showWallpaperOnboarding = state.userId.map { !UserDefaults.standard.bool(forKey: "wallpaperVisited.\($0)") } ?? false
+        }
+        if let user = state.userId, let data = try? JSONEncoder().encode(state) { UserDefaults.standard.set(data, forKey: "bootstrap.\(user)") }
+        if previousPair != state.pairSessionId || (sync == nil && state.isPaired) {
+            await sync?.stop(); syncObserver?.cancel()
+            sync = nil; drawing = DrawingState(); pendingEdits = 0; drawingVersion = 0
+            if let user = state.userId, let pair = state.pairSessionId, state.isPaired, let api = try? api {
+                do { try await AppRuntime.drawings.finishInterruptedStrokes(userId: user, pairSessionId: pair) }
+                catch { errorMessage = "Your interrupted drawing could not be recovered. \(error.localizedDescription)" }
+                let newSync = DrawingSync(api: api, store: AppRuntime.drawings, userId: user, pairSessionId: pair)
+                sync = newSync
+                syncObserver = Task { [weak self] in
+                    for await event in newSync.events {
+                        guard !Task.isCancelled, let self, self.bootstrap?.pairSessionId == pair, self.userId == user else { break }
+                        switch event {
+                        case .changed(let document):
+                            do { try self.acceptDrawing(document) }
+                            catch { self.errorMessage = error.localizedDescription }
+                        case .connection(let connection):
+                            self.drawingConnection = connection
+                            if connection == .pairingChanged { await self.refresh() }
+                        case .appendRate(let rate): self.appendHz = rate
+                        }
+                    }
+                }
+                if active { await newSync.start() }
+            }
+        }
+        if state.isPaired { createdInvite = nil; showInviteEntry = false }
+    }
+
+    private func loadDraft(for state: BootstrapState) {
+        if let user = state.userId, let data = UserDefaults.standard.data(forKey: "profileDraft.\(user)"), let saved = try? JSONDecoder().decode(ProfileDraft.self, from: data) { draft = saved }
+        else { draft = .init(displayName: state.userDisplayName ?? "", partnerDisplayName: state.partnerDisplayName ?? "", anniversaryDate: state.anniversaryDate ?? "") }
+    }
+
+    private func acceptDrawing(_ document: DrawingDocument) throws {
+        guard document.userId == userId, document.pairSessionId == bootstrap?.pairSessionId else { throw DrawingError.wrongSession }
+        guard document.version >= drawingVersion else { return }
+        drawing = try document.visible; pendingEdits = document.pending.count; drawingVersion = document.version
+    }
+
+    private func perform(_ operation: () async throws -> Void) async {
+        guard !busy else { return }
+        busy = true; errorMessage = nil
+        defer { busy = false }
+        do { try await operation() }
+        catch { await handle(error) }
+    }
+
+    private func handle(_ error: Error) async {
+        if (error as NSError).domain == kGIDSignInErrorDomain && (error as NSError).code == GIDSignInError.canceled.rawValue { return }
+        if (try? await api.signedInUserId) == nil && bootstrap != nil {
+            await sync?.stop(); syncObserver?.cancel(); sync = nil
+            bootstrap = nil; drawing = DrawingState()
+        }
+        let message = error.localizedDescription
+        switch message {
+        case "You cannot redeem your own invite": errorMessage = "That’s your invite code. Share it with your partner."
+        case "Invite code has expired", "Invite code is no longer valid": errorMessage = "That invite code has expired. Ask your partner to generate a new one."
+        case "Invite code not found": errorMessage = "That invite code wasn’t found. Double-check the code and try again."
+        default: errorMessage = message
+        }
+    }
+}

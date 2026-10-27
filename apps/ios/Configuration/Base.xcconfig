@@ -1,0 +1,8 @@
+// Public client settings only. Local.xcconfig is generated on the developer's Mac.
+MULBERRY_API_BASE_URL = https:/$()/api.mulberry.my/
+GOOGLE_IOS_CLIENT_ID =
+GOOGLE_REVERSED_CLIENT_ID =
+GOOGLE_SERVER_CLIENT_ID =
+
+MULBERRY_ENTITLEMENTS_FILE = Configuration/MulberryDelivery.entitlements
+APS_ENVIRONMENT = production

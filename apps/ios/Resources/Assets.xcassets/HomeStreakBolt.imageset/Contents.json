@@ -1,0 +1,12 @@
+{
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "images": [
+    {
+      "filename": "ic_home_streak_bolt.png",
+      "idiom": "universal"
+    }
+  ]
+}
