@@ -1,15 +1,43 @@
 import SwiftUI
 
-enum DoodleTool: String { case brush, eyedropper, eraser }
+enum DoodleTool: String, Codable { case brush, eyedropper, eraser }
+
+/// Mirrors Android's canvas metadata: brush colour, width and tool survive
+/// restarts, and start fresh for a new user or pair session.
+struct CanvasToolSettings: Codable, Equatable {
+    var tool: DoodleTool = .brush
+    var color: UInt32 = 0xFFB31329
+    var width: Double = 10
+}
+
+@MainActor enum CanvasToolStore {
+    static let widths: ClosedRange<Double> = 4...42
+
+    static func load(user: String?, pair: String?) -> CanvasToolSettings {
+        guard let user, let data = UserDefaults.standard.data(forKey: key(user, pair)),
+              var settings = try? JSONDecoder().decode(CanvasToolSettings.self, from: data) else { return .init() }
+        settings.width = min(widths.upperBound, max(widths.lowerBound, settings.width))
+        // The eyedropper is a one-shot sampling mode, not a resting tool.
+        if settings.tool == .eyedropper { settings.tool = .brush }
+        return settings
+    }
+
+    static func save(_ settings: CanvasToolSettings, user: String?, pair: String?) {
+        guard let user, let data = try? JSONEncoder().encode(settings) else { return }
+        UserDefaults.standard.set(data, forKey: key(user, pair))
+    }
+
+    private static func key(_ user: String, _ pair: String?) -> String { "canvasTools.\(user).\(pair ?? "unpaired")" }
+}
 
 @MainActor
 final class DoodleEditor: ObservableObject {
     static let palette: [UInt32] = [0xFFB31329, 0xFFFF6A2A, 0xFFFFE66D, 0xFF2457D6, 0xFF5BB7E8, 0xFF006B4F, 0xFF567A3A, 0xFF80D8B0, 0xFFE85072, 0xFFA78BFA, 0xFF3B2F8F, 0xFFF5B83D, 0xFF141414, 0xFFF7F4EF, 0xFF3A3A3A, 0xFF7A4A32, 0xFFB56A43, 0xFFD8A0A8, 0xFF00A53C]
-    @Published var tool: DoodleTool = .brush
-    @Published var color: UInt32 = 0xFFB31329
+    @Published var tool: DoodleTool { didSet { saveTools() } }
+    @Published var color: UInt32 { didSet { saveTools() } }
     // Android widths are physical canvas pixels. A reference width of 1080
     // preserves the same relative brush weight on Retina and Android screens.
-    @Published var width: Double = 10
+    @Published var width: Double { didSet { saveTools() } }
     @Published private(set) var strokes: [DrawingStroke] = []
     @Published private(set) var history = DrawingHistory()
     @Published private(set) var saving = false
@@ -29,6 +57,8 @@ final class DoodleEditor: ObservableObject {
 
     init(model: MulberryModel) {
         self.model = model; pair = model.bootstrap?.pairSessionId; user = model.userId
+        let tools = CanvasToolStore.load(user: user, pair: pair)
+        tool = tools.tool; color = tools.color; width = tools.width
         strokes = model.drawing.strokes
         model.retryCanvasSave = { [weak self] in self?.retry() }
     }
@@ -116,6 +146,10 @@ final class DoodleEditor: ObservableObject {
     func updateViewport(_ size: CGSize) {
         guard validSession, let user else { return }
         CanvasViewportStore.save(size, user: user, pair: pair)
+    }
+
+    private func saveTools() {
+        CanvasToolStore.save(.init(tool: tool, color: color, width: width), user: user, pair: pair)
     }
 
     private var validSession: Bool { model.userId == user && model.bootstrap?.pairSessionId == pair && model.bootstrap?.isPaired == true }

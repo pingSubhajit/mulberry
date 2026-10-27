@@ -111,7 +111,7 @@ struct DoodleCanvasView: View {
     }
 
     private var widthPicker: some View {
-        Slider(value: $editor.width, in: 4...42, step: 1)
+        Slider(value: $editor.width, in: CanvasToolStore.widths, step: 1)
             .tint(brushColor).accessibilityLabel("Brush width")
             .frame(width: 200, height: 44)
             .rotationEffect(.degrees(-90))
