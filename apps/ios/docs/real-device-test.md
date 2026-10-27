@@ -20,7 +20,13 @@ Run the device script's `--check`, then build/install with the intended team ID.
 
 Use the Setup tab to add the supplied template. Choose Shortcuts in the share sheet and tap Add Shortcut. The former wallpaper import question was removed because Add Shortcut stalled after target selection. Use Choose wallpaper and enable updates to open the editor. Tap the wallpaper name in Set Wallpaper and choose the test photo wallpaper. Expand the notification trigger and turn Automation on. Tap Back to save. Run once and allow access returns to Mulberry through x-callback-url. Approve first-run app and wallpaper permissions. Check the wallpaper visually.
 
-The template contains Get latest Mulberry wallpaper > Set Wallpaper > Record completion. Preview, smart crop, and legibility blur are off. Do not assume a blank target creates a new wallpaper: iOS may prefill an existing choice. Check the target explicitly.
+The single Mulberry Sync template fetches the image, updates the selected pair, checks Current Focus, and only when no Focus is active compares the current pair with the updated pair. If they differ, it switches to the updated pair before recording completion. The Switch action uses Set Wallpaper’s output, so users select a pair only once. Choose a photo pair without a linked Focus; switching to a Focus-linked pair can itself activate that Focus. During Focus the selected pair is still updated, but the active pair is left alone. Focus ending does not itself trigger a run; the next delivered update or manual run checks again.
+
+Get Name returns the generic “Wallpaper” on the tested iOS 27.0.1 phone. Get Details of Files → File Path instead returns the numbered preview name, such as “Wallpaper 2.png”. The Shortcut compares both freshly obtained paths in one run; it never stores the number across runs or compares the drawing pixels.
+
+The template contains all of this in one Shortcut and one notification trigger. Replacing an installed app does not replace an imported Shortcut: reimport Mulberry Sync, choose Replace, check its photo pair, and enable Automation. Preview, smart crop, and legibility blur are off. Do not assume a blank target creates a new wallpaper: iOS may prefill an existing choice. Check the target explicitly.
+
+On 2026-10-28, manual runs on the iPhone 17 with iOS 27.0.1 completed with the selected pair already active, restored photo pair 2 after activating pair 1 with Focus off, and preserved Sleep plus its dark wallpaper while updating the saved photo pair. Completion receipts were recorded in all three cases. A background local-notification test completed but revealed an older enabled “Mulberry Sync 2”, so it was not a clean single-trigger test. The duplicate was subsequently removed; only Mulberry Sync remained. Further tests stopped at the user's request. This does not validate remote APNs or notification delivery during Focus.
 
 ## Notification automation
 
