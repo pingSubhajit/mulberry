@@ -5,6 +5,7 @@ enum MulberryDesign {
     static let background = adaptive(light: 0xFFFAFA, dark: 0x101010)
     static let surface = adaptive(light: 0xF5EAED, dark: 0x242424)
     static let soft = adaptive(light: 0xFFF0F3, dark: 0x24181B)
+    static let canvas = adaptive(light: 0xFFF7F8, dark: 0x171314)
     static let ink = adaptive(light: 0x171016, dark: 0xFFFFFF)
     static let muted = adaptive(light: 0x6F5961, dark: 0xBDBDBD)
 

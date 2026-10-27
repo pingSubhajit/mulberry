@@ -12,7 +12,6 @@ final class MulberryModel: ObservableObject {
     @Published var showInviteEntry = false
     @Published var createdInvite: CreatedInvite?
     @Published var showWallpaperOnboarding = false
-    @Published var tab = 0
     @Published var showSettings = false
     @Published var drawing = DrawingState()
     @Published var drawingConnection: DrawingConnection = .connecting

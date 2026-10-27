@@ -61,7 +61,7 @@ final class DoodleEditor: ObservableObject {
             receive()
         case .eraser: erase(at: point, size: size)
         case .eyedropper:
-            let background = UIColor(MulberryDesign.background)
+            let background = UIColor(MulberryDesign.canvas)
             if let sampled = DoodleRenderer.color(at: point, strokes: strokes, dry: model.bootstrap?.canvasStrokeRenderMode == "dry", size: size, background: background) {
                 color = sampled; tool = .brush
             }
@@ -197,7 +197,7 @@ struct DoodleSurface: UIViewRepresentable {
     }
     func updateUIView(_ view: DoodleTouchView, context: Context) {
         view.editor = editor; view.strokes = editor.strokes; view.dry = dry
-        view.backgroundColor = UIColor(MulberryDesign.background)
+        view.backgroundColor = UIColor(MulberryDesign.canvas)
         view.setNeedsDisplay()
     }
 }

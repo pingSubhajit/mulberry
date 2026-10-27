@@ -23,7 +23,8 @@ struct MulberryRootView: View {
     @State private var setupAfterSettings = false
     @ObservedObject private var quickActions = HomeQuickActions.shared
     @State private var quickClearConfirmation = false
-    @State private var profileTabPhoto: UIImage?
+    @State private var profilePhoto: UIImage?
+    @State private var wallpaperOpen = false
     @Environment(\.colorScheme) private var colorScheme
 
     init(model: MulberryModel, wallpapers: WallpaperLibrary) {
@@ -45,10 +46,10 @@ struct MulberryRootView: View {
                 NavigationStack {
                     WallpaperPickerView(library: wallpapers, onboarding: true, onSetup: { setupOpen = true }, onSkip: model.finishWallpaperOnboarding)
                 }
-            } else { mainTabs }
+            } else { mainCanvas }
         }
         .task { _ = try? WallpaperRenderSize.current(); await model.restore(); wallpapers.load(user: model.userId) }
-        .task(id: model.bootstrap?.userPhotoUrl) { await loadProfileTabPhoto() }
+        .task(id: model.bootstrap?.userPhotoUrl) { await loadProfilePhoto() }
         .onChange(of: model.userId) { _, user in wallpapers.load(user: user) }
         .onChange(of: quickActions.pending) { _, _ in handleQuickAction() }
         .onChange(of: model.showWallpaperOnboarding) { _, _ in handleQuickAction() }
@@ -104,9 +105,9 @@ struct MulberryRootView: View {
         quickActions.pending = nil
         model.showSettings = false; model.showInviteEntry = false
         switch action {
-        case .wallpaper: model.tab = 1
+        case .wallpaper: wallpaperOpen = true
         case .clear:
-            model.tab = 0
+            wallpaperOpen = false
             if model.bootstrap?.isPaired == true { quickClearConfirmation = true }
         case .toggle:
             wallpapers.setShowDrawings(!wallpapers.showDrawings)
@@ -116,32 +117,25 @@ struct MulberryRootView: View {
         }
     }
 
-    private var mainTabs: some View {
-        TabView(selection: $model.tab) {
-            NavigationStack {
-                Group {
-                    if model.bootstrap?.isPaired == true { DoodleCanvasView(model: model).id(model.bootstrap?.pairSessionId) }
-                    else { UnpairedCanvasView(model: model) }
-                }.toolbar { header }
-            }.tabItem { Label("Canvas", systemImage: "paintbrush.pointed") }.tag(0)
-            NavigationStack {
+    private var mainCanvas: some View {
+        NavigationStack {
+            Group {
+                if model.bootstrap?.isPaired == true { DoodleCanvasView(model: model).id(model.bootstrap?.pairSessionId) }
+                else { UnpairedCanvasView(model: model) }
+            }
+            .toolbar { header }
+            .navigationDestination(isPresented: $wallpaperOpen) {
                 WallpaperPickerView(library: wallpapers, onSetup: {
                     let key = "wallpaperReceipt.\(model.userId ?? "").\(model.bootstrap?.pairSessionId ?? "unpaired")"
                     if UserDefaults.standard.object(forKey: key) != nil { Task { await setup.runShortcut() } }
                     else { setupOpen = true }
-                }).toolbar { header }
-            }.tabItem { Label("Wallpaper", systemImage: "photo") }.tag(1)
-            SettingsView(model: model, library: wallpapers, isTab: true) { setupOpen = true }
-                .tabItem {
-                    if let photo = profileTabPhoto {
-                        Label { Text("Profile") } icon: { Image(uiImage: photo).renderingMode(.original) }
-                    } else { Label("Profile", systemImage: "person.crop.circle") }
-                }.tag(2)
+                }).navigationTitle("Wallpapers").navigationBarTitleDisplayMode(.inline)
+            }
         }
     }
 
-    private func loadProfileTabPhoto() async {
-        profileTabPhoto = nil
+    private func loadProfilePhoto() async {
+        profilePhoto = nil
         guard let value = model.bootstrap?.userPhotoUrl, let url = URL(string: value) else { return }
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -149,7 +143,7 @@ struct MulberryRootView: View {
                   model.bootstrap?.userPhotoUrl == value else { return }
             let photo = try ImagePreparation.image(data, maximumDimension: 128)
             let size = CGSize(width: 28, height: 28)
-            profileTabPhoto = UIGraphicsImageRenderer(size: size).image { _ in
+            profilePhoto = UIGraphicsImageRenderer(size: size).image { _ in
                 UIBezierPath(ovalIn: CGRect(origin: .zero, size: size)).addClip()
                 let scale = max(size.width / photo.size.width, size.height / photo.size.height)
                 let fitted = CGSize(width: photo.size.width * scale, height: photo.size.height * scale)
@@ -182,5 +176,25 @@ struct MulberryRootView: View {
                     .accessibilityLabel("Daily streak: \(days) \(days == 1 ? "day" : "days")")
             }.sharedBackgroundVisibility(.hidden)
         }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button { wallpaperOpen = true } label: {
+                Image("WallpaperNav").resizable().renderingMode(.template).scaledToFit()
+                    .frame(width: 30, height: 30)
+                    .foregroundStyle(MulberryDesign.ink)
+            }.accessibilityLabel("Wallpaper")
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button { model.showSettings = true } label: {
+                Group {
+                    if let photo = profilePhoto {
+                        Image(uiImage: photo).resizable().scaledToFill().clipShape(Circle())
+                    } else {
+                        Image(systemName: "person.crop.circle").resizable().scaledToFit()
+                    }
+                }.frame(width: 30, height: 30)
+                    .foregroundStyle(MulberryDesign.ink)
+            }.accessibilityLabel("Profile")
+        }
+
     }
 }
