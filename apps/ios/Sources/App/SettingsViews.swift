@@ -10,6 +10,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("developerOptions") private var developerOptions = false
     @State private var logout = false
+    @State private var streakOpen = false
 
     var body: some View {
         NavigationStack {
@@ -23,6 +24,9 @@ struct SettingsView: View {
                                 Text(model.bootstrap?.userDisplayName ?? "").font(.caption).foregroundStyle(.secondary)
                             }
                         }.padding(.vertical, 4)
+                    }
+                    if model.bootstrap?.isPaired == true {
+                        Button { streakOpen = true } label: { Label("Daily streak", systemImage: "bolt.fill") }
                     }
                     NavigationLink { PartnerSettingsView(model: model) } label: { Label("Partner settings", systemImage: "person.2") }
                     LabeledContent { Text(model.bootstrap?.isPaired == true ? connectionLabel : "Unpaired").foregroundStyle(.secondary) } label: { Label("Sync status", systemImage: "arrow.triangle.2.circlepath") }
@@ -57,6 +61,11 @@ struct SettingsView: View {
                     Button("Log out", role: .destructive) { Task { await model.signOut() } }
                     Button("Cancel", role: .cancel) {}
                 } message: { Text("Your account and pairing will stay saved. Sign in again to keep drawing together.") }
+        }
+        .sheet(isPresented: $streakOpen) {
+            StreakSheet(streaks: model.streaks) {
+                if let api = try? model.api { await model.streaks.refresh(api: api) }
+            }
         }
     }
     private var connectionLabel: String {

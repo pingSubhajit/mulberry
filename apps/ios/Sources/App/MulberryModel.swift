@@ -2,6 +2,9 @@ import SwiftUI
 
 @MainActor
 final class MulberryModel: ObservableObject {
+    let streaks = StreakModel()
+    @Published var showStreak = false
+    @Published var showPairingConfirmation = false
     @Published private(set) var bootstrap: BootstrapState?
     @Published private(set) var restoring = true
     @Published private(set) var busy = false
@@ -71,6 +74,7 @@ final class MulberryModel: ObservableObject {
             let state = try await api.bootstrap()
             guard epoch == sessionEpoch else { return }
             await apply(state)
+            if let api = try? api { await streaks.refresh(api: api) }
         } catch { if epoch == sessionEpoch { await handle(error) } }
     }
 
@@ -177,6 +181,8 @@ final class MulberryModel: ObservableObject {
         }
         GoogleAuthentication.signOut()
         HomeQuickActions.shared.pending = nil
+        streaks.bind(userId: nil, pairSessionId: nil)
+        showStreak = false; showPairingConfirmation = false
         bootstrap = nil; drawing = DrawingState(); draft = ProfileDraft()
         createdInvite = nil; showSettings = false; showInviteEntry = false
         showWallpaperOnboarding = false; errorMessage = nil; busy = false
@@ -189,7 +195,14 @@ final class MulberryModel: ObservableObject {
         if previousPair != state.pairSessionId || previousUser != state.userId {
             canvasSaveError = nil; retryCanvasSave = nil
         }
+        let pairingConfirmed = PairingCelebration.shouldPresent(previous: bootstrap, current: state)
         bootstrap = state
+        streaks.bind(userId: state.userId, pairSessionId: state.isPaired ? state.pairSessionId : nil, baselineDays: state.currentStreakDays)
+        if !state.isPaired { showStreak = false; showPairingConfirmation = false }
+        if pairingConfirmed {
+            showPairingConfirmation = true
+            showSettings = false
+        }
         if previousUser != state.userId {
             loadDraft(for: state)
             showWallpaperOnboarding = state.userId.map { !UserDefaults.standard.bool(forKey: "wallpaperVisited.\($0)") } ?? false
@@ -248,6 +261,8 @@ final class MulberryModel: ObservableObject {
         if GoogleAuthentication.isCancellation(error) { return }
         if (try? await api.signedInUserId) == nil && bootstrap != nil {
             await sync?.stop(); syncObserver?.cancel(); sync = nil
+            streaks.bind(userId: nil, pairSessionId: nil)
+            showStreak = false; showPairingConfirmation = false
             bootstrap = nil; drawing = DrawingState()
         }
         let message = error.localizedDescription

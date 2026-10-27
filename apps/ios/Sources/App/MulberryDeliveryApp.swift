@@ -25,6 +25,7 @@ struct MulberryRootView: View {
     @State private var quickClearConfirmation = false
     @State private var profilePhoto: UIImage?
     @State private var wallpaperOpen = false
+    @State private var pairingConfirmationOpen = false
     @Environment(\.colorScheme) private var colorScheme
 
     init(model: MulberryModel, wallpapers: WallpaperLibrary) {
@@ -67,6 +68,24 @@ struct MulberryRootView: View {
                 await setup.refresh()
                 await PushRegistration.shared.refresh()
                 try? await Task.sleep(for: .seconds(5))
+            }
+        }
+        .sheet(isPresented: $model.showStreak) {
+            StreakSheet(streaks: model.streaks) {
+                if let api = try? model.api { await model.streaks.refresh(api: api) }
+            }
+        }
+        .task(id: model.showPairingConfirmation) {
+            guard model.showPairingConfirmation else { pairingConfirmationOpen = false; return }
+            // Allow the invite sheet to finish dismissing before presenting success.
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, model.bootstrap?.isPaired == true else { return }
+            pairingConfirmationOpen = true
+        }
+        .sheet(isPresented: $pairingConfirmationOpen, onDismiss: { model.showPairingConfirmation = false }) {
+            PairingConfirmedSheet(userName: model.bootstrap?.userDisplayName ?? "",
+                                  partnerName: model.bootstrap?.partnerDisplayName ?? "your partner") {
+                pairingConfirmationOpen = false
             }
         }
         .sheet(isPresented: $model.showInviteEntry) { InviteEntryView(model: model) }
@@ -162,18 +181,9 @@ struct MulberryRootView: View {
         }.sharedBackgroundVisibility(.hidden)
         if model.bootstrap?.isPaired == true {
             ToolbarItem(placement: .topBarTrailing) {
-                let days = model.bootstrap?.currentStreakDays ?? 0
-                HStack(spacing: 6) {
-                    Image("HomeStreakBolt").resizable().scaledToFit().frame(width: 16, height: 23)
-                    Text("\(days) \(days == 1 ? "day" : "days")")
-                        .font(MulberryDesign.font(14, weight: "Bold", relativeTo: .subheadline))
-                }.foregroundStyle(colorScheme == .dark ? .white : MulberryDesign.accent)
-                    .padding(.horizontal, 14).frame(minHeight: 31)
-                    .background(MulberryDesign.accent.opacity(0.15), in: Capsule())
-                    .overlay(Capsule().strokeBorder(MulberryDesign.accent, lineWidth: 1))
-                    .fixedSize()
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Daily streak: \(days) \(days == 1 ? "day" : "days")")
+                StreakPill(streaks: model.streaks, fallbackDays: model.bootstrap?.currentStreakDays ?? 0) {
+                    model.showStreak = true
+                }
             }.sharedBackgroundVisibility(.hidden)
         }
         ToolbarItem(placement: .topBarTrailing) {

@@ -88,6 +88,9 @@ public actor BackendClient {
     }
 
     public func bootstrap(quick: Bool = false) async throws -> BootstrapState { try await get("bootstrap", quick: quick) }
+    public func streak(today: String = ServerDate.localDay()) async throws -> StreakResponse {
+        try await get("streak", query: [.init(name: "today", value: today)])
+    }
     public func saveProfile(_ draft: ProfileDraft) async throws -> BootstrapState {
         try await json("me/profile", method: "PUT", body: draft)
     }

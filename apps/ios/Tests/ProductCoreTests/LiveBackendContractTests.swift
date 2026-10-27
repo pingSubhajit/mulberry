@@ -35,6 +35,11 @@ func swiftClientPairsDrawsAndUnpairsThroughRealBackendRoutes() async throws {
     let firstPaired = try await first.bootstrap()
     #expect(firstPaired.pairSessionId == paired.pairSessionId)
 
+    let streakBeforeDrawing = try await first.streak()
+    #expect(streakBeforeDrawing.currentStreakDays == 0)
+    #expect(!streakBeforeDrawing.hasActivityToday)
+    #expect(streakBeforeDrawing.week.count == 7)
+
     let stroke = DrawingStroke(colorArgb: 0xFFB31329, width: 0.02, points: [.init(x: 0.1, y: 0.2), .init(x: 0.7, y: 0.8)], finished: true)
     let operations = try DrawingOperation.restore(stroke)
     let accepted = try await first.submit(.init(operations: operations))
@@ -46,6 +51,10 @@ func swiftClientPairsDrawsAndUnpairsThroughRealBackendRoutes() async throws {
     let snapshot = try await second.canvasSnapshot()
     #expect(snapshot.snapshot.strokes == [stroke])
     #expect(snapshot.snapshotRevision == 3)
+    let streakAfterDrawing = try await second.streak()
+    #expect(streakAfterDrawing.currentStreakDays == 1)
+    #expect(streakAfterDrawing.hasActivityToday)
+    #expect(streakAfterDrawing.week.first { $0.day == streakAfterDrawing.today }?.hasActivity == true)
 
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -95,6 +104,26 @@ func swiftClientPairsDrawsAndUnpairsThroughRealBackendRoutes() async throws {
     #expect(partnerAfterReconnect.snapshotRevision == 9)
     #expect(partnerAfterReconnect.snapshot.strokes.filter { $0.id == offlineStroke.id } == [offlineStroke])
 
+    #expect(try await first.streak().currentStreakDays == 1)
+    // Backlogged activity uses the day it was drawn, not the day it uploads.
+    let yesterday = ServerDate.localDay(Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
+    let backlogStroke = DrawingStroke(colorArgb: 0xFFB31329, width: 0.02, points: [.init(x: 0.2, y: 0.2)], finished: true)
+    let backlog = try DrawingOperation.restore(backlogStroke).map {
+        DrawingOperation(type: $0.type, strokeId: $0.strokeId, payload: $0.payload, clientLocalDate: yesterday)
+    }
+    _ = try await first.submit(.init(operations: backlog))
+    #expect(try await first.streak().currentStreakDays == 2)
+    #expect(try await second.streak().currentStreakDays == 2)
+    let tomorrow = ServerDate.localDay(Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
+    let heldStreak = try await first.streak(today: tomorrow)
+    #expect(heldStreak.currentStreakDays == 2)
+    #expect(!heldStreak.hasActivityToday)
+    let afterMissedDay = ServerDate.localDay(Calendar.current.date(byAdding: .day, value: 2, to: Date())!)
+    let lostStreak = try await first.streak(today: afterMissedDay)
+    #expect(lostStreak.currentStreakDays == 0)
+    #expect(lostStreak.previousStreakDays == 2)
+    #expect(lostStreak.lostRecently)
+
     _ = try await second.setPresence(deviceId: "contract-iphone", configured: true, enabled: true, canSeeLatestDrawings: true, details: ["lastCompletedRevision": .number(3)])
     let visibility = try await first.bootstrap()
     #expect(visibility.partnerPresence.canSeeLatestDrawings)
@@ -110,6 +139,7 @@ func swiftClientPairsDrawsAndUnpairsThroughRealBackendRoutes() async throws {
     #expect(try await first.wallpapers().items.isEmpty)
     let disconnected = try await second.disconnect()
     #expect(!disconnected.isPaired)
+    #expect(try await second.streak().currentStreakDays == 0)
     #expect(try await first.bootstrap().pairSessionId == nil)
     // Unpairing clears partner details. The re-invite form must save them
     // before requesting another code, without applying the paired cooldown.

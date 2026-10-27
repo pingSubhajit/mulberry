@@ -27,6 +27,9 @@ struct DoodleCanvasView: View {
                         CanvasBlankStateGuidance(visible: editor.strokes.isEmpty)
                             .padding(.bottom, 34)
                     }
+                    .overlay {
+                        StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
+                    }
                     .clipShape(RoundedRectangle(cornerRadius: 24))
                     .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(MulberryDesign.accent.opacity(0.30), lineWidth: 2))
                     .padding(.horizontal, 16).padding(.top, 12)
