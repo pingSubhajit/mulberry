@@ -28,6 +28,9 @@ struct StreakPill: View {
 struct StreakCanvasCelebration: View {
     @ObservedObject var streaks: StreakModel
     let onOpen: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    private var animateBanner: Bool { !reduceMotion && scenePhase == .active }
     var body: some View {
         ZStack(alignment: .top) {
             TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -46,6 +49,14 @@ struct StreakCanvasCelebration: View {
                         }.foregroundStyle(.white).padding(.horizontal, 20).padding(.vertical, 19)
                             .background(MulberryDesign.accent, in: RoundedRectangle(cornerRadius: 16))
                     }.buttonStyle(.plain).padding(.horizontal, 16).padding(.top, 12)
+                        // Match Android's 7 dp bob and 850 ms FastOutSlowIn legs.
+                        .phaseAnimator(animateBanner ? [false, true] : [false]) { banner, raised in
+                            banner.offset(y: raised ? -7 : 0)
+                        } animation: { _ in
+                            .timingCurve(0.4, 0, 0.2, 1, duration: 0.85)
+                        }
+                        // A single resting phase at launch does not restart when the phase list changes.
+                        .id(animateBanner)
                         .accessibilityIdentifier("streakLevelUpBanner")
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

@@ -10,6 +10,10 @@ A transition from unpaired or pending acceptance to paired shows the pairing con
 
 Both celebrations share `CelebrationConfetti`. Its point-based particle engine follows Android's Konfetti 2.0.5 recurrence at 60 Hz: two groups of 70 particles, 360 ms emission, 100-degree spread, speed 22–44, damping 0.9, accumulated gravity, mass variance, and 2D/3D rotation. It uses Android's eight colors and three sizes/shapes. Animation ends after four seconds, ignores touches and is suppressed by Reduce Motion. ISC attribution is bundled in `Resources/Legal/konfetti_license.txt`.
 
+The level-up banner bobs upward by 7 points and back, with 850 ms per direction and the Android FastOutSlowIn curve (0.4, 0, 0.2, 1). The offset does not change canvas layout. Reduce Motion and an inactive scene stop the bob.
+
+The phase animator is recreated when motion becomes enabled or disabled. On the physical iPhone, an animator initially given only its resting phase did not start when the scene became active and its phase list changed. Captured frames reproduced the stationary banner with the old identity and showed movement after resetting its identity. Keep this foreground transition when changing the animation.
+
 ## Validation
 
 `python3 apps/ios/scripts/test-product.py` runs the Swift client against an isolated real backend implementation. It covers pairing, both partners' streak counts, completed drawings, offline replay, original local dates, a missed day and unpairing. It does not change the local development database or the real account.
