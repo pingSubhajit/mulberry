@@ -29,7 +29,8 @@ For local development, the backend accepts development Google tokens when:
 ALLOW_DEV_GOOGLE_TOKENS=true
 ```
 
-That is already enabled in `docker-compose.yml`.
+Docker Compose reads this setting from the root `.env` (and defaults to `true` if it is unset).
+Set `ALLOW_DEV_GOOGLE_TOKENS=false` to require real Google sign-in during local testing.
 
 Real Google sign-in requires setting `GOOGLE_SERVER_CLIENT_ID` in a local `.env` file at the repo root:
 
