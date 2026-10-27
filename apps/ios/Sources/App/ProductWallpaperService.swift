@@ -161,6 +161,26 @@ final class ProductWallpaperService {
         } catch { /* Keep the unapplied content dirty; retry on the next background transition. */ }
     }
 
+    /// True when the wallpaper would look different from the last image the Shortcut applied.
+    /// Before the first completed run there is nothing applied, so an update is always useful.
+    func hasUnappliedChanges() async -> Bool {
+        do {
+            guard let user = try await AppRuntime.api().signedInUserId, let state = cachedState(user: user) else { return false }
+            guard let applied = UserDefaults.standard.string(forKey: "wallpaperContent.\(user).\(state.pairSessionId ?? "unpaired")"),
+                  let current = try await currentSignature(state) else { return true }
+            return current != applied
+        } catch { return true }
+    }
+
+    /// Nil when the saved background cannot be opened, so nothing reliable can be compared or rendered.
+    private func currentSignature(_ state: BootstrapState) async throws -> String? {
+        guard let user = state.userId else { return nil }
+        let canvas = try await localCanvas(state)
+        let background = WallpaperLibrary(); background.load(user: user)
+        if background.errorMessage != nil { return nil }
+        return try signature(canvas: canvas, background: background, state: state)
+    }
+
     private func cachedState(user: String) -> BootstrapState? {
         guard let data = UserDefaults.standard.data(forKey: "bootstrap.\(user)"),
               let state = try? JSONDecoder().decode(BootstrapState.self, from: data), state.userId == user else { return nil }

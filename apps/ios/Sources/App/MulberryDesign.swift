@@ -8,6 +8,8 @@ enum MulberryDesign {
     static let canvas = adaptive(light: 0xFFF7F8, dark: 0x171314)
     static let ink = adaptive(light: 0x171016, dark: 0xFFFFFF)
     static let muted = adaptive(light: 0x6F5961, dark: 0xBDBDBD)
+    static let softAlt = adaptive(light: 0xFFEBED, dark: 0x1B1517)
+    static let previewFrame = adaptive(light: 0xD2D2D2, dark: 0x2F2F2F)
 
     static func font(_ size: CGFloat = 16, weight: String = "Regular", relativeTo style: Font.TextStyle = .body) -> Font {
         .custom("Poppins-\(weight)", size: size, relativeTo: style)
