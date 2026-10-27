@@ -70,7 +70,8 @@ final class ProductWallpaperService {
         let size = try WallpaperRenderSize.current()
         let rendered = DoodleRenderer.wallpaper(background: background.image, strokes: background.showDrawings ? canvas.strokes : [],
                                                 dry: state.canvasStrokeRenderMode == "dry", pixelSize: size,
-                                                displayScale: try WallpaperRenderSize.displayScale())
+                                                displayScale: try WallpaperRenderSize.displayScale(),
+                                                canvasSize: CanvasViewportStore.load(user: user, pair: state.pairSessionId))
         guard user == (await api.signedInUserId) else { throw BackendError.sessionChanged }
         try await validateSession(state)
         guard let data = rendered.pngData() else { throw WallpaperImageError.invalidImage }
@@ -183,8 +184,10 @@ final class ProductWallpaperService {
     }
 
     private func signature(canvas: DrawingState, background: WallpaperLibrary, state: BootstrapState) throws -> String {
+        let viewport = state.userId.flatMap { CanvasViewportStore.load(user: $0, pair: state.pairSessionId) }
         return try WallpaperContent.signature(canvas: canvas, backgroundID: background.choice.id,
-                                       showDrawings: background.showDrawings, renderMode: state.canvasStrokeRenderMode)
+                                       showDrawings: background.showDrawings, renderMode: state.canvasStrokeRenderMode,
+                                       canvasViewport: viewport.map { [Double($0.width), Double($0.height)] } ?? [])
     }
 
     private func metadataURL(_ id: UUID) -> URL { exportDirectory.appendingPathComponent("\(id.uuidString).json") }

@@ -95,6 +95,11 @@ actor OfflineTransport: BackendTransport {
         check(notifications.pending.isEmpty, "Unchanged content does not launch another Shortcut")
 
         let editor = DoodleEditor(model: model)
+        let touchView = DoodleTouchView(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
+        touchView.editor = editor
+        touchView.layoutSubviews()
+        check(CanvasViewportStore.load(user: user, pair: pair) == CGSize(width: 400, height: 800), "Actual canvas view persists its measured drawing area")
+        check(CanvasViewportStore.load(user: user, pair: "another-pair") == nil, "Canvas dimensions stay scoped to the pairing")
         editor.begin(at: CGPoint(x: 40, y: 40), size: CGSize(width: 400, height: 800))
         editor.move(points: [CGPoint(x: 100, y: 200)], size: CGSize(width: 400, height: 800))
         editor.end()

@@ -16,7 +16,7 @@ enum DoodleRenderer {
         context.restoreGState()
     }
 
-    static func wallpaper(background: UIImage, strokes: [DrawingStroke], dry: Bool, pixelSize: CGSize, displayScale: CGFloat) -> UIImage {
+    static func wallpaper(background: UIImage, strokes: [DrawingStroke], dry: Bool, pixelSize: CGSize, displayScale: CGFloat, canvasSize: CGSize? = nil) -> UIImage {
         // UIKit draws the canvas in points, then rasterizes at the screen scale.
         // Keep that coordinate space here too: using pixels as points changes
         // dry-brush minimum widths, bristle count and even its random seed.
@@ -29,7 +29,16 @@ enum DoodleRenderer {
             let scale = max(size.width / background.size.width, size.height / background.size.height)
             let fitted = CGSize(width: background.size.width * scale, height: background.size.height * scale)
             background.draw(in: CGRect(x: (size.width - fitted.width) / 2, y: (size.height - fitted.height) / 2, width: fitted.width, height: fitted.height))
-            draw(strokes, dry: dry, in: renderer.cgContext, size: size)
+            let placement = CanvasGeometry.placement(canvas: canvasSize, inside: size)
+            renderer.cgContext.saveGState()
+            renderer.cgContext.translateBy(x: placement.minX, y: placement.minY)
+            // Render in the original point space before scaling so dry-brush
+            // seeds, bristle counts and minimum widths match the app too.
+            let source = canvasSize.flatMap { CanvasGeometry.valid($0) ? $0 : nil } ?? size
+            let strokeScale = placement.width / source.width
+            renderer.cgContext.scaleBy(x: strokeScale, y: strokeScale)
+            draw(strokes, dry: dry, in: renderer.cgContext, size: source)
+            renderer.cgContext.restoreGState()
         }
         // Export pixels, not UIKit's point-size/DPI hint. This changes metadata
         // only; the full-resolution bitmap is passed to Shortcuts unchanged.

@@ -49,6 +49,7 @@ final class DoodleEditor: ObservableObject {
 
     func begin(at point: CGPoint, size: CGSize) {
         guard active == nil, !saving, errorMessage == nil, validSession else { return }
+        updateViewport(size)
         switch tool {
         case .brush:
             let stroke = DrawingStroke(colorArgb: color, width: width / 1080, points: [normalized(point, size)])
@@ -111,6 +112,11 @@ final class DoodleEditor: ObservableObject {
     }
 
     func resetHistory() { history.reset() }
+
+    func updateViewport(_ size: CGSize) {
+        guard validSession, let user else { return }
+        CanvasViewportStore.save(size, user: user, pair: pair)
+    }
 
     private var validSession: Bool { model.userId == user && model.bootstrap?.pairSessionId == pair && model.bootstrap?.isPaired == true }
 
@@ -197,10 +203,17 @@ struct DoodleSurface: UIViewRepresentable {
 }
 
 final class DoodleTouchView: UIView {
-    weak var editor: DoodleEditor?
+    weak var editor: DoodleEditor? {
+        didSet { editor?.updateViewport(bounds.size) }
+    }
     var strokes: [DrawingStroke] = []
     var dry = true
     private weak var trackedTouch: UITouch?
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        editor?.updateViewport(bounds.size)
+        setNeedsDisplay()
+    }
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         DoodleRenderer.draw(strokes, dry: dry, in: context, size: bounds.size)

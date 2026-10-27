@@ -1,0 +1,36 @@
+{
+  "device": "iPhone 17, iOS 27.0.1",
+  "canvasPoints": [
+    402,
+    590
+  ],
+  "wallpaperPixels": [
+    1206,
+    2622
+  ],
+  "backend": "stopped during physical test",
+  "squareScreenCaptureBounds": {
+    "canvas": {
+      "x": 297,
+      "y": 646,
+      "width": 257,
+      "height": 257
+    },
+    "wallpaper": {
+      "x": 298,
+      "y": 682,
+      "width": 256,
+      "height": 259
+    }
+  },
+  "squareCenterlineSpan": {
+    "canvas": {
+      "width": 249.5,
+      "height": 250.0
+    },
+    "wallpaper": {
+      "width": 249.0,
+      "height": 250.0
+    }
+  }
+}
