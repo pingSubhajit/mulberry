@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+Configuration/GoogleService-Info.*.plist
+Configuration/Local.xcconfig
+xcuserdata/
+!docs/evidence/ios27/*.log

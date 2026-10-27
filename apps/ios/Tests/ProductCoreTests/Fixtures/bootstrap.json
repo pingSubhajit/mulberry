@@ -1,0 +1,34 @@
+{
+  "authStatus": "SIGNED_IN",
+  "onboardingCompleted": true,
+  "hasWallpaperConfigured": false,
+  "canvasStrokeRenderMode": "dry_brush_only",
+  "userId": "11111111-1111-4111-8111-111111111111",
+  "userEmail": "ios-test@example.invalid",
+  "userPhotoUrl": null,
+  "userDisplayName": "Sam",
+  "partnerPhotoUrl": null,
+  "partnerDisplayName": "Alex",
+  "partnerWallpaperStatus": null,
+  "anniversaryDate": "2024-06-12",
+  "partnerProfileNextUpdateAt": "2026-10-30T12:00:00.000Z",
+  "pairedAt": "2026-10-27T12:00:00.000Z",
+  "currentStreakDays": 1,
+  "pairingStatus": "PAIRED",
+  "pairSessionId": "22222222-2222-4222-8222-222222222222",
+  "invite": null,
+  "ownPresence": { "canSeeLatestDrawings": false, "surfaces": [] },
+  "partnerPresence": {
+    "canSeeLatestDrawings": true,
+    "surfaces": [{
+      "surfaceType": "ANDROID_WALLPAPER",
+      "deviceInstanceId": "android-wallpaper",
+      "configured": true,
+      "enabled": true,
+      "canSeeLatestDrawings": true,
+      "hasEverBeenAbleToSee": true,
+      "details": {"wallpaperSelectedOnHome": true, "wallpaperSelectedOnLock": false},
+      "updatedAt": "2026-10-27T12:00:00.000Z"
+    }]
+  }
+}

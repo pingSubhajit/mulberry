@@ -1,0 +1,9 @@
+services:
+  delivery-lab:
+    build: ./mock
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - delivery-lab:/data
+volumes:
+  delivery-lab:
