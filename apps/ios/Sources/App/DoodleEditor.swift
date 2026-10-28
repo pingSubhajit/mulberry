@@ -65,7 +65,23 @@ struct CanvasStickerSession: Identifiable, Equatable {
 @MainActor
 final class DoodleEditor: ObservableObject {
     static let palette: [UInt32] = [0xFFB31329, 0xFFFF6A2A, 0xFFFFE66D, 0xFF2457D6, 0xFF5BB7E8, 0xFF006B4F, 0xFF567A3A, 0xFF80D8B0, 0xFFE85072, 0xFFA78BFA, 0xFF3B2F8F, 0xFFF5B83D, 0xFF141414, 0xFFF7F4EF, 0xFF3A3A3A, 0xFF7A4A32, 0xFFB56A43, 0xFFD8A0A8, 0xFF00A53C]
-    @Published var tool: DoodleTool { didSet { saveTools() } }
+    @Published var tool: DoodleTool {
+        didSet {
+            if tool != oldValue, Self.drawingTools.contains(oldValue) { previousTool = oldValue }
+            saveTools()
+        }
+    }
+    /// Apple Pencil's double-tap and squeeze move between these; text and stickers open editors.
+    private static let drawingTools: Set<DoodleTool> = [.brush, .eraser, .eyedropper]
+    /// The drawing tool before the current one, for Apple Pencil's "switch to previous tool".
+    private(set) var previousTool: DoodleTool = .brush
+    /// A double-tap or squeeze asking the canvas to show something.
+    @Published var pencilRequest: PencilRequest?
+    /// Counts touches that start on the canvas, so the squeeze palette closes as drawing begins.
+    @Published private(set) var canvasTouches = 0
+    func canvasTouched() { canvasTouches += 1 }
+    /// The stroke being drawn, which the canvas extends with predicted Pencil points.
+    var activeStroke: DrawingStroke? { ended ? nil : active }
     @Published var color: UInt32 { didSet { saveTools() } }
     // Android widths are physical canvas pixels. A reference width of 1080
     // preserves the same relative brush weight on Retina and Android screens.
@@ -198,6 +214,22 @@ final class DoodleEditor: ObservableObject {
     }
 
     func resetHistory() { history.reset() }
+
+    /// Carries out the action the user chose for double-tap or squeeze in Settings → Apple Pencil.
+    /// The location is where the Pencil hovers over the canvas, if it does.
+    func handlePencil(_ action: UIPencilPreferredAction, at location: CGPoint?) {
+        switch action {
+        case .switchEraser:
+            tool = tool == .eraser ? (previousTool == .eraser ? .brush : previousTool) : .eraser
+        case .switchPrevious:
+            tool = previousTool == tool ? .brush : previousTool
+        case .showColorPalette: pencilRequest = .init(kind: .colours, location: location)
+        case .showInkAttributes: pencilRequest = .init(kind: .inkAttributes, location: location)
+        case .showContextualPalette: pencilRequest = .init(kind: .palette, location: location)
+        case .ignore, .runSystemShortcut: break
+        @unknown default: break
+        }
+    }
 
     // MARK: Text and stickers
 
@@ -467,7 +499,7 @@ final class CanvasElementLayerView: UIView {
     }
 }
 
-final class DoodleTouchView: UIView, UIGestureRecognizerDelegate {
+final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilInteractionDelegate {
     weak var editor: DoodleEditor? {
         didSet {
             editor?.updateViewport(bounds.size)
@@ -492,6 +524,10 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate {
     private var elementGestures: [UIGestureRecognizer] = []
     private var transforming: Set<ObjectIdentifier> = []
     private var elementTransform: (base: CanvasElement, current: CanvasElement)?
+    /// Where iOS expects the Pencil to be next, drawn ahead of the stroke and never saved.
+    private var predicted: [CGPoint] = []
+    /// The brush or eraser outline under a hovering Pencil.
+    private let hoverLayer = CAShapeLayer()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -499,6 +535,10 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate {
         elementLayer.frame = bounds
         elementLayer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(elementLayer)
+        hoverLayer.isHidden = true
+        layer.addSublayer(hoverLayer)
+        addInteraction(UIPencilInteraction(delegate: self))
+        addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(hover(_:))))
         let tap = UITapGestureRecognizer(target: self, action: #selector(elementTap(_:)))
         let pan = UIPanGestureRecognizer(target: self, action: #selector(elementPan(_:)))
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(elementPinch(_:)))
@@ -519,10 +559,20 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate {
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         DoodleRenderer.draw(strokes, dry: dry, in: context, size: bounds.size)
+        if !predicted.isEmpty, let stroke = editor?.activeStroke, let last = stroke.points.last {
+            let ahead = DrawingStroke(id: stroke.id, colorArgb: stroke.colorArgb, width: stroke.width,
+                                      createdAt: stroke.createdAt, points: [last] + predicted.map(normalized))
+            DoodleRenderer.draw([ahead], dry: dry, in: context, size: bounds.size)
+        }
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        editor?.canvasTouched()
         guard elementTool == nil, trackedTouch == nil, let touch = touches.first else { return }
+        // With "Only Draw with Apple Pencil" on, a finger or palm never marks the canvas.
+        if UIPencilInteraction.prefersPencilOnlyDrawing, touch.type != .pencil,
+           editor?.tool == .brush || editor?.tool == .eraser { return }
         trackedTouch = touch
+        hoverLayer.isHidden = true
         let point = touch.location(in: self)
         if editor?.tool == .eraser, let hit = elementLayer.renderer.hit(elementLayer.visible, at: point, canvasSize: bounds.size) {
             elementToErase = (hit.id, point)
@@ -539,6 +589,8 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate {
             editor?.begin(at: point, size: bounds.size)
         }
         editor?.move(points: (event?.coalescedTouches(for: touch) ?? [touch]).map { $0.location(in: self) }, size: bounds.size)
+        predicted = editor?.tool == .brush ? (event?.predictedTouches(for: touch) ?? []).map { $0.location(in: self) } : []
+        setNeedsDisplay()
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = trackedTouch, touches.contains(touch) else { return }
@@ -548,11 +600,45 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate {
             editor?.move(points: [touch.location(in: self)], size: bounds.size)
             editor?.end()
         }
-        elementToErase = nil; trackedTouch = nil
+        elementToErase = nil; trackedTouch = nil; predicted = []
     }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         if elementToErase == nil { editor?.end() }
-        elementToErase = nil; trackedTouch = nil
+        elementToErase = nil; trackedTouch = nil; predicted = []
+        setNeedsDisplay()
+    }
+
+    // MARK: Apple Pencil
+
+    func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
+        editor?.handlePencil(UIPencilInteraction.preferredTapAction, at: tap.hoverPose?.location)
+    }
+
+    func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+        guard squeeze.phase == .ended else { return }
+        editor?.handlePencil(UIPencilInteraction.preferredSqueezeAction, at: squeeze.hoverPose?.location)
+    }
+
+    /// A hovering Pencil shows the brush's size and colour, or the eraser's reach, at its tip.
+    @objc private func hover(_ gesture: UIHoverGestureRecognizer) {
+        let drawing = elementTool == nil && trackedTouch == nil && (editor?.tool == .brush || editor?.tool == .eraser)
+        // A trackpad pointer hovers at zero height and has its own cursor.
+        guard drawing, gesture.zOffset > 0, gesture.state == .began || gesture.state == .changed, let editor else {
+            hoverLayer.isHidden = true
+            return
+        }
+        let eraser = editor.tool == .eraser
+        let diameter = eraser ? 20 : max(4, editor.width / 1080 * min(bounds.width, bounds.height))
+        let point = gesture.location(in: self)
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        hoverLayer.path = UIBezierPath(ovalIn: CGRect(x: point.x - diameter / 2, y: point.y - diameter / 2,
+                                                      width: diameter, height: diameter)).cgPath
+        let color = UIColor(argb: editor.color)
+        hoverLayer.fillColor = eraser ? UIColor.clear.cgColor : color.withAlphaComponent(0.35).cgColor
+        hoverLayer.strokeColor = eraser ? UIColor.label.withAlphaComponent(0.7).cgColor : color.cgColor
+        hoverLayer.lineWidth = eraser ? 1.5 : 1
+        hoverLayer.isHidden = false
+        CATransaction.commit()
     }
 
     // MARK: Text and sticker tools
@@ -648,4 +734,12 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate {
     private func normalized(_ point: CGPoint) -> DrawingPoint {
         .init(x: min(1, max(0, point.x / max(1, bounds.width))), y: min(1, max(0, point.y / max(1, bounds.height))))
     }
+}
+
+struct PencilRequest: Equatable {
+    enum Kind { case colours, inkAttributes, palette }
+    let kind: Kind
+    let location: CGPoint?
+    /// Every gesture is a new request, even when it asks for the same thing.
+    let id = UUID()
 }
