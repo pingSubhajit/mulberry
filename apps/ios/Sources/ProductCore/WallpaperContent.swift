@@ -1,7 +1,7 @@
 import Foundation
 import CryptoKit
 
-/// Tracks what is rendered, not just server acknowledgements. Offline strokes,
+/// Tracks what is rendered, not just server acknowledgements. Offline strokes, text,
 /// clears, photo choices and visibility changes all invalidate an old receipt.
 public enum WallpaperContent {
     public static func signature(canvas: DrawingState, backgroundID: String, showDrawings: Bool, renderMode: String, canvasViewport: [Double] = []) throws -> String {
@@ -11,12 +11,15 @@ public enum WallpaperContent {
             let showDrawings: Bool
             let renderMode: String
             let canvasViewport: [Double]
+            // Omitted when empty so signatures from builds before text stay valid.
+            let elements: [JSONValue]?
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(Content(strokes: showDrawings ? canvas.strokes : [], backgroundID: backgroundID,
                                               showDrawings: showDrawings, renderMode: renderMode,
-                                              canvasViewport: showDrawings ? canvasViewport : []))
+                                              canvasViewport: showDrawings ? canvasViewport : [],
+                                              elements: showDrawings && !canvas.elements.isEmpty ? canvas.elements : nil))
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 

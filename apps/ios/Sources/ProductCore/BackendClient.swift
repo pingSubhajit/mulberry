@@ -125,6 +125,20 @@ public actor BackendClient {
         let result: Token = try await get("feedback/canny-sso-token")
         return result.token
     }
+    public func stickerPacks() async throws -> [StickerPackSummary] {
+        let result: StickerPackList = try await get("stickers/packs")
+        return result.items
+    }
+    public func stickerPack(_ packKey: String, version: Int? = nil) async throws -> StickerPackDetail {
+        try await get("stickers/packs/\(packKey)", query: version.map { [.init(name: "version", value: String($0))] } ?? [])
+    }
+    /// A fresh signed URL, for when a catalog URL has expired.
+    public func stickerAssetURL(_ sticker: StickerReference, variant: StickerAssetVariant, quick: Bool = false) async throws -> StickerAssetURL {
+        try await get("stickers/assets/url", query: [
+            .init(name: "packKey", value: sticker.packKey), .init(name: "version", value: String(sticker.packVersion)),
+            .init(name: "stickerId", value: sticker.stickerId), .init(name: "variant", value: variant.rawValue)
+        ], quick: quick)
+    }
     public func canvasSnapshot() async throws -> DrawingSnapshot { try await get("canvas/snapshot") }
     public func canvasOperations(after revision: Int64, quick: Bool = false) async throws -> [DrawingOperation] {
         let result: DrawingOperations = try await get("canvas/ops", query: [.init(name: "afterRevision", value: String(revision))], quick: quick)
