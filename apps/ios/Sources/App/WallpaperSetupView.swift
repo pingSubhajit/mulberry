@@ -302,6 +302,13 @@ struct WallpaperSetupView: View {
             guard completed || activity != nil else { return }
             Task { @MainActor in setup.markShortcutAdded() }
         }
+        // iPad shows the share sheet as a popover, which UIKit refuses to present without an anchor.
+        // Phones present it as a sheet and have no popover controller.
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = top.view
+            popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 0, height: 0)
+            popover.permittedArrowDirections = []
+        }
         top.present(sheet, animated: true)
     }
 
