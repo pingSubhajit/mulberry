@@ -20,7 +20,8 @@ enum DoodleRenderer {
     }
 
     static func wallpaper(background: UIImage, strokes: [DrawingStroke], elements: [CanvasElement] = [],
-                          stickerImages: [StickerReference: UIImage] = [:], dry: Bool, pixelSize: CGSize, displayScale: CGFloat, canvasSize: CGSize? = nil) -> UIImage {
+                          stickerImages: [StickerReference: UIImage] = [:], dry: Bool, pixelSize: CGSize, displayScale: CGFloat, canvasSize: CGSize? = nil,
+                          canvasRegion: CGSize? = nil) -> UIImage {
         // UIKit draws the canvas in points, then rasterizes at the screen scale.
         // Keep that coordinate space here too: using pixels as points changes
         // dry-brush minimum widths, bristle count and even its random seed.
@@ -33,7 +34,11 @@ enum DoodleRenderer {
             let scale = max(size.width / background.size.width, size.height / background.size.height)
             let fitted = CGSize(width: background.size.width * scale, height: background.size.height * scale)
             background.draw(in: CGRect(x: (size.width - fitted.width) / 2, y: (size.height - fitted.height) / 2, width: fitted.width, height: fitted.height))
-            let placement = CanvasGeometry.placement(canvas: canvasSize, inside: size)
+            // The canvas fits a centred region when only part of the image is always on screen.
+            let region = canvasRegion.map { CGRect(x: (size.width - $0.width) / 2, y: (size.height - $0.height) / 2,
+                                                   width: $0.width, height: $0.height) } ?? CGRect(origin: .zero, size: size)
+            let placement = CanvasGeometry.placement(canvas: canvasSize, inside: region.size)
+                .offsetBy(dx: region.minX, dy: region.minY)
             renderer.cgContext.saveGState()
             renderer.cgContext.translateBy(x: placement.minX, y: placement.minY)
             // Render in the original point space before scaling so dry-brush

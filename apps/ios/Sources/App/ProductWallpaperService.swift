@@ -68,6 +68,7 @@ final class ProductWallpaperService {
         let background = WallpaperLibrary(); background.load(user: user)
         if let error = background.errorMessage { throw BackendError.rejected(0, error) }
         let size = try WallpaperRenderSize.current()
+        let region = try WallpaperRenderSize.visibleRegion()
         let elements = background.showDrawings ? canvas.canvasElements : []
         // Like Android, a Shortcut run downloads any sticker artwork not cached yet.
         var stickerImages: [StickerReference: UIImage] = [:]
@@ -79,7 +80,8 @@ final class ProductWallpaperService {
                                                 elements: elements, stickerImages: stickerImages,
                                                 dry: state.canvasStrokeRenderMode == "dry", pixelSize: size,
                                                 displayScale: try WallpaperRenderSize.displayScale(),
-                                                canvasSize: CanvasViewportStore.load(user: user, pair: state.pairSessionId))
+                                                canvasSize: CanvasViewportStore.load(user: user, pair: state.pairSessionId),
+                                                canvasRegion: region)
         guard user == (await api.signedInUserId) else { throw BackendError.sessionChanged }
         try await validateSession(state)
         guard let data = rendered.pngData() else { throw WallpaperImageError.invalidImage }
@@ -217,6 +219,8 @@ final class ProductWallpaperService {
         return try WallpaperContent.signature(canvas: canvas, backgroundID: background.choice.id,
                                        showDrawings: background.showDrawings, renderMode: state.canvasStrokeRenderMode,
                                        canvasViewport: viewport.map { [Double($0.width), Double($0.height)] } ?? [])
+            // A wallpaper rendered before iPad's square layout is out of date.
+            + (WallpaperRenderSize.square ? "-square" : "")
     }
 
     private func metadataURL(_ id: UUID) -> URL { exportDirectory.appendingPathComponent("\(id.uuidString).json") }
@@ -232,7 +236,29 @@ final class ProductWallpaperService {
 
 @MainActor
 enum WallpaperRenderSize {
+    /// iPadOS keeps one wallpaper for both orientations and scales it to cover the screen. A square
+    /// of the long side covers either way without scaling, as Apple's own iPad wallpapers do; a
+    /// portrait image would be enlarged and cropped in landscape.
+    static var square: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
+    /// The wallpaper image to render, in pixels: the screen on iPhone, a square on iPad.
     static func current() throws -> CGSize {
+        let screen = try screen()
+        guard square else { return screen }
+        let side = max(screen.width, screen.height)
+        return CGSize(width: side, height: side)
+    }
+
+    /// The part of the wallpaper visible in every orientation, in points: the centred square of the
+    /// short side on iPad, where the canvas belongs. Nil on iPhone, where the whole image shows.
+    static func visibleRegion() throws -> CGSize? {
+        guard square else { return nil }
+        let side = try min(screen().width, screen().height) / displayScale()
+        return CGSize(width: side, height: side)
+    }
+
+    /// The screen's own size in pixels, portrait.
+    static func screen() throws -> CGSize {
         if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
             let size = scene.screen.nativeBounds.size
             UserDefaults.standard.set([size.width, size.height], forKey: "wallpaperPixelSize")

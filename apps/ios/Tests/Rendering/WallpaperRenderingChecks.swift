@@ -31,6 +31,19 @@ struct WallpaperRenderingChecks {
                                                       inside: CGSize(width: 400, height: 800))
         precondition(tallPlacement == CGRect(x: 80, y: 0, width: 240, height: 800))
         precondition(CanvasGeometry.placement(canvas: .zero, inside: canvasSize) == CGRect(origin: .zero, size: canvasSize))
+        // iPad: a square wallpaper, with the phone-shaped canvas inside the centred square that both
+        // orientations show (820 pt of the 1180 pt image on an 11-inch iPad Air).
+        let diagonal = DrawingStroke(id: "ipad-region", colorArgb: 0xFFFF0000, width: 1 / 461.25,
+                                     points: [.init(x: 0, y: 0), .init(x: 1, y: 1)])
+        let squareWallpaper = DoodleRenderer.wallpaper(background: background, strokes: [diagonal], dry: false,
+            pixelSize: CGSize(width: 2360, height: 2360), displayScale: 2,
+            canvasSize: CGSize(width: 461.25, height: 820), canvasRegion: CGSize(width: 820, height: 820))
+        precondition(squareWallpaper.size == CGSize(width: 2360, height: 2360), "The iPad wallpaper must stay square")
+        let regionInk = inkBounds(squareWallpaper)
+        print("iPad region ink bounds: \(regionInk)")
+        // Canvas in pixels: x 718.75...1641.25, y 360...2000; the line's round caps add a little.
+        precondition(abs(regionInk.minX - 718.75) <= 4 && abs(regionInk.maxX - 1641.25) <= 4, "Canvas left the centred square horizontally")
+        precondition(abs(regionInk.minY - 360) <= 4 && abs(regionInk.maxY - 2000) <= 4, "Canvas left the centred square vertically")
         var checks = 1
         // A non-square, partly transparent sticker exercises aspect fitting and alpha.
         let kitten = StickerReference(packKey: "spring-kittens", packVersion: 1, stickerId: "1")
