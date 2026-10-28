@@ -117,3 +117,11 @@ struct ScreenHeading: View {
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
+
+extension View {
+    /// Holds forms and prompts to a comfortable column in wide iPad windows. Phones are
+    /// narrower than the column, so they are unaffected.
+    func readableColumn(_ width: CGFloat = 560) -> some View {
+        frame(maxWidth: width).frame(maxWidth: .infinity)
+    }
+}

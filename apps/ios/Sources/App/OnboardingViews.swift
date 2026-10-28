@@ -14,7 +14,7 @@ struct OnboardingNameView: View {
                 OnboardingField(label: "What is your name?", placeholder: "Enter the name your partner calls you", value: $model.draft.displayName)
                     .focused($nameFocused).submitLabel(.next).onSubmit(continueToDetails)
                 InlineError(message: model.errorMessage)
-            }.padding(24).padding(.top, 20)
+            }.padding(24).padding(.top, 20).readableColumn()
         }
         .scrollDismissesKeyboard(.interactively)
         .background(MulberryDesign.background)
@@ -28,7 +28,7 @@ struct OnboardingNameView: View {
                 }
                 Button("By continuing you agree to our Privacy Policy") { privacy = true }
                     .font(.footnote).foregroundStyle(MulberryDesign.muted).fixedSize(horizontal: false, vertical: true)
-            }.padding(.horizontal, 24).padding(.bottom, 12).padding(.top, 12).background(MulberryDesign.background)
+            }.readableColumn().padding(.horizontal, 24).padding(.bottom, 12).padding(.top, 12).background(MulberryDesign.background)
         }
         .navigationDestination(isPresented: $details) { OnboardingDetailsView(model: model) }
         .sheet(isPresented: $privacy) { LegalDocumentView(document: .privacy) }
@@ -55,7 +55,7 @@ struct OnboardingDetailsView: View {
                     .focused($partnerFocused).submitLabel(.done)
                 AnniversaryField(value: $model.draft.anniversaryDate)
                 InlineError(message: model.errorMessage)
-            }.padding(24).padding(.top, 12)
+            }.padding(24).padding(.top, 12).readableColumn()
         }
         .scrollDismissesKeyboard(.interactively)
         .background(MulberryDesign.background)
@@ -64,7 +64,7 @@ struct OnboardingDetailsView: View {
                           enabled: !model.draft.partnerDisplayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.draft.anniversaryDate.isEmpty) {
                 partnerFocused = false
                 Task { await model.submitProfile() }
-            }.padding(24).background(MulberryDesign.background)
+            }.readableColumn().padding(24).background(MulberryDesign.background)
         }
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: model.draft) { _, _ in model.saveDraft() }

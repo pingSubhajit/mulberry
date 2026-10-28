@@ -48,14 +48,14 @@ struct InviteAcceptanceView: View {
                 Text("Welcome \(model.bootstrap?.invite?.recipientDisplayName ?? model.bootstrap?.userDisplayName ?? "")")
                     .foregroundStyle(MulberryDesign.muted)
                 InlineError(message: model.errorMessage)
-            }.frame(maxWidth: .infinity).padding(24)
+            }.padding(24).readableColumn()
         }.background(MulberryDesign.background)
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 12) {
                     PrimaryAction(title: "Awesome, let’s go", loading: model.busy) { Task { await model.acceptInvite() } }
                     Button("Wrong partner? Disconnect") { Task { await model.declineInvite() } }
                         .frame(minHeight: 44).disabled(model.busy)
-                }.padding(24).background(MulberryDesign.background)
+                }.readableColumn().padding(24).background(MulberryDesign.background)
             }
     }
 }

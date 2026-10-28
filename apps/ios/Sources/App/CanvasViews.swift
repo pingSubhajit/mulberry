@@ -9,8 +9,19 @@ struct DoodleCanvasView: View {
     @State private var paletteHeight: CGFloat = 280
     @State private var clearConfirmation = false
     @State private var toolbarFrame = CGRect.zero
+    /// The floating palette a Pencil squeeze or double-tap asked for, at the Pencil's tip.
+    @State private var pencilPalette: PencilRequest?
+    /// Wider than tall: on iPad the colours then have their own column instead of a palette button.
+    @State private var wideWindow = false
+    /// Where a squeeze opened the radial palette, in the canvas screen's coordinates.
+    @State private var radialAt: CGPoint?
+    /// The drawing surface's frame on the canvas screen, for placing Pencil palettes at the tip.
+    @State private var surfaceFrame = CGRect.zero
+    private static let pencilSpace = "pencilSpace"
     private static let space = "canvasScreen"
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: MulberryModel) {
         self.model = model
@@ -31,48 +42,184 @@ struct DoodleCanvasView: View {
         return max(0, contentTop - (window?.safeAreaInsets.top ?? contentTop))
     }
 
+    /// The canvas stands in for a phone wallpaper, so a wide window keeps that shape rather than
+    /// filling the space. It is within a few percent of the iPhone canvas, so drawings match on both.
+    static let tabletAspect: CGFloat = 9 / 16
+
     var body: some View {
         GeometryReader { geometry in
-            // Use part of the bottom safe area, while retaining space for the Home gesture.
-            let bottomReach = min(16, max(0, geometry.safeAreaInsets.bottom - 16))
-            let height = geometry.size.height + bottomReach
-            let tools = toolbarFrame == .zero ? CGRect(x: 0, y: height - 72, width: geometry.size.width, height: 72) : toolbarFrame
-            let size = Self.canvasSize(in: CGSize(width: geometry.size.width, height: tools.minY))
-            let navigationMiddle = -Self.navigationBarHeight(contentTop: geometry.frame(in: .global).minY) / 2
-            ZStack(alignment: .bottom) {
-                DoodleSurface(editor: editor, dry: model.bootstrap?.canvasStrokeRenderMode == "dry")
-                    .frame(width: size.width, height: size.height)
-                    // Centred between the middles of the navigation bar and the tools, so it runs under both.
-                    .position(x: geometry.size.width / 2, y: (navigationMiddle + tools.midY) / 2)
-                // The visible part of the canvas, between the bars.
-                CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty)
-                    .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
-                // Between the bars, so the banner stays clear of both.
-                StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
-                    .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
-                toolbar
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { toolbarFrame = $0 }
-                    .fullScreenCover(item: $editor.stickerSession) { session in
-                        CanvasStickerEditorView(session: session, catalog: editor.stickers,
-                                                onDone: editor.commitSticker, onDelete: editor.deleteEditingSticker)
-                    }
+            Group {
+                if sizeClass == .regular { regularLayout(geometry) } else { compactLayout(geometry) }
             }
-            .frame(width: geometry.size.width, height: height, alignment: .top)
-            .coordinateSpace(.named(Self.space))
+            .fullScreenCover(item: $editor.stickerSession) { session in
+                CanvasStickerEditorView(session: session, catalog: editor.stickers,
+                                        onDone: editor.commitSticker, onDelete: editor.deleteEditingSticker)
+            }
+            .coordinateSpace(.named(Self.pencilSpace))
+            // A tap beside the canvas puts the palette away too.
+            .background { if radialAt != nil { Color.clear.contentShape(.rect).onTapGesture { closeRadial() } } }
+            .overlay { radialPalette(in: geometry.size) }
+            .animation(reduceMotion ? nil : .spring(duration: 0.22, bounce: 0.15), value: radialAt)
+        }
+        .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { wideWindow = $0 }
+        .onChange(of: editor.pencilRequest) { _, request in
+            guard let request else { return }
+            switch request.kind {
+            case .inkAttributes: widthOpen = true
+            // With every colour already in its column, the floating palette stands in for the palette button.
+            case .colours where !(sizeClass == .regular && wideWindow): paletteOpen = true
+            case .colours: pencilPalette = request
+            case .palette:
+                // A second squeeze closes it, as with the system palette.
+                guard radialAt == nil else { closeRadial(); return }
+                radialAt = request.location.map { CGPoint(x: surfaceFrame.minX + $0.x, y: surfaceFrame.minY + $0.y) }
+                    ?? CGPoint(x: surfaceFrame.midX, y: surfaceFrame.midY)
+            }
+        }
+        // Touching the canvas, or choosing a tool anywhere, puts the palette away; the touch still draws.
+        .onChange(of: editor.canvasTouches) { _, _ in closeRadial() }
+        // After the selection highlight has moved, when the tool was chosen on the arc itself.
+        .onChange(of: editor.tool) { _, _ in
+            Task { try? await Task.sleep(for: .milliseconds(reduceMotion ? 0 : 100)); closeRadial() }
         }
         .background(MulberryDesign.background)
             .onChange(of: model.drawing) { _, _ in editor.receive() }
             .onChange(of: model.canvasClearVersion) { _, _ in editor.resetHistory() }
             .onChange(of: scenePhase) { _, value in
-                if value != .active { editor.end() }
+                if value != .active { editor.end(); radialAt = nil }
                 else if editor.errorMessage != nil { editor.retry() }
             }
             .onDisappear { editor.end() }
-            .sheet(isPresented: $paletteOpen) { colorPicker }
             .fullScreenCover(item: $editor.textSession) { session in
                 CanvasTextEditorView(session: session, palette: DoodleEditor.palette,
                                      onDone: editor.commitText, onDelete: editor.deleteEditingText)
             }
+    }
+
+    /// Phones and narrow iPad windows: the canvas spans the width and runs under both bars.
+    private func compactLayout(_ geometry: GeometryProxy) -> some View {
+        // Use part of the bottom safe area, while retaining space for the Home gesture.
+        let bottomReach = min(16, max(0, geometry.safeAreaInsets.bottom - 16))
+        let height = geometry.size.height + bottomReach
+        let tools = toolbarFrame == .zero ? CGRect(x: 0, y: height - 72, width: geometry.size.width, height: 72) : toolbarFrame
+        let size = Self.canvasSize(in: CGSize(width: geometry.size.width, height: tools.minY))
+        let navigationMiddle = -Self.navigationBarHeight(contentTop: geometry.frame(in: .global).minY) / 2
+        return ZStack(alignment: .bottom) {
+            DoodleSurface(editor: editor, dry: model.bootstrap?.canvasStrokeRenderMode == "dry")
+                .frame(width: size.width, height: size.height)
+                .modifier(PencilPalettePopover(request: $pencilPalette) { pencilPaletteContent })
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.pencilSpace)) } action: { surfaceFrame = $0 }
+                // Centred between the middles of the navigation bar and the tools, so it runs under both.
+                .position(x: geometry.size.width / 2, y: (navigationMiddle + tools.midY) / 2)
+            // The visible part of the canvas, between the bars.
+            CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty)
+                .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
+            // Between the bars, so the banner stays clear of both.
+            StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
+                .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
+            toolbar(.horizontal)
+                .padding(.horizontal, 12)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { toolbarFrame = $0 }
+        }
+        .frame(width: geometry.size.width, height: height, alignment: .top)
+        .coordinateSpace(.named(Self.space))
+    }
+
+    /// Full iPad windows: a phone-shaped canvas running the full height of the screen, behind the
+    /// navigation bar and the tools. Taller than wide, the tools sit beneath it. Wider than tall,
+    /// the window splits in two: the tools and a column of every colour on the left, the canvas on the right.
+    private func regularLayout(_ geometry: GeometryProxy) -> some View {
+        let wide = geometry.size.width > geometry.size.height
+        let margin: CGFloat = 24, gap: CGFloat = 24, toolDepth: CGFloat = 72
+        // The left panel: the tool column, then the colour column (a 44 pt swatch with 8 pt padding).
+        let panelWidth: CGFloat = toolDepth + 12 + 60
+        let screenTop = -geometry.frame(in: .global).minY
+        let screenBottom = geometry.size.height + geometry.safeAreaInsets.bottom
+        // Like the phone, the tools use part of the bottom safe area while leaving the Home gesture room.
+        let toolsBottom = geometry.size.height + min(16, max(0, geometry.safeAreaInsets.bottom - 16))
+        let toolsMiddle = toolsBottom - toolDepth / 2
+        let span = screenBottom - screenTop
+        let canvasLeft = wide ? margin + panelWidth + gap : margin
+        let roomWidth = geometry.size.width - margin - canvasLeft
+        let height = min(span, roomWidth / Self.tabletAspect)
+        let size = CGSize(width: height * Self.tabletAspect, height: height)
+        let center = CGPoint(x: canvasLeft + roomWidth / 2, y: (screenTop + screenBottom) / 2)
+        // The part of the canvas below the navigation bar and clear of the tools, where the prompt
+        // and the streak banner belong.
+        let visibleTop = max(0, center.y - height / 2)
+        let visibleBottom = min(wide ? geometry.size.height : toolsBottom - toolDepth, center.y + height / 2)
+        return ZStack(alignment: .topLeading) {
+            // Transparent and unframed, like the phone's: drawings sit straight on the screen.
+            DoodleSurface(editor: editor, dry: model.bootstrap?.canvasStrokeRenderMode == "dry")
+                .frame(width: size.width, height: size.height)
+                .modifier(PencilPalettePopover(request: $pencilPalette) { pencilPaletteContent })
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.pencilSpace)) } action: { surfaceFrame = $0 }
+                .position(center)
+            Group {
+                CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty)
+                    .padding(.bottom, 16)
+                StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
+            }
+            .frame(width: size.width, height: max(0, visibleBottom - visibleTop))
+            .position(x: center.x, y: (visibleTop + visibleBottom) / 2)
+            if wide {
+                HStack(alignment: .center, spacing: 12) {
+                    toolbar(.vertical, palette: false)
+                    colourColumn
+                }
+                .frame(width: panelWidth, height: geometry.size.height - margin * 2)
+                .position(x: margin + panelWidth / 2, y: geometry.size.height / 2)
+            } else {
+                toolbar(.horizontal)
+                    .frame(maxWidth: roomWidth)
+                    .position(x: geometry.size.width / 2, y: toolsMiddle)
+            }
+        }
+        .frame(width: geometry.size.width, height: geometry.size.height)
+    }
+
+    /// Every colour at once beside the tools, in place of the palette button. Scrolls when the
+    /// window is too short for all of them.
+    private var colourColumn: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 10) {
+                ForEach(DoodleEditor.palette, id: \.self) { color in
+                    Button { pick(color) } label: {
+                        Circle().fill(Color(uiColor: UIColor(argb: color))).frame(width: 40, height: 40)
+                            .overlay(Circle().stroke(MulberryDesign.muted.opacity(0.3)))
+                            .padding(2)
+                            .overlay {
+                                if color == editor.selectedColor {
+                                    Circle().strokeBorder(MulberryDesign.ink, lineWidth: 2)
+                                }
+                            }
+                            .frame(width: 44, height: 44)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Colour \(String(format: "%06X", color & 0xFFFFFF))")
+                    .accessibilityAddTraits(editor.selectedColor == color ? .isSelected : [])
+                }
+                Button { customColourOpen = true } label: {
+                    CustomColourWell(color: editor.selectedColor)
+                        .frame(width: 28, height: 28).scaleEffect(1.43)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                        .accessibilityHidden(true)
+                }.buttonStyle(.plain).accessibilityLabel("Custom colour")
+            }
+            .padding(8)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        // As tall as the tool column beside it: nine 56 pt buttons, 10 pt apart, 8 pt padding.
+        .frame(width: 60).frame(maxHeight: 9 * 56 + 8 * 10 + 16)
+        .glassEffect(.regular, in: .capsule)
+        .sheet(isPresented: $customColourOpen) {
+            CustomColourSheet(color: $editor.selectedColor) {
+                if editor.tool != .text { editor.tool = .brush }
+                customColourOpen = false
+            }
+        }
     }
 
     private var brushColor: Color { Color(uiColor: UIColor(argb: editor.color)) }
@@ -84,45 +231,62 @@ struct DoodleCanvasView: View {
         if editor.tool != .text { editor.tool = .brush }
     }
 
-    private var toolbar: some View {
+    /// One row on phones; a column beside the canvas in wide iPad windows. It scrolls only when it does not fit.
+    /// Without the palette, the colours have their own column beside the tools.
+    private func toolbar(_ axis: Axis, palette: Bool = true) -> some View {
         GlassEffectContainer(spacing: 4) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    toolButton("Undo", image: "CanvasUndo", enabled: editor.canUndo, action: editor.undo)
-                    toolButton("Redo", image: "CanvasRedo", enabled: editor.canRedo, action: editor.redo)
-                    toolButton("Brush", image: "CanvasBrush", selected: editor.tool == .brush) { editor.tool = .brush }
-                    Button { widthOpen.toggle() } label: {
-                        Circle().fill(brushColor)
-                            .frame(width: 8 + (editor.width - 4) / 38 * 38, height: 8 + (editor.width - 4) / 38 * 38)
-                            .frame(width: 56, height: 56)
-                    }.buttonStyle(.plain)
-                        .glassEffect(.regular.interactive(), in: .circle)
-                        .accessibilityLabel("Brush width")
-                        .accessibilityValue("\(Int(editor.width))")
-                        .popover(isPresented: $widthOpen, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
-                            widthPicker.presentationCompactAdaptation(.popover)
-                        }
-                    Button { paletteOpen = true } label: {
-                        Circle().fill(selectedColor).frame(width: 56, height: 56)
-                    }.buttonStyle(.plain)
-                        .glassEffect(.clear.interactive(), in: .circle)
-                        .accessibilityLabel("Colour palette")
-                    toolButton("Eyedropper", image: "CanvasEyedropper", selected: editor.tool == .eyedropper) { editor.tool = .eyedropper }
-                    toolButton("Eraser", image: "CanvasErase", selected: editor.tool == .eraser) { editor.tool = .eraser }
-                    toolButton("Text", image: "CanvasText", selected: editor.tool == .text, enabled: editor.canEditElements) { editor.toggleText() }
-                    toolButton("Stickers", image: "CanvasSticker", selected: editor.tool == .sticker, enabled: editor.canEditElements) { editor.toggleSticker() }
-                    toolButton("Clear canvas", image: "CanvasClear") { clearConfirmation = true }
-                        .confirmationDialog("Clear canvas?", isPresented: $clearConfirmation, titleVisibility: .visible) {
-                            Button("Clear", role: .destructive) { editor.clear() }
-                            Button("Cancel", role: .cancel) {}
-                        } message: { Text("This removes all strokes from the shared canvas.") }
-                }
-                .buttonBorderShape(.circle)
-                .controlSize(.large)
-                .padding(.horizontal, 8).padding(.vertical, 8)
-            }.fixedSize(horizontal: false, vertical: true)
+            ViewThatFits(in: axis == .horizontal ? .horizontal : .vertical) {
+                tools(axis, palette: palette)
+                ScrollView(axis == .horizontal ? .horizontal : .vertical, showsIndicators: false) { tools(axis, palette: palette) }
+                    .fixedSize(horizontal: axis == .vertical, vertical: axis == .horizontal)
+            }
         }
-        .padding(.horizontal, 12)
+    }
+
+    private func tools(_ axis: Axis, palette: Bool) -> some View {
+        // Popovers open toward the canvas: above a row, to the right of the left-hand column.
+        let edge: Edge = axis == .horizontal ? .bottom : .leading
+        return (axis == .horizontal ? AnyLayout(HStackLayout(spacing: 10)) : AnyLayout(VStackLayout(spacing: 10))) {
+            toolButton("Undo", image: "CanvasUndo", enabled: editor.canUndo, action: editor.undo)
+            toolButton("Redo", image: "CanvasRedo", enabled: editor.canRedo, action: editor.redo)
+            toolButton("Brush", image: "CanvasBrush", selected: editor.tool == .brush) { editor.tool = .brush }
+            Button { widthOpen.toggle() } label: {
+                Circle().fill(brushColor)
+                    .frame(width: 8 + (editor.width - 4) / 38 * 38, height: 8 + (editor.width - 4) / 38 * 38)
+                    .frame(width: 56, height: 56)
+                    // The whole glass circle opens the slider, not only the dot.
+                    .contentShape(Circle())
+            }.buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Brush width")
+                .accessibilityValue("\(Int(editor.width))")
+                .popover(isPresented: $widthOpen, attachmentAnchor: .rect(.bounds), arrowEdge: edge) {
+                    widthPicker.presentationCompactAdaptation(.popover)
+                }
+            if palette {
+                Button { paletteOpen = true } label: {
+                    Circle().fill(selectedColor).frame(width: 56, height: 56)
+                }.buttonStyle(.plain)
+                    .glassEffect(.clear.interactive(), in: .circle)
+                    .accessibilityLabel("Colour palette")
+                    // A popover beside the button on iPad; a sheet on phones.
+                    .popover(isPresented: $paletteOpen, attachmentAnchor: .rect(.bounds), arrowEdge: edge) {
+                        colorPicker.presentationCompactAdaptation(.sheet)
+                    }
+            }
+            toolButton("Eyedropper", image: "CanvasEyedropper", selected: editor.tool == .eyedropper) { editor.tool = .eyedropper }
+            toolButton("Eraser", image: "CanvasErase", selected: editor.tool == .eraser) { editor.tool = .eraser }
+            toolButton("Text", image: "CanvasText", selected: editor.tool == .text, enabled: editor.canEditElements) { editor.toggleText() }
+            toolButton("Stickers", image: "CanvasSticker", selected: editor.tool == .sticker, enabled: editor.canEditElements) { editor.toggleSticker() }
+            toolButton("Clear canvas", image: "CanvasClear") { clearConfirmation = true }
+                .confirmationDialog("Clear canvas?", isPresented: $clearConfirmation, titleVisibility: .visible) {
+                    Button("Clear", role: .destructive) { editor.clear() }
+                    Button("Cancel", role: .cancel) {}
+                } message: { Text("This removes all strokes from the shared canvas.") }
+        }
+        .buttonBorderShape(.circle)
+        .controlSize(.large)
+        .padding(8)
     }
 
     private func toolButton(_ title: String, image: String, selected: Bool = false, enabled: Bool = true, action: @escaping () -> Void) -> some View {
@@ -132,12 +296,62 @@ struct DoodleCanvasView: View {
                 .foregroundStyle(MulberryDesign.ink)
                 .opacity(enabled ? 1 : 0.35)
                 .frame(width: 56, height: 56)
+                // The whole glass circle is the button, not only the drawn icon.
+                .contentShape(Circle())
         }.disabled(!enabled).accessibilityLabel(title).accessibilityAddTraits(selected ? .isSelected : [])
         .buttonStyle(.plain)
         .glassEffect(.regular.tint(selected ? MulberryDesign.accent.opacity(0.12) : .clear).interactive(), in: .circle)
         .overlay {
             if selected { Circle().strokeBorder(MulberryDesign.accent.opacity(0.4), lineWidth: 1.5).allowsHitTesting(false) }
         }
+    }
+
+    /// The squeeze palette around the Pencil tip, kept on screen; a tap anywhere else closes it.
+    @ViewBuilder private func radialPalette(in size: CGSize) -> some View {
+        if let tip = radialAt {
+            let reach = PencilRadialPalette.reach
+            // Over the tip unless that would run off the top of the screen.
+            let below = tip.y - reach < 0
+            let centre = CGPoint(x: min(max(tip.x, reach), size.width - reach), y: tip.y)
+            // Only the arc takes touches; the canvas around it keeps drawing, which closes the arc.
+            PencilRadialPalette(editor: editor, below: below, dismiss: closeRadial)
+                .position(centre)
+                // It grows out of the tip and shrinks back into it.
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.7).combined(with: .opacity))
+        }
+    }
+
+    private func closeRadial() {
+        guard radialAt != nil else { return }
+        withAnimation(reduceMotion ? .easeOut(duration: 0.1) : .spring(duration: 0.16, bounce: 0)) { radialAt = nil }
+    }
+
+    /// Apple Pencil's contextual palette: the drawing tools, every colour and the brush size, at the tip.
+    private var pencilPaletteContent: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 10) {
+                toolButton("Brush", image: "CanvasBrush", selected: editor.tool == .brush) { editor.tool = .brush }
+                toolButton("Eraser", image: "CanvasErase", selected: editor.tool == .eraser) { editor.tool = .eraser }
+                toolButton("Eyedropper", image: "CanvasEyedropper", selected: editor.tool == .eyedropper) { editor.tool = .eyedropper }
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(36), spacing: 10), count: 6), spacing: 10) {
+                ForEach(DoodleEditor.palette, id: \.self) { color in
+                    Button { pick(color); pencilPalette = nil } label: {
+                        Circle().fill(Color(uiColor: UIColor(argb: color))).frame(width: 32, height: 32)
+                            .overlay(Circle().stroke(MulberryDesign.muted.opacity(0.3)))
+                            .padding(2)
+                            .overlay { if color == editor.selectedColor { Circle().strokeBorder(MulberryDesign.ink, lineWidth: 2) } }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Colour \(String(format: "%06X", color & 0xFFFFFF))")
+                    .accessibilityAddTraits(editor.selectedColor == color ? .isSelected : [])
+                }
+            }
+            Slider(value: $editor.width, in: CanvasToolStore.widths, step: 1)
+                .tint(brushColor).accessibilityLabel("Brush width")
+        }
+        .padding(20)
+        .frame(width: 6 * 36 + 5 * 10 + 40)
     }
 
     private var widthPicker: some View {
@@ -171,8 +385,9 @@ struct DoodleCanvasView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.top, 40)
-            .padding(.bottom, 16)
+            // A sheet leaves room for its drag indicator; a popover is even all round.
+            .padding(.top, sizeClass == .regular ? 24 : 40)
+            .padding(.bottom, sizeClass == .regular ? 24 : 16)
             .onGeometryChange(for: CGFloat.self) { geometry in
                 geometry.size.height.rounded(.up)
             } action: { height in
@@ -180,6 +395,8 @@ struct DoodleCanvasView: View {
             }
         }
         .scrollBounceBehavior(.basedOnSize)
+        // Sized to its swatches as a popover; a sheet sizes itself by its detent.
+        .frame(width: sizeClass == .regular ? 360 : nil, height: sizeClass == .regular ? paletteHeight : nil)
         .presentationDetents([.height(paletteHeight)])
         .presentationDragIndicator(.visible)
         .sheet(isPresented: $customColourOpen) {
@@ -195,13 +412,15 @@ struct DoodleCanvasView: View {
 struct UnpairedCanvasView: View {
     @ObservedObject var model: MulberryModel
     @State private var inviteOpen = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
     var body: some View {
+        GeometryReader { geometry in
         ScrollView {
             VStack(spacing: 26) {
                 HStack(spacing: -16) {
                     ProfileAvatar(url: model.bootstrap?.userPhotoUrl, name: model.bootstrap?.userDisplayName, size: 100)
                     ProfileAvatar(url: nil, name: nil, size: 100, unknown: true)
-                }.padding(.top, 64)
+                }.padding(.top, sizeClass == .regular ? 0 : 64)
                 Text("\(model.bootstrap?.userDisplayName ?? "You") & who?")
                     .font(MulberryDesign.font(30, weight: "Bold", relativeTo: .largeTitle)).multilineTextAlignment(.center)
                 Text("Invite your partner to Mulberry to unlock the full experience")
@@ -209,8 +428,29 @@ struct UnpairedCanvasView: View {
                 PrimaryAction(title: "Share invite code") { inviteOpen = true }
                 Button("Have a code? Enter code") { model.showInviteEntry = true }.frame(minHeight: 44)
                 InlineError(message: model.errorMessage)
-            }.padding(28)
+            }.padding(28).readableColumn()
+                // Centred in a tall iPad window rather than hugging the top.
+                .frame(minHeight: sizeClass == .regular ? geometry.size.height : nil)
+        }
         }.frame(maxWidth: .infinity, maxHeight: .infinity).background(MulberryDesign.background)
             .sheet(isPresented: $inviteOpen) { InviteShareView(model: model) }
+    }
+}
+
+/// Opens the Pencil palette where the Pencil hovers, or mid-canvas when it is lifted away.
+private struct PencilPalettePopover<Palette: View>: ViewModifier {
+    @Binding var request: PencilRequest?
+    @ViewBuilder let palette: () -> Palette
+
+    func body(content: Content) -> some View {
+        content.popover(isPresented: Binding(get: { request != nil }, set: { if !$0 { request = nil } }),
+                        attachmentAnchor: anchor) {
+            palette().presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private var anchor: PopoverAttachmentAnchor {
+        guard let location = request?.location else { return .point(.center) }
+        return .rect(.rect(CGRect(origin: location, size: .zero)))
     }
 }

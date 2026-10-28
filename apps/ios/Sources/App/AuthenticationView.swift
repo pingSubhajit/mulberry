@@ -31,6 +31,7 @@ struct AuthenticationView: View {
                         .padding(.top, 12)
                     Spacer(minLength: 40)
                 }
+                .readableColumn(480)
                 .padding(.horizontal, 20)
                 .frame(maxWidth: .infinity, minHeight: geometry.size.height)
             }
@@ -69,6 +70,7 @@ struct AuthenticationView: View {
                 .disabled(isSigningIn)
                 .accessibilityIdentifier("googleSignIn")
             }
+            .readableColumn(480)
             .padding(.horizontal, 20).padding(.bottom, 12)
         }
         // Android's owned landing artwork has one intentional light appearance.
