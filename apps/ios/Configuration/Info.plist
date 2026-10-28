@@ -73,6 +73,13 @@
 		<string>Fonts/poppins_regular.ttf</string>
 		<string>Fonts/poppins_semibold.ttf</string>
 		<string>Fonts/virgil_regular.ttf</string>
+		<string>Fonts/dm_sans_regular.ttf</string>
+		<string>Fonts/space_mono_regular.ttf</string>
+		<string>Fonts/playfair_display_regular.ttf</string>
+		<string>Fonts/bangers_regular.ttf</string>
+		<string>Fonts/permanent_marker_regular.ttf</string>
+		<string>Fonts/kalam_regular.ttf</string>
+		<string>Fonts/oswald_regular.ttf</string>
 	</array>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>

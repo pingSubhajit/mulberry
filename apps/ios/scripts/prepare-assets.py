@@ -51,4 +51,7 @@ fonts = root / 'Resources/Fonts'
 fonts.mkdir(parents=True, exist_ok=True)
 for name in ['poppins_regular.ttf', 'poppins_medium.ttf', 'poppins_semibold.ttf', 'poppins_bold.ttf', 'virgil_regular.ttf']:
     shutil.copy2(android / 'font' / name, fonts / name)
+# Android delivers these in a fast-follow asset pack; iOS bundles them for text.
+for name in ['dm_sans', 'space_mono', 'playfair_display', 'bangers', 'permanent_marker', 'kalam', 'oswald']:
+    shutil.copy2(root.parent / f'mobile/canvas_fonts/src/main/assets/fonts/{name}_regular.ttf', fonts / f'{name}_regular.ttf')
 print('Prepared existing Android artwork and fonts for iOS.')
