@@ -74,6 +74,15 @@ struct StreakSheet: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     private let burgundy = Color(red: 55 / 255, green: 1 / 255, blue: 8 / 255)
     private let lowerBurgundy = Color(red: 82 / 255, green: 2 / 255, blue: 12 / 255)
+    /// A form sheet reports a compact width even on iPad, so the iPad sizing checks the device.
+    private let pad = UIDevice.current.userInterfaceIdiom == .pad
+    @State private var contentHeight: CGFloat = 0
+    @State private var actionHeight: CGFloat = 0
+    /// The streak and the Continue button together; iPadOS sizes the sheet before they are measured,
+    /// so it starts from the usual total.
+    private var sheetHeight: CGFloat {
+        contentHeight > 0 && actionHeight > 0 ? contentHeight + actionHeight : 730
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -117,6 +126,7 @@ struct StreakSheet: View {
                         }.foregroundStyle(.white.opacity(0.85)).padding(24)
                     }
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }.scrollBounceBehavior(.basedOnSize)
                     Button { dismiss() } label: {
                         Text("Continue").font(MulberryDesign.font(17, weight: "Medium"))
@@ -125,6 +135,7 @@ struct StreakSheet: View {
                     }.buttonStyle(.borderedProminent).buttonBorderShape(.roundedRectangle(radius: 16))
                         .tint(MulberryDesign.accent)
                         .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 16)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { actionHeight = $0 }
                 }
                 .background {
                     ZStack(alignment: .topLeading) {
@@ -137,7 +148,8 @@ struct StreakSheet: View {
                 }
         }
         .foregroundStyle(.white).preferredColorScheme(.dark)
-        .presentationDetents([.large]).presentationDragIndicator(.visible)
+        // A phone's full-height detent would override the iPad's sizing, so each gets its own.
+        .modifier(StreakSheetSizing(pad: pad, height: sheetHeight))
         .task { await refresh() }
     }
 }
@@ -188,5 +200,19 @@ struct PairingConfirmedSheet: View {
         }.scrollBounceBehavior(.basedOnSize)
             .overlay { CelebrationConfetti() }
             .presentationDetents([.height(480), .large]).presentationDragIndicator(.visible)
+    }
+}
+
+/// iPad: a form sheet as tall as the streak. Phone: the full-height sheet with its grabber.
+private struct StreakSheetSizing: ViewModifier {
+    let pad: Bool
+    let height: CGFloat
+    func body(content: Content) -> some View {
+        if pad {
+            content.frame(idealHeight: height)
+                .presentationSizing(.form.fitted(horizontal: false, vertical: true))
+        } else {
+            content.presentationDetents([.large]).presentationDragIndicator(.visible)
+        }
     }
 }

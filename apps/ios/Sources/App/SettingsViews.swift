@@ -422,6 +422,8 @@ private struct PartnerVisibilitySheet: View {
         .padding(24).padding(.top, 8)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         .presentationDetents([.height(height)])
+        // On iPad, a form sheet just tall enough for the text.
+        .presentationSizing(.form.fitted(horizontal: false, vertical: true))
         .presentationBackground(MulberryDesign.background)
     }
 }

@@ -6,6 +6,15 @@ struct WallpaperSetupView: View {
     @Environment(\.scenePhase) private var phase
     @State private var automationGuide = false
     @State private var celebration = 0
+    /// A form sheet reports a compact width even on iPad, so iPad-only layout checks the device.
+    private let pad = UIDevice.current.userInterfaceIdiom == .pad
+    @State private var barHeight: CGFloat = 0
+    @State private var contentHeight: CGFloat = 0
+    @State private var actionHeight: CGFloat = 0
+    /// The navigation bar, steps and button together, or the usual total before they are measured.
+    private var sheetHeight: CGFloat {
+        barHeight > 0 && contentHeight > 0 && actionHeight > 0 ? barHeight + contentHeight + actionHeight : 746
+    }
 
     private typealias Step = SetupStep
 
@@ -17,21 +26,26 @@ struct WallpaperSetupView: View {
                     if setup.health.state == .incomplete && currentStep == nil { troubleshooting } else { steps }
                     notices
                 }
-                .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 24)
+                // A tighter gap above the button on iPad, where the sheet is sized to its content.
+                .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, pad ? 12 : 24)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
             .background(MulberryDesign.background)
+            .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { barHeight = $0 }
             .overlay { if celebration > 0 { CelebrationConfetti().id(celebration) } }
             .navigationTitle("Wallpaper").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { helpMenu }
                 ToolbarItem(placement: .confirmationAction) { Button("Done", action: onDone) }
             }
-            .safeAreaInset(edge: .bottom) { callToAction }
-            .sheet(isPresented: $automationGuide) {
-                AutomationGuideSheet {
-                    automationGuide = false
-                    setup.editShortcut(for: setup.automationOn ? nil : .automate)
-                }
+            .safeAreaInset(edge: .bottom) {
+                callToAction.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { actionHeight = $0 }
+            }
+            // A second sheet on iPad is capped well short of this one, so the guide opens as a page
+            // inside it, where its screenshot can span the width. Phones keep the sheet.
+            .sheet(isPresented: pad ? .constant(false) : $automationGuide) { automationGuideView }
+            .navigationDestination(isPresented: pad ? $automationGuide : .constant(false)) {
+                automationGuideView.navigationBarTitleDisplayMode(.inline).background(MulberryDesign.background)
             }
             .animation(.snappy, value: setup.health.state)
             .animation(.snappy, value: currentStep)
@@ -44,6 +58,19 @@ struct WallpaperSetupView: View {
                 guard phase == .active else { return }
                 while !Task.isCancelled { await setup.refresh(); try? await Task.sleep(for: .seconds(2)) }
             }
+        }
+        // On iPad, a form sheet exactly as tall as its content, so no step needs scrolling. iPadOS
+        // sizes the sheet before anything is measured and only follows the content's ideal height
+        // afterwards, so the ideal height starts from the usual layout. Phones ignore both.
+        // The Automation guide page needs room for its screenshot at full width.
+        .frame(idealHeight: pad ? (automationGuide ? max(sheetHeight, 800) : sheetHeight) : nil)
+        .presentationSizing(.form.fitted(horizontal: false, vertical: true))
+    }
+
+    private var automationGuideView: some View {
+        AutomationGuideSheet(inline: pad) {
+            automationGuide = false
+            setup.editShortcut(for: setup.automationOn ? nil : .automate)
         }
     }
 
@@ -273,7 +300,8 @@ struct WallpaperSetupView: View {
                 Text(ctaFootnote).font(.caption).foregroundStyle(MulberryDesign.muted)
             }
         }
-        .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 6)
+        // An iPad sheet has no Home indicator inset below the button, so it matches the side margins.
+        .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, pad ? 20 : 6)
         .background(MulberryDesign.background)
     }
 
@@ -347,8 +375,10 @@ struct WallpaperSetupView: View {
         switch step {
         case .allow: setup.permission == "Off" ? "Turned off in Settings" : "They quietly trigger each update"
         case .add: "Share sheet → Shortcuts → Add"
-        case .choose: "In Set Wallpaper, choose a photo pair with no linked Focus. Mulberry switches to it only when Focus is off."
-        case .automate: "It’s in the Shortcut’s trigger. Tap ? to see where"
+        // On iPad, Shortcuts opens the Shortcut's summary rather than its editor.
+        case .choose: pad ? "Tap Edit, then choose your wallpaper in Set Wallpaper"
+            : "In Set Wallpaper, choose a photo pair with no linked Focus. Mulberry switches to it only when Focus is off."
+        case .automate: pad ? "Tap Edit, then find it in the trigger. Tap ? to see where" : "It’s in the Shortcut’s trigger. Tap ? to see where"
         case .run: "Allow access when asked"
         }
     }
@@ -451,7 +481,11 @@ private struct SetupHelpMenu: View, Equatable {
 
 /// Shows the real Shortcuts trigger, because the expand arrow beside the app name is hard to describe in words.
 private struct AutomationGuideSheet: View {
+    /// Shown as a page inside the setup sheet on iPad, where its own sheet sizing must not apply.
+    var inline = false
     let onOpen: () -> Void
+    /// On iPad, Shortcuts opens the Shortcut's summary first, so tapping Edit becomes step 1.
+    private var first: Int { inline ? 2 : 1 }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
@@ -459,29 +493,46 @@ private struct AutomationGuideSheet: View {
         VStack(alignment: .leading, spacing: 22) {
             Text("Turn Automation on").font(MulberryDesign.font(22, weight: "SemiBold", relativeTo: .title2))
                 .accessibilityAddTraits(.isHeader)
-            Image("AutomationGuide").resizable().scaledToFit()
+            // A box of the crop's exact shape, so the markers and the picture share one frame at any size.
+            Color.clear.aspectRatio(1120 / 920, contentMode: .fit)
+                .overlay { Image("AutomationGuide").resizable().scaledToFit() }
                 .overlay {
                     // Positions are fractions of the 1120 × 920 crop.
                     GeometryReader { geo in
-                        marker(1, center: CGPoint(x: 0.649, y: 0.355), size: CGSize(width: 0.1, height: 0.12), badgeTrailing: true, in: geo.size)
-                        marker(2, center: CGPoint(x: 0.873, y: 0.913), size: CGSize(width: 0.2, height: 0.12), badgeTrailing: false, in: geo.size)
+                        marker(first, center: CGPoint(x: 0.649, y: 0.355), size: CGSize(width: 0.1, height: 0.12), badgeTrailing: true, in: geo.size)
+                        marker(first + 1, center: CGPoint(x: 0.873, y: 0.913), size: CGSize(width: 0.2, height: 0.12), badgeTrailing: false, in: geo.size)
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(.white.opacity(0.12)))
                 .accessibilityLabel("Shortcut trigger with the arrow beside Mulberry and the Automation switch marked")
+                // Takes the room it needs first, so it spans the width when the page is tall enough.
+                .layoutPriority(1)
             VStack(alignment: .leading, spacing: 14) {
-                instruction(1, "Tap the arrow beside Mulberry")
-                instruction(2, "Switch Automation on")
+                if inline { instruction(1, "Tap Edit at the top right") }
+                instruction(first, "Tap the arrow beside Mulberry")
+                instruction(first + 1, "Switch Automation on")
             }
             Spacer(minLength: 0)
             PrimaryAction(title: "Open Shortcut", action: onOpen)
         }
         .padding(24).padding(.top, 8)
-        .presentationDetents([.height(620), .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(MulberryDesign.background)
+        .modifier(GuideSheetPresentation(active: !inline))
         .onAppear { pulse = !reduceMotion }
+    }
+
+    /// Sheet sizing applies to whichever sheet holds the view, so as a page it would resize the setup sheet.
+    private struct GuideSheetPresentation: ViewModifier {
+        let active: Bool
+        func body(content: Content) -> some View {
+            if active {
+                content.presentationDetents([.height(620), .large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(MulberryDesign.background)
+            } else {
+                content
+            }
+        }
     }
 
     private func marker(_ number: Int, center: CGPoint, size: CGSize, badgeTrailing: Bool, in frame: CGSize) -> some View {
@@ -490,8 +541,11 @@ private struct AutomationGuideSheet: View {
         return ZStack {
             Capsule().strokeBorder(MulberryDesign.accent, lineWidth: 3)
                 .frame(width: width, height: height)
-                .scaleEffect(pulse ? 1.12 : 1)
-                .animation(pulse ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : nil, value: pulse)
+                // Only the pulse repeats. An animation on the whole marker would also loop any layout
+                // change, such as the page settling into place, and send the marker drifting.
+                .animation(pulse ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : nil) {
+                    $0.scaleEffect(pulse ? 1.12 : 1)
+                }
                 .position(x: x, y: y)
             badge(number).position(x: x + (badgeTrailing ? 1 : -1) * (width / 2 + 18), y: y)
         }
