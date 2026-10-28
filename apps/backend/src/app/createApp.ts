@@ -92,16 +92,14 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     options.wallpaperImageProcessor ?? new SharpWallpaperImageProcessor(),
     config,
   )
-  const stickerCatalogService = new StickerCatalogService(
-    db,
-    createStickerStorage({
-      supabaseUrl: config.supabaseUrl,
-      supabaseServiceRoleKey: config.supabaseServiceRoleKey,
-      supabaseStickerBucket: config.supabaseStickerBucket,
-      stickerAdminPassword: config.stickerAdminPassword,
-    }),
-    config.stickerAdminPassword,
-  )
+  const stickerStorage = createStickerStorage({
+    supabaseUrl: config.supabaseUrl,
+    supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+    supabaseStickerBucket: config.supabaseStickerBucket,
+    stickerAdminPassword: config.stickerAdminPassword,
+    stickerLocalStorageDir: config.stickerLocalStorageDir,
+  })
+  const stickerCatalogService = new StickerCatalogService(db, stickerStorage, config.stickerAdminPassword)
 
   const streakService = new StreakService(db)
   const bootstrapService = new BootstrapService(db, streakService, storage)
@@ -154,7 +152,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   registerReactionRoutes(app, reactionsService)
   registerCanvasRoutes(app, canvasService)
   registerWallpaperRoutes(app, wallpaperCatalogService)
-  registerStickerRoutes(app, stickerCatalogService)
+  registerStickerRoutes(app, stickerCatalogService, stickerStorage)
   registerCanvasSyncRoutes(app, canvasSyncHub)
   registerFeedbackRoutes(app, feedbackService)
   registerHealthRoutes(app)

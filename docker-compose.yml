@@ -43,9 +43,12 @@ services:
       WALLPAPER_ADMIN_PASSWORD: ${WALLPAPER_ADMIN_PASSWORD:-}
       SUPABASE_STICKER_BUCKET: ${SUPABASE_STICKER_BUCKET:-}
       STICKER_ADMIN_PASSWORD: ${STICKER_ADMIN_PASSWORD:-}
+      STICKER_LOCAL_STORAGE_DIR: ${STICKER_LOCAL_STORAGE_DIR:-}
       CANNY_SSO_PRIVATE_KEY: ${CANNY_SSO_PRIVATE_KEY:-}
     ports:
       - "8080:8080"
+    volumes:
+      - mulberry-sticker-assets:/data/sticker-assets
     healthcheck:
       test:
         [
@@ -60,3 +63,4 @@ services:
 
 volumes:
   mulberry-postgres-data:
+  mulberry-sticker-assets:

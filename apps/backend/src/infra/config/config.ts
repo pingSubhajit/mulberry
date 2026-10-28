@@ -29,6 +29,7 @@ export interface AppConfig {
   wallpaperAdminPassword?: string
   supabaseStickerBucket?: string
   stickerAdminPassword?: string
+  stickerLocalStorageDir?: string
   cannySsoPrivateKey?: string
 }
 
@@ -78,8 +79,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     wallpaperAdminPassword: env.WALLPAPER_ADMIN_PASSWORD,
     supabaseStickerBucket: env.SUPABASE_STICKER_BUCKET ?? env.SUPABASE_WALLPAPER_BUCKET,
     stickerAdminPassword: env.STICKER_ADMIN_PASSWORD ?? env.WALLPAPER_ADMIN_PASSWORD,
+    stickerLocalStorageDir: optionalLocalStickerStorageDir(env.STICKER_LOCAL_STORAGE_DIR, isProduction),
     cannySsoPrivateKey: env.CANNY_SSO_PRIVATE_KEY?.trim() ? env.CANNY_SSO_PRIVATE_KEY : undefined,
   }
+}
+
+// Local sticker files exist only for development against the local database.
+function optionalLocalStickerStorageDir(value: string | undefined, isProduction: boolean): string | undefined {
+  const dir = value?.trim()
+  if (!dir) return undefined
+  if (isProduction) throw new Error("STICKER_LOCAL_STORAGE_DIR is for local development only")
+  return dir
 }
 
 function loadDotenv(startDir = cwd()): Record<string, string> {

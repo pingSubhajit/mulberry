@@ -3,12 +3,15 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import sharp from "sharp"
 import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
+import { LocalStickerStorage } from "./localStorage.js"
 
 export interface StickerCatalogConfig {
   supabaseUrl?: string
   supabaseServiceRoleKey?: string
   supabaseStickerBucket?: string
   stickerAdminPassword?: string
+  /** Development only: keep sticker assets on local disk instead of Supabase. */
+  stickerLocalStorageDir?: string
 }
 
 export interface StickerStorage {
@@ -126,6 +129,7 @@ export class SupabaseStickerStorage implements StickerStorage {
 }
 
 export function createStickerStorage(config: StickerCatalogConfig): StickerStorage | null {
+  if (config.stickerLocalStorageDir) return new LocalStickerStorage(config.stickerLocalStorageDir)
   if (!config.supabaseUrl || !config.supabaseServiceRoleKey || !config.supabaseStickerBucket) return null
   return new SupabaseStickerStorage(
     config.supabaseUrl,

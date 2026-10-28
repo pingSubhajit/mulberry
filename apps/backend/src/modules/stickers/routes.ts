@@ -3,9 +3,30 @@ import { HttpError } from "../../infra/http/HttpError.js"
 import { requireBearerToken } from "../../infra/http/auth.js"
 import { readStickerAdminPassword } from "../../infra/http/adminHeaders.js"
 import { readRequiredImageUpload } from "../../infra/http/uploads.js"
-import type { StickerCatalogService } from "./service.js"
+import type { StickerCatalogService, StickerStorage } from "./service.js"
+import { absolutizeLocalStickerUrls, LOCAL_STICKER_ASSET_PREFIX, LocalStickerStorage } from "./localStorage.js"
 
-export function registerStickerRoutes(app: FastifyInstance, stickerCatalogService: StickerCatalogService): void {
+export function registerStickerRoutes(
+  app: FastifyInstance,
+  stickerCatalogService: StickerCatalogService,
+  storage: StickerStorage | null = null,
+): void {
+  if (storage instanceof LocalStickerStorage) {
+    // Development only: give relative local asset URLs the host the client called.
+    app.addHook("preSerialization", async (request, _reply, payload) => {
+      if (!request.url.startsWith("/stickers/") && !request.url.startsWith("/admin/stickers/")) return payload
+      return absolutizeLocalStickerUrls(payload, `${request.protocol}://${request.headers.host ?? "localhost"}`)
+    })
+
+    app.get(`${LOCAL_STICKER_ASSET_PREFIX}*`, async (request, reply) => {
+      const params = request.params as { "*"?: string }
+      const query = request.query as { expires?: string; sig?: string }
+      const data = await storage.read(params["*"] ?? "", Number(query.expires), query.sig ?? "")
+      reply.header("cache-control", "private, max-age=600").type("image/png")
+      return data
+    })
+  }
+
   app.get("/stickers/packs", async (request) => {
     requireBearerToken(request)
     return stickerCatalogService.listPublishedStickerPacks()
