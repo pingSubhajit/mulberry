@@ -12,7 +12,6 @@ struct MulberryRootView: View {
     @State private var profilePhoto: UIImage?
     @State private var wallpaperOpen = false
     @State private var pairingConfirmationOpen = false
-    @Environment(\.colorScheme) private var colorScheme
 
     init(model: MulberryModel, wallpapers: WallpaperLibrary) {
         self.model = model; self.wallpapers = wallpapers
@@ -159,12 +158,6 @@ struct MulberryRootView: View {
     }
 
     @ToolbarContentBuilder private var header: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Image("HomeWordmark").resizable().renderingMode(.template).scaledToFit()
-                .frame(width: 100, height: 24)
-                .foregroundStyle(colorScheme == .dark ? .white : MulberryDesign.accent)
-                .accessibilityLabel("Mulberry").accessibilityAddTraits(.isHeader)
-        }.sharedBackgroundVisibility(.hidden)
         if model.bootstrap?.isPaired == true {
             ToolbarItem(placement: .topBarTrailing) {
                 StreakPill(streaks: model.streaks, fallbackDays: model.bootstrap?.currentStreakDays ?? 0) {
@@ -193,6 +186,5 @@ struct MulberryRootView: View {
                     .foregroundStyle(MulberryDesign.ink)
             }.accessibilityLabel("Profile")
         }
-
     }
 }
