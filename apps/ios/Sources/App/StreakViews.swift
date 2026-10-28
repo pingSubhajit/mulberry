@@ -1,24 +1,24 @@
 import SwiftUI
 
+/// A plain toolbar button, so it takes the same Liquid Glass capsule as its neighbours.
 struct StreakPill: View {
     @ObservedObject var streaks: StreakModel
     let fallbackDays: Int
     let onOpen: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
+    @ScaledMetric(relativeTo: .body) private var bolt: CGFloat = 19
     var body: some View {
         let days = streaks.streak?.currentStreakDays ?? fallbackDays
         Button(action: onOpen) {
-            HStack(spacing: 6) {
-                Image("HomeStreakBolt").resizable().scaledToFit().frame(width: 16, height: 23)
-                Text("\(days) \(days == 1 ? "day" : "days")")
-                    .font(MulberryDesign.font(14, weight: "Bold", relativeTo: .subheadline))
+            HStack(spacing: 5) {
+                Image("HomeStreakBolt").resizable().scaledToFit().frame(height: bolt)
+                Text(days, format: .number)
+                    .font(.body.weight(.semibold)).monospacedDigit()
+                    .contentTransition(.numericText(value: Double(days)))
+                    .foregroundStyle(MulberryDesign.ink)
             }
-            .foregroundStyle(colorScheme == .dark ? .white : MulberryDesign.accent)
-            .padding(.horizontal, 9).frame(minHeight: 31)
-            .background(MulberryDesign.accent.opacity(0.15), in: Capsule())
-            .overlay(Capsule().strokeBorder(MulberryDesign.accent, lineWidth: 1))
-            .fixedSize().frame(minHeight: 44)
-        }.buttonStyle(.plain)
+            .padding(.horizontal, 4)
+            .animation(.snappy, value: days)
+        }
             .accessibilityLabel("Daily streak: \(days) \(days == 1 ? "day" : "days")")
             .accessibilityHint("Opens your streak for this week")
             .accessibilityIdentifier("streakButton")
@@ -81,19 +81,8 @@ struct StreakSheet: View {
             VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
-                    HStack(spacing: 16) {
+                    HStack {
                         Spacer()
-                        if let streak = streaks.streak {
-                            HStack(spacing: 5) {
-                                Image("HomeStreakBolt").resizable().scaledToFit().frame(width: 13, height: 20)
-                                Text("\(streak.currentStreakDays) \(streak.currentStreakDays == 1 ? "day" : "days")")
-                                    .font(MulberryDesign.font(14, weight: "Bold", relativeTo: .subheadline))
-                            }.padding(.horizontal, 12).padding(.vertical, 6)
-                                .background(MulberryDesign.accent.opacity(0.15), in: Capsule())
-                                .overlay(Capsule().strokeBorder(MulberryDesign.accent, lineWidth: 1))
-                                .accessibilityElement(children: .ignore)
-                                .accessibilityLabel("Daily streak: \(streak.currentStreakDays) \(streak.currentStreakDays == 1 ? "day" : "days")")
-                        }
                         Button { dismiss() } label: {
                             Image(systemName: "xmark").font(.system(size: 17, weight: .medium))
                                 .frame(width: 44, height: 44)

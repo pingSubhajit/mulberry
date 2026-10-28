@@ -184,7 +184,9 @@ struct MulberryRootView: View {
                 StreakPill(streaks: model.streaks, fallbackDays: model.bootstrap?.currentStreakDays ?? 0) {
                     model.showStreak = true
                 }
-            }.sharedBackgroundVisibility(.hidden)
+            }
+            // Its own capsule, apart from the wallpaper and profile pair.
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button { wallpaperOpen = true } label: {
