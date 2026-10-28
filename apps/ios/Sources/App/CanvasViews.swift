@@ -24,7 +24,7 @@ struct DoodleCanvasView: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(MulberryDesign.canvas)
                     .overlay(alignment: .bottom) {
-                        CanvasBlankStateGuidance(visible: editor.strokes.isEmpty)
+                        CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty)
                             .padding(.bottom, 34)
                     }
                     .overlay {
@@ -34,6 +34,10 @@ struct DoodleCanvasView: View {
                     .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(MulberryDesign.accent.opacity(0.30), lineWidth: 2))
                     .padding(.horizontal, 16).padding(.top, 12)
                 toolbar
+                    .fullScreenCover(item: $editor.stickerSession) { session in
+                        CanvasStickerEditorView(session: session, catalog: editor.stickers,
+                                                onDone: editor.commitSticker, onDelete: editor.deleteEditingSticker)
+                    }
 
             }
             // Use part of the bottom safe area, while retaining space for the Home gesture.
@@ -48,9 +52,20 @@ struct DoodleCanvasView: View {
             }
             .onDisappear { editor.end() }
             .sheet(isPresented: $paletteOpen) { colorPicker }
+            .fullScreenCover(item: $editor.textSession) { session in
+                CanvasTextEditorView(session: session, palette: DoodleEditor.palette,
+                                     onDone: editor.commitText, onDelete: editor.deleteEditingText)
+            }
     }
 
     private var brushColor: Color { Color(uiColor: UIColor(argb: editor.color)) }
+    private var selectedColor: Color { Color(uiColor: UIColor(argb: editor.selectedColor)) }
+
+    private func pick(_ color: UInt32) {
+        editor.selectedColor = color
+        // Text keeps its tool; any other colour choice returns to the brush.
+        if editor.tool != .text { editor.tool = .brush }
+    }
 
     private var toolbar: some View {
         GlassEffectContainer(spacing: 4) {
@@ -71,16 +86,14 @@ struct DoodleCanvasView: View {
                             widthPicker.presentationCompactAdaptation(.popover)
                         }
                     Button { paletteOpen = true } label: {
-                        Circle().fill(brushColor).frame(width: 56, height: 56)
+                        Circle().fill(selectedColor).frame(width: 56, height: 56)
                     }.buttonStyle(.plain)
                         .glassEffect(.clear.interactive(), in: .circle)
                         .accessibilityLabel("Colour palette")
                     toolButton("Eyedropper", image: "CanvasEyedropper", selected: editor.tool == .eyedropper) { editor.tool = .eyedropper }
                     toolButton("Eraser", image: "CanvasErase", selected: editor.tool == .eraser) { editor.tool = .eraser }
-                    toolButton("Text", image: "CanvasText", enabled: false) {}
-                        .accessibilityHint("Not available in this version")
-                    toolButton("Stickers", image: "CanvasSticker", enabled: false) {}
-                        .accessibilityHint("Not available in this version")
+                    toolButton("Text", image: "CanvasText", selected: editor.tool == .text, enabled: editor.canEditElements) { editor.toggleText() }
+                    toolButton("Stickers", image: "CanvasSticker", selected: editor.tool == .sticker, enabled: editor.canEditElements) { editor.toggleSticker() }
                     toolButton("Clear canvas", image: "CanvasClear") { clearConfirmation = true }
                         .confirmationDialog("Clear canvas?", isPresented: $clearConfirmation, titleVisibility: .visible) {
                             Button("Clear", role: .destructive) { editor.clear() }
@@ -123,15 +136,15 @@ struct DoodleCanvasView: View {
             VStack(spacing: 24) {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 16)], spacing: 16) {
                     ForEach(DoodleEditor.palette, id: \.self) { color in
-                        Button { editor.color = color; editor.tool = .brush; paletteOpen = false } label: {
+                        Button { pick(color); paletteOpen = false } label: {
                             Circle().fill(Color(uiColor: UIColor(argb: color))).frame(width: 44, height: 44)
                                 .overlay(Circle().stroke(MulberryDesign.muted.opacity(0.3)))
-                                .overlay { if color == editor.color { Image(systemName: "checkmark").foregroundStyle(color == 0xFFF7F4EF || color == 0xFFFFE66D ? .black : .white) } }
+                                .overlay { if color == editor.selectedColor { Image(systemName: "checkmark").foregroundStyle(color == 0xFFF7F4EF || color == 0xFFFFE66D ? .black : .white) } }
                                 .frame(width: 44, height: 44)
-                        }.buttonStyle(.plain).accessibilityLabel("Colour \(String(format: "%06X", color & 0xFFFFFF))").accessibilityAddTraits(editor.color == color ? .isSelected : [])
+                        }.buttonStyle(.plain).accessibilityLabel("Colour \(String(format: "%06X", color & 0xFFFFFF))").accessibilityAddTraits(editor.selectedColor == color ? .isSelected : [])
                     }
                     Button { customColourOpen = true } label: {
-                        CustomColourWell(color: editor.color)
+                        CustomColourWell(color: editor.selectedColor)
                             .frame(width: 28, height: 28)
                             .scaleEffect(1.5)
                             .frame(width: 44, height: 44)
@@ -153,8 +166,8 @@ struct DoodleCanvasView: View {
         .presentationDetents([.height(paletteHeight)])
         .presentationDragIndicator(.visible)
         .sheet(isPresented: $customColourOpen) {
-            CustomColourSheet(color: $editor.color) {
-                editor.tool = .brush
+            CustomColourSheet(color: $editor.selectedColor) {
+                if editor.tool != .text { editor.tool = .brush }
                 paletteOpen = false
                 customColourOpen = false
             }

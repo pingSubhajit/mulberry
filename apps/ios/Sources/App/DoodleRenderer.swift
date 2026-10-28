@@ -1,9 +1,11 @@
 import UIKit
 
 /// Stroke math follows Android's RoundStrokeRenderer and DryBrushStrokeRenderer.
-/// Both interactive drawing and wallpaper export use this renderer.
+/// Both interactive drawing and wallpaper export use this renderer. Text and
+/// stickers paint above every stroke, as Android's element overlay does.
 enum DoodleRenderer {
-    static func draw(_ strokes: [DrawingStroke], dry: Bool, in context: CGContext, size: CGSize) {
+    static func draw(_ strokes: [DrawingStroke], elements: [CanvasElement] = [], stickerImages: [StickerReference: UIImage] = [:],
+                     dry: Bool, in context: CGContext, size: CGSize) {
         context.saveGState()
         context.clip(to: CGRect(origin: .zero, size: size))
         for stroke in strokes {
@@ -13,10 +15,12 @@ enum DoodleRenderer {
             if dry { DryBrushStrokeRenderer.draw(stroke: rendered, in: context) }
             else { RoundStrokeRenderer.draw(stroke: rendered, in: context) }
         }
+        if !elements.isEmpty { CanvasElementRenderer(stickerImages: stickerImages).draw(elements, in: context, canvasSize: size) }
         context.restoreGState()
     }
 
-    static func wallpaper(background: UIImage, strokes: [DrawingStroke], dry: Bool, pixelSize: CGSize, displayScale: CGFloat, canvasSize: CGSize? = nil) -> UIImage {
+    static func wallpaper(background: UIImage, strokes: [DrawingStroke], elements: [CanvasElement] = [],
+                          stickerImages: [StickerReference: UIImage] = [:], dry: Bool, pixelSize: CGSize, displayScale: CGFloat, canvasSize: CGSize? = nil) -> UIImage {
         // UIKit draws the canvas in points, then rasterizes at the screen scale.
         // Keep that coordinate space here too: using pixels as points changes
         // dry-brush minimum widths, bristle count and even its random seed.
@@ -37,7 +41,7 @@ enum DoodleRenderer {
             let source = canvasSize.flatMap { CanvasGeometry.valid($0) ? $0 : nil } ?? size
             let strokeScale = placement.width / source.width
             renderer.cgContext.scaleBy(x: strokeScale, y: strokeScale)
-            draw(strokes, dry: dry, in: renderer.cgContext, size: source)
+            draw(strokes, elements: elements, stickerImages: stickerImages, dry: dry, in: renderer.cgContext, size: source)
             renderer.cgContext.restoreGState()
         }
         // Export pixels, not UIKit's point-size/DPI hint. This changes metadata
@@ -45,14 +49,17 @@ enum DoodleRenderer {
         return UIImage(cgImage: rendered.cgImage!, scale: 1, orientation: .up)
     }
 
-    static func color(at point: CGPoint, strokes: [DrawingStroke], dry: Bool, size: CGSize, background: UIColor) -> UInt32? {
+    static func color(at point: CGPoint, strokes: [DrawingStroke], elements: [CanvasElement] = [], stickerImages: [StickerReference: UIImage] = [:],
+                      dry: Bool, size: CGSize, background: UIColor) -> UInt32? {
         var pixel = [UInt8](repeating: 0, count: 4)
         let success = pixel.withUnsafeMutableBytes { bytes -> Bool in
             guard let context = CGContext(data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
             context.setFillColor(background.cgColor); context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+            // Use UIKit's top-left origin so glyphs are sampled upright.
+            context.translateBy(x: 0, y: 1); context.scaleBy(x: 1, y: -1)
             context.translateBy(x: -point.x, y: -point.y)
-            draw(strokes, dry: dry, in: context, size: size)
+            draw(strokes, elements: elements, stickerImages: stickerImages, dry: dry, in: context, size: size)
             return true
         }
         guard success else { return nil }

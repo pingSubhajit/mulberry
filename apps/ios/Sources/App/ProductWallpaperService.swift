@@ -68,7 +68,15 @@ final class ProductWallpaperService {
         let background = WallpaperLibrary(); background.load(user: user)
         if let error = background.errorMessage { throw BackendError.rejected(0, error) }
         let size = try WallpaperRenderSize.current()
+        let elements = background.showDrawings ? canvas.canvasElements : []
+        // Like Android, a Shortcut run downloads any sticker artwork not cached yet.
+        var stickerImages: [StickerReference: UIImage] = [:]
+        for sticker in Set(elements.compactMap(\.sticker?.sticker)) {
+            stickerImages[sticker] = await StickerAssetStore.shared.image(sticker, variant: .full, user: user)
+        }
+        let missingArtwork = elements.contains { $0.sticker.map { stickerImages[$0.sticker] == nil } ?? false }
         let rendered = DoodleRenderer.wallpaper(background: background.image, strokes: background.showDrawings ? canvas.strokes : [],
+                                                elements: elements, stickerImages: stickerImages,
                                                 dry: state.canvasStrokeRenderMode == "dry", pixelSize: size,
                                                 displayScale: try WallpaperRenderSize.displayScale(),
                                                 canvasSize: CanvasViewportStore.load(user: user, pair: state.pairSessionId))
@@ -78,7 +86,8 @@ final class ProductWallpaperService {
         let history = await journal.all()
         let probe = history.last(where: { $0.stage == "local_notification_scheduled" && Date().timeIntervalSince($0.timestamp) < 120 })?.revision
         let export = WallpaperExport(id: UUID(), userId: user, pairId: state.pairSessionId, revision: canvas.revision, probe: probe, preparedAt: .now, drawingsVisible: background.showDrawings,
-                                     contentSignature: try signature(canvas: canvas, background: background, state: state))
+                                     // A placeholder stands in for missing artwork; keep the wallpaper out of date so it renders again.
+                                     contentSignature: try signature(canvas: canvas, background: background, state: state) + (missingArtwork ? "-incomplete" : ""))
         try FileManager.default.createDirectory(at: exportDirectory, withIntermediateDirectories: true,
                                                 attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
         let file = exportDirectory.appendingPathComponent(export.filename)

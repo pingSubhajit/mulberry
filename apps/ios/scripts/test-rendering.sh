@@ -9,6 +9,7 @@ xcrun --sdk iphonesimulator swiftc -sdk "$SDK_PATH" -target "$(uname -m)-apple-i
   "$IOS_ROOT"/Sources/ProductCore/*.swift \
   "$IOS_ROOT/Sources/App/MulberryDesign.swift" \
   "$IOS_ROOT/Sources/App/CanvasGeometry.swift" "$IOS_ROOT/Sources/App/DoodleRenderer.swift" \
+  "$IOS_ROOT/Sources/App/CanvasElementRenderer.swift" \
   "$IOS_ROOT/Tests/Rendering/WallpaperRenderingChecks.swift" \
   -o "$CHECK_DIR/check-rendering"
 xcrun simctl spawn "${1:-booted}" "$CHECK_DIR/check-rendering"

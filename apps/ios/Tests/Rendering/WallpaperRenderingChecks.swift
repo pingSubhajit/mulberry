@@ -32,6 +32,14 @@ struct WallpaperRenderingChecks {
         precondition(tallPlacement == CGRect(x: 80, y: 0, width: 240, height: 800))
         precondition(CanvasGeometry.placement(canvas: .zero, inside: canvasSize) == CGRect(origin: .zero, size: canvasSize))
         var checks = 1
+        // A non-square, partly transparent sticker exercises aspect fitting and alpha.
+        let kitten = StickerReference(packKey: "spring-kittens", packVersion: 1, stickerId: "1")
+        let stickerFormat = UIGraphicsImageRendererFormat()
+        stickerFormat.scale = 1; stickerFormat.opaque = false; stickerFormat.preferredRange = .standard
+        let images = [kitten: UIGraphicsImageRenderer(size: CGSize(width: 300, height: 200), format: stickerFormat).image {
+            UIColor.clear.setFill(); $0.fill(CGRect(x: 0, y: 0, width: 300, height: 200))
+            UIColor.systemTeal.setFill(); $0.cgContext.fillEllipse(in: CGRect(x: 10, y: 10, width: 280, height: 180))
+        }]
         for (size, scale) in [(CGSize(width: 402, height: 874), CGFloat(3)),
                               (CGSize(width: 393, height: 852), CGFloat(3)),
                               (CGSize(width: 414, height: 896), CGFloat(2))] {
@@ -42,14 +50,21 @@ struct WallpaperRenderingChecks {
                     }
                     let strokes = [DrawingStroke(id: "render-regression", colorArgb: 0xFFB31329, width: width / 1080, points: points),
                                    DrawingStroke(id: "single-point", colorArgb: 0xFFFFE66D, width: width / 1080, points: [.init(x: 0.2, y: 0.2)])]
+                    // Text paints above strokes; include rotation, scale and a pill.
+                    let elements: [CanvasElement] = [
+                        .text(.init(id: "label", text: "Hello\nlove", center: .init(x: 0.5, y: 0.4), rotationRad: 0.4,
+                                    scale: 1.6, colorArgb: 0xFFFFE66D, backgroundPillEnabled: true, alignment: .left)),
+                        .sticker(.init(id: "kitten", center: .init(x: 0.6, y: 0.75), rotationRad: -0.5, scale: 0.4, sticker: kitten)),
+                        .sticker(.init(id: "loading", center: .init(x: 0.2, y: 0.2), sticker: .init(packKey: "p", packVersion: 1, stickerId: "missing"))),
+                        .text(.init(id: "plain", text: "xo", center: .init(x: 0.3, y: 0.7), colorArgb: 0xFF5BB7E8))]
                     let format = UIGraphicsImageRendererFormat()
                     format.scale = scale; format.opaque = true; format.preferredRange = .standard
                     let canvas = UIGraphicsImageRenderer(size: size, format: format).image {
                         UIColor.black.setFill(); $0.fill(CGRect(origin: .zero, size: size))
-                        DoodleRenderer.draw(strokes, dry: dry, in: $0.cgContext, size: size)
+                        DoodleRenderer.draw(strokes, elements: elements, stickerImages: images, dry: dry, in: $0.cgContext, size: size)
                     }
                     let pixelSize = CGSize(width: size.width * scale, height: size.height * scale)
-                    let wallpaper = DoodleRenderer.wallpaper(background: background, strokes: strokes, dry: dry,
+                    let wallpaper = DoodleRenderer.wallpaper(background: background, strokes: strokes, elements: elements, stickerImages: images, dry: dry,
                                                             pixelSize: pixelSize, displayScale: scale)
                     precondition(wallpaper.scale == 1 && wallpaper.size == pixelSize, "Export must describe physical pixels")
                     // Check the file Shortcuts receives, including PNG serialization.
@@ -65,9 +80,9 @@ struct WallpaperRenderingChecks {
                     let appSize = CGSize(width: size.width, height: size.height - 200)
                     let appCanvas = UIGraphicsImageRenderer(size: appSize, format: format).image {
                         UIColor.black.setFill(); $0.fill(CGRect(origin: .zero, size: appSize))
-                        DoodleRenderer.draw(strokes, dry: dry, in: $0.cgContext, size: appSize)
+                        DoodleRenderer.draw(strokes, elements: elements, stickerImages: images, dry: dry, in: $0.cgContext, size: appSize)
                     }
-                    let fitted = DoodleRenderer.wallpaper(background: background, strokes: strokes, dry: dry,
+                    let fitted = DoodleRenderer.wallpaper(background: background, strokes: strokes, elements: elements, stickerImages: images, dry: dry,
                         pixelSize: pixelSize, displayScale: scale, canvasSize: appSize)
                     let decodedFit = UIImage(data: fitted.pngData()!)!
                     let bytes = pixels(decodedFit)
@@ -89,6 +104,25 @@ struct WallpaperRenderingChecks {
                 }
             }
         }
+        // The eyedropper samples text upright: the pill fill sits left of the
+        // first glyph on an unrotated left-aligned label.
+        // Stickers keep their aspect ratio with the long edge at scale x canvas width.
+        let wide = CanvasStickerGeometry.size(.init(center: .init(x: 0.5, y: 0.5), scale: 0.5, sticker: kitten), image: images[kitten], canvasWidth: 400)
+        precondition(wide == CGSize(width: 200, height: 200 / 1.5), "Sticker size must follow Android's long-edge rule")
+        let placed = CanvasStickerElement(center: .init(x: 0.5, y: 0.5), rotationRad: .pi / 2, scale: 0.5, sticker: kitten)
+        precondition(DoodleRenderer.color(at: CGPoint(x: 201, y: 300), strokes: [], elements: [.sticker(placed)], stickerImages: images,
+                                          dry: false, size: canvasSize, background: .black) != 0xFF000000, "Eyedropper must sample stickers")
+        precondition(CanvasElementRenderer(stickerImages: images).hit([.sticker(placed)], at: CGPoint(x: 201, y: 300 + 90), canvasSize: canvasSize) != nil,
+                     "Rotated sticker hit area follows its rotation")
+        let pill = CanvasTextElement(text: "Hi", center: .init(x: 0.5, y: 0.5), colorArgb: 0xFF2457D6, backgroundPillEnabled: true, alignment: .left)
+        let layout = CanvasTextLayout(element: pill, canvasWidth: 402)
+        let body = layout.bodyRect(pill: true)
+        let edge = CGPoint(x: 201 + body.minX + 4, y: 300)
+        precondition(DoodleRenderer.color(at: edge, strokes: [], elements: [.text(pill)], dry: false, size: canvasSize, background: .black) == 0xFF2457D6,
+                     "Eyedropper must sample text pills")
+        precondition(CanvasElementRenderer().hit([.text(pill)], at: CGPoint(x: 201 + body.midX, y: 300), canvasSize: canvasSize)?.id == pill.id)
+        precondition(CanvasElementRenderer().hit([.text(pill)], at: CGPoint(x: 20, y: 20), canvasSize: canvasSize) == nil)
+        checks += 1
         print("Passed \(checks) canvas-to-wallpaper pixel comparisons at 2x and 3x, including shorter app canvases, PNG round trips and Android placement fixtures.")
     }
 

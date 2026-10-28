@@ -1,13 +1,44 @@
 import SwiftUI
 
-enum DoodleTool: String, Codable { case brush, eyedropper, eraser }
+enum DoodleTool: String, Codable { case brush, eyedropper, eraser, text, sticker }
 
-/// Mirrors Android's canvas metadata: brush colour, width and tool survive
-/// restarts, and start fresh for a new user or pair session.
+/// Mirrors Android's canvas metadata: brush colour, text colour, width and tool
+/// survive restarts, and start fresh for a new user or pair session.
 struct CanvasToolSettings: Codable, Equatable {
     var tool: DoodleTool = .brush
     var color: UInt32 = 0xFFB31329
     var width: Double = 10
+    var textColor: UInt32 = 0xFFB31329
+
+    init() {}
+    init(tool: DoodleTool, color: UInt32, width: Double, textColor: UInt32) {
+        self.tool = tool; self.color = color; self.width = width; self.textColor = textColor
+    }
+
+    // Settings saved before text existed have no text colour.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = CanvasToolSettings()
+        tool = try c.decodeIfPresent(DoodleTool.self, forKey: .tool) ?? defaults.tool
+        color = try c.decodeIfPresent(UInt32.self, forKey: .color) ?? defaults.color
+        width = try c.decodeIfPresent(Double.self, forKey: .width) ?? defaults.width
+        textColor = try c.decodeIfPresent(UInt32.self, forKey: .textColor) ?? defaults.textColor
+    }
+}
+
+/// A text element open in the full-screen editor. New text is only added on Done.
+struct CanvasTextSession: Identifiable, Equatable {
+    var element: CanvasTextElement
+    let isNew: Bool
+    var id: String { element.id }
+}
+
+/// A sticker open in its editor. A new sticker has an empty reference until
+/// the catalog provides a default or the user picks one.
+struct CanvasStickerSession: Identifiable, Equatable {
+    var element: CanvasStickerElement
+    let isNew: Bool
+    var id: String { element.id }
 }
 
 @MainActor enum CanvasToolStore {
@@ -17,8 +48,9 @@ struct CanvasToolSettings: Codable, Equatable {
         guard let user, let data = UserDefaults.standard.data(forKey: key(user, pair)),
               var settings = try? JSONDecoder().decode(CanvasToolSettings.self, from: data) else { return .init() }
         settings.width = min(widths.upperBound, max(widths.lowerBound, settings.width))
-        // The eyedropper is a one-shot sampling mode, not a resting tool.
-        if settings.tool == .eyedropper { settings.tool = .brush }
+        // The eyedropper is a one-shot sampling mode, not a resting tool. Text
+        // placement also starts cold in the brush, as Android starts with no tool.
+        if [.eyedropper, .text, .sticker].contains(settings.tool) { settings.tool = .brush }
         return settings
     }
 
@@ -38,7 +70,14 @@ final class DoodleEditor: ObservableObject {
     // Android widths are physical canvas pixels. A reference width of 1080
     // preserves the same relative brush weight on Retina and Android screens.
     @Published var width: Double { didSet { saveTools() } }
+    @Published var textColor: UInt32 { didSet { saveTools() } }
     @Published private(set) var strokes: [DrawingStroke] = []
+    @Published private(set) var elements: [CanvasElement] = []
+    @Published var textSession: CanvasTextSession?
+    @Published var stickerSession: CanvasStickerSession?
+    let stickers: StickerCatalog
+    /// Artwork the canvas has loaded, so the eyedropper samples stickers too.
+    var stickerImages: [StickerReference: UIImage] = [:]
     @Published private(set) var history = DrawingHistory()
     @Published private(set) var saving = false
     @Published var errorMessage: String? {
@@ -46,7 +85,7 @@ final class DoodleEditor: ObservableObject {
     }
     private let model: MulberryModel
     private let pair: String?
-    private let user: String?
+    let user: String?
     private var active: DrawingStroke?
     private var ended = false
     private var emittedPoints = 0
@@ -54,17 +93,26 @@ final class DoodleEditor: ObservableObject {
     private var pending: [DrawingOperation] = []
     private var overlay: [DrawingOperation] = []
     private var draining = false
+    private var decodedElements: [JSONValue] = []
 
     init(model: MulberryModel) {
         self.model = model; pair = model.bootstrap?.pairSessionId; user = model.userId
         let tools = CanvasToolStore.load(user: user, pair: pair)
-        tool = tools.tool; color = tools.color; width = tools.width
+        tool = tools.tool; color = tools.color; width = tools.width; textColor = tools.textColor
         strokes = model.drawing.strokes
+        elements = model.drawing.canvasElements; decodedElements = model.drawing.elements
+        stickers = StickerCatalog(user: user)
         model.retryCanvasSave = { [weak self] in self?.retry() }
     }
 
     var canUndo: Bool { active == nil && !saving && history.canUndo }
     var canRedo: Bool { active == nil && !saving && history.canRedo }
+
+    /// Android keeps one colour for text and one for every other tool.
+    var selectedColor: UInt32 {
+        get { tool == .text ? textColor : color }
+        set { if tool == .text { textColor = newValue } else { color = newValue } }
+    }
 
     func receive() {
         var state = model.drawing
@@ -75,6 +123,11 @@ final class DoodleEditor: ObservableObject {
             state.strokes.append(active)
         }
         strokes = state.strokes
+        // Receive runs for every stroke point; decode elements only when they change.
+        if state.elements != decodedElements {
+            decodedElements = state.elements
+            elements = state.canvasElements
+        }
     }
 
     func begin(at point: CGPoint, size: CGSize) {
@@ -92,9 +145,11 @@ final class DoodleEditor: ObservableObject {
         case .eraser: erase(at: point, size: size)
         case .eyedropper:
             let background = UIColor(MulberryDesign.canvas)
-            if let sampled = DoodleRenderer.color(at: point, strokes: strokes, dry: model.bootstrap?.canvasStrokeRenderMode == "dry", size: size, background: background) {
-                color = sampled; tool = .brush
+            if let sampled = DoodleRenderer.color(at: point, strokes: strokes, elements: elements, stickerImages: stickerImages,
+                                                  dry: model.bootstrap?.canvasStrokeRenderMode == "dry", size: size, background: background) {
+                color = sampled; textColor = sampled; tool = .brush
             }
+        case .text, .sticker: break
         }
     }
 
@@ -143,13 +198,120 @@ final class DoodleEditor: ObservableObject {
 
     func resetHistory() { history.reset() }
 
+    // MARK: Text and stickers
+
+    var canEditElements: Bool { validSession && errorMessage == nil }
+    private var editorOpen: Bool { textSession != nil || stickerSession != nil }
+
+    /// Selecting the tool opens a new centered text, as on Android; selecting
+    /// it again returns to the brush.
+    func toggleText() {
+        if tool == .text { tool = .brush; return }
+        end()
+        tool = .text
+        startText(at: .init(x: 0.5, y: 0.5))
+    }
+
+    func startText(at center: DrawingPoint) {
+        guard canEditElements, !editorOpen else { return }
+        present { $0.textSession = .init(element: .init(center: center, colorArgb: self.textColor), isNew: true) }
+    }
+
+    /// Blank text is never saved: a new one is discarded and an edited one deleted.
+    func commitText(_ element: CanvasTextElement) {
+        guard let session = textSession, session.id == element.id else { return }
+        present { $0.textSession = nil }
+        let blank = element.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if session.isNew {
+            guard !blank else { return }
+            addElement(.text(element))
+        } else if blank {
+            deleteElement(element.id)
+        } else {
+            updateElement(.text(element))
+        }
+    }
+
+    func deleteEditingText() {
+        guard let session = textSession else { return }
+        present { $0.textSession = nil }
+        if !session.isNew { deleteElement(session.id) }
+    }
+
+    /// Like text, the sticker tool opens a new centered sticker straight away.
+    func toggleSticker() {
+        if tool == .sticker { tool = .brush; return }
+        end()
+        tool = .sticker
+        stickers.load()
+        startSticker(at: .init(x: 0.5, y: 0.5))
+    }
+
+    /// Opens the picker with the last used sticker, or the open pack's first.
+    /// Before the catalog loads the editor waits for the user's choice.
+    func startSticker(at center: DrawingPoint) {
+        guard canEditElements, !editorOpen else { return }
+        let sticker = stickers.defaultSticker ?? StickerReference(packKey: "", packVersion: 0, stickerId: "")
+        present { $0.stickerSession = .init(element: .init(center: center, sticker: sticker), isNew: true) }
+    }
+
+    func commitSticker(_ element: CanvasStickerElement) {
+        guard let session = stickerSession, session.id == element.id else { return }
+        present { $0.stickerSession = nil }
+        guard !element.sticker.stickerId.isEmpty else { return }
+        stickers.use(element.sticker)
+        if session.isNew { addElement(.sticker(element)) } else { updateElement(.sticker(element)) }
+    }
+
+    func deleteEditingSticker() {
+        guard let session = stickerSession else { return }
+        present { $0.stickerSession = nil }
+        if !session.isNew { deleteElement(session.id) }
+    }
+
+    /// Tapping existing text or a sticker reopens its editor.
+    func edit(_ element: CanvasElement) {
+        guard canEditElements, !editorOpen else { return }
+        switch element {
+        case .text(let text): present { $0.textSession = .init(element: text, isNew: false) }
+        case .sticker(let sticker):
+            stickers.load()
+            present { $0.stickerSession = .init(element: sticker, isNew: false) }
+        }
+    }
+
+    private func addElement(_ element: CanvasElement) {
+        guard canEditElements else { return }
+        history.recordAdd(element)
+        queue([.add(element)], preview: true)
+    }
+
+    /// Saves a moved, rotated, rescaled or edited element as one undo step.
+    func updateElement(_ element: CanvasElement) {
+        guard canEditElements, let before = elements.first(where: { $0.id == element.id }), before != element else { return }
+        history.recordUpdate(from: before, to: element)
+        queue([.update(element)], preview: true)
+    }
+
+    func deleteElement(_ id: String) {
+        guard canEditElements, let existing = elements.first(where: { $0.id == id }) else { return }
+        history.recordDelete(existing)
+        queue([.delete(existing)], preview: true)
+    }
+
+    // The editors fade themselves in and out; the cover must not slide.
+    private func present(_ change: (DoodleEditor) -> Void) {
+        var transaction = Transaction(); transaction.disablesAnimations = true
+        withTransaction(transaction) { change(self) }
+    }
+
     func updateViewport(_ size: CGSize) {
         guard validSession, let user else { return }
         CanvasViewportStore.save(size, user: user, pair: pair)
     }
 
     private func saveTools() {
-        CanvasToolStore.save(.init(tool: tool, color: color, width: width), user: user, pair: pair)
+        CanvasToolStore.save(.init(tool: tool, color: color, width: width, textColor: textColor), user: user, pair: pair)
     }
 
     private var validSession: Bool { model.userId == user && model.bootstrap?.pairSessionId == pair && model.bootstrap?.isPaired == true }
@@ -231,39 +393,258 @@ struct DoodleSurface: UIViewRepresentable {
     }
     func updateUIView(_ view: DoodleTouchView, context: Context) {
         view.editor = editor; view.strokes = editor.strokes; view.dry = dry
+        view.elementTool = editor.tool == .text || editor.tool == .sticker ? editor.tool : nil
+        // The element being edited is shown only in its editor until Done.
+        view.elementLayer.user = editor.user
+        view.elementLayer.update(elements: editor.elements, hidden: editor.textSession?.id ?? editor.stickerSession?.id)
+        view.accessibilityValue = editor.elements.compactMap(\.text?.text).joined(separator: ", ")
         view.backgroundColor = UIColor(MulberryDesign.canvas)
         view.setNeedsDisplay()
     }
 }
 
-final class DoodleTouchView: UIView {
+/// Text and stickers are drawn in their own layer above the strokes, so a
+/// stroke in progress does not redraw them, and a drag does not redraw strokes.
+final class CanvasElementLayerView: UIView {
+    let renderer = CanvasElementRenderer()
+    var user: String?
+    /// Called when sticker artwork arrives, for the eyedropper.
+    var onImagesChanged: (([StickerReference: UIImage]) -> Void)?
+    private(set) var elements: [CanvasElement] = []
+    private var hiddenID: String?
+    /// A gesture's live position, drawn in place of the saved element.
+    private var preview: CanvasElement?
+    private var loading: Set<StickerReference> = []
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = false; backgroundColor = .clear; isUserInteractionEnabled = false
+        contentMode = .redraw
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    var visible: [CanvasElement] {
+        elements.compactMap { element in
+            element.id == hiddenID ? nil : element.id == preview?.id ? preview : element
+        }
+    }
+
+    func update(elements: [CanvasElement], hidden: String?) {
+        guard elements != self.elements || hidden != hiddenID else { return }
+        self.elements = elements; hiddenID = hidden
+        renderer.retain(elements)
+        loadArtwork()
+        setNeedsDisplay()
+    }
+
+    func show(preview: CanvasElement?) {
+        guard preview != self.preview else { return }
+        self.preview = preview
+        setNeedsDisplay()
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        renderer.draw(visible, in: context, canvasSize: bounds.size)
+    }
+
+    /// Full artwork, downsampled for the screen; placeholders draw meanwhile.
+    private func loadArtwork() {
+        guard let user else { return }
+        let missing = Set(elements.compactMap(\.sticker?.sticker)).subtracting(renderer.stickerImages.keys).subtracting(loading)
+        for sticker in missing {
+            loading.insert(sticker)
+            Task { [weak self] in
+                let image = await StickerAssetStore.shared.image(sticker, variant: .full, user: user, maxPixelSize: 1024)
+                guard let self else { return }
+                self.loading.remove(sticker)
+                guard let image, self.user == user else { return }
+                self.renderer.stickerImages[sticker] = image
+                self.onImagesChanged?(self.renderer.stickerImages)
+                self.setNeedsDisplay()
+            }
+        }
+    }
+}
+
+final class DoodleTouchView: UIView, UIGestureRecognizerDelegate {
     weak var editor: DoodleEditor? {
-        didSet { editor?.updateViewport(bounds.size) }
+        didSet {
+            editor?.updateViewport(bounds.size)
+            elementLayer.onImagesChanged = { [weak editor] images in editor?.stickerImages = images }
+        }
     }
     var strokes: [DrawingStroke] = []
     var dry = true
+    let elementLayer = CanvasElementLayerView()
+    /// Text or sticker: tapping places or edits that kind; dragging, pinching
+    /// and twisting move it. Other tools draw.
+    var elementTool: DoodleTool? {
+        didSet {
+            guard elementTool != oldValue else { return }
+            elementGestures.forEach { $0.isEnabled = elementTool != nil }
+            endTransform(commit: false)
+        }
+    }
     private weak var trackedTouch: UITouch?
+    // Eraser: a tap on text or a sticker deletes it; dragging off it erases strokes.
+    private var elementToErase: (id: String, start: CGPoint)?
+    private var elementGestures: [UIGestureRecognizer] = []
+    private var transforming: Set<ObjectIdentifier> = []
+    private var elementTransform: (base: CanvasElement, current: CanvasElement)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        elementLayer.frame = bounds
+        elementLayer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(elementLayer)
+        let tap = UITapGestureRecognizer(target: self, action: #selector(elementTap(_:)))
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(elementPan(_:)))
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(elementPinch(_:)))
+        let rotation = UIRotationGestureRecognizer(target: self, action: #selector(elementRotation(_:)))
+        elementGestures = [tap, pan, pinch, rotation]
+        for gesture in elementGestures {
+            gesture.delegate = self; gesture.isEnabled = false
+            addGestureRecognizer(gesture)
+        }
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         editor?.updateViewport(bounds.size)
-        setNeedsDisplay()
+        setNeedsDisplay(); elementLayer.setNeedsDisplay()
     }
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         DoodleRenderer.draw(strokes, dry: dry, in: context, size: bounds.size)
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard trackedTouch == nil, let touch = touches.first else { return }
-        trackedTouch = touch; editor?.begin(at: touch.location(in: self), size: bounds.size)
+        guard elementTool == nil, trackedTouch == nil, let touch = touches.first else { return }
+        trackedTouch = touch
+        let point = touch.location(in: self)
+        if editor?.tool == .eraser, let hit = elementLayer.renderer.hit(elementLayer.visible, at: point, canvasSize: bounds.size) {
+            elementToErase = (hit.id, point)
+            return
+        }
+        editor?.begin(at: point, size: bounds.size)
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = trackedTouch, touches.contains(touch) else { return }
+        let point = touch.location(in: self)
+        if let pending = elementToErase {
+            guard hypot(point.x - pending.start.x, point.y - pending.start.y) > 10 else { return }
+            elementToErase = nil
+            editor?.begin(at: point, size: bounds.size)
+        }
         editor?.move(points: (event?.coalescedTouches(for: touch) ?? [touch]).map { $0.location(in: self) }, size: bounds.size)
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = trackedTouch, touches.contains(touch) else { return }
-        editor?.move(points: [touch.location(in: self)], size: bounds.size)
-        editor?.end(); trackedTouch = nil
+        if let pending = elementToErase {
+            editor?.deleteElement(pending.id)
+        } else {
+            editor?.move(points: [touch.location(in: self)], size: bounds.size)
+            editor?.end()
+        }
+        elementToErase = nil; trackedTouch = nil
     }
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { editor?.end(); trackedTouch = nil }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if elementToErase == nil { editor?.end() }
+        elementToErase = nil; trackedTouch = nil
+    }
+
+    // MARK: Text and sticker tools
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        elementGestures.contains(gestureRecognizer) && elementGestures.contains(other)
+    }
+
+    // UIView's own hook, which also answers as these recognizers' delegate.
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard elementGestures.contains(gestureRecognizer) else { return super.gestureRecognizerShouldBegin(gestureRecognizer) }
+        guard elementTool != nil, editor?.textSession == nil, editor?.stickerSession == nil else { return false }
+        // Moving needs a target; a tap on empty canvas still places a new element.
+        guard !(gestureRecognizer is UITapGestureRecognizer) else { return true }
+        return elementTransform != nil || hitElement(at: gestureRecognizer.location(in: self)) != nil
+    }
+
+    @objc private func elementTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended, let editor else { return }
+        let point = gesture.location(in: self)
+        if let hit = hitElement(at: point) { editor.edit(hit) }
+        else if elementTool == .text { editor.startText(at: normalized(point)) }
+        else if elementTool == .sticker { editor.startSticker(at: normalized(point)) }
+    }
+
+    @objc private func elementPan(_ gesture: UIPanGestureRecognizer) {
+        updateTransform(gesture) { element in
+            let translation = gesture.translation(in: self)
+            gesture.setTranslation(.zero, in: self)
+            element.center = normalized(CGPoint(x: element.center.x * bounds.width + translation.x,
+                                                y: element.center.y * bounds.height + translation.y))
+        }
+    }
+
+    @objc private func elementPinch(_ gesture: UIPinchGestureRecognizer) {
+        updateTransform(gesture) { element in
+            element.scale(by: gesture.scale)
+            gesture.scale = 1
+        }
+    }
+
+    @objc private func elementRotation(_ gesture: UIRotationGestureRecognizer) {
+        updateTransform(gesture) { element in
+            element.rotationRad += gesture.rotation
+            gesture.rotation = 0
+        }
+    }
+
+    /// Pan, pinch and rotation share one target and save once, when the last ends.
+    private func updateTransform(_ gesture: UIGestureRecognizer, _ change: (inout CanvasElement) -> Void) {
+        switch gesture.state {
+        case .began:
+            if elementTransform == nil {
+                guard let hit = hitElement(at: gesture.location(in: self)) else { return }
+                elementTransform = (hit, hit)
+            }
+            transforming.insert(ObjectIdentifier(gesture))
+            fallthrough
+        case .changed:
+            guard var current = elementTransform?.current else { return }
+            change(&current)
+            elementTransform?.current = current
+            elementLayer.show(preview: current)
+        default:
+            transforming.remove(ObjectIdentifier(gesture))
+            if transforming.isEmpty { endTransform(commit: true) }
+        }
+    }
+
+    private func endTransform(commit: Bool) {
+        transforming.removeAll()
+        guard let elementTransform else { return }
+        self.elementTransform = nil
+        if commit, elementTransform.current != elementTransform.base, let editor {
+            editor.updateElement(elementTransform.current)
+            // Swap in the saved position now so the old one never flashes.
+            elementLayer.update(elements: editor.elements, hidden: editor.textSession?.id ?? editor.stickerSession?.id)
+        }
+        elementLayer.show(preview: nil)
+    }
+
+    /// Like Android, each tool picks up only its own kind of element.
+    private func hitElement(at point: CGPoint) -> CanvasElement? {
+        let tool = elementTool
+        return elementLayer.renderer.hit(elementLayer.visible, at: point, canvasSize: bounds.size) { element in
+            switch element {
+            case .text: tool == .text
+            case .sticker: tool == .sticker
+            }
+        }
+    }
+
+    private func normalized(_ point: CGPoint) -> DrawingPoint {
+        .init(x: min(1, max(0, point.x / max(1, bounds.width))), y: min(1, max(0, point.y / max(1, bounds.height))))
+    }
 }
