@@ -70,6 +70,7 @@ struct ProfileAvatar: View {
     let name: String?
     var size: CGFloat = 88
     var unknown = false
+    var ringWidth: CGFloat = 5
     var body: some View {
         ZStack {
             Circle().fill(MulberryDesign.soft)
@@ -82,7 +83,7 @@ struct ProfileAvatar: View {
             }
         }
         .frame(width: size, height: size).clipShape(Circle())
-        .overlay(Circle().stroke(MulberryDesign.soft, lineWidth: 5))
+        .overlay(Circle().stroke(MulberryDesign.soft, lineWidth: ringWidth))
         .accessibilityLabel(name ?? "Profile photo")
     }
 }
