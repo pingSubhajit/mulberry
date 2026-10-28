@@ -37,7 +37,7 @@ public struct SetupHealth: Equatable, Sendable {
             return Self(state: .responded, title: "Last test completed", detail: "The Shortcut reached its final step. Check the wallpaper once. Test again after editing the Shortcut.", checkedAt: receipt.timestamp)
         }
         if now.timeIntervalSince(probe.timestamp) < 45 {
-            return Self(state: .waiting, title: "Waiting for the Shortcut", detail: "Go to the Home Screen or lock your phone. Return here after the wallpaper changes.", checkedAt: nil)
+            return Self(state: .waiting, title: "Waiting for the Shortcut", detail: "Mulberry is running your Shortcut. This takes a few seconds.", checkedAt: nil)
         }
         return Self(state: .incomplete, title: "Test did not finish", detail: "Open the Shortcut and check Automation is on. Run it once to see any error or permission prompt, then test again. Delivery can also be delayed.", checkedAt: probe.timestamp)
     }

@@ -296,9 +296,6 @@ struct WallpaperSetupView: View {
             // Testing before every step is done can only fail, so the test unlocks at the end.
             PrimaryAction(title: ctaTitle, loading: setup.busy || setup.health.state == .waiting,
                           enabled: isAllSet || currentStep == nil, action: primary)
-            if let ctaFootnote {
-                Text(ctaFootnote).font(.caption).foregroundStyle(MulberryDesign.muted)
-            }
         }
         // An iPad sheet has no Home indicator inset below the button, so it matches the side margins.
         .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, pad ? 20 : 6)
@@ -403,7 +400,7 @@ struct WallpaperSetupView: View {
     private var heroSymbol: String {
         switch setup.health.state {
         case .responded: "checkmark"
-        case .waiting: "lock.fill"
+        case .waiting: "arrow.triangle.2.circlepath"
         case .blocked: "bell.slash.fill"
         case .incomplete: "arrow.clockwise"
         default: currentStep == nil ? "wand.and.sparkles" : "scribble.variable"
@@ -413,7 +410,8 @@ struct WallpaperSetupView: View {
     private var heroTitle: String {
         switch setup.health.state {
         case .responded: "You’re all set"
-        case .waiting: "Lock your phone now"
+        // The Shortcut automation runs while Mulberry stays open, so nobody has to leave to test.
+        case .waiting: "Updating your wallpaper"
         case .blocked: "Notifications are off"
         case .incomplete: "That didn’t go through"
         case .settingsChanged: "Settings changed"
@@ -424,7 +422,7 @@ struct WallpaperSetupView: View {
     private var heroSubtitle: String {
         switch setup.health.state {
         case .responded: "New drawings will appear on their own"
-        case .waiting: "Come back once your wallpaper changes"
+        case .waiting: "This takes a few seconds"
         case .blocked: "Turn them on to keep syncing"
         case .incomplete: "It’s usually a quick fix"
         case .settingsChanged: "Run a quick test to confirm"
@@ -441,11 +439,6 @@ struct WallpaperSetupView: View {
 
     /// Shown above the button with the troubleshooting list, since retrying is itself a fix.
     private var retryHint: Bool { setup.health.state == .incomplete && currentStep == nil }
-
-    private var ctaFootnote: String? {
-        if isAllSet || retryHint || setup.health.state == .waiting { return nil }
-        return currentStep == nil ? "Then lock your phone" : nil
-    }
 }
 
 private struct RowButtonStyle: ViewModifier {
