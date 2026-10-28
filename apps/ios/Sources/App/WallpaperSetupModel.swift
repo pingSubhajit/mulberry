@@ -43,12 +43,17 @@ final class WallpaperSetupModel: ObservableObject {
     func markShortcutAdded() { mark(.add, true) }
     var template: URL? { Bundle.main.url(forResource: shortcutName, withExtension: "shortcut", subdirectory: "ShortcutTemplates") }
 
+    /// Publishes only real changes. The screen polls every two seconds, and an unchanged
+    /// assignment would still re-render it, rebuilding any open menu under the user's finger.
+    private func update<Value: Equatable>(_ property: ReferenceWritableKeyPath<WallpaperSetupModel, Value>, _ value: Value) {
+        if self[keyPath: property] != value { self[keyPath: property] = value }
+    }
+
     func refresh() async {
         guard !refreshing, let journal else { return }
         refreshing = true; defer { refreshing = false }
-        if UserDefaults.standard.string(forKey: "apnsRegistrationError") != nil || UserDefaults.standard.string(forKey: "pushRegistrationError") != nil {
-            remoteDeliveryMessage = "Remote updates are not connected yet. Local Shortcut tests can still run."
-        } else { remoteDeliveryMessage = nil }
+        let pushBroken = UserDefaults.standard.string(forKey: "apnsRegistrationError") != nil || UserDefaults.standard.string(forKey: "pushRegistrationError") != nil
+        update(\.remoteDeliveryMessage, pushBroken ? "Remote updates are not connected yet. Local Shortcut tests can still run." : nil)
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         let key = "notificationSettings.\(model.userId ?? "")"
         let signature = "\(settings.authorizationStatus.rawValue):\(settings.notificationCenterSetting.rawValue):\(settings.lockScreenSetting.rawValue):\(settings.alertSetting.rawValue):\(settings.scheduledDeliverySetting.rawValue)"
@@ -58,23 +63,24 @@ final class WallpaperSetupModel: ObservableObject {
         UserDefaults.standard.set(signature, forKey: key)
         var access: NotificationAccess
         switch settings.authorizationStatus {
-        case .authorized, .provisional, .ephemeral: access = .allowed; permission = "Allowed"
-        case .denied: access = .denied; permission = "Off"
-        default: access = .notRequested; permission = "Not requested"
+        case .authorized, .provisional, .ephemeral: access = .allowed; update(\.permission, "Allowed")
+        case .denied: access = .denied; update(\.permission, "Off")
+        default: access = .notRequested; update(\.permission, "Not requested")
         }
         if access == .allowed && settings.notificationCenterSetting != .enabled && settings.lockScreenSetting != .enabled && settings.alertSetting != .enabled { access = .noPresentation }
-        allowed = access == .allowed
+        update(\.allowed, access == .allowed)
         let history = await journal.all()
         // Events before the latest reset belong to an earlier setup run.
         let events = history.lastIndex { $0.stage == "setup_reset" }.map { Array(history[($0 + 1)...]) } ?? history
-        health = SetupHealth.assess(access: access, events: events)
+        update(\.health, SetupHealth.assess(access: access, events: events))
         // The Shortcut normally removes its trigger notification; after a failed test nothing else will.
         if health.state == .incomplete { await clearTestNotifications() }
-        shortcutRan = events.contains { $0.stage == "shortcut_reported_applied" }
-        shortcutAdded = shortcutRan || UserDefaults.standard.bool(forKey: stepKey(.add))
-        shortcutConfigured = shortcutRan || UserDefaults.standard.bool(forKey: stepKey(.choose))
+        let ran = events.contains { $0.stage == "shortcut_reported_applied" }
+        update(\.shortcutRan, ran)
+        update(\.shortcutAdded, ran || UserDefaults.standard.bool(forKey: stepKey(.add)))
+        update(\.shortcutConfigured, ran || UserDefaults.standard.bool(forKey: stepKey(.choose)))
         // A manual run works with Automation off, so only a passed test proves this step.
-        automationOn = health.state == .responded || UserDefaults.standard.bool(forKey: stepKey(.automate))
+        update(\.automationOn, health.state == .responded || UserDefaults.standard.bool(forKey: stepKey(.automate)))
         // A slow or unreachable backend must not hold up the next local refresh.
         if presenceReport == nil {
             presenceReport = Task { await reportPresence(); presenceReport = nil }

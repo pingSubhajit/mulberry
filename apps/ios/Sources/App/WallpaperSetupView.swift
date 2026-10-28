@@ -4,7 +4,6 @@ struct WallpaperSetupView: View {
     @ObservedObject var setup: WallpaperSetupModel
     let onDone: () -> Void
     @Environment(\.scenePhase) private var phase
-    @State private var blurryHelp = false
     @State private var automationGuide = false
     @State private var celebration = 0
 
@@ -28,7 +27,6 @@ struct WallpaperSetupView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done", action: onDone) }
             }
             .safeAreaInset(edge: .bottom) { callToAction }
-            .sheet(isPresented: $blurryHelp) { SharpDrawingsSheet { blurryHelp = false } }
             .sheet(isPresented: $automationGuide) {
                 AutomationGuideSheet {
                     automationGuide = false
@@ -254,15 +252,10 @@ struct WallpaperSetupView: View {
     }
 
     private var helpMenu: some View {
-        Menu {
-            Button("Edit Shortcut", systemImage: "square.and.pencil") { setup.editShortcut() }
-            Button("Notification settings", systemImage: "bell") { setup.openSettings() }
-            Button("Drawings look blurry?", systemImage: "camera.filters") { blurryHelp = true }
-            Divider()
-            Button("Start setup over", systemImage: "arrow.counterclockwise") { Task { await setup.startOver() } }
-                .disabled(testRunning)
-        } label: { Image(systemName: "questionmark") }
-            .accessibilityLabel("Help")
+        SetupHelpMenu(testRunning: testRunning, editShortcut: { [setup] in setup.editShortcut() },
+                      openSettings: { [setup] in setup.openSettings() },
+                      startOver: { [setup] in Task { await setup.startOver() } })
+            .equatable()
     }
 
     // MARK: Call to action
@@ -429,35 +422,23 @@ private struct RowButtonStyle: ViewModifier {
     }
 }
 
-private struct SharpDrawingsSheet: View {
-    let onClose: () -> Void
-    private let steps: [(symbol: String, text: String)] = [
-        ("gearshape.fill", "Settings → Wallpaper → Customise"),
-        ("hexagon", "Turn Spatial Scene off"),
-        ("drop.halffull", "Leave Home Screen blur off"),
-    ]
+/// Compared by its one input, so the polling screen behind it never rebuilds the menu while it is open.
+private struct SetupHelpMenu: View, Equatable {
+    let testRunning: Bool
+    let editShortcut: () -> Void
+    let openSettings: () -> Void
+    let startOver: () -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.testRunning == rhs.testRunning }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            Text("Keep drawings sharp").font(MulberryDesign.font(22, weight: "SemiBold", relativeTo: .title2))
-                .accessibilityAddTraits(.isHeader)
-            VStack(alignment: .leading, spacing: 16) {
-                ForEach(steps, id: \.text) { step in
-                    HStack(spacing: 14) {
-                        Image(systemName: step.symbol).font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(MulberryDesign.accent)
-                            .frame(width: 38, height: 38)
-                            .background(MulberryDesign.accent.opacity(0.12), in: Circle())
-                            .accessibilityHidden(true)
-                        Text(step.text).font(MulberryDesign.font(16, weight: "Medium", relativeTo: .body))
-                    }
-                }
-            }
-            Spacer(minLength: 0)
-            PrimaryAction(title: "Got it", action: onClose)
-        }
-        .padding(24).padding(.top, 8)
-        .presentationDetents([.height(360)])
-        .presentationBackground(MulberryDesign.background)
+        Menu {
+            Button("Edit Shortcut", systemImage: "square.and.pencil", action: editShortcut)
+            Button("Notification settings", systemImage: "bell", action: openSettings)
+            Button("Start setup over", systemImage: "arrow.counterclockwise", action: startOver)
+                .disabled(testRunning)
+        } label: { Image(systemName: "questionmark") }
+            .accessibilityLabel("Help")
     }
 }
 
