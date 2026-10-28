@@ -8,6 +8,8 @@ struct DoodleCanvasView: View {
     @State private var customColourOpen = false
     @State private var paletteHeight: CGFloat = 280
     @State private var clearConfirmation = false
+    @State private var toolbarFrame = CGRect.zero
+    private static let space = "canvasScreen"
     @Environment(\.scenePhase) private var scenePhase
 
     init(model: MulberryModel) {
@@ -15,33 +17,48 @@ struct DoodleCanvasView: View {
         _editor = StateObject(wrappedValue: DoodleEditor(model: model))
     }
 
+    /// Strokes are stored relative to the drawing area's width and height, so it keeps the shape it had
+    /// when inset 24 pt at the sides and 28 pt in all vertically, scaled up to span the full width.
+    static func canvasSize(in slot: CGSize) -> CGSize {
+        let inset = CGSize(width: slot.width - 48, height: slot.height - 28)
+        guard inset.width > 0, inset.height > 0 else { return slot }
+        return CGSize(width: slot.width, height: inset.height * slot.width / inset.width)
+    }
+
+    /// The navigation bar lies between the status bar and the top of this view.
+    private static func navigationBarHeight(contentTop: CGFloat) -> CGFloat {
+        let window = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
+        return max(0, contentTop - (window?.safeAreaInsets.top ?? contentTop))
+    }
+
     var body: some View {
         GeometryReader { geometry in
-            VStack(spacing: 0) {
-                ZStack {
-                    DoodleSurface(editor: editor, dry: model.bootstrap?.canvasStrokeRenderMode == "dry")
-                        .padding(8)
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(MulberryDesign.canvas)
-                    .overlay(alignment: .bottom) {
-                        CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty)
-                            .padding(.bottom, 34)
-                    }
-                    .overlay {
-                        StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 24))
-                    .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(MulberryDesign.accent.opacity(0.30), lineWidth: 2))
-                    .padding(.horizontal, 16).padding(.top, 12)
+            // Use part of the bottom safe area, while retaining space for the Home gesture.
+            let bottomReach = min(16, max(0, geometry.safeAreaInsets.bottom - 16))
+            let height = geometry.size.height + bottomReach
+            let tools = toolbarFrame == .zero ? CGRect(x: 0, y: height - 72, width: geometry.size.width, height: 72) : toolbarFrame
+            let size = Self.canvasSize(in: CGSize(width: geometry.size.width, height: tools.minY))
+            let navigationMiddle = -Self.navigationBarHeight(contentTop: geometry.frame(in: .global).minY) / 2
+            ZStack(alignment: .bottom) {
+                DoodleSurface(editor: editor, dry: model.bootstrap?.canvasStrokeRenderMode == "dry")
+                    .frame(width: size.width, height: size.height)
+                    // Centred between the middles of the navigation bar and the tools, so it runs under both.
+                    .position(x: geometry.size.width / 2, y: (navigationMiddle + tools.midY) / 2)
+                // The visible part of the canvas, between the bars.
+                CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty)
+                    .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
+                // Between the bars, so the banner stays clear of both.
+                StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
+                    .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
                 toolbar
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { toolbarFrame = $0 }
                     .fullScreenCover(item: $editor.stickerSession) { session in
                         CanvasStickerEditorView(session: session, catalog: editor.stickers,
                                                 onDone: editor.commitSticker, onDelete: editor.deleteEditingSticker)
                     }
-
             }
-            // Use part of the bottom safe area, while retaining space for the Home gesture.
-            .padding(.bottom, -min(16, max(0, geometry.safeAreaInsets.bottom - 16)))
+            .frame(width: geometry.size.width, height: height, alignment: .top)
+            .coordinateSpace(.named(Self.space))
         }
         .background(MulberryDesign.background)
             .onChange(of: model.drawing) { _, _ in editor.receive() }

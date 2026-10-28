@@ -11,8 +11,9 @@ struct CanvasBlankStateGuidance: View {
     private var shown: Bool { visible && entered }
     private var squirrelHeight: CGFloat { typeSize.isAccessibilitySize ? 96 : 160 }
 
+    /// Fills the visible canvas: the prompt sits in its middle and Squee at its foot.
     var body: some View {
-        VStack(spacing: 10) {
+        ZStack(alignment: .bottomLeading) {
             VStack(spacing: 10) {
                 Text("Draw them something cute")
                     .font(.custom("Virgil3YOFF", size: 20, relativeTo: .title3))
@@ -28,8 +29,7 @@ struct CanvasBlankStateGuidance: View {
             .fixedSize(horizontal: false, vertical: true)
             .opacity(shown ? 1 : 0)
             .animation(reduceMotion ? nil : .easeInOut(duration: shown ? 0.14 : 0.12), value: shown)
-
-            Spacer().frame(height: 18)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Group {
                 if shown && !reduceMotion && scenePhase == .active {
@@ -49,7 +49,6 @@ struct CanvasBlankStateGuidance: View {
             .offset(x: shown || reduceMotion ? -22 : -squirrelHeight * 432 / 498 - 50)
             .opacity(shown ? 1 : 0)
             .animation(reduceMotion ? nil : .timingCurve(0.4, 0, 0.2, 1, duration: shown ? 0.32 : 0.26), value: shown)
-            .frame(maxWidth: .infinity, minHeight: squirrelHeight + 18, alignment: .bottomLeading)
         }
         .padding(.horizontal, 32)
         .allowsHitTesting(false)

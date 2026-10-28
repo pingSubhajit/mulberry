@@ -144,7 +144,8 @@ final class DoodleEditor: ObservableObject {
             receive()
         case .eraser: erase(at: point, size: size)
         case .eyedropper:
-            let background = UIColor(MulberryDesign.canvas)
+            // The canvas is transparent, so an empty spot shows the screen behind it.
+            let background = UIColor(MulberryDesign.background)
             if let sampled = DoodleRenderer.color(at: point, strokes: strokes, elements: elements, stickerImages: stickerImages,
                                                   dry: model.bootstrap?.canvasStrokeRenderMode == "dry", size: size, background: background) {
                 color = sampled; textColor = sampled; tool = .brush
@@ -398,7 +399,6 @@ struct DoodleSurface: UIViewRepresentable {
         view.elementLayer.user = editor.user
         view.elementLayer.update(elements: editor.elements, hidden: editor.textSession?.id ?? editor.stickerSession?.id)
         view.accessibilityValue = editor.elements.compactMap(\.text?.text).joined(separator: ", ")
-        view.backgroundColor = UIColor(MulberryDesign.canvas)
         view.setNeedsDisplay()
     }
 }
@@ -495,6 +495,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        isOpaque = false; backgroundColor = .clear
         elementLayer.frame = bounds
         elementLayer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(elementLayer)
