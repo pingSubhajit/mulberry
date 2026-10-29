@@ -63,6 +63,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     private let launchAtLogin = LaunchAtLogin()
     private let streaks = StreakModel()
     private lazy var reactions = ReactionsModel(api: { [unowned self] in api }, deviceID: store.installationID)
+    private var reactionIsland: ReactionIslandController?
     private var reactionPolling: Task<Void, Never>?
     private var surfaceObservers: [NSObjectProtocol] = []
     private lazy var accountSettings = AccountSettings(api: { [unowned self] in api }) { [weak self] bootstrap in
@@ -328,9 +329,19 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
 
     // MARK: Reactions
 
-    /// The partner's reactions, played over a canvas on screen. The Mac looks every five seconds
-    /// while paired, as the iPhone does while open, until reaction pushes can reach it.
+    /// The partner's reactions: played over a canvas on screen, else shown in the notch or under
+    /// the menu bar icon until a canvas opens. The Mac looks every five seconds while paired, as
+    /// the iPhone does while open, until reaction pushes can reach it.
     private func installReactions() {
+        reactionIsland = ReactionIslandController(
+            reactions: reactions,
+            partner: { [unowned self] in
+                let bootstrap = appStateController.loadState.bootstrap
+                return (bootstrap?.partnerDisplayName?.nonEmpty ?? "Your partner", bootstrap?.partnerPhotoUrl)
+            },
+            statusButton: { [unowned self] in preferences.showsMenuBarIcon ? statusItem?.button : nil },
+            openCanvas: { [unowned self] in openMulberry() }
+        )
         let center = NotificationCenter.default
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
                      NSWindow.didBecomeKeyNotification, NSWindow.didMiniaturizeNotification,
