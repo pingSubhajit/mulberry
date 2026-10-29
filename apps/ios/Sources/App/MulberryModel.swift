@@ -262,6 +262,8 @@ final class MulberryModel: ObservableObject {
 
     private func handle(_ error: Error) async {
         if GoogleAuthentication.isCancellation(error) { return }
+        // Leaving the app cancels the 5-second refresh mid-request; that is not a failure to show.
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
         if (try? await api.signedInUserId) == nil && bootstrap != nil {
             await sync?.stop(); syncObserver?.cancel(); sync = nil
             streaks.bind(userId: nil, pairSessionId: nil)
