@@ -156,8 +156,9 @@ private struct WindowGlass: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        // Glass lifts towards white; in Dark Mode a dark tint keeps it smoky instead.
         Rectangle()
-            .fill(Color(nsColor: .windowBackgroundColor).opacity(colorScheme == .dark ? 0.35 : 0.45))
+            .fill(colorScheme == .dark ? Color.black.opacity(0.45) : Color(nsColor: .windowBackgroundColor).opacity(0.45))
             .glassEffect(.regular, in: Rectangle())
             .ignoresSafeArea()
     }
