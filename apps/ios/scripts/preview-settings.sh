@@ -18,13 +18,14 @@ plist={'CFBundleIdentifier':'my.mulberry.settings-preview','CFBundleExecutable':
 PY
 xcrun actool "$IOS_ROOT/Resources/Assets.xcassets" --compile "$APP" --platform iphonesimulator --minimum-deployment-target 27.0 --target-device iphone > /tmp/mulberry-settings-preview-assets.log 2>&1
 SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
-APP_SOURCES=(MulberryDesign CanvasViewportStore DoodleWallpaper CanvasEditorChrome CanvasTextEditorView
+APP_SOURCES=(MulberryDesign ColourNames CanvasViewportStore DoodleWallpaper CanvasEditorChrome CanvasTextEditorView
   CanvasStickerEditorView StickerArtwork CustomColourSheet DoodleEditor MulberryModel StreakModel StreakViews CelebrationConfetti
-  WallpaperLibrary ProductWallpaperService WallpaperNotifications PairingViews OnboardingViews SettingsViews)
+  WallpaperLibrary ProductWallpaperService WallpaperNotifications PairingViews OnboardingViews SettingsViews
+  ReactionsModel ReactionActivities PairingHelpView)
 APP_FILES=(); for name in "${APP_SOURCES[@]}"; do APP_FILES+=("$IOS_ROOT/Sources/App/$name.swift"); done
 xcrun --sdk iphonesimulator swiftc -sdk "$SDK_PATH" -target "$(uname -m)-apple-ios27.0-simulator" -parse-as-library \
   "$IOS_ROOT"/../../packages/apple/Sources/ProductCore/*.swift "$IOS_ROOT"/../../packages/apple/Sources/CanvasDrawing/*.swift \
-  "$IOS_ROOT"/../../packages/apple/Sources/StickerAssets/*.swift "$IOS_ROOT"/Sources/DeliveryCore/*.swift \
+  "$IOS_ROOT"/../../packages/apple/Sources/StickerAssets/*.swift "$IOS_ROOT"/Sources/DeliveryCore/*.swift "$IOS_ROOT"/Sources/Shared/*.swift \
   "${APP_FILES[@]}" \
   "$IOS_ROOT/Tests/SettingsPreview/SettingsPreview.swift" \
   -o "$APP/SettingsPreview" 2>&1 | grep -v "^$" || true

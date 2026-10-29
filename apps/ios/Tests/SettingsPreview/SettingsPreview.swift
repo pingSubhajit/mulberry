@@ -17,6 +17,10 @@ private struct PreviewTokens: SessionTokenStore {
                                             transport: URLSessionTransport(session: .shared), shortTransport: URLSessionTransport(session: .shared))
     static func api() throws -> BackendClient { backend }
 }
+enum CrashReporting {
+    static func testCrash() -> Never { fatalError("Preview test crash") }
+    static func testError() {}
+}
 @MainActor enum GoogleAuthentication {
     static func signIn() async throws -> String { throw BackendError.signedOut }
     static func signOut() {}
