@@ -582,6 +582,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.setContentSize(Self.defaultContentSize())
         window.center()
         window.isReleasedWhenClosed = false
+        // A portrait panel has no full-screen layout: no green button, and the menu item and
+        // Control-Command-F leave the window as it is.
+        window.collectionBehavior.insert(.fullScreenNone)
+        window.standardWindowButton(.zoomButton)?.isHidden = true
         super.init(window: window)
         window.delegate = self
     }
