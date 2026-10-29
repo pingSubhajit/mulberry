@@ -9,6 +9,7 @@ struct MulberryRootView: View {
     @State private var setupOpen = false
     @State private var setupAfterSettings = false
     @ObservedObject private var quickActions = HomeQuickActions.shared
+    @ObservedObject private var routes = AppRoutes.shared
     @Environment(\.requestReview) private var requestReview
     @State private var quickClearConfirmation = false
     @State private var profilePhoto: UIImage?
@@ -46,9 +47,10 @@ struct MulberryRootView: View {
         .task(id: model.bootstrap?.userPhotoUrl) { await loadProfilePhoto() }
         .onChange(of: model.userId) { _, user in wallpapers.load(user: user) }
         .onChange(of: quickActions.pending) { _, _ in handleQuickAction() }
-        .onChange(of: model.showWallpaperOnboarding) { _, _ in handleQuickAction() }
-        .onChange(of: model.restoring) { _, _ in handleQuickAction() }
-        .onChange(of: model.bootstrap) { _, _ in publishQuickActions(); handleQuickAction() }
+        .onChange(of: routes.pending) { _, _ in handleRoute() }
+        .onChange(of: model.showWallpaperOnboarding) { _, _ in handleQuickAction(); handleRoute() }
+        .onChange(of: model.restoring) { _, _ in handleQuickAction(); handleRoute() }
+        .onChange(of: model.bootstrap) { _, _ in publishQuickActions(); handleQuickAction(); handleRoute() }
         // Hidden doodles bring reminders until they are shown again; becoming active tops them up.
         .task(id: "\(model.userId ?? "")|\(wallpapers.showDrawings)|\(model.bootstrap?.isPaired == true)|\(phase == .active)") {
             await DoodlesOffReminders.sync(user: model.userId, hidden: !wallpapers.showDrawings, paired: model.bootstrap?.isPaired == true)
@@ -126,6 +128,26 @@ struct MulberryRootView: View {
     private func publishQuickActions() {
         quickActions.publish(signedIn: model.userId != nil, paired: model.bootstrap?.isPaired == true,
                              showDrawings: wallpapers.showDrawings, reaction: model.reactions.lastUsed)
+    }
+
+    /// Opens what a tapped notification is about, once the app is past sign-in and onboarding.
+    private func handleRoute() {
+        guard !model.restoring, model.bootstrap?.onboardingCompleted == true,
+              !model.showWallpaperOnboarding, let route = routes.pending else { return }
+        routes.pending = nil
+        let covered = model.showSettings || model.showStreak || model.showInviteEntry || setupOpen
+        model.showSettings = false; model.showStreak = false; model.showInviteEntry = false
+        setupOpen = false; wallpaperOpen = false
+        Task {
+            await model.refresh()
+            // Let a sheet that was open finish closing before another opens.
+            if covered { try? await Task.sleep(for: .milliseconds(450)) }
+            switch route {
+            case .canvas: break
+            case .wallpaperSetup: setupOpen = true
+            case .settings: model.showSettings = true
+            }
+        }
     }
 
     private func handleQuickAction() {

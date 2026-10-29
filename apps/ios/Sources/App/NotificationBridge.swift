@@ -39,6 +39,9 @@ final class NotificationBridge: NSObject, UIApplicationDelegate, UNUserNotificat
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         await record(response.notification, stage: "notification_opened")
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+              let route = AppRoute(notificationType: response.notification.request.content.userInfo["type"] as? String) else { return }
+        await MainActor.run { AppRoutes.shared.pending = route }
     }
 
     private func record(_ notification: UNNotification, stage: String) async {
