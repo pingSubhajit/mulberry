@@ -7,7 +7,7 @@ import Sync
 import SwiftUI
 
 /// One portrait panel of frosted glass holding the canvas, with the streak and profile in the
-/// window toolbar. Settings and the streak open as sheets until they are designed.
+/// window toolbar. Settings opens as a sheet until it is designed.
 struct MainWindowView: View {
     @ObservedObject var router: AppRouter
     @ObservedObject var authController: AuthSessionController
@@ -17,6 +17,7 @@ struct MainWindowView: View {
     @ObservedObject var stickerLoader: StickerImageLoader
     let editorModel: CanvasEditorModel
     @StateObject private var avatar = ProfileAvatar()
+    @StateObject private var streaks = StreakModel()
     @State private var reactionsOpen = false
 
     var body: some View {
@@ -46,9 +47,6 @@ struct MainWindowView: View {
                     syncController: syncController,
                     overlayController: overlayController
                 ) { router.goHome() }
-            }
-            .sheet(isPresented: routeBinding(.streak)) {
-                StreakSheet(bootstrap: appStateController.loadState.bootstrap) { router.goHome() }
             }
     }
 
@@ -102,6 +100,11 @@ struct MainWindowView: View {
         }
         .help("Daily streak")
         .accessibilityLabel("Daily streak: \(days) \(days == 1 ? "day" : "days")")
+        .popover(isPresented: routeBinding(.streak), arrowEdge: .bottom) {
+            StreakPopover(streaks: streaks) {
+                await streaks.refresh(api: authController.api)
+            }
+        }
     }
 
     private var reactionButton: some View {
@@ -256,26 +259,6 @@ private struct UnpairedPanel: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
         }
-    }
-}
-
-/// Placeholder until the streak screen is designed.
-private struct StreakSheet: View {
-    let bootstrap: BootstrapState?
-    let onDone: () -> Void
-
-    var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "flame.fill")
-                .font(.system(size: 40))
-                .foregroundStyle(.orange)
-            Text(bootstrap?.streakTitle ?? "Streak")
-                .font(.title2.weight(.semibold))
-            Button("Done", action: onDone)
-                .keyboardShortcut(.defaultAction)
-        }
-        .padding(32)
-        .frame(width: 300)
     }
 }
 
