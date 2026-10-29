@@ -25,7 +25,7 @@ Mulberry collects account, profile, pairing, device, sync, analytics, diagnostic
 
 The shared canvas is visible to both paired users. Your device-local wallpaper background is intended to stay on your device and is not part of the shared drawing state sent to the Mulberry backend.
 
-Mulberry uses Google Sign-In for authentication, Firebase Cloud Messaging (delivered through Apple Push Notification service on iPhone and iPad) for background canvas update signals and notifications, Firebase Crashlytics for crash diagnostics, PostHog for product analytics recorded by the Mulberry backend, Canny for in-app feedback, Better Stack Logs for operational logging, Supabase for database services, and Railway for backend hosting.
+Mulberry uses Google Sign-In for authentication, Firebase Cloud Messaging (delivered through Apple Push Notification service on iPhone and iPad) for background canvas update signals and notifications, Firebase Crashlytics for crash diagnostics, PostHog for product analytics recorded by the Mulberry backend, Canny for in-app feedback, Supabase for database services, and Fly.io for backend hosting.
 
 Mulberry does not sell your personal information. Mulberry does not share your personal information for targeted advertising. Mulberry does not use shared canvas content for advertising or AI model training.
 
@@ -102,7 +102,7 @@ Mulberry may collect technical information needed to operate, secure, diagnose, 
 - Crash, error, and diagnostic information through Firebase Crashlytics. On iPhone and iPad, Mulberry does not attach your account to crash reports.
 - Product analytics events recorded by the Mulberry backend in PostHog, such as canvas activity, invite and pairing events, reactions sent, and the days and weeks a pair is active.
 - Whether your wallpaper setup is working and whether doodles are shown on your wallpaper. Mulberry shares this with your paired partner so they know whether you can see their latest drawings.
-- Backend operational logs through Better Stack Logs.
+- Backend operational logs, kept on Fly.io, where the backend runs.
 
 Production logs are not intended to include device identifiers, user identifiers, or canvas payloads. Backend logs may include operational details needed to run the service, such as timestamps, route names, status codes, and error categories.
 
@@ -149,7 +149,7 @@ Mulberry collects information in these ways:
 - Directly from you when you sign in, complete onboarding, create or redeem an invite, draw on the shared canvas, choose a wallpaper background, request account deletion, or contact support.
 - Automatically through the app and backend when Mulberry authenticates sessions, syncs canvas operations, registers FCM tokens, refreshes canvas state, records analytics events, records crash diagnostics, or records operational logs needed to run the service.
 - From your paired partner when that person creates shared canvas operations or participates in the pairing flow.
-- From service providers such as Google Sign-In, Firebase Cloud Messaging, Apple Push Notification service, Firebase Crashlytics, Canny, Better Stack Logs, PostHog, Supabase, and Railway when they provide authentication, hosting, logging, analytics, diagnostic, feedback, database, or push-delivery functionality.
+- From service providers such as Google Sign-In, Firebase Cloud Messaging, Apple Push Notification service, Firebase Crashlytics, Canny, PostHog, Supabase, and Fly.io when they provide authentication, hosting, logging, analytics, diagnostic, feedback, database, or push-delivery functionality.
 
 5. How we use information
 
@@ -225,10 +225,9 @@ Mulberry may share information in the following limited circumstances:
 - With Google services: Google Sign-In helps authenticate users; Firebase Cloud Messaging helps deliver background canvas update signals and notifications; Firebase Crashlytics helps with crash reporting.
 - With Apple: on iPhone and iPad, Apple Push Notification service delivers notifications.
 - With Canny: Canny stores feedback you choose to send, with the account details used to sign you in.
-- With Better Stack Logs: Better Stack Logs helps store and inspect operational logs.
 - With PostHog: PostHog helps understand product usage and feature health from events recorded by the Mulberry backend.
 - With Supabase: Supabase provides database services.
-- With Railway: Railway provides backend hosting services.
+- With Fly.io: Fly.io provides backend hosting services and keeps operational logs.
 - For legal and safety reasons: Mulberry may disclose information if required by law, legal process, or a good-faith belief that disclosure is necessary to protect rights, safety, users, or the service.
 - In a business transfer: If Mulberry is involved in a merger, acquisition, financing, reorganization, or sale of assets, information may be transferred as part of that transaction, subject to appropriate safeguards.
 - With your direction or consent: Mulberry may share information when you ask us to or when you give permission.
@@ -248,10 +247,9 @@ Mulberry currently uses:
 - Apple Push Notification service for notifications on iPhone and iPad.
 - Firebase Crashlytics for crash diagnostics.
 - Canny for in-app feedback.
-- Better Stack Logs for operational logs.
 - PostHog for product analytics and feature usage insights, recorded by the Mulberry backend.
 - Supabase for database services.
-- Railway for backend hosting.
+- Fly.io for backend hosting and operational logs.
 
 These services may process information in India and other countries where they or their infrastructure providers operate. Their processing is governed by their own terms and privacy policies in addition to Mulberry's instructions where applicable.
 
@@ -259,7 +257,7 @@ These services may process information in India and other countries where they o
 
 The Mulberry apps for Android, iPhone, and iPad do not use browser cookies of their own. The in-app feedback page is provided by Canny, which may use cookies under its own policy. The apps use SDKs and platform services needed for authentication, push messaging, networking, local storage, crash reporting, and app operation. The apps do not include an analytics SDK.
 
-The Mulberry backend records product usage events in PostHog to understand high-level product usage and feature health. Mulberry uses Firebase Crashlytics to detect and diagnose crashes. Mulberry uses Better Stack Logs to help run and troubleshoot backend services.
+The Mulberry backend records product usage events in PostHog to understand high-level product usage and feature health. Mulberry uses Firebase Crashlytics to detect and diagnose crashes. Backend operational logs on Fly.io help run and troubleshoot backend services.
 
 Mulberry does not use third-party advertising SDKs. Mulberry does not use cross-app tracking for targeted advertising.
 
@@ -322,7 +320,7 @@ To make a privacy request, contact subha60kundu@gmail.com. Mulberry may need to 
 
 16. International processing
 
-Mulberry is intended for users in India, but some service providers may process information outside India. This may include Google, Firebase, Apple, Canny, Better Stack Logs, PostHog, Supabase, Railway, and their infrastructure providers.
+Mulberry is intended for users in India, but some service providers may process information outside India. This may include Google, Firebase, Apple, Canny, PostHog, Supabase, Fly.io, and their infrastructure providers.
 
 By using Mulberry, you understand that your information may be processed in countries where these providers operate, subject to this policy, provider terms, applicable law, and appropriate contractual or technical safeguards.
 
