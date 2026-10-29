@@ -12,6 +12,7 @@ struct CanvasBlankStateGuidance: View {
     @State private var entered = false
 
     private var shown: Bool { visible && entered }
+    private var bobbing: Bool { shown && !reduceMotion && scenePhase == .active }
     /// The iPad's larger canvas gets a larger prompt.
     private let pad = UIDevice.current.userInterfaceIdiom == .pad
     private var squirrelHeight: CGFloat { typeSize.isAccessibilitySize ? 96 : 160 }
@@ -33,27 +34,26 @@ struct CanvasBlankStateGuidance: View {
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             .opacity(shown ? 1 : 0)
-            .animation(reduceMotion ? nil : .easeInOut(duration: shown ? 0.14 : 0.12), value: shown)
+            .animation(.easeInOut(duration: shown ? 0.25 : 0.15), value: shown)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Group {
-                if shown && !reduceMotion && scenePhase == .active {
-                    squirrel.phaseAnimator([SqueePhase.rest, .raised, .lowered]) { image, phase in
-                        image.offset(y: phase == .raised ? -6 : 0)
-                    } animation: { phase in
-                        switch phase {
-                        case .rest: .linear(duration: 0.24)
-                        case .raised: .timingCurve(0, 0, 0.2, 1, duration: 0.66)
-                        case .lowered: .easeIn(duration: 0.9)
-                        }
-                    }
-                } else {
-                    squirrel
+            // One view throughout, so nothing cross-fades: the bob simply rests while Squee is away.
+            squirrel.phaseAnimator([SqueePhase.rest, .raised, .lowered]) { image, phase in
+                image.offset(y: bobbing && phase == .raised ? -6 : 0)
+            } animation: { phase in
+                switch phase {
+                case .rest: .linear(duration: 0.24)
+                case .raised: .timingCurve(0, 0, 0.2, 1, duration: 0.66)
+                case .lowered: .easeIn(duration: 0.9)
                 }
             }
-            .offset(x: shown || reduceMotion ? (squirrelLeading.map { $0 - 32 } ?? -22) : -squirrelHeight * 432 / 498 - 50)
+            .offset(x: squirrelLeading.map { $0 - 32 } ?? -22)
+            // Ducks down where it stands as the first stroke lands, staying on the canvas, and pops
+            // back up when the canvas clears.
+            .scaleEffect(shown || reduceMotion ? 1 : 0.85, anchor: .bottom)
+            .offset(y: shown || reduceMotion ? 0 : 24)
             .opacity(shown ? 1 : 0)
-            .animation(reduceMotion ? nil : .timingCurve(0.4, 0, 0.2, 1, duration: shown ? 0.32 : 0.26), value: shown)
+            .animation(reduceMotion ? .easeInOut(duration: 0.15) : shown ? .spring(duration: 0.4, bounce: 0.3) : .easeIn(duration: 0.18), value: shown)
         }
         .padding(.horizontal, 32)
         .allowsHitTesting(false)
