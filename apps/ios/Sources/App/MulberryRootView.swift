@@ -47,6 +47,10 @@ struct MulberryRootView: View {
         .onChange(of: model.showWallpaperOnboarding) { _, _ in handleQuickAction() }
         .onChange(of: model.restoring) { _, _ in handleQuickAction() }
         .onChange(of: model.bootstrap) { _, _ in publishQuickActions(); handleQuickAction() }
+        // Hidden doodles bring reminders until they are shown again; becoming active tops them up.
+        .task(id: "\(model.userId ?? "")|\(wallpapers.showDrawings)|\(model.bootstrap?.isPaired == true)|\(phase == .active)") {
+            await DoodlesOffReminders.sync(user: model.userId, hidden: !wallpapers.showDrawings, paired: model.bootstrap?.isPaired == true)
+        }
         .onChange(of: wallpapers.showDrawings) { _, _ in publishQuickActions() }
         .onReceive(model.reactions.$lastUsed.removeDuplicates()) { _ in publishQuickActions() }
         .confirmationDialog("Clear all doodles?", isPresented: $quickClearConfirmation, titleVisibility: .visible) {
