@@ -63,14 +63,8 @@ struct FullAppCanvasEditor: View {
     /// another selection or a resized window settles it again.
     @State private var formatBarAnchor: CGPoint?
     @State private var formatBarEpoch = 0
-    /// What the pointer is over, kept only as the pointer it needs so moving does not redraw.
-    @State private var hoverPointer = CanvasPointer.tool
     /// The title bar's height, which the canvas runs under but does not draw in.
     @State private var titleBarHeight: CGFloat = 52
-
-    private enum CanvasPointer: Equatable {
-        case tool, arrow
-    }
 
     private struct FormatBarPlacement: Equatable {
         let id: String
@@ -230,6 +224,7 @@ struct FullAppCanvasEditor: View {
                     editingIsEnabled: editingIsEnabled,
                     focusRequest: focusRequest,
                     topInset: titleBarHeight,
+                    cursor: { point in canvasCursor(at: point, canvasSize: proxy.size) },
                     onDrawStart: { point in
                         submit(editor.startStroke(at: point, surfaceSize: proxy.size))
                     },
@@ -274,19 +269,6 @@ struct FullAppCanvasEditor: View {
                 )
                 // Below the title bar: the canvas is cropped there, and the band is the title bar's.
                 .padding(.top, titleBarHeight)
-                .pointerStyle(canvasPointerStyle)
-                .onContinuousHover { phase in
-                    guard case let .active(local) = phase else { return }
-                    let point = CGPoint(x: local.x, y: local.y + titleBarHeight)
-                    let pointer: CanvasPointer
-                    if editor.toolState.activeTool == .text {
-                        // Over a text it would select, the text tool shows the arrow.
-                        pointer = element(at: point, canvasSize: proxy.size, where: { $0.text != nil }) == nil ? .tool : .arrow
-                    } else {
-                        pointer = .tool
-                    }
-                    if pointer != hoverPointer { hoverPointer = pointer }
-                }
 
                 textLayers(canvasSize: proxy.size)
 
@@ -589,20 +571,20 @@ struct FullAppCanvasEditor: View {
     // MARK: Pointer
 
     /// Each tool's pointer over the canvas: the brush and eraser tips at their size, the I-beam
-    /// for text, and an eyedropper. Controls above the canvas keep their own pointers.
-    private var canvasPointerStyle: PointerStyle {
-        guard hoverPointer == .tool else { return .default }
+    /// for text, and an eyedropper. The text tool shows the arrow over a text it would select.
+    private func canvasCursor(at point: CGPoint, canvasSize: CGSize) -> NSCursor {
+        guard editingIsEnabled else { return .arrow }
         switch editor.toolState.activeTool {
         case .draw:
-            return CanvasCursors.tipStyle(diameter: CGFloat(editor.toolState.selectedBrushWidthPx) * editor.viewportTransform.scale)
+            return CanvasCursors.tip(diameter: CGFloat(editor.toolState.selectedBrushWidthPx) * editor.viewportTransform.scale)
         case .erase:
-            return CanvasCursors.tipStyle(diameter: 20)
+            return CanvasCursors.tip(diameter: 20)
         case .text:
-            return .horizontalText
+            return element(at: point, canvasSize: canvasSize, where: { $0.text != nil }) == nil ? .iBeam : .arrow
         case .eyedropper:
-            return CanvasCursors.eyedropperStyle
+            return CanvasCursors.eyedropper
         case .sticker:
-            return .default
+            return .arrow
         }
     }
 
@@ -832,6 +814,7 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
     var editingIsEnabled: Bool
     var focusRequest: Int
     var topInset: CGFloat
+    var cursor: (CGPoint) -> NSCursor
     var onDrawStart: (CGPoint) -> Void
     var onDrawMove: (CGPoint) -> Void
     var onDrawEnd: () -> Void
@@ -854,6 +837,8 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
 
     func updateNSView(_ nsView: InputView, context: Context) {
         nsView.configuration = configuration
+        // A new tool, width or selection changes the pointer without the pointer moving.
+        nsView.refreshCursor()
     }
 
     private var configuration: InputView.Configuration {
@@ -862,6 +847,7 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
             editingIsEnabled: editingIsEnabled,
             focusRequest: focusRequest,
             topInset: topInset,
+            cursor: cursor,
             onDrawStart: onDrawStart,
             onDrawMove: onDrawMove,
             onDrawEnd: onDrawEnd,
@@ -885,6 +871,8 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
             var focusRequest = 0
             /// How far below the canvas's top this view starts: the title bar's height.
             var topInset: CGFloat = 0
+            /// The pointer for a whole-canvas point.
+            var cursor: (CGPoint) -> NSCursor = { _ in .arrow }
             var onDrawStart: (CGPoint) -> Void = { _ in }
             var onDrawMove: (CGPoint) -> Void = { _ in }
             var onDrawEnd: () -> Void = {}
@@ -924,6 +912,64 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
         }
 
         override var isFlipped: Bool { true }
+
+        // MARK: Pointer
+
+        // The canvas sets its tool's pointer with AppKit's cursor updates and mouse moves, while it
+        // is the view under the pointer: the window's hit test says whether the title bar or a
+        // control above the canvas is in the way. SwiftUI's pointer styles only reapply when the
+        // style changes, so leaving for the title bar and coming back left the wrong pointer.
+
+        /// The pointer this view last set, so it only resets a pointer that is still its own.
+        private var appliedCursor: NSCursor?
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if trackingAreas.isEmpty {
+                addTrackingArea(NSTrackingArea(
+                    rect: .zero,
+                    options: [.cursorUpdate, .mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                    owner: self
+                ))
+            }
+        }
+
+        override func cursorUpdate(with event: NSEvent) {
+            updateCursor(at: event.locationInWindow)
+        }
+
+        override func mouseMoved(with event: NSEvent) {
+            updateCursor(at: event.locationInWindow)
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            releaseCursor()
+        }
+
+        /// A new tool, width or selection changes the pointer without the pointer moving.
+        func refreshCursor() {
+            guard let window, window.isKeyWindow else { return }
+            updateCursor(at: window.mouseLocationOutsideOfEventStream)
+        }
+
+        private func updateCursor(at locationInWindow: CGPoint) {
+            guard let frameView = window?.contentView?.superview,
+                  frameView.hitTest(locationInWindow) === self else {
+                // Over a control above the canvas, which shows its own pointer or the arrow.
+                return releaseCursor()
+            }
+            let local = convert(locationInWindow, from: nil)
+            let cursor = configuration.cursor(CGPoint(x: local.x, y: local.y + configuration.topInset))
+            if NSCursor.current != cursor { cursor.set() }
+            appliedCursor = cursor
+        }
+
+        private func releaseCursor() {
+            guard let appliedCursor else { return }
+            self.appliedCursor = nil
+            // A control that set its own pointer first keeps it.
+            if NSCursor.current == appliedCursor { NSCursor.arrow.set() }
+        }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -1089,11 +1135,11 @@ enum CanvasKey {
 /// The canvas's pointers.
 @MainActor
 enum CanvasCursors {
-    private static var tips: [Int: PointerStyle] = [:]
+    private static var tips: [Int: NSCursor] = [:]
 
     /// A brush or eraser tip, outlined dark inside light so it reads on any colour, as in
     /// Photoshop. Tips too small to aim by show a crosshair instead.
-    static func tipStyle(diameter: CGFloat) -> PointerStyle {
+    static func tip(diameter: CGFloat) -> NSCursor {
         let key = Int(diameter.rounded())
         if let cached = tips[key] { return cached }
         let crosshair = diameter < 6
@@ -1118,13 +1164,13 @@ enum CanvasCursors {
             }
             return true
         }
-        let style = PointerStyle.image(Image(nsImage: image), hotSpot: .center)
-        tips[key] = style
-        return style
+        let cursor = NSCursor(image: image, hotSpot: CGPoint(x: side / 2, y: side / 2))
+        tips[key] = cursor
+        return cursor
     }
 
     /// An eyedropper whose tip is the hotspot.
-    static let eyedropperStyle: PointerStyle = {
+    static let eyedropper: NSCursor = {
         let side: CGFloat = 22
         let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
         let symbol = NSImage(systemSymbolName: "eyedropper", accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
@@ -1138,8 +1184,8 @@ enum CanvasCursors {
             tinted(symbol, .black).draw(in: drawn)
             return true
         }
-        // The symbol's tip is its lower-left corner.
-        return .image(Image(nsImage: image), hotSpot: UnitPoint(x: 2 / side, y: (side - 2) / side))
+        // The symbol's tip is its lower-left corner; hot spots count from the top left.
+        return NSCursor(image: image, hotSpot: CGPoint(x: 2, y: side - 2))
     }()
 
     private static func tinted(_ image: NSImage, _ colour: NSColor) -> NSImage {
