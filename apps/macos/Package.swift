@@ -17,7 +17,6 @@ let package = Package(
         .library(name: "Auth", targets: ["Auth"]),
         .library(name: "Networking", targets: ["Networking"]),
         .library(name: "Sync", targets: ["Sync"]),
-        .library(name: "CanvasCore", targets: ["CanvasCore"]),
         .library(name: "CanvasRendering", targets: ["CanvasRendering"]),
         .library(name: "CanvasEditing", targets: ["CanvasEditing"]),
         .library(name: "Persistence", targets: ["Persistence"]),
@@ -35,18 +34,11 @@ let package = Package(
         .executable(
             name: "CanvasRenderFixtureCheck",
             targets: ["CanvasRenderFixtureCheck"]
-        ),
-        .executable(
-            name: "PersistenceFixtureCheck",
-            targets: ["PersistenceFixtureCheck"]
-        ),
-        .executable(
-            name: "SyncFixtureCheck",
-            targets: ["SyncFixtureCheck"]
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.10.0")
+        // The backend client, canvas model and sync shared with the iPhone and iPad app.
+        .package(path: "../../packages/apple")
     ],
     targets: [
         .executableTarget(
@@ -61,7 +53,6 @@ let package = Package(
                 "Auth",
                 "Networking",
                 "Sync",
-                "CanvasCore",
                 "CanvasRendering",
                 "CanvasEditing",
                 "Persistence",
@@ -71,24 +62,18 @@ let package = Package(
                 "Reactions",
                 "Notifications",
                 "Settings",
-                "Diagnostics"
+                "Diagnostics",
+                .product(name: "ProductCore", package: "apple")
             ]
         ),
-        .target(name: "Auth", dependencies: ["Networking"]),
-        .target(name: "Networking", dependencies: ["CanvasCore"]),
-        .target(name: "Sync", dependencies: ["CanvasCore", "Networking", "Persistence"]),
-        .target(name: "CanvasCore"),
-        .target(name: "CanvasRendering", dependencies: ["CanvasCore"]),
-        .target(name: "CanvasEditing", dependencies: ["CanvasCore", "Persistence"]),
-        .target(
-            name: "Persistence",
-            dependencies: [
-                "CanvasCore",
-                .product(name: "GRDB", package: "GRDB.swift")
-            ]
-        ),
-        .target(name: "Overlay", dependencies: ["CanvasRendering"]),
-        .target(name: "QuickDraw", dependencies: ["Overlay", "CanvasCore"]),
+        .target(name: "Auth", dependencies: ["Networking", "Persistence", .product(name: "ProductCore", package: "apple")]),
+        .target(name: "Networking", dependencies: [.product(name: "ProductCore", package: "apple")]),
+        .target(name: "Sync", dependencies: [.product(name: "ProductCore", package: "apple")]),
+        .target(name: "CanvasRendering", dependencies: [.product(name: "ProductCore", package: "apple")]),
+        .target(name: "CanvasEditing", dependencies: [.product(name: "ProductCore", package: "apple")]),
+        .target(name: "Persistence", dependencies: [.product(name: "ProductCore", package: "apple")]),
+        .target(name: "Overlay", dependencies: ["CanvasRendering", .product(name: "ProductCore", package: "apple")]),
+        .target(name: "QuickDraw", dependencies: ["Overlay"]),
         .target(name: "Stickers", dependencies: ["Networking", "Persistence"]),
         .target(name: "Reactions", dependencies: ["Networking"]),
         .target(name: "Notifications"),
@@ -96,20 +81,17 @@ let package = Package(
         .target(name: "Diagnostics"),
         .executableTarget(name: "OverlayRegressionCheck", dependencies: ["Overlay"]),
         .executableTarget(name: "CanvasRenderFixtureCheck", dependencies: ["CanvasRendering"]),
-        .executableTarget(name: "PersistenceFixtureCheck", dependencies: ["Persistence"]),
-        .executableTarget(name: "SyncFixtureCheck", dependencies: ["Sync"]),
-        .testTarget(
-            name: "CanvasCoreTests",
-            dependencies: ["CanvasCore"],
-            exclude: ["README.md"]
-        ),
         .testTarget(
             name: "CanvasRenderingTests",
-            dependencies: ["CanvasRendering"]
+            dependencies: ["CanvasRendering", .product(name: "ProductCore", package: "apple")]
         ),
         .testTarget(
             name: "CanvasEditingTests",
-            dependencies: ["CanvasEditing"]
+            dependencies: ["CanvasEditing", .product(name: "ProductCore", package: "apple")]
+        ),
+        .testTarget(
+            name: "SyncTests",
+            dependencies: ["Sync", .product(name: "ProductCore", package: "apple")]
         )
     ]
 )

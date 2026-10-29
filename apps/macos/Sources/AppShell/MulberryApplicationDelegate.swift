@@ -1,9 +1,11 @@
 import AppKit
 import Auth
+import CanvasRendering
 import Combine
 import Networking
 import Overlay
 import Persistence
+import ProductCore
 import QuickDraw
 import SwiftUI
 import Sync
@@ -11,29 +13,30 @@ import Sync
 @MainActor
 public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate {
     private let configuration = MacAppConfiguration.current
-    private lazy var database: MulberryDatabase = {
+    private let store = MacLocalStore()
+    private lazy var api: BackendClient = {
         do {
-            return try MulberryDatabase()
+            return try MacBackend.makeClient(configuration: configuration)
         } catch {
-            fatalError("Unable to open Mulberry local database: \(error)")
+            fatalError("Unable to open Mulberry's saved session: \(error)")
         }
     }()
     private let router = AppRouter()
     private lazy var authController = AuthSessionController(
         configuration: configuration,
+        api: api,
+        store: store,
         presentationAnchorProvider: { [weak self] in
             self?.mainWindowController?.window ?? NSApp.keyWindow ?? NSApp.windows.first
         }
     )
     private lazy var appStateController = AppStateController(
         authController: authController,
-        database: database,
-        configuration: configuration
+        store: store
     )
     private lazy var syncController = CanvasSyncController(
-        configuration: configuration,
-        database: database,
-        authorizer: makeAuthorizer()
+        api: api,
+        store: DrawingStore(directory: MacLocalStore.drawingsDirectory)
     )
     private let overlayController = OverlayController()
     private var quickDrawController: QuickDrawController?
@@ -59,7 +62,15 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         let quickDrawController = QuickDrawController(overlayController: overlayController)
         self.quickDrawController = quickDrawController
         quickDrawController.start()
-        appStateController.restoreCachedBootstrap()
+        syncController.onPairingChanged = { [weak self] in
+            guard let self else { return }
+            Task {
+                await self.appStateController.refreshBootstrapAndReportOverlay(
+                    overlayController: self.overlayController,
+                    syncController: self.syncController
+                )
+            }
+        }
         authController.restoreSessionOnLaunch()
         overlayStateCancellable = overlayController.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
@@ -87,21 +98,29 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
                 guard let self else { return }
                 self.syncCurrentSession()
                 self.updateSyncDemand()
+                self.refreshOverlayCanvas()
                 self.refreshStatusMenu()
             }
         }
         syncStateCancellable = syncController.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.overlayController.updateCanvasState(
-                    self.syncController.canvasState,
-                    diagnostics: self.syncController.diagnostics
-                )
+                self.refreshOverlayCanvas()
                 self.refreshStatusMenu()
                 self.reportCurrentOverlayPresence()
             }
         }
         installStatusItem()
+    }
+
+    /// The overlay draws the shared canvas in the pair's stroke style.
+    private func refreshOverlayCanvas() {
+        overlayController.updateCanvasState(
+            syncController.drawing,
+            strokeRenderMode: CanvasStrokeRenderMode(
+                rawBackendValue: appStateController.loadState.bootstrap?.canvasStrokeRenderMode
+            )
+        )
     }
 
     private func installApplicationIcon() {
@@ -168,7 +187,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
-        syncController.stop(reason: "terminate")
+        syncController.stop()
         quickDrawController?.stop()
     }
 
@@ -366,39 +385,22 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         }
     }
 
-    private func makeAuthorizer() -> AuthenticatedRequestAuthorizer {
-        AuthenticatedRequestAuthorizer(
-            currentAccessToken: { [weak authController] in
-                await MainActor.run {
-                    authController?.currentAccessToken
-                }
-            },
-            refreshAccessToken: { [weak authController] in
-                guard let authController else {
-                    throw APIError.missingToken
-                }
-                return try await authController.refreshForAuthenticatedRetry()
-            }
-        )
-    }
-
-    private func statusDetailLine(bootstrap: MacBootstrapState?) -> String {
+    private func statusDetailLine(bootstrap: BootstrapState?) -> String {
         guard authController.state.isSignedIn, bootstrap?.isPaired == true else {
             return authController.state.statusDetail
         }
         let revision = syncController.status.lastAppliedServerRevision
-        let latest = syncController.status.latestKnownServerRevision
         if let lastError = syncController.status.lastError, syncController.connectionState != .connected {
             return "\(syncController.connectionState.title): \(lastError)"
         }
-        return "\(syncController.demand.title) · \(syncController.connectionState.title) · rev \(revision)/\(latest)"
+        return "\(syncController.demand.title) · \(syncController.connectionState.title) · rev \(revision)"
     }
 
     private func syncCurrentSession() {
         guard case let .signedIn(session) = authController.state,
               let bootstrap = appStateController.loadState.bootstrap,
               bootstrap.isPaired,
-              let pairSessionID = bootstrap.pairSessionID
+              let pairSessionID = bootstrap.pairSessionId
         else {
             syncController.updateSession(userID: nil, pairSessionID: nil, shouldSync: false)
             lastOverlayPresenceReportSignature = nil
@@ -432,7 +434,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     private func reportCurrentOverlayPresence() {
         guard let bootstrap = appStateController.loadState.bootstrap else { return }
         let signature = OverlayPresenceReportSignature(
-            pairSessionID: bootstrap.pairSessionID,
+            pairSessionID: bootstrap.pairSessionId,
             overlayVisible: overlayController.isVisible,
             selectedDisplayName: overlayController.selectedDisplayName,
             canSeeLatestDrawings: syncController.canReportOverlayCanSeeLatestDrawings(
@@ -441,7 +443,6 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
             demand: syncController.demand,
             connectionState: syncController.connectionState,
             lastAppliedServerRevision: syncController.status.lastAppliedServerRevision,
-            latestKnownServerRevision: syncController.status.latestKnownServerRevision,
             lastSuccessfulRecoveryAt: syncController.status.lastSuccessfulRecoveryAt
         )
         guard signature != lastOverlayPresenceReportSignature else { return }
@@ -449,17 +450,6 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
 
         Task {
             await appStateController.reportOverlayPresenceIfNeeded(
-                bootstrap: BootstrapDTO(
-                    authStatus: bootstrap.authStatus,
-                    onboardingCompleted: bootstrap.onboardingCompleted,
-                    userId: bootstrap.userID,
-                    userEmail: bootstrap.userEmail,
-                    userDisplayName: bootstrap.userDisplayName,
-                    partnerDisplayName: bootstrap.partnerDisplayName,
-                    currentStreakDays: bootstrap.currentStreakDays,
-                    pairingStatus: bootstrap.pairingStatus,
-                    pairSessionId: bootstrap.pairSessionID
-                ),
                 overlayController: overlayController,
                 syncController: syncController
             )
@@ -475,7 +465,6 @@ private struct OverlayPresenceReportSignature: Equatable {
     let demand: CanvasSyncDemand
     let connectionState: MacSyncConnectionState
     let lastAppliedServerRevision: Int64
-    let latestKnownServerRevision: Int64
     let lastSuccessfulRecoveryAt: Date?
 }
 

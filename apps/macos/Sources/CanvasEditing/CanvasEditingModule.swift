@@ -1,7 +1,6 @@
-import CanvasCore
 import CoreGraphics
 import Foundation
-import Persistence
+import ProductCore
 
 public enum CanvasEditingModule {
     public static let name = "CanvasEditing"
@@ -61,7 +60,7 @@ public enum CanvasEditingDefaults {
     }
 }
 
-public struct CanvasEditingToolState: Equatable, Sendable {
+public struct CanvasEditingToolState: Codable, Equatable, Sendable {
     public var activeTool: CanvasEditingTool
     public var lastNonNoneTool: CanvasEditingTool
     public var brushColorArgb: UInt32
@@ -141,11 +140,11 @@ public struct CanvasViewportTransform: Equatable, Sendable {
         )
     }
 
-    public func normalizedPoint(fromRenderedPoint point: CGPoint, surfaceSize: CGSize) -> CanvasPoint {
+    public func normalizedPoint(fromRenderedPoint point: CGPoint, surfaceSize: CGSize) -> DrawingPoint {
         contentPoint(fromRenderedPoint: point).normalized(in: surfaceSize)
     }
 
-    public func renderedPoint(fromNormalizedPoint point: CanvasPoint, surfaceSize: CGSize) -> CGPoint {
+    public func renderedPoint(fromNormalizedPoint point: DrawingPoint, surfaceSize: CGSize) -> CGPoint {
         renderedPoint(fromContentPoint: point.denormalized(in: surfaceSize))
     }
 
@@ -166,7 +165,8 @@ public struct CanvasViewportTransform: Equatable, Sendable {
     }
 }
 
-public struct CanvasEditingMetadata: Equatable, Sendable {
+/// Tool choices and the last canvas size, as Android keeps them between sessions.
+public struct CanvasEditingMetadata: Codable, Equatable, Sendable {
     public var toolState: CanvasEditingToolState
     public var lastViewportWidthPx: Int
     public var lastViewportHeightPx: Int
@@ -179,32 +179,6 @@ public struct CanvasEditingMetadata: Equatable, Sendable {
         self.toolState = toolState
         self.lastViewportWidthPx = max(0, lastViewportWidthPx)
         self.lastViewportHeightPx = max(0, lastViewportHeightPx)
-    }
-
-    public init(persisted: PersistedCanvasEditingMetadata) {
-        self.init(
-            toolState: CanvasEditingToolState(
-                activeTool: CanvasEditingTool(rawValue: persisted.selectedTool) ?? .none,
-                lastNonNoneTool: CanvasEditingTool(rawValue: persisted.lastNonNoneTool) ?? .draw,
-                brushColorArgb: persisted.selectedBrushColorArgb,
-                textColorArgb: persisted.selectedTextColorArgb,
-                selectedBrushWidthPx: persisted.selectedBrushWidthPx
-            ),
-            lastViewportWidthPx: persisted.lastViewportWidthPx,
-            lastViewportHeightPx: persisted.lastViewportHeightPx
-        )
-    }
-
-    public var persisted: PersistedCanvasEditingMetadata {
-        PersistedCanvasEditingMetadata(
-            selectedBrushColorArgb: toolState.brushColorArgb,
-            selectedTextColorArgb: toolState.textColorArgb,
-            selectedBrushWidthPx: toolState.selectedBrushWidthPx,
-            selectedTool: toolState.activeTool.rawValue,
-            lastNonNoneTool: toolState.lastNonNoneTool.rawValue,
-            lastViewportWidthPx: lastViewportWidthPx,
-            lastViewportHeightPx: lastViewportHeightPx
-        )
     }
 }
 
@@ -260,6 +234,7 @@ public struct CanvasEditingAvailabilityPolicy: Sendable {
     }
 }
 
+/// Stamps local edits with their IDs and times. Injectable so tests are deterministic.
 public struct CanvasEditingOperationFactory: Sendable {
     public var uuidProvider: @Sendable () -> UUID
     public var nowProvider: @Sendable () -> Date
@@ -272,128 +247,52 @@ public struct CanvasEditingOperationFactory: Sendable {
         self.nowProvider = nowProvider
     }
 
-    public func makeOperation(
-        type: CanvasOperationType,
-        strokeId: String?,
-        payload: CanvasOperationPayload,
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        at date: Date? = nil
-    ) -> CanvasOperation {
-        let timestampDate = date ?? nowProvider()
-        return CanvasOperation(
+    public func makeOperation(type: String, strokeId: String?, payload: JSONValue = .object([:]), at date: Date? = nil) -> DrawingOperation {
+        let timestamp = date ?? nowProvider()
+        return DrawingOperation(
             clientOperationId: uuidProvider().uuidString.lowercased(),
-            actorUserId: actorUserId,
-            pairSessionId: pairSessionId,
             type: type,
             strokeId: strokeId,
             payload: payload,
-            clientCreatedAt: DateFormatter.canvasEditingISO8601.string(from: timestampDate),
-            clientLocalDate: DateFormatter.canvasEditingLocalDate.string(from: timestampDate)
+            clientCreatedAt: ServerDate.string(timestamp),
+            clientLocalDate: ServerDate.localDay(timestamp)
         )
     }
 
-    public func makeAddStroke(
-        strokeId: String,
-        colorArgb: UInt32,
-        width: Float,
-        firstPoint: CanvasPoint,
-        createdAt: Int64,
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        at date: Date? = nil
-    ) -> CanvasOperation {
-        makeOperation(
-            type: .addStroke,
-            strokeId: strokeId,
-            payload: .addStroke(AddStrokePayload(
-                id: strokeId,
-                colorArgb: colorArgb,
-                width: width,
-                createdAt: createdAt,
-                firstPoint: firstPoint
-            )),
-            actorUserId: actorUserId,
-            pairSessionId: pairSessionId,
-            at: date
-        )
+    public func makeAddStroke(_ stroke: DrawingStroke, at date: Date? = nil) throws -> DrawingOperation {
+        let start = try DrawingOperation.startStroke(stroke)
+        return makeOperation(type: start.type, strokeId: start.strokeId, payload: start.payload, at: date)
     }
 
-    public func makeAppendPoints(
-        strokeId: String,
-        points: [CanvasPoint],
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        at date: Date? = nil
-    ) -> CanvasOperation {
-        makeOperation(
-            type: .appendPoints,
-            strokeId: strokeId,
-            payload: .appendPoints(AppendPointsPayload(points: points)),
-            actorUserId: actorUserId,
-            pairSessionId: pairSessionId,
-            at: date
-        )
+    public func makeAppendPoints(strokeId: String, points: [DrawingPoint], at date: Date? = nil) throws -> DrawingOperation {
+        let append = try DrawingOperation.appendPoints(points, to: strokeId)
+        return makeOperation(type: append.type, strokeId: strokeId, payload: append.payload, at: date)
     }
 
-    public func makeFinishStroke(
-        strokeId: String,
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        at date: Date? = nil
-    ) -> CanvasOperation {
-        makeOperation(
-            type: .finishStroke,
-            strokeId: strokeId,
-            payload: .finishStroke,
-            actorUserId: actorUserId,
-            pairSessionId: pairSessionId,
-            at: date
-        )
+    public func makeFinishStroke(strokeId: String, at date: Date? = nil) -> DrawingOperation {
+        makeOperation(type: "FINISH_STROKE", strokeId: strokeId, at: date)
     }
 
-    public func makeDeleteStroke(
-        strokeId: String,
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        at date: Date? = nil
-    ) -> CanvasOperation {
-        makeOperation(
-            type: .deleteStroke,
-            strokeId: strokeId,
-            payload: .deleteStroke,
-            actorUserId: actorUserId,
-            pairSessionId: pairSessionId,
-            at: date
-        )
+    public func makeDeleteStroke(strokeId: String, at date: Date? = nil) -> DrawingOperation {
+        makeOperation(type: "DELETE_STROKE", strokeId: strokeId, at: date)
     }
 
-    public func makeClearCanvas(
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        at date: Date? = nil
-    ) -> CanvasOperation {
-        makeOperation(
-            type: .clearCanvas,
-            strokeId: nil,
-            payload: .clearCanvas,
-            actorUserId: actorUserId,
-            pairSessionId: pairSessionId,
-            at: date
-        )
+    public func makeClearCanvas(at date: Date? = nil) -> DrawingOperation {
+        makeOperation(type: "CLEAR_CANVAS", strokeId: nil, at: date)
     }
 }
 
+/// Turns pointer input into canvas operations. Undo and redo use ProductCore's `DrawingHistory`,
+/// the same history as the iPhone and iPad editor: they only touch this Mac's own strokes.
 public struct CanvasStrokeEditingEngine: Sendable {
     public var toolState: CanvasEditingToolState
     public var viewportTransform: CanvasViewportTransform
     public var appendBatchSize: Int
-    public private(set) var activeStroke: CanvasStroke?
+    public private(set) var activeStroke: DrawingStroke?
     public private(set) var clearConfirmationRequested: Bool
 
-    private var pendingAppendPoints: [CanvasPoint]
-    private var undoStack: [CanvasStrokeHistoryAction]
-    private var redoStack: [CanvasStrokeHistoryAction]
+    private var pendingAppendPoints: [DrawingPoint]
+    private var history: DrawingHistory
     private var operationFactory: CanvasEditingOperationFactory
     private var strokeIDProvider: @Sendable () -> String
 
@@ -412,60 +311,34 @@ public struct CanvasStrokeEditingEngine: Sendable {
         self.activeStroke = nil
         self.clearConfirmationRequested = false
         self.pendingAppendPoints = []
-        self.undoStack = []
-        self.redoStack = []
+        self.history = DrawingHistory()
     }
 
     public var canUndo: Bool {
-        activeStroke != nil || undoStack.isEmpty == false
+        activeStroke != nil || history.canUndo
     }
 
     public var canRedo: Bool {
-        activeStroke == nil && redoStack.isEmpty == false
+        activeStroke == nil && history.canRedo
     }
 
-    public mutating func startStroke(
-        at renderedPoint: CGPoint,
-        surfaceSize: CGSize,
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        date: Date = Date()
-    ) -> [CanvasOperation] {
+    public mutating func startStroke(at renderedPoint: CGPoint, surfaceSize: CGSize, date: Date = Date()) -> [DrawingOperation] {
         guard toolState.activeTool == .draw else { return [] }
-        let strokeID = strokeIDProvider()
         let point = viewportTransform.normalizedPoint(fromRenderedPoint: renderedPoint, surfaceSize: surfaceSize)
-        let normalizedWidth = normalizeBrushWidth(widthPx: toolState.selectedBrushWidthPx, surfaceSize: surfaceSize)
-        let createdAt = Int64((date.timeIntervalSince1970 * 1_000).rounded())
-        activeStroke = CanvasStroke(
-            id: strokeID,
+        let stroke = DrawingStroke(
+            id: strokeIDProvider(),
             colorArgb: toolState.brushColorArgb,
-            width: normalizedWidth,
-            points: [point],
-            createdAt: createdAt
+            width: normalizeBrushWidth(widthPx: toolState.selectedBrushWidthPx, surfaceSize: surfaceSize),
+            createdAt: Int64((date.timeIntervalSince1970 * 1_000).rounded()),
+            points: [point]
         )
+        guard let operation = try? operationFactory.makeAddStroke(stroke, at: date) else { return [] }
+        activeStroke = stroke
         pendingAppendPoints.removeAll()
-        redoStack.removeAll()
-        return [
-            operationFactory.makeAddStroke(
-                strokeId: strokeID,
-                colorArgb: toolState.brushColorArgb,
-                width: normalizedWidth,
-                firstPoint: point,
-                createdAt: createdAt,
-                actorUserId: actorUserId,
-                pairSessionId: pairSessionId,
-                at: date
-            )
-        ]
+        return [operation]
     }
 
-    public mutating func appendStrokePoint(
-        at renderedPoint: CGPoint,
-        surfaceSize: CGSize,
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        date: Date = Date()
-    ) -> [CanvasOperation] {
+    public mutating func appendStrokePoint(at renderedPoint: CGPoint, surfaceSize: CGSize, date: Date = Date()) -> [DrawingOperation] {
         guard var stroke = activeStroke else { return [] }
         let point = viewportTransform.normalizedPoint(fromRenderedPoint: renderedPoint, surfaceSize: surfaceSize)
         guard stroke.points.last != point else { return [] }
@@ -473,54 +346,29 @@ public struct CanvasStrokeEditingEngine: Sendable {
         activeStroke = stroke
         pendingAppendPoints.append(point)
         guard pendingAppendPoints.count >= appendBatchSize else { return [] }
-        return flushAppendPoints(actorUserId: actorUserId, pairSessionId: pairSessionId, date: date)
+        return flushAppendPoints(date: date)
     }
 
-    public mutating func finishStroke(
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        date: Date = Date()
-    ) -> [CanvasOperation] {
-        guard let stroke = activeStroke else { return [] }
-        var operations = flushAppendPoints(actorUserId: actorUserId, pairSessionId: pairSessionId, date: date)
-        operations.append(operationFactory.makeFinishStroke(
-            strokeId: stroke.id,
-            actorUserId: actorUserId,
-            pairSessionId: pairSessionId,
-            at: date
-        ))
-        undoStack.append(.draw(stroke))
+    public mutating func finishStroke(date: Date = Date()) -> [DrawingOperation] {
+        guard var stroke = activeStroke else { return [] }
+        var operations = flushAppendPoints(date: date)
+        operations.append(operationFactory.makeFinishStroke(strokeId: stroke.id, at: date))
+        stroke.finished = true
+        history.recordDraw(stroke)
         activeStroke = nil
         pendingAppendPoints.removeAll()
         return operations
     }
 
-    public mutating func eraseStroke(
-        at renderedPoint: CGPoint,
-        in state: CanvasState,
-        surfaceSize: CGSize,
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        date: Date = Date()
-    ) -> [CanvasOperation] {
+    public mutating func eraseStroke(at renderedPoint: CGPoint, in state: DrawingState, surfaceSize: CGSize, date: Date = Date()) -> [DrawingOperation] {
         guard toolState.activeTool == .erase else { return [] }
         let point = viewportTransform.normalizedPoint(fromRenderedPoint: renderedPoint, surfaceSize: surfaceSize)
             .denormalized(in: surfaceSize)
-        guard let stroke = Self.hitStroke(
-            at: point,
-            strokes: state.committedStrokes,
-            surfaceSize: surfaceSize
-        ) else {
+        guard let stroke = Self.hitStroke(at: point, strokes: state.finishedStrokes, surfaceSize: surfaceSize) else {
             return []
         }
-        undoStack.append(.erase(deletedStrokeID: stroke.id, deletedStroke: stroke))
-        redoStack.removeAll()
-        return [operationFactory.makeDeleteStroke(
-            strokeId: stroke.id,
-            actorUserId: actorUserId,
-            pairSessionId: pairSessionId,
-            at: date
-        )]
+        history.recordErase(stroke)
+        return [operationFactory.makeDeleteStroke(strokeId: stroke.id, at: date)]
     }
 
     public mutating func requestClearCanvas() {
@@ -531,172 +379,40 @@ public struct CanvasStrokeEditingEngine: Sendable {
         clearConfirmationRequested = false
     }
 
-    public mutating func confirmClearCanvas(
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        date: Date = Date()
-    ) -> [CanvasOperation] {
+    public mutating func confirmClearCanvas(date: Date = Date()) -> [DrawingOperation] {
         clearConfirmationRequested = false
         activeStroke = nil
         pendingAppendPoints.removeAll()
-        undoStack.removeAll()
-        redoStack.removeAll()
-        return [operationFactory.makeClearCanvas(actorUserId: actorUserId, pairSessionId: pairSessionId, at: date)]
+        history.reset()
+        return [operationFactory.makeClearCanvas(at: date)]
     }
 
-    public mutating func undo(
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        date: Date = Date()
-    ) -> [CanvasOperation] {
+    /// Undoing mid-stroke drops the stroke being drawn.
+    public mutating func undo(date: Date = Date()) -> [DrawingOperation] {
         if let activeStroke {
             self.activeStroke = nil
             pendingAppendPoints.removeAll()
-            return [operationFactory.makeDeleteStroke(
-                strokeId: activeStroke.id,
-                actorUserId: actorUserId,
-                pairSessionId: pairSessionId,
-                at: date
-            )]
+            return [operationFactory.makeDeleteStroke(strokeId: activeStroke.id, at: date)]
         }
-
-        guard let action = undoStack.popLast() else { return [] }
-        switch action {
-        case let .draw(stroke):
-            redoStack.append(action)
-            return [operationFactory.makeDeleteStroke(
-                strokeId: stroke.id,
-                actorUserId: actorUserId,
-                pairSessionId: pairSessionId,
-                at: date
-            )]
-        case let .erase(deletedStrokeID, deletedStroke):
-            let replayed = replayStroke(
-                deletedStroke,
-                actorUserId: actorUserId,
-                pairSessionId: pairSessionId,
-                date: date
-            )
-            rewriteDrawActionStrokeID(oldStrokeID: deletedStrokeID, newStrokeID: replayed.stroke.id)
-            redoStack.append(.erase(deletedStrokeID: replayed.stroke.id, deletedStroke: replayed.stroke))
-            return replayed.operations
-        }
+        return (try? history.undo()) ?? []
     }
 
-    public mutating func redo(
-        actorUserId: String? = nil,
-        pairSessionId: String? = nil,
-        date: Date = Date()
-    ) -> [CanvasOperation] {
-        guard activeStroke == nil, let action = redoStack.popLast() else { return [] }
-        switch action {
-        case let .draw(stroke):
-            let replayed = replayStroke(
-                stroke,
-                actorUserId: actorUserId,
-                pairSessionId: pairSessionId,
-                date: date
-            )
-            undoStack.append(.draw(replayed.stroke))
-            return replayed.operations
-        case let .erase(deletedStrokeID, _):
-            undoStack.append(action)
-            return [operationFactory.makeDeleteStroke(
-                strokeId: deletedStrokeID,
-                actorUserId: actorUserId,
-                pairSessionId: pairSessionId,
-                at: date
-            )]
-        }
+    public mutating func redo() -> [DrawingOperation] {
+        guard activeStroke == nil else { return [] }
+        return (try? history.redo()) ?? []
     }
 
-    private mutating func flushAppendPoints(
-        actorUserId: String?,
-        pairSessionId: String?,
-        date: Date
-    ) -> [CanvasOperation] {
+    private mutating func flushAppendPoints(date: Date) -> [DrawingOperation] {
         guard let activeStroke, pendingAppendPoints.isEmpty == false else { return [] }
         let points = pendingAppendPoints
         pendingAppendPoints.removeAll()
-        return [
-            operationFactory.makeAppendPoints(
-                strokeId: activeStroke.id,
-                points: points,
-                actorUserId: actorUserId,
-                pairSessionId: pairSessionId,
-                at: date
-            )
-        ]
+        guard let operation = try? operationFactory.makeAppendPoints(strokeId: activeStroke.id, points: points, at: date) else {
+            return []
+        }
+        return [operation]
     }
 
-    private mutating func replayStroke(
-        _ source: CanvasStroke,
-        actorUserId: String?,
-        pairSessionId: String?,
-        date: Date
-    ) -> (stroke: CanvasStroke, operations: [CanvasOperation]) {
-        let newStrokeID = strokeIDProvider()
-        let replayed = CanvasStroke(
-            id: newStrokeID,
-            colorArgb: source.colorArgb,
-            width: source.width,
-            points: source.points,
-            createdAt: Int64((date.timeIntervalSince1970 * 1_000).rounded())
-        )
-        guard let first = replayed.points.first else {
-            return (replayed, [])
-        }
-
-        var operations = [
-            operationFactory.makeAddStroke(
-                strokeId: replayed.id,
-                colorArgb: replayed.colorArgb,
-                width: replayed.width,
-                firstPoint: first,
-                createdAt: replayed.createdAt,
-                actorUserId: actorUserId,
-                pairSessionId: pairSessionId,
-                at: date
-            )
-        ]
-        let tail = Array(replayed.points.dropFirst())
-        if tail.isEmpty == false {
-            operations.append(operationFactory.makeAppendPoints(
-                strokeId: replayed.id,
-                points: tail,
-                actorUserId: actorUserId,
-                pairSessionId: pairSessionId,
-                at: date
-            ))
-        }
-        operations.append(operationFactory.makeFinishStroke(
-            strokeId: replayed.id,
-            actorUserId: actorUserId,
-            pairSessionId: pairSessionId,
-            at: date
-        ))
-        return (replayed, operations)
-    }
-
-    private mutating func rewriteDrawActionStrokeID(oldStrokeID: String, newStrokeID: String) {
-        guard oldStrokeID != newStrokeID else { return }
-        undoStack = undoStack.map { action in
-            switch action {
-            case let .draw(stroke) where stroke.id == oldStrokeID:
-                var rewritten = stroke
-                rewritten.id = newStrokeID
-                return .draw(rewritten)
-            default:
-                return action
-            }
-        }
-    }
-
-    private static func hitStroke(
-        at point: CGPoint,
-        strokes: [CanvasStroke],
-        surfaceSize: CGSize
-    ) -> CanvasStroke? {
+    private static func hitStroke(at point: CGPoint, strokes: [DrawingStroke], surfaceSize: CGSize) -> DrawingStroke? {
         strokes.reversed().first { stroke in
             let rendered = stroke.denormalizedStroke(in: surfaceSize)
             let threshold = (rendered.width / 2) + CGFloat(CanvasEditingDefaults.strokeHitTolerancePx)
@@ -711,11 +427,6 @@ public struct CanvasStrokeEditingEngine: Sendable {
     }
 }
 
-private enum CanvasStrokeHistoryAction: Sendable {
-    case draw(CanvasStroke)
-    case erase(deletedStrokeID: String, deletedStroke: CanvasStroke)
-}
-
 public extension CGSize {
     var safeCanvasWidth: CGFloat { max(width, 1) }
     var safeCanvasHeight: CGFloat { max(height, 1) }
@@ -723,15 +434,15 @@ public extension CGSize {
 }
 
 public extension CGPoint {
-    func normalized(in surfaceSize: CGSize) -> CanvasPoint {
-        CanvasPoint(
-            x: Float((x / surfaceSize.safeCanvasWidth).clamped(to: 0...1)),
-            y: Float((y / surfaceSize.safeCanvasHeight).clamped(to: 0...1))
+    func normalized(in surfaceSize: CGSize) -> DrawingPoint {
+        DrawingPoint(
+            x: Double((x / surfaceSize.safeCanvasWidth).clamped(to: 0...1)),
+            y: Double((y / surfaceSize.safeCanvasHeight).clamped(to: 0...1))
         )
     }
 }
 
-public extension CanvasPoint {
+public extension DrawingPoint {
     func denormalized(in surfaceSize: CGSize) -> CGPoint {
         CGPoint(
             x: CGFloat(x) * surfaceSize.safeCanvasWidth,
@@ -740,14 +451,15 @@ public extension CanvasPoint {
     }
 }
 
-public func normalizeBrushWidth(widthPx: Float, surfaceSize: CGSize) -> Float {
-    let reference = Float(surfaceSize.safeCanvasReferenceDimension)
-    return max(0, widthPx / max(reference, 1))
+/// Stroke widths travel as a fraction of the canvas's shorter side, as on Android and iOS.
+public func normalizeBrushWidth(widthPx: Float, surfaceSize: CGSize) -> Double {
+    let reference = Double(surfaceSize.safeCanvasReferenceDimension)
+    return max(0, Double(widthPx) / max(reference, 1))
 }
 
-public func denormalizeBrushWidth(_ normalizedWidth: Float, surfaceSize: CGSize) -> Float {
-    let reference = Float(surfaceSize.safeCanvasReferenceDimension)
-    return max(0, normalizedWidth) * max(reference, 1)
+public func denormalizeBrushWidth(_ normalizedWidth: Double, surfaceSize: CGSize) -> Float {
+    let reference = Double(surfaceSize.safeCanvasReferenceDimension)
+    return Float(max(0, normalizedWidth) * max(reference, 1))
 }
 
 private struct RenderedStroke {
@@ -756,7 +468,7 @@ private struct RenderedStroke {
     var points: [CGPoint]
 }
 
-private extension CanvasStroke {
+private extension DrawingStroke {
     func denormalizedStroke(in surfaceSize: CGSize) -> RenderedStroke {
         RenderedStroke(
             id: id,
@@ -783,33 +495,6 @@ private extension CGPoint {
         let t = projection.clamped(to: 0...1)
         return distance(to: CGPoint(x: start.x + (t * dx), y: start.y + (t * dy)))
     }
-}
-
-public extension MulberryDatabase {
-    func canvasEditingMetadata() throws -> CanvasEditingMetadata {
-        try CanvasEditingMetadata(persisted: persistedCanvasEditingMetadata())
-    }
-
-    func saveCanvasEditingMetadata(_ metadata: CanvasEditingMetadata) throws {
-        try savePersistedCanvasEditingMetadata(metadata.persisted)
-    }
-}
-
-private extension DateFormatter {
-    static let canvasEditingISO8601: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
-        return formatter
-    }()
-
-    static let canvasEditingLocalDate: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
 }
 
 private extension Comparable {

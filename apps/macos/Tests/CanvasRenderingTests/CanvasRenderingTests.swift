@@ -1,13 +1,15 @@
-import CanvasCore
 import CanvasRendering
 import Foundation
+import ProductCore
 import Testing
 
 @Test func offscreenRendererProducesVisiblePixelsAndStickerFallbackDiagnostics() throws {
-    let result = CanvasRenderFixture.previewState()
+    let state = CanvasRenderFixture.previewState()
+    #expect(state.finishedStrokes.count == 1)
+    #expect(state.canvasElements.count == 2)
     let output = try #require(CanvasOffscreenRenderer.renderPNG(
         input: CanvasRenderInput(
-            state: result.state,
+            state: state,
             viewport: CGRect(x: 0, y: 0, width: 360, height: 640),
             strokeRenderMode: .dryBrush,
             surface: .test
@@ -19,18 +21,18 @@ import Testing
 }
 
 @Test func offscreenRendererSamplesRenderedCanvasColor() throws {
-    let state = CanvasState(committedStrokes: [
-        CanvasStroke(
-            id: "sample",
-            colorArgb: 0xFF2457D6,
-            width: 0.2,
-            points: [
-                CanvasPoint(x: 0.25, y: 0.5),
-                CanvasPoint(x: 0.75, y: 0.5)
-            ],
-            createdAt: 1
-        )
-    ])
+    var state = DrawingState()
+    let stroke = DrawingStroke(
+        id: "sample",
+        colorArgb: 0xFF2457D6,
+        width: 0.2,
+        createdAt: 1,
+        points: [DrawingPoint(x: 0.25, y: 0.5), DrawingPoint(x: 0.75, y: 0.5)],
+        finished: true
+    )
+    for operation in try DrawingOperation.restore(stroke) {
+        try state.apply(operation)
+    }
     let color = try #require(CanvasOffscreenRenderer.sampleColor(
         input: CanvasRenderInput(
             state: state,
@@ -60,6 +62,15 @@ import Testing
     }
 }
 
+@Test func strokeRenderModeParsesBackendAndAndroidValues() {
+    #expect(CanvasStrokeRenderMode(rawBackendValue: "dry") == .dryBrush)
+    #expect(CanvasStrokeRenderMode(rawBackendValue: "round") == .roundStroke)
+    #expect(CanvasStrokeRenderMode(rawBackendValue: "round_stroke_only") == .roundStroke)
+    #expect(CanvasStrokeRenderMode(rawBackendValue: "dry-brush") == .dryBrush)
+    #expect(CanvasStrokeRenderMode(rawBackendValue: "hybrid") == .dryBrush)
+    #expect(CanvasStrokeRenderMode(rawBackendValue: nil) == .dryBrush)
+}
+
 @Test func committedGoldenFixtureMatchesCurrentRendererWhenPresent() throws {
     let rendered = try #require(renderGoldenFixture())
     let goldenURL = fixtureRoot()
@@ -72,7 +83,7 @@ import Testing
 }
 
 private func renderGoldenFixture() -> (data: Data, diagnostics: [CanvasDiagnostic])? {
-    let state = CanvasRenderFixture.previewState().state
+    let state = CanvasRenderFixture.previewState()
     return CanvasOffscreenRenderer.renderPNG(
         input: CanvasRenderInput(
             state: state,

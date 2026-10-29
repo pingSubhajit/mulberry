@@ -1,9 +1,9 @@
 import AppKit
 import Auth
-import CanvasCore
 import CanvasEditing
 import CanvasRendering
 import Overlay
+import ProductCore
 import Sync
 import SwiftUI
 
@@ -222,7 +222,7 @@ private struct RoutePlaceholderView: View {
                 if let bootstrap = appStateController.loadState.bootstrap {
                     Text(bootstrap.isPaired ? "Paired with \(bootstrap.partnerTitle)" : "Not paired")
                         .font(.headline)
-                    if let pairSessionID = bootstrap.pairSessionID {
+                    if let pairSessionID = bootstrap.pairSessionId {
                         Text("Pair session: \(pairSessionID)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -259,10 +259,6 @@ private struct RoutePlaceholderView: View {
                         syncController.recoverNow()
                     }
                     .disabled(authController.state.isSignedIn == false)
-                    Button("Queue Test Stroke") {
-                        syncController.submitDebugStroke()
-                    }
-                    .disabled(syncController.demand != .foregroundWebSocket || syncController.connectionState != .connected)
                     if authController.state.isSignedIn {
                         Button("Sign Out") {
                             Task {
@@ -285,10 +281,10 @@ private struct RoutePlaceholderView: View {
             Text("Mode: \(syncController.demand.title)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("Revision: \(syncController.status.lastAppliedServerRevision) / \(syncController.status.latestKnownServerRevision)")
+            Text("Revision: \(syncController.status.lastAppliedServerRevision)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("Outbox: \(syncController.status.pendingCount) pending, \(syncController.status.inFlightCount) in flight")
+            Text("Outbox: \(syncController.status.pendingCount) pending")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if let recoveredAt = syncController.status.lastSuccessfulRecoveryAt {
@@ -378,7 +374,7 @@ private struct FullAppCanvasEditor: View {
                 editor.cancelClearCanvas()
             }
             Button("Clear", role: .destructive) {
-                submit(editor.confirmClearCanvas(pairSessionId: syncController.status.pairSessionID))
+                submit(editor.confirmClearCanvas())
             }
         } message: {
             Text("This removes every stroke, text item, and sticker from the shared canvas.")
@@ -394,7 +390,7 @@ private struct FullAppCanvasEditor: View {
             Text("Sync: \(syncController.connectionState.title)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            if syncController.status.pendingCount + syncController.status.inFlightCount > 0 {
+            if syncController.status.pendingCount > 0 {
                 Text("\(syncController.status.pendingCount) pending")
                     .font(.caption)
                     .foregroundStyle(.orange)
@@ -420,29 +416,16 @@ private struct FullAppCanvasEditor: View {
                     activeTool: editor.toolState.activeTool,
                     editingIsEnabled: editingIsEnabled,
                     onDrawStart: { point in
-                        submit(editor.startStroke(
-                            at: point,
-                            surfaceSize: proxy.size,
-                            pairSessionId: syncController.status.pairSessionID
-                        ))
+                        submit(editor.startStroke(at: point, surfaceSize: proxy.size))
                     },
                     onDrawMove: { point in
-                        submit(editor.appendStrokePoint(
-                            at: point,
-                            surfaceSize: proxy.size,
-                            pairSessionId: syncController.status.pairSessionID
-                        ))
+                        submit(editor.appendStrokePoint(at: point, surfaceSize: proxy.size))
                     },
                     onDrawEnd: {
-                        submit(editor.finishStroke(pairSessionId: syncController.status.pairSessionID))
+                        submit(editor.finishStroke())
                     },
                     onErase: { point in
-                        submit(editor.eraseStroke(
-                            at: point,
-                            in: syncController.canvasState,
-                            surfaceSize: proxy.size,
-                            pairSessionId: syncController.status.pairSessionID
-                        ))
+                        submit(editor.eraseStroke(at: point, in: syncController.drawing, surfaceSize: proxy.size))
                     },
                     onEyedropper: { point in
                         sampleEyedropper(at: point, surfaceSize: proxy.size)
@@ -491,7 +474,7 @@ private struct FullAppCanvasEditor: View {
 
             HStack {
                 Button {
-                    submit(editor.undo(pairSessionId: syncController.status.pairSessionID))
+                    submit(editor.undo())
                 } label: {
                     Label("Undo", systemImage: "arrow.uturn.backward")
                 }
@@ -499,7 +482,7 @@ private struct FullAppCanvasEditor: View {
                 .keyboardShortcut("z", modifiers: .command)
 
                 Button {
-                    submit(editor.redo(pairSessionId: syncController.status.pairSessionID))
+                    submit(editor.redo())
                 } label: {
                     Label("Redo", systemImage: "arrow.uturn.forward")
                 }
@@ -577,10 +560,10 @@ private struct FullAppCanvasEditor: View {
 
     private var syncSummary: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Revision: \(syncController.status.lastAppliedServerRevision) / \(syncController.status.latestKnownServerRevision)")
-            Text("Outbox: \(syncController.status.pendingCount) pending, \(syncController.status.inFlightCount) in flight")
-            Text("Diagnostics: \(syncController.diagnostics.count)")
-                .foregroundStyle(syncController.diagnostics.isEmpty ? Color.secondary : Color.orange)
+            Text("Revision: \(syncController.status.lastAppliedServerRevision)")
+            Text("Outbox: \(syncController.status.pendingCount) pending")
+            Text("Diagnostics: \(canvasModel.diagnostics.count)")
+                .foregroundStyle(canvasModel.diagnostics.isEmpty ? Color.secondary : Color.orange)
             if let lastError = syncController.status.lastError {
                 Text(lastError)
                     .foregroundStyle(.orange)
@@ -617,7 +600,7 @@ private struct FullAppCanvasEditor: View {
         return CanvasEditingAvailabilityPolicy().availability(for: CanvasEditingAvailabilityInput(
             isAuthenticated: authController.state.isSignedIn,
             isPaired: bootstrap?.isPaired ?? false,
-            pairSessionID: bootstrap?.pairSessionID ?? syncController.status.pairSessionID,
+            pairSessionID: bootstrap?.pairSessionId ?? syncController.status.pairSessionID,
             hasUsableCanvasState: true,
             hasHardLocalStateError: false
         )).isEnabled
@@ -628,7 +611,7 @@ private struct FullAppCanvasEditor: View {
         let availability = CanvasEditingAvailabilityPolicy().availability(for: CanvasEditingAvailabilityInput(
             isAuthenticated: authController.state.isSignedIn,
             isPaired: bootstrap?.isPaired ?? false,
-            pairSessionID: bootstrap?.pairSessionID ?? syncController.status.pairSessionID,
+            pairSessionID: bootstrap?.pairSessionId ?? syncController.status.pairSessionID,
             hasUsableCanvasState: true,
             hasHardLocalStateError: false
         ))
@@ -648,17 +631,15 @@ private struct FullAppCanvasEditor: View {
         }
     }
 
-    private func submit(_ operations: [CanvasOperation]) {
-        guard operations.isEmpty == false else { return }
-        operations.forEach(syncController.submitLocalOperation)
-        syncCanvasModel()
+    private func submit(_ operations: [DrawingOperation]) {
+        syncController.submit(operations)
     }
 
     private func sampleEyedropper(at renderedPoint: CGPoint, surfaceSize: CGSize) {
         let contentPoint = editor.viewportTransform.contentPoint(fromRenderedPoint: renderedPoint)
         guard let color = CanvasOffscreenRenderer.sampleColor(
             input: CanvasRenderInput(
-                state: syncController.canvasState,
+                state: syncController.drawing,
                 viewport: CGRect(origin: .zero, size: surfaceSize),
                 strokeRenderMode: canvasModel.strokeRenderMode,
                 surface: .fullApp,
@@ -684,8 +665,10 @@ private struct FullAppCanvasEditor: View {
     }
 
     private func syncCanvasModel() {
-        canvasModel.state = syncController.canvasState
-        canvasModel.diagnostics = syncController.diagnostics
+        canvasModel.state = syncController.drawing
+        canvasModel.strokeRenderMode = CanvasStrokeRenderMode(
+            rawBackendValue: appStateController.loadState.bootstrap?.canvasStrokeRenderMode
+        )
     }
 }
 

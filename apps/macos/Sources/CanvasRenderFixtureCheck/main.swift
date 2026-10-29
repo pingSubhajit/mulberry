@@ -8,7 +8,7 @@ let renderedURL = fixtureRoot.appendingPathComponent("rendered/preview-dry-brush
 let goldenURL = fixtureRoot.appendingPathComponent("goldens/preview-dry-brush.png")
 let recordGoldens = ProcessInfo.processInfo.environment["CANVAS_RECORD_GOLDENS"] == "1"
 
-let state = CanvasRenderFixture.previewState().state
+let state = CanvasRenderFixture.previewState()
 guard let rendered = CanvasOffscreenRenderer.renderPNG(
     input: CanvasRenderInput(
         state: state,

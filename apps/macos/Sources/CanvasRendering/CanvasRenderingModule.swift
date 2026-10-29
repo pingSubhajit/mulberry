@@ -1,11 +1,48 @@
 import AppKit
-import CanvasCore
 import Combine
 import CoreText
+import ProductCore
 import SwiftUI
 
 public enum CanvasRenderingModule {
     public static let name = "CanvasRendering"
+}
+
+/// The pair's stroke style setting. The backend stores `dry` or `round`; Android's older
+/// spellings still read correctly.
+public enum CanvasStrokeRenderMode: String, Codable, Sendable {
+    case dryBrush
+    case roundStroke
+
+    public init(rawBackendValue: String?) {
+        switch rawBackendValue?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "round", "round_stroke", "round-stroke", "round_stroke_only", "round-stroke-only", "round_stroke_only_strokes":
+            self = .roundStroke
+        default:
+            self = .dryBrush
+        }
+    }
+}
+
+public enum CanvasDiagnosticSeverity: String, Codable, Equatable, Sendable {
+    case info
+    case warning
+    case error
+}
+
+/// Something the renderer had to work around, such as a font or sticker it could not load.
+public struct CanvasDiagnostic: Codable, Equatable, Sendable {
+    public var code: String
+    public var message: String
+    public var severity: CanvasDiagnosticSeverity
+    public var elementID: String?
+
+    public init(code: String, message: String, severity: CanvasDiagnosticSeverity = .warning, elementID: String? = nil) {
+        self.code = code
+        self.message = message
+        self.severity = severity
+        self.elementID = elementID
+    }
 }
 
 public enum CanvasRenderSurface: Sendable {
@@ -16,7 +53,7 @@ public enum CanvasRenderSurface: Sendable {
 }
 
 public struct CanvasRenderInput: Sendable {
-    public var state: CanvasState
+    public var state: DrawingState
     public var viewport: CGRect
     public var scale: CGFloat
     public var strokeRenderMode: CanvasStrokeRenderMode
@@ -25,7 +62,7 @@ public struct CanvasRenderInput: Sendable {
     public var selectedElementID: String?
 
     public init(
-        state: CanvasState,
+        state: DrawingState,
         viewport: CGRect,
         scale: CGFloat = 1,
         strokeRenderMode: CanvasStrokeRenderMode = .dryBrush,
@@ -83,19 +120,13 @@ public final class CanvasRenderer {
             context.fill(input.viewport)
         }
 
-        input.state.committedStrokes.forEach { stroke in
+        // Strokes still being drawn, on either side, are part of the state in drawing order.
+        input.state.strokes.forEach { stroke in
             drawStroke(stroke, input: input, context: context)
         }
-        input.state.remoteActiveStrokes.values
-            .sorted { $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt < $1.createdAt }
-            .forEach { stroke in
-                drawStroke(stroke, input: input, context: context)
-            }
-        if let localActiveStroke = input.state.localActiveStroke {
-            drawStroke(localActiveStroke, input: input, context: context)
-        }
 
-        for element in input.state.committedElements {
+        let elements = input.state.canvasElements
+        for element in elements {
             switch element {
             case let .text(textElement):
                 diagnostics.append(contentsOf: drawTextElement(textElement, input: input, context: context))
@@ -105,14 +136,14 @@ public final class CanvasRenderer {
         }
 
         if let selectedElementID = input.selectedElementID,
-           let selected = input.state.committedElements.first(where: { $0.id == selectedElementID }) {
+           let selected = elements.first(where: { $0.id == selectedElementID }) {
             drawSelection(for: selected, input: input, context: context)
         }
 
         return CanvasRenderResult(diagnostics: diagnostics)
     }
 
-    private func drawStroke(_ stroke: CanvasStroke, input: CanvasRenderInput, context: CGContext) {
+    private func drawStroke(_ stroke: DrawingStroke, input: CanvasRenderInput, context: CGContext) {
         let renderStroke = stroke.denormalized(in: input.viewport)
         switch input.strokeRenderMode {
         case .roundStroke:
@@ -193,7 +224,7 @@ public final class CanvasRenderer {
         context: CGContext
     ) -> [CanvasDiagnostic] {
         let center = element.center.denormalized(in: input.viewport)
-        let maxSize = max(CGFloat(element.scale).clamped(to: 0.08...1.6) * input.viewport.width, 1)
+        let maxSize = max(CGFloat(element.renderScale) * input.viewport.width, 1)
         let image = stickerAssetResolver.image(for: element)
         let size = resolvedStickerSize(maxSize: maxSize, image: image)
         let rect = CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height)
@@ -211,9 +242,9 @@ public final class CanvasRenderer {
         guard image == nil else { return [] }
         return [CanvasDiagnostic(
             code: "missing_sticker_asset",
-            message: "Rendered sticker fallback for \(element.packKey)#\(element.packVersion)/\(element.stickerId).",
+            message: "Rendered sticker fallback for \(element.sticker.packKey)#\(element.sticker.packVersion)/\(element.sticker.stickerId).",
             severity: .info,
-            operationId: element.id
+            elementID: element.id
         )]
     }
 
@@ -237,14 +268,12 @@ public final class CanvasRenderer {
     }
 
     private func drawSelection(for element: CanvasElement, input: CanvasRenderInput, context: CGContext) {
-        let center: CanvasPoint
-        let scale: Float
+        let center = element.center
+        let scale: Double
         switch element {
         case let .text(text):
-            center = text.center
             scale = text.scale
         case let .sticker(sticker):
-            center = sticker.center
             scale = sticker.scale
         }
         let point = center.denormalized(in: input.viewport)
@@ -270,12 +299,12 @@ public final class CanvasRenderer {
 }
 
 public final class CanvasRenderModel: ObservableObject {
-    @Published public var state: CanvasState
+    @Published public var state: DrawingState
     @Published public var strokeRenderMode: CanvasStrokeRenderMode
     @Published public var diagnostics: [CanvasDiagnostic]
 
     public init(
-        state: CanvasState = CanvasState(),
+        state: DrawingState = DrawingState(),
         strokeRenderMode: CanvasStrokeRenderMode = .dryBrush,
         diagnostics: [CanvasDiagnostic] = []
     ) {
@@ -374,101 +403,54 @@ public struct CanvasRenderSurfaceView: NSViewRepresentable {
 }
 
 public enum CanvasRenderFixture {
-    public static func previewOperations() -> [CanvasOperation] {
-        [
-            CanvasOperation(
-                clientOperationId: "fixture-add-stroke-1",
-                actorUserId: "partner",
-                pairSessionId: "pair",
-                type: .addStroke,
-                strokeId: "stroke-1",
-                payload: .addStroke(AddStrokePayload(
-                    id: "stroke-1",
-                    colorArgb: 0xFFFF4F8B,
-                    width: 0.028,
-                    createdAt: 1,
-                    firstPoint: CanvasPoint(x: 0.14, y: 0.18)
-                )),
-                clientCreatedAt: "2026-01-01T00:00:00.000Z",
-                serverRevision: 1,
-                createdAt: "2026-01-01T00:00:00.000Z"
-            ),
-            CanvasOperation(
-                clientOperationId: "fixture-append-stroke-1",
-                actorUserId: "partner",
-                pairSessionId: "pair",
-                type: .appendPoints,
-                strokeId: "stroke-1",
-                payload: .appendPoints(AppendPointsPayload(points: [
-                    CanvasPoint(x: 0.24, y: 0.3),
-                    CanvasPoint(x: 0.37, y: 0.22),
-                    CanvasPoint(x: 0.5, y: 0.42),
-                    CanvasPoint(x: 0.68, y: 0.29),
-                    CanvasPoint(x: 0.82, y: 0.46)
-                ])),
-                clientCreatedAt: "2026-01-01T00:00:00.100Z",
-                serverRevision: 2,
-                createdAt: "2026-01-01T00:00:00.100Z"
-            ),
-            CanvasOperation(
-                clientOperationId: "fixture-finish-stroke-1",
-                actorUserId: "partner",
-                pairSessionId: "pair",
-                type: .finishStroke,
-                strokeId: "stroke-1",
-                payload: .finishStroke,
-                clientCreatedAt: "2026-01-01T00:00:00.200Z",
-                serverRevision: 3,
-                createdAt: "2026-01-01T00:00:00.200Z"
-            ),
-            CanvasOperation(
-                clientOperationId: "fixture-text-1",
-                actorUserId: "user",
-                pairSessionId: "pair",
-                type: .addTextElement,
-                strokeId: "text-1",
-                payload: .addTextElement(CanvasTextElement(
-                    id: "text-1",
-                    text: "Miss you",
-                    createdAt: 4,
-                    center: CanvasPoint(x: 0.5, y: 0.62),
-                    rotationRad: -0.12,
-                    scale: 1.08,
-                    boxWidth: 0.58,
-                    colorArgb: 0xFFFFD166,
-                    backgroundPillEnabled: true,
-                    font: .virgil,
-                    alignment: .center
-                )),
-                clientCreatedAt: "2026-01-01T00:00:00.300Z",
-                serverRevision: 4,
-                createdAt: "2026-01-01T00:00:00.300Z"
-            ),
-            CanvasOperation(
-                clientOperationId: "fixture-sticker-1",
-                actorUserId: "partner",
-                pairSessionId: "pair",
-                type: .addStickerElement,
-                strokeId: "sticker-1",
-                payload: .addStickerElement(CanvasStickerElement(
-                    id: "sticker-1",
-                    createdAt: 5,
-                    center: CanvasPoint(x: 0.48, y: 0.78),
-                    rotationRad: 0.16,
-                    scale: 0.22,
-                    packKey: "fixture-pack",
-                    packVersion: 1,
-                    stickerId: "heart"
-                )),
-                clientCreatedAt: "2026-01-01T00:00:00.400Z",
-                serverRevision: 5,
-                createdAt: "2026-01-01T00:00:00.400Z"
-            )
-        ]
+    /// A stroke, a text label and a sticker, as a partner's device would send them.
+    public static func previewOperations() -> [DrawingOperation] {
+        let stroke = DrawingStroke(
+            id: "stroke-1",
+            colorArgb: 0xFFFF4F8B,
+            width: 0.028,
+            createdAt: 1,
+            points: [
+                DrawingPoint(x: 0.14, y: 0.18),
+                DrawingPoint(x: 0.24, y: 0.3),
+                DrawingPoint(x: 0.37, y: 0.22),
+                DrawingPoint(x: 0.5, y: 0.42),
+                DrawingPoint(x: 0.68, y: 0.29),
+                DrawingPoint(x: 0.82, y: 0.46)
+            ]
+        )
+        let text = CanvasTextElement(
+            id: "text-1",
+            text: "Miss you",
+            createdAt: 4,
+            center: DrawingPoint(x: 0.5, y: 0.62),
+            rotationRad: -0.12,
+            scale: 1.08,
+            boxWidth: 0.58,
+            colorArgb: 0xFFFFD166,
+            backgroundPillEnabled: true,
+            font: .virgil,
+            alignment: .center
+        )
+        let sticker = CanvasStickerElement(
+            id: "sticker-1",
+            createdAt: 5,
+            center: DrawingPoint(x: 0.48, y: 0.78),
+            rotationRad: 0.16,
+            scale: 0.22,
+            sticker: StickerReference(packKey: "fixture-pack", packVersion: 1, stickerId: "heart")
+        )
+        // Built from fixed values, so restoring them cannot fail.
+        let strokeOperations = (try? DrawingOperation.restore(stroke)) ?? []
+        return strokeOperations + [.add(.text(text)), .add(.sticker(sticker))]
     }
 
-    public static func previewState() -> CanvasReducerResult {
-        CanvasReducer().apply(previewOperations())
+    public static func previewState() -> DrawingState {
+        var state = DrawingState()
+        for operation in previewOperations() {
+            try? state.apply(operation)
+        }
+        return state
     }
 }
 
@@ -795,7 +777,7 @@ public enum CanvasOffscreenRenderer {
     }
 }
 
-private extension CanvasStroke {
+private extension DrawingStroke {
     func denormalized(in viewport: CGRect) -> RenderStroke {
         RenderStroke(
             id: id,
@@ -806,7 +788,7 @@ private extension CanvasStroke {
     }
 }
 
-private extension CanvasPoint {
+private extension DrawingPoint {
     func denormalized(in viewport: CGRect) -> CGPoint {
         CGPoint(
             x: viewport.minX + CGFloat(x) * viewport.width,
@@ -817,7 +799,7 @@ private extension CanvasPoint {
 
 private extension CanvasStickerElement {
     var stableHash: Int {
-        "\(packKey)-\(packVersion)-\(stickerId)".unicodeScalars.reduce(0) { partial, scalar in
+        "\(sticker.packKey)-\(sticker.packVersion)-\(sticker.stickerId)".unicodeScalars.reduce(0) { partial, scalar in
             Int(Int32(truncatingIfNeeded: partial) &* 31) ^ Int(scalar.value)
         }
     }

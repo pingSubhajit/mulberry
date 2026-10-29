@@ -1,7 +1,6 @@
-import CanvasCore
 import CanvasEditing
 import Foundation
-import Persistence
+import ProductCore
 import Testing
 
 @Test func androidDefaultsAndPaletteAreStable() {
@@ -62,10 +61,10 @@ import Testing
         fromRenderedPoint: CGPoint(x: 220, y: 440),
         surfaceSize: surface
     )
-    #expect(normalized == CanvasPoint(x: 0.25, y: 0.25))
+    #expect(normalized == DrawingPoint(x: 0.25, y: 0.25))
 
     let rendered = transform.renderedPoint(
-        fromNormalizedPoint: CanvasPoint(x: 0.25, y: 0.25),
+        fromNormalizedPoint: DrawingPoint(x: 0.25, y: 0.25),
         surfaceSize: surface
     )
     #expect(rendered.x == 220)
@@ -120,41 +119,36 @@ import Testing
 
 @Test func operationFactoryCreatesDeterministicLocalOperationMetadata() throws {
     let uuid = try #require(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
-    let date = try #require(DateFormatter.testISO.date(from: "2026-05-10T12:34:56.789Z"))
+    let date = try fixedDate()
     let factory = CanvasEditingOperationFactory(
         uuidProvider: { uuid },
         nowProvider: { date }
     )
-
-    let operation = factory.makeAddStroke(
-        strokeId: "stroke-1",
+    let stroke = DrawingStroke(
+        id: "stroke-1",
         colorArgb: 0xFFB31329,
         width: 0.025,
-        firstPoint: CanvasPoint(x: 0.1, y: 0.2),
         createdAt: 1_777_777_777_000,
-        actorUserId: "user",
-        pairSessionId: "pair"
+        points: [DrawingPoint(x: 0.1, y: 0.2)]
     )
 
+    let operation = try factory.makeAddStroke(stroke)
+
     #expect(operation.clientOperationId == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
-    #expect(operation.actorUserId == "user")
-    #expect(operation.pairSessionId == "pair")
-    #expect(operation.type == .addStroke)
+    #expect(operation.type == "ADD_STROKE")
     #expect(operation.strokeId == "stroke-1")
+    #expect(operation.serverRevision == nil)
     #expect(operation.clientCreatedAt == "2026-05-10T12:34:56.789Z")
-    #expect(operation.clientLocalDate == "2026-05-10")
-    guard case let .addStroke(payload) = operation.payload else {
-        Issue.record("Expected add stroke payload")
-        return
-    }
+    #expect(operation.clientLocalDate == ServerDate.localDay(date))
+    let payload = try operation.payload.decode(StrokeStart.self)
     #expect(payload.id == "stroke-1")
     #expect(payload.colorArgb == 0xFFB31329)
     #expect(payload.width == 0.025)
-    #expect(payload.firstPoint == CanvasPoint(x: 0.1, y: 0.2))
+    #expect(payload.createdAt == 1_777_777_777_000)
+    #expect(payload.firstPoint == DrawingPoint(x: 0.1, y: 0.2))
 }
 
-@Test func editingMetadataPersistsThroughDatabaseRoundTrip() throws {
-    let database = try makeDatabase()
+@Test func editingMetadataRoundTripsAndKeepsClampedValues() throws {
     let metadata = CanvasEditingMetadata(
         toolState: CanvasEditingToolState(
             activeTool: .text,
@@ -167,16 +161,11 @@ import Testing
         lastViewportHeightPx: 900
     )
 
-    try database.saveCanvasEditingMetadata(metadata)
-    let loaded = try database.canvasEditingMetadata()
+    let loaded = try JSONDecoder().decode(CanvasEditingMetadata.self, from: JSONEncoder().encode(metadata))
 
-    #expect(loaded.toolState.activeTool == .text)
+    #expect(loaded == metadata)
     #expect(loaded.toolState.lastNonNoneTool == .text)
-    #expect(loaded.toolState.brushColorArgb == 0xFF2457D6)
-    #expect(loaded.toolState.textColorArgb == 0xFFFFE66D)
     #expect(loaded.toolState.selectedBrushWidthPx == CanvasEditingDefaults.maxBrushWidthPx)
-    #expect(loaded.lastViewportWidthPx == 1200)
-    #expect(loaded.lastViewportHeightPx == 900)
 }
 
 @Test func brushEmitsAddAppendAndFinishInOrderWithFinalFlush() throws {
@@ -187,37 +176,27 @@ import Testing
 
     var operations = engine.startStroke(at: CGPoint(x: 40, y: 80), surfaceSize: surface, date: date)
     operations += engine.appendStrokePoint(at: CGPoint(x: 80, y: 120), surfaceSize: surface, date: date)
-    #expect(operations.map(\.type) == [.addStroke])
+    #expect(operations.map(\.type) == ["ADD_STROKE"])
 
     operations += engine.finishStroke(date: date)
-    #expect(operations.map(\.type) == [.addStroke, .appendPoints, .finishStroke])
+    #expect(operations.map(\.type) == ["ADD_STROKE", "APPEND_POINTS", "FINISH_STROKE"])
     #expect(Set(operations.map(\.clientOperationId)).count == 3)
+    #expect(try operations[1].payload.decode(StrokePoints.self).points == [DrawingPoint(x: 0.2, y: 0.15)])
 
-    guard case let .appendPoints(payload) = operations[1].payload else {
-        Issue.record("Expected append points payload")
-        return
-    }
-    #expect(payload.points == [CanvasPoint(x: 0.2, y: 0.15)])
+    // The operations draw the same stroke the engine tracked, finished.
+    var state = DrawingState()
+    for operation in operations { try state.apply(operation) }
+    #expect(state.finishedStrokes.map(\.points) == [[DrawingPoint(x: 0.1, y: 0.1), DrawingPoint(x: 0.2, y: 0.15)]])
 }
 
 @Test func eraserChoosesTopmostHitStrokeAndEmitsDelete() throws {
     var engine = makeStrokeEngine()
     engine.toolState.setActiveTool(.erase)
-    let bottom = CanvasStroke(
-        id: "bottom",
-        colorArgb: 0xFF111111,
-        width: 0.02,
-        points: [CanvasPoint(x: 0.1, y: 0.1), CanvasPoint(x: 0.9, y: 0.9)],
-        createdAt: 1
-    )
-    let top = CanvasStroke(
-        id: "top",
-        colorArgb: 0xFF222222,
-        width: 0.02,
-        points: [CanvasPoint(x: 0.1, y: 0.1), CanvasPoint(x: 0.9, y: 0.9)],
-        createdAt: 2
-    )
-    let state = CanvasState(committedStrokes: [bottom, top])
+    let diagonal = [DrawingPoint(x: 0.1, y: 0.1), DrawingPoint(x: 0.9, y: 0.9)]
+    let state = try drawingState([
+        DrawingStroke(id: "bottom", colorArgb: 0xFF111111, width: 0.02, createdAt: 1, points: diagonal, finished: true),
+        DrawingStroke(id: "top", colorArgb: 0xFF222222, width: 0.02, createdAt: 2, points: diagonal, finished: true)
+    ])
 
     let operations = engine.eraseStroke(
         at: CGPoint(x: 200, y: 400),
@@ -225,7 +204,7 @@ import Testing
         surfaceSize: CGSize(width: 400, height: 800)
     )
 
-    #expect(operations.map(\.type) == [.deleteStroke])
+    #expect(operations.map(\.type) == ["DELETE_STROKE"])
     #expect(operations.first?.strokeId == "top")
 }
 
@@ -241,7 +220,7 @@ import Testing
 
     engine.requestClearCanvas()
     let operations = engine.confirmClearCanvas()
-    #expect(operations.map(\.type) == [.clearCanvas])
+    #expect(operations.map(\.type) == ["CLEAR_CANVAS"])
     #expect(engine.clearConfirmationRequested == false)
     #expect(engine.canUndo == false)
     #expect(engine.canRedo == false)
@@ -258,26 +237,24 @@ import Testing
     _ = engine.finishStroke(date: date)
 
     let undo = engine.undo(date: date)
-    #expect(undo.map(\.type) == [.deleteStroke])
+    #expect(undo.map(\.type) == ["DELETE_STROKE"])
     #expect(undo.first?.strokeId == "stroke-1")
+    #expect(engine.canRedo)
 
-    let redo = engine.redo(date: date)
-    #expect(redo.map(\.type) == [.addStroke, .appendPoints, .finishStroke])
-    #expect(redo.first?.strokeId == "stroke-2")
-    #expect(redo.last?.strokeId == "stroke-2")
+    let redo = engine.redo()
+    #expect(redo.map(\.type) == ["ADD_STROKE", "APPEND_POINTS", "FINISH_STROKE"])
+    let replayed = try #require(redo.first?.strokeId)
+    #expect(replayed != "stroke-1")
+    #expect(redo.allSatisfy { $0.strokeId == replayed })
 }
 
 @Test func undoEraseReplaysDeletedStrokeWithNewID() throws {
     var engine = makeStrokeEngine()
     engine.toolState.setActiveTool(.erase)
-    let stroke = CanvasStroke(
-        id: "deleted",
-        colorArgb: 0xFF111111,
-        width: 0.02,
-        points: [CanvasPoint(x: 0.1, y: 0.1), CanvasPoint(x: 0.2, y: 0.2)],
-        createdAt: 1
-    )
-    let state = CanvasState(committedStrokes: [stroke])
+    let state = try drawingState([
+        DrawingStroke(id: "deleted", colorArgb: 0xFF111111, width: 0.02, createdAt: 1,
+                      points: [DrawingPoint(x: 0.1, y: 0.1), DrawingPoint(x: 0.2, y: 0.2)], finished: true)
+    ])
 
     _ = engine.eraseStroke(
         at: CGPoint(x: 40, y: 80),
@@ -287,15 +264,30 @@ import Testing
     )
 
     let undo = engine.undo(date: try fixedDate())
-    #expect(undo.map(\.type) == [.addStroke, .appendPoints, .finishStroke])
-    #expect(undo.first?.strokeId == "stroke-1")
+    #expect(undo.map(\.type) == ["ADD_STROKE", "APPEND_POINTS", "FINISH_STROKE"])
+    #expect(undo.first?.strokeId != "deleted")
 }
 
-private func makeDatabase() throws -> MulberryDatabase {
-    let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("mulberry-canvas-editing-tests-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    return try MulberryDatabase(databaseURL: directory.appendingPathComponent("test.sqlite"))
+@Test func undoMidStrokeDropsTheStrokeBeingDrawn() throws {
+    var engine = makeStrokeEngine()
+    engine.toolState.setActiveTool(.draw)
+    _ = engine.startStroke(at: CGPoint(x: 40, y: 80), surfaceSize: CGSize(width: 400, height: 800))
+    #expect(engine.canUndo)
+    #expect(engine.canRedo == false)
+
+    let undo = engine.undo()
+    #expect(undo.map(\.type) == ["DELETE_STROKE"])
+    #expect(undo.first?.strokeId == "stroke-1")
+    #expect(engine.activeStroke == nil)
+    #expect(engine.canUndo == false)
+}
+
+private func drawingState(_ strokes: [DrawingStroke]) throws -> DrawingState {
+    var state = DrawingState()
+    for stroke in strokes {
+        for operation in try DrawingOperation.restore(stroke) { try state.apply(operation) }
+    }
+    return state
 }
 
 private func makeStrokeEngine(appendBatchSize: Int = 4) -> CanvasStrokeEditingEngine {

@@ -1,6 +1,6 @@
 import AppKit
-import CanvasCore
 import CanvasRendering
+import ProductCore
 import SwiftUI
 
 public enum OverlayMode: Equatable, Sendable {
@@ -38,11 +38,9 @@ public final class OverlayController: NSObject, ObservableObject {
         let settings = settingsStore.load()
         self.isVisible = settings.isVisible
         self.selectedDisplayID = settings.selectedDisplayID
-        let preview = CanvasRenderFixture.previewState()
         self.canvasModel = CanvasRenderModel(
-            state: preview.state,
-            strokeRenderMode: .dryBrush,
-            diagnostics: preview.diagnostics
+            state: CanvasRenderFixture.previewState(),
+            strokeRenderMode: .dryBrush
         )
         super.init()
         updateFrameDescription()
@@ -56,14 +54,9 @@ public final class OverlayController: NSObject, ObservableObject {
         hotKeyStatus = status
     }
 
-    public func updateCanvasState(
-        _ state: CanvasCore.CanvasState,
-        strokeRenderMode: CanvasCore.CanvasStrokeRenderMode = .dryBrush,
-        diagnostics: [CanvasCore.CanvasDiagnostic] = []
-    ) {
+    public func updateCanvasState(_ state: DrawingState, strokeRenderMode: CanvasStrokeRenderMode) {
         canvasModel.state = state
         canvasModel.strokeRenderMode = strokeRenderMode
-        canvasModel.diagnostics = diagnostics
     }
 
     public func show() {

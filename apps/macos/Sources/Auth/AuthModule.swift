@@ -4,6 +4,8 @@ import CryptoKit
 import Foundation
 import Network
 import Networking
+import Persistence
+import ProductCore
 import Security
 
 public enum AuthModule {
@@ -11,13 +13,20 @@ public enum AuthModule {
 }
 
 public struct AuthSession: Sendable {
-    public let accessToken: String
-    public let refreshToken: String
     public let userID: String
     public let userEmail: String?
     public let userDisplayName: String?
     public let userPhotoURL: String?
-    public let bootstrap: BootstrapDTO
+    public let bootstrap: BootstrapState
+
+    public init?(bootstrap: BootstrapState) {
+        guard let userID = bootstrap.userId else { return nil }
+        self.userID = userID
+        userEmail = bootstrap.userEmail
+        userDisplayName = bootstrap.userDisplayName
+        userPhotoURL = bootstrap.userPhotoUrl
+        self.bootstrap = bootstrap
+    }
 }
 
 public struct AuthFailure: Sendable {
@@ -73,42 +82,61 @@ public enum AuthSessionState: Sendable {
     }
 }
 
+/// Signs in with Google, then hands the session to ProductCore's `BackendClient`, which keeps the
+/// tokens in the Keychain and refreshes them for every request.
 @MainActor
 public final class AuthSessionController: ObservableObject {
     @Published public private(set) var state: AuthSessionState = .signedOut
 
+    public let api: BackendClient
     private let configuration: MacAppConfiguration
-    private let apiClient: AuthAPIClient
+    private let store: MacLocalStore
     private let oauthClient: GoogleOAuthClient
-    private let keychainStore: KeychainSessionStore
-    private let metadataStore: UserDefaultsAuthMetadataStore
 
     public init(
         configuration: MacAppConfiguration,
+        api: BackendClient,
+        store: MacLocalStore,
         presentationAnchorProvider: @escaping @MainActor () -> ASPresentationAnchor? = {
             NSApp.keyWindow ?? NSApp.windows.first
         }
     ) {
         self.configuration = configuration
-        self.apiClient = AuthAPIClient(configuration: configuration)
+        self.api = api
+        self.store = store
         self.oauthClient = GoogleOAuthClient(
             configuration: configuration,
             presentationAnchorProvider: presentationAnchorProvider
         )
-        self.keychainStore = KeychainSessionStore()
-        self.metadataStore = UserDefaultsAuthMetadataStore()
-    }
-
-    public var currentAccessToken: String? {
-        if case let .signedIn(session) = state {
-            return session.accessToken
-        }
-        return try? keychainStore.loadTokens()?.accessToken
     }
 
     public func restoreSessionOnLaunch() {
         Task {
-            await refreshStoredSession()
+            await restoreSession()
+        }
+    }
+
+    /// Opens straight onto the saved account state; the app then refreshes it from the server.
+    /// Without one, it waits for the server, and a refused session signs out.
+    public func restoreSession() async {
+        guard let userID = await api.signedInUserId else {
+            state = .signedOut
+            return
+        }
+        if let cached = store.cachedBootstrap(userId: userID), let session = AuthSession(bootstrap: cached) {
+            state = .signedIn(session)
+            return
+        }
+        state = .refreshing
+        do {
+            let bootstrap = try await api.bootstrap()
+            accept(bootstrap)
+        } catch {
+            if await api.signedInUserId == nil {
+                state = .signedOut
+            } else {
+                state = .failed(AuthFailure(message: userFacingMessage(for: error)))
+            }
         }
     }
 
@@ -121,92 +149,47 @@ public final class AuthSessionController: ObservableObject {
         state = .signingIn
         do {
             let idToken = try await oauthClient.signIn()
-            let response = try await apiClient.authenticateWithGoogle(idToken: idToken)
-            let session = try persist(response: response)
-            state = .signedIn(session)
+            accept(try await api.signIn(googleIDToken: idToken))
         } catch {
             AuthDiagnostics.log("Google sign-in failed: \(diagnosticMessage(for: error))")
             state = .failed(AuthFailure(message: userFacingMessage(for: error)))
         }
     }
 
-    public func refreshStoredSession() async {
-        let tokens: SessionTokens?
-        do {
-            tokens = try keychainStore.loadTokens()
-        } catch {
-            clearLocalSession()
+    /// Keeps the session's account details current as the app refreshes them.
+    public func accept(_ bootstrap: BootstrapState) {
+        guard let session = AuthSession(bootstrap: bootstrap) else {
             state = .signedOut
             return
         }
-
-        guard let tokens else {
-            state = .signedOut
-            return
-        }
-
-        state = .refreshing
-        do {
-            let response = try await apiClient.refresh(refreshToken: tokens.refreshToken)
-            let session = try persist(response: response)
-            state = .signedIn(session)
-        } catch {
-            clearLocalSession()
-            state = .signedOut
-        }
-    }
-
-    public func refreshForAuthenticatedRetry() async throws -> String {
-        guard let refreshToken = try keychainStore.loadTokens()?.refreshToken else {
-            throw APIError.missingToken
-        }
-        let response = try await apiClient.refresh(refreshToken: refreshToken)
-        let session = try persist(response: response)
+        store.cacheBootstrap(bootstrap)
         state = .signedIn(session)
-        return session.accessToken
     }
 
-    public func signOut() async {
-        let accessToken = currentAccessToken
-        if let accessToken {
-            try? await apiClient.logout(accessToken: accessToken)
+    /// The server refused the saved session, so this Mac is signed out.
+    public func sessionEnded() {
+        if case let .signedIn(session) = state {
+            store.clearBootstrap(userId: session.userID)
         }
-        clearLocalSession()
         state = .signedOut
     }
 
-    private func persist(response: AuthResponseDTO) throws -> AuthSession {
-        let tokens = SessionTokens(accessToken: response.accessToken, refreshToken: response.refreshToken)
-        try keychainStore.save(tokens)
-        let metadata = AuthSessionMetadata(
-            userID: response.userId,
-            userEmail: response.bootstrapState.userEmail,
-            userDisplayName: response.bootstrapState.userDisplayName,
-            userPhotoURL: response.bootstrapState.userPhotoUrl
-        )
-        metadataStore.save(metadata)
-        return AuthSession(
-            accessToken: response.accessToken,
-            refreshToken: response.refreshToken,
-            userID: response.userId,
-            userEmail: metadata.userEmail,
-            userDisplayName: metadata.userDisplayName,
-            userPhotoURL: metadata.userPhotoURL,
-            bootstrap: response.bootstrapState
-        )
-    }
-
-    private func clearLocalSession() {
-        try? keychainStore.clear()
-        metadataStore.clear()
-        // TODO: Phase 7+ should clear local pending operations and sync cursors here.
-        // TODO: Phase 6+ should clear local canvas snapshots and cached partner state here.
+    public func signOut() async {
+        if case let .signedIn(session) = state {
+            store.clearBootstrap(userId: session.userID)
+        }
+        // Local sign-out is immediate even if the server cannot revoke the session.
+        try? await api.signOut()
+        state = .signedOut
         // TODO: Phase 11 should unregister and clear notification tokens here.
     }
 
     private func userFacingMessage(for error: Error) -> String {
         if let oauthError = error as? GoogleOAuthError {
             return oauthError.errorDescription ?? "Google Sign-In failed."
+        }
+        if error is URLError {
+            return "Could not reach Mulberry at \(configuration.normalizedAPIBaseURL.absoluteString). Start the backend and try again."
         }
         if let localizedError = error as? LocalizedError, let description = localizedError.errorDescription {
             return description
@@ -637,157 +620,6 @@ public enum GoogleOAuthError: Error, LocalizedError, Sendable {
     }
 }
 
-public struct SessionTokens: Codable, Sendable {
-    public let accessToken: String
-    public let refreshToken: String
-}
-
-public final class KeychainSessionStore {
-    private static let invalidOwnerEditStatus: OSStatus = -25244
-
-    private let service = "com.mulberry.mac.session"
-    private let account = "mulberry-session-tokens"
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
-
-    public init() {}
-
-    public func save(_ tokens: SessionTokens) throws {
-        let data = try encoder.encode(tokens)
-        let query = baseQuery(useDataProtectionKeychain: false)
-        let update: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        ]
-
-        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
-        switch updateStatus {
-        case errSecSuccess:
-            return
-        case errSecItemNotFound:
-            let addStatus = SecItemAdd(saveQuery(data: data, useDataProtectionKeychain: false) as CFDictionary, nil)
-            guard addStatus == errSecSuccess else {
-                throw KeychainError.unhandledStatus(addStatus)
-            }
-        default:
-            throw KeychainError.unhandledStatus(updateStatus)
-        }
-    }
-
-    public func loadTokens() throws -> SessionTokens? {
-        if let tokens = try loadTokens(useDataProtectionKeychain: false) {
-            return tokens
-        }
-        return try loadTokens(useDataProtectionKeychain: true)
-    }
-
-    public func clear() throws {
-        try clear(useDataProtectionKeychain: false)
-        try clear(useDataProtectionKeychain: true)
-    }
-
-    private func baseQuery(useDataProtectionKeychain: Bool) -> [String: Any] {
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        if useDataProtectionKeychain {
-            query[kSecUseDataProtectionKeychain as String] = true
-        }
-        return query
-    }
-
-    private func saveQuery(data: Data, useDataProtectionKeychain: Bool) -> [String: Any] {
-        var query = baseQuery(useDataProtectionKeychain: useDataProtectionKeychain)
-        query.merge([
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        ]) { _, new in new }
-        return query
-    }
-
-    private func loadTokens(useDataProtectionKeychain: Bool) throws -> SessionTokens? {
-        var query = baseQuery(useDataProtectionKeychain: useDataProtectionKeychain)
-        query.merge([
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]) { _, new in new }
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound || isUnavailableLegacyKeychainStatus(status) {
-            return nil
-        }
-        guard status == errSecSuccess else {
-            throw KeychainError.unhandledStatus(status)
-        }
-        guard let data = result as? Data else {
-            throw KeychainError.invalidData
-        }
-        return try decoder.decode(SessionTokens.self, from: data)
-    }
-
-    private func clear(useDataProtectionKeychain: Bool) throws {
-        let query = baseQuery(useDataProtectionKeychain: useDataProtectionKeychain)
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound || isUnavailableLegacyKeychainStatus(status) else {
-            throw KeychainError.unhandledStatus(status)
-        }
-    }
-
-    private func isUnavailableLegacyKeychainStatus(_ status: OSStatus) -> Bool {
-        status == errSecMissingEntitlement || status == Self.invalidOwnerEditStatus
-    }
-}
-
-public enum KeychainError: Error, LocalizedError, Sendable {
-    case invalidData
-    case unhandledStatus(OSStatus)
-
-    public var errorDescription: String? {
-        switch self {
-        case .invalidData:
-            "The saved session could not be read."
-        case let .unhandledStatus(status):
-            "Keychain operation failed with status \(status)."
-        }
-    }
-}
-
-public struct AuthSessionMetadata: Codable, Sendable {
-    public let userID: String
-    public let userEmail: String?
-    public let userDisplayName: String?
-    public let userPhotoURL: String?
-}
-
-public final class UserDefaultsAuthMetadataStore {
-    private let key = "com.mulberry.mac.auth.metadata"
-    private let defaults: UserDefaults
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
-
-    public init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-    }
-
-    public func save(_ metadata: AuthSessionMetadata) {
-        let data = try? encoder.encode(metadata)
-        defaults.set(data, forKey: key)
-    }
-
-    public func load() -> AuthSessionMetadata? {
-        guard let data = defaults.data(forKey: key) else {
-            return nil
-        }
-        return try? decoder.decode(AuthSessionMetadata.self, from: data)
-    }
-
-    public func clear() {
-        defaults.removeObject(forKey: key)
-    }
-}
-
 private struct GoogleTokenResponse: Codable {
     let idToken: String
 
@@ -806,7 +638,7 @@ private func randomURLSafeString(byteCount: Int) throws -> String {
     var bytes = [UInt8](repeating: 0, count: byteCount)
     let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
     guard status == errSecSuccess else {
-        throw KeychainError.unhandledStatus(status)
+        throw GoogleOAuthError.couldNotStart
     }
     return Data(bytes).base64URLEncodedString()
 }

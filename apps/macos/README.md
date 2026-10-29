@@ -38,6 +38,12 @@ pnpm build:macos
 pnpm smoke:macos
 ```
 
+## Shared Code
+
+The backend client, Keychain session, canvas model, offline outbox and WebSocket sync come from `ProductCore` in [`packages/apple`](../../packages/apple), the same code the iPhone and iPad app runs. This app adds what is particular to the Mac: the menu bar, the desktop overlay and when it syncs, Quick Draw, Google sign-in through the browser, and its own renderer and editing tools.
+
+Sign-in reads `MULBERRY_MAC_GOOGLE_CLIENT_ID` and `MULBERRY_MAC_GOOGLE_CLIENT_SECRET` from `apps/macos/.env` (see `.env.example`). The backend must list that client ID in `GOOGLE_ALLOWED_CLIENT_IDS`.
+
 ## Phase 1 Scope
 
 The Phase 1 shell intentionally contains only the permanent app foundation:
