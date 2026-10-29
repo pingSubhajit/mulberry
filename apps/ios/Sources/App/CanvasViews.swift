@@ -314,10 +314,14 @@ struct DoodleCanvasView: View {
             let below = tip.y - reach < 0
             let centre = CGPoint(x: min(max(tip.x, reach), size.width - reach), y: tip.y)
             // Only the arc takes touches; the canvas around it keeps drawing, which closes the arc.
-            PencilRadialPalette(editor: editor, below: below, dismiss: closeRadial)
+            PencilRadialPalette(editor: editor, below: below, tipOffset: tip.x - centre.x, dismiss: closeRadial)
                 .position(centre)
-                // It grows out of the tip and shrinks back into it.
-                .transition(reduceMotion ? .opacity : .scale(scale: 0.7).combined(with: .opacity))
+                // It blooms out of the tip by itself and shrinks back into it. The positioned palette
+                // fills the overlay, so the tip is anchored as a fraction of the whole overlay.
+                .transition(reduceMotion ? .opacity : .asymmetric(
+                    insertion: .identity,
+                    removal: .scale(scale: 0.2, anchor: UnitPoint(x: tip.x / size.width, y: tip.y / size.height))
+                        .combined(with: .opacity)))
         }
     }
 

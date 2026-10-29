@@ -7,12 +7,14 @@ struct PencilRadialPalette: View {
     @ObservedObject var editor: DoodleEditor
     /// Opens under the tip instead of over it, for a tip near the top of the screen.
     var below = false
+    /// How far the tip sits right of the arc's centre, when the arc is nudged to stay on screen.
+    var tipOffset: CGFloat = 0
     let dismiss: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var selection
     @AccessibilityFocusState private var focus: Item?
-    /// False until the first frame, so the band sweeps open and the items settle in.
+    /// False until the first frame, so the band and items bloom out of the tip.
     @State private var opened = false
     // The colour and size items open their own popovers over the arc, which stays open.
     @State private var coloursOpen = false
@@ -36,25 +38,31 @@ struct PencilRadialPalette: View {
     var body: some View {
         let side = Self.reach * 2
         let items = Array(Item.allCases.enumerated())
+        let shown = opened || reduceMotion
+        let tip = CGPoint(x: side / 2 + tipOffset, y: side / 2)
         ZStack {
             Color.clear
                 .glassEffect(.regular, in: ArcBand(radius: Self.radius, thickness: Self.thickness,
                                                    from: angles.first ?? 0, to: angles.last ?? 0,
-                                                   progress: opened || reduceMotion ? 1 : 0.6))
+                                                   progress: shown ? 1 : 0.8))
+                // The band grows out of the tip, opening a little along the arc as it goes.
+                .scaleEffect(shown ? 1 : 0.2, anchor: UnitPoint(x: tip.x / side, y: tip.y / side))
+                .opacity(shown ? 1 : 0)
+                .animation(reduceMotion ? nil : .spring(duration: 0.24, bounce: 0.15), value: opened)
                 .accessibilityHidden(true)
             ForEach(items, id: \.offset) { index, item in
                 button(item)
                     .accessibilityFocused($focus, equals: item)
                     // VoiceOver reads along the arc, left to right.
                     .accessibilitySortPriority(Double(items.count - index))
-                    .scaleEffect(opened || reduceMotion ? 1 : 0.6)
-                    .opacity(opened || reduceMotion ? 1 : 0)
-                    .animation(reduceMotion ? nil : .spring(duration: 0.22, bounce: 0.25).delay(Double(index) * 0.01), value: opened)
-                    .position(point(at: angles[index], in: side))
+                    .scaleEffect(shown ? 1 : 0.3)
+                    .opacity(shown ? 1 : 0)
+                    // Each item flies out of the tip to its place on the arc, a beat after the one before.
+                    .position(shown ? point(at: angles[index], in: side) : tip)
+                    .animation(reduceMotion ? nil : .spring(duration: 0.24, bounce: 0.2).delay(Double(index) * 0.012), value: opened)
             }
         }
         .frame(width: side, height: side)
-        .animation(reduceMotion ? nil : .spring(duration: 0.24, bounce: 0.18), value: opened)
         .animation(.snappy(duration: 0.16), value: editor.tool)
         // A light tap as it opens, a tick for each tool chosen; Apple Pencil Pro plays them in the hand.
         .sensoryFeedback(.impact(weight: .light), trigger: opened) { _, isOpen in isOpen }
