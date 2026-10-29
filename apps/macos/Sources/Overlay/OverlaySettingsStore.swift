@@ -50,6 +50,7 @@ public final class OverlaySettingsStore {
         static let frameY = "mac.overlay.frame.y"
         static let frameWidth = "mac.overlay.frame.width"
         static let frameHeight = "mac.overlay.frame.height"
+        static let opacity = "mac.overlay.opacity"
     }
 
     private let defaults: UserDefaults
@@ -80,6 +81,15 @@ public final class OverlaySettingsStore {
             selectedDisplayID: selectedDisplayID,
             relativeFrame: relativeFrame
         )
+    }
+
+    /// How strongly the drawing shows on the desktop, from 0.2 to 1. Quick Draw always shows it fully.
+    public func loadOpacity() -> Double {
+        defaults.object(forKey: Key.opacity) == nil ? 1 : min(1, max(0.2, defaults.double(forKey: Key.opacity)))
+    }
+
+    public func saveOpacity(_ opacity: Double) {
+        defaults.set(opacity, forKey: Key.opacity)
     }
 
     public func save(_ settings: OverlaySettings) {

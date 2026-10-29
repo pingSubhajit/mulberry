@@ -19,6 +19,8 @@ public final class OverlayController: NSObject, ObservableObject {
     @Published public private(set) var selectedDisplayID: String?
     @Published public private(set) var currentFrameDescription = "Not shown"
     @Published public private(set) var hotKeyStatus = OverlayHotKeyStatus.notRegistered
+    /// How strongly the drawing shows on the desktop. Quick Draw always shows it fully.
+    @Published public private(set) var opacity: Double
 
     public var isQuickDrawActive: Bool { mode == .quickDraw }
     public var displays: [OverlayDisplay] { Self.availableDisplays() }
@@ -51,6 +53,7 @@ public final class OverlayController: NSObject, ObservableObject {
         let settings = settingsStore.load()
         self.isVisible = settings.isVisible
         self.selectedDisplayID = settings.selectedDisplayID
+        self.opacity = settingsStore.loadOpacity()
         self.canvasModel = CanvasRenderModel(
             state: CanvasRenderFixture.previewState(),
             strokeRenderMode: .dryBrush
@@ -61,6 +64,12 @@ public final class OverlayController: NSObject, ObservableObject {
         if settings.isVisible {
             show(persist: false)
         }
+    }
+
+    public func setOpacity(_ opacity: Double) {
+        self.opacity = min(1, max(0.2, opacity))
+        settingsStore.saveOpacity(self.opacity)
+        if mode == .passive { panel?.alphaValue = self.opacity }
     }
 
     public func updateHotKeyStatus(_ status: OverlayHotKeyStatus) {
@@ -138,6 +147,7 @@ public final class OverlayController: NSObject, ObservableObject {
         panel.styleMask = [.borderless, .resizable]
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         panel.level = quickDrawLevel
+        panel.alphaValue = 1
         panel.ignoresMouseEvents = false
         // Drawing, not dragging: the palette's grip moves the overlay.
         panel.isMovableByWindowBackground = false
@@ -165,6 +175,7 @@ public final class OverlayController: NSObject, ObservableObject {
 
         panel?.styleMask = [.borderless, .nonactivatingPanel]
         panel?.level = passiveLevel
+        panel?.alphaValue = opacity
         panel?.ignoresMouseEvents = true
         panel?.isMovableByWindowBackground = false
         panel?.orderFrontRegardless()
@@ -274,6 +285,7 @@ public final class OverlayController: NSObject, ObservableObject {
         panel.isOpaque = false
         panel.level = passiveLevel
         panel.contentAspectRatio = Self.aspectRatio
+        panel.alphaValue = opacity
     }
 
     private func showPalette() {
