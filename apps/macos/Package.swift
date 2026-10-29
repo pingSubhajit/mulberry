@@ -6,7 +6,8 @@ let package = Package(
     name: "MulberryMac",
     defaultLocalization: "en",
     platforms: [
-        .macOS(.v14)
+        // Liquid Glass.
+        .macOS("26.0")
     ],
     products: [
         .executable(
