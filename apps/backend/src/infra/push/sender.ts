@@ -85,9 +85,17 @@ export function applePushConfiguration(message: MulberryPushMessage): ApnsConfig
       // Reactions are outside iOS v1. Visibility is fetched when the app opens.
       return { headers: { ...headers, "apns-push-type": "background", "apns-priority": "5" }, payload: { aps: { contentAvailable: true } } }
   }
+  // Joining and ending a pairing show as banners; the rest arrive quietly in Notification Center.
+  const banner = data.type === "PAIRING_CONFIRMED" || data.type === "PAIRING_DISCONNECTED"
   return {
     headers: { ...headers, "apns-push-type": "alert", "apns-priority": "10" },
-    payload: { aps: { alert, threadId: data.type === "CANVAS_UPDATED" ? "mulberry-wallpaper" : "mulberry-account", "interruption-level": "passive" } },
+    payload: {
+      aps: {
+        alert,
+        threadId: data.type === "CANVAS_UPDATED" ? "mulberry-wallpaper" : "mulberry-account",
+        "interruption-level": banner ? "active" : "passive",
+      },
+    },
   }
 }
 

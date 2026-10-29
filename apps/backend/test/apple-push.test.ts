@@ -24,4 +24,25 @@ describe("Apple wallpaper delivery", () => {
     })
     expect(Number(payload.apns.headers["apns-expiration"])).toBeGreaterThan(Date.now() / 1_000)
   })
+
+  it("shows pairing changes as banners and keeps reminders passive", async () => {
+    const send = vi.fn().mockResolvedValue({ responses: [{ success: true }, { success: true }] })
+    const sender = new FirebaseAdminPushSender({ sendEachForMulticast: send } as unknown as Messaging)
+    const levels: Record<string, string> = {}
+    for (const type of ["PAIRING_CONFIRMED", "PAIRING_DISCONNECTED", "CANVAS_NUDGE", "DRAW_REMINDER"] as const) {
+      await sender.send({
+        tokens: ["fixture-token"],
+        data: { type, pairSessionId: "pair-one" },
+        android: { priority: "high", collapseKey: `${type}-pair-one`, ttlMs: 60_000 },
+      } as MulberryPushMessage)
+      const call = send.mock.calls[send.mock.calls.length - 1]
+      levels[type] = call[0].apns.payload.aps["interruption-level"]
+    }
+    expect(levels).toEqual({
+      PAIRING_CONFIRMED: "active",
+      PAIRING_DISCONNECTED: "active",
+      CANVAS_NUDGE: "passive",
+      DRAW_REMINDER: "passive",
+    })
+  })
 })
