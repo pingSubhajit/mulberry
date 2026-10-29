@@ -13,6 +13,10 @@ struct DoodleCanvasView: View {
     @State private var pencilPalette: PencilRequest?
     /// Wider than tall: on iPad the colours then have their own column instead of a palette button.
     @State private var wideWindow = false
+    /// In wide iPad windows, the colour column folds into a colour button on the tool column.
+    @AppStorage("canvasColourRailCollapsed") private var colourRailCollapsed = false
+    /// Lets the colour column's glass melt into the colour button and back.
+    @Namespace private var glassSpace
     /// Where a squeeze opened the radial palette, in the canvas screen's coordinates.
     @State private var radialAt: CGPoint?
     /// The drawing surface's frame on the canvas screen, for placing Pencil palettes at the tip.
@@ -117,9 +121,22 @@ struct DoodleCanvasView: View {
             // Between the bars, so the banner stays clear of both.
             StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
-            toolbar(.horizontal)
-                .padding(.horizontal, 12)
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { toolbarFrame = $0 }
+            // Actions stand apart from the tools: undo and redo on the left, colour and width on the right.
+            VStack(spacing: 28) {
+                HStack(alignment: .bottom) {
+                    // Clear glass lets them blend into the canvas, apart from the tools below.
+                    VStack(spacing: 10) { undoButton(glass: .clear); redoButton(glass: .clear) }
+                    Spacer()
+                    VStack(spacing: 10) { paletteButton(edge: .trailing, glass: .clear); widthButton(edge: .trailing, glass: .clear) }
+                }
+                .padding(.horizontal, 8)
+                compactToolbar
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { toolbarFrame = $0 }
+            }
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .frame(maxWidth: 6 * 56 + 5 * 10 + 16)
+            .padding(.horizontal, 8)
         }
         .frame(width: geometry.size.width, height: height, alignment: .top)
         .coordinateSpace(.named(Self.space))
@@ -163,11 +180,17 @@ struct DoodleCanvasView: View {
             .frame(width: size.width, height: max(0, visibleBottom - visibleTop))
             .position(x: center.x, y: (visibleTop + visibleBottom) / 2)
             if wide {
-                HStack(alignment: .center, spacing: 12) {
-                    toolbar(.vertical, palette: false)
-                    colourColumn
+                // One glass container, so the colour column folds into the colour button as a single
+                // piece of glass, and the button unfolds back into the column.
+                GlassEffectContainer(spacing: 4) {
+                    HStack(alignment: .center, spacing: 12) {
+                        toolColumn(palette: colourRailCollapsed)
+                        if !colourRailCollapsed { colourColumn }
+                    }
                 }
-                .frame(width: panelWidth, height: geometry.size.height - margin * 2)
+                .animation(railAnimation, value: colourRailCollapsed)
+                // The canvas keeps its place when the colours fold away.
+                .frame(width: panelWidth, height: geometry.size.height - margin * 2, alignment: .leading)
                 .position(x: margin + panelWidth / 2, y: geometry.size.height / 2)
             } else {
                 toolbar(.horizontal)
@@ -181,39 +204,53 @@ struct DoodleCanvasView: View {
     /// Every colour at once beside the tools, in place of the palette button. Scrolls when the
     /// window is too short for all of them.
     private var colourColumn: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 10) {
-                ForEach(DoodleEditor.palette, id: \.self) { color in
-                    Button { pick(color) } label: {
-                        Circle().fill(Color(uiColor: UIColor(argb: color))).frame(width: 40, height: 40)
-                            .overlay(Circle().stroke(MulberryDesign.muted.opacity(0.3)))
-                            .padding(2)
-                            .overlay {
-                                if color == editor.selectedColor {
-                                    Circle().strokeBorder(MulberryDesign.ink, lineWidth: 2)
+        VStack(spacing: 0) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 10) {
+                    ForEach(DoodleEditor.palette, id: \.self) { color in
+                        Button { pick(color) } label: {
+                            Circle().fill(Color(uiColor: UIColor(argb: color))).frame(width: 40, height: 40)
+                                .overlay(Circle().stroke(MulberryDesign.muted.opacity(0.3)))
+                                .padding(2)
+                                .overlay {
+                                    if color == editor.selectedColor {
+                                        Circle().strokeBorder(MulberryDesign.ink, lineWidth: 2)
+                                    }
                                 }
-                            }
+                                .frame(width: 44, height: 44)
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Colour \(String(format: "%06X", color & 0xFFFFFF))")
+                        .accessibilityAddTraits(editor.selectedColor == color ? .isSelected : [])
+                    }
+                    Button { customColourOpen = true } label: {
+                        CustomColourWell(color: editor.selectedColor)
+                            .frame(width: 28, height: 28).scaleEffect(1.43)
                             .frame(width: 44, height: 44)
                             .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Colour \(String(format: "%06X", color & 0xFFFFFF))")
-                    .accessibilityAddTraits(editor.selectedColor == color ? .isSelected : [])
+                            .accessibilityHidden(true)
+                    }.buttonStyle(.plain).accessibilityLabel("Custom colour")
                 }
-                Button { customColourOpen = true } label: {
-                    CustomColourWell(color: editor.selectedColor)
-                        .frame(width: 28, height: 28).scaleEffect(1.43)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Circle())
-                        .accessibilityHidden(true)
-                }.buttonStyle(.plain).accessibilityLabel("Custom colour")
+                .padding(8)
             }
-            .padding(8)
+            .scrollBounceBehavior(.basedOnSize)
+            Button { setColourRail(collapsed: true) } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(MulberryDesign.ink)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Hide colours")
+            .padding(.bottom, 8)
         }
-        .scrollBounceBehavior(.basedOnSize)
-        // As tall as the tool column beside it: nine 56 pt buttons, 10 pt apart, 8 pt padding.
-        .frame(width: 60).frame(maxHeight: 9 * 56 + 8 * 10 + 16)
+        // As tall as the tool column beside it: two groups of 56 pt buttons, 10 pt apart, with 8 pt padding.
+        .frame(width: 60).frame(maxHeight: 9 * 56 + 7 * 10 + Self.groupGap + 16)
         .glassEffect(.regular, in: .capsule)
+        .glassEffectID(Self.colourGlass, in: glassSpace)
+        .glassEffectTransition(reduceMotion ? .materialize : .matchedGeometry)
         .sheet(isPresented: $customColourOpen) {
             CustomColourSheet(color: $editor.selectedColor) {
                 if editor.tool != .text { editor.tool = .brush }
@@ -223,7 +260,16 @@ struct DoodleCanvasView: View {
     }
 
     private var brushColor: Color { Color(uiColor: UIColor(argb: editor.color)) }
-    private var selectedColor: Color { Color(uiColor: UIColor(argb: editor.selectedColor)) }
+
+    /// Quick, with the overshoot glass popovers have, so the glass bulges past its size and settles.
+    /// Reduce Motion fades instead.
+    private var railAnimation: Animation {
+        reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.4, bounce: 0.4)
+    }
+
+    private func setColourRail(collapsed: Bool) {
+        withAnimation(railAnimation) { colourRailCollapsed = collapsed }
+    }
 
     private func pick(_ color: UInt32) {
         editor.selectedColor = color
@@ -231,8 +277,8 @@ struct DoodleCanvasView: View {
         if editor.tool != .text { editor.tool = .brush }
     }
 
-    /// One row on phones; a column beside the canvas in wide iPad windows. It scrolls only when it does not fit.
-    /// Without the palette, the colours have their own column beside the tools.
+    /// One row on iPad; a column beside the canvas in wide iPad windows. It scrolls only when it does not fit.
+    /// In the column, the palette button stands in for the folded colour column and opens it again.
     private func toolbar(_ axis: Axis, palette: Bool = true) -> some View {
         GlassEffectContainer(spacing: 4) {
             ViewThatFits(in: axis == .horizontal ? .horizontal : .vertical) {
@@ -243,64 +289,160 @@ struct DoodleCanvasView: View {
         }
     }
 
+    /// The column beside the canvas in wide iPad windows, sharing its glass container with the colour column.
+    private func toolColumn(palette: Bool) -> some View {
+        ViewThatFits(in: .vertical) {
+            tools(.vertical, palette: palette)
+            ScrollView(.vertical, showsIndicators: false) { tools(.vertical, palette: palette) }
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    /// Phones: only the tools, spread across the row; the actions stand above it at either end.
+    private var compactToolbar: some View {
+        GlassEffectContainer(spacing: 4) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 0) {
+                    brushButton; Spacer(minLength: 4)
+                    textButton; Spacer(minLength: 4)
+                    stickerButton; Spacer(minLength: 4)
+                    eraserButton; Spacer(minLength: 4)
+                    eyedropperButton; Spacer(minLength: 4)
+                    clearButton
+                }
+                .padding(8)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) { brushButton; textButton; stickerButton; eraserButton; eyedropperButton; clearButton }
+                        .padding(8)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// The glass the colour column and the colour button share as one folds into the other.
+    private static let colourGlass = "colours"
+
+    /// The space between the actions and the tools.
+    private static let groupGap: CGFloat = 40
+
     private func tools(_ axis: Axis, palette: Bool) -> some View {
         // Popovers open toward the canvas: above a row, to the right of the left-hand column.
         let edge: Edge = axis == .horizontal ? .bottom : .leading
-        return (axis == .horizontal ? AnyLayout(HStackLayout(spacing: 10)) : AnyLayout(VStackLayout(spacing: 10))) {
-            toolButton("Undo", image: "CanvasUndo", enabled: editor.canUndo, action: editor.undo)
-            toolButton("Redo", image: "CanvasRedo", enabled: editor.canRedo, action: editor.redo)
-            toolButton("Brush", image: "CanvasBrush", selected: editor.tool == .brush) { editor.tool = .brush }
-            Button { widthOpen.toggle() } label: {
-                Circle().fill(brushColor)
-                    .frame(width: 8 + (editor.width - 4) / 38 * 38, height: 8 + (editor.width - 4) / 38 * 38)
-                    .frame(width: 56, height: 56)
-                    // The whole glass circle opens the slider, not only the dot.
-                    .contentShape(Circle())
-            }.buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel("Brush width")
-                .accessibilityValue("\(Int(editor.width))")
-                .popover(isPresented: $widthOpen, attachmentAnchor: .rect(.bounds), arrowEdge: edge) {
-                    widthPicker.presentationCompactAdaptation(.popover)
-                }
-            if palette {
-                Button { paletteOpen = true } label: {
-                    Circle().fill(selectedColor).frame(width: 56, height: 56)
-                }.buttonStyle(.plain)
-                    .glassEffect(.clear.interactive(), in: .circle)
-                    .accessibilityLabel("Colour palette")
-                    // A popover beside the button on iPad; a sheet on phones.
-                    .popover(isPresented: $paletteOpen, attachmentAnchor: .rect(.bounds), arrowEdge: edge) {
-                        colorPicker.presentationCompactAdaptation(.sheet)
-                    }
+        let groups = axis == .horizontal ? AnyLayout(HStackLayout(spacing: Self.groupGap)) : AnyLayout(VStackLayout(spacing: Self.groupGap))
+        let group = axis == .horizontal ? AnyLayout(HStackLayout(spacing: 10)) : AnyLayout(VStackLayout(spacing: 10))
+        // The actions first, then the tools.
+        return groups {
+            group {
+                undoButton()
+                redoButton()
+                if palette { paletteButton(edge: edge, opensRail: axis == .vertical) }
+                widthButton(edge: edge)
             }
-            toolButton("Eyedropper", image: "CanvasEyedropper", selected: editor.tool == .eyedropper) { editor.tool = .eyedropper }
-            toolButton("Eraser", image: "CanvasErase", selected: editor.tool == .eraser) { editor.tool = .eraser }
-            toolButton("Text", image: "CanvasText", selected: editor.tool == .text, enabled: editor.canEditElements) { editor.toggleText() }
-            toolButton("Stickers", image: "CanvasSticker", selected: editor.tool == .sticker, enabled: editor.canEditElements) { editor.toggleSticker() }
-            toolButton("Clear canvas", image: "CanvasClear") { clearConfirmation = true }
-                .confirmationDialog("Clear canvas?", isPresented: $clearConfirmation, titleVisibility: .visible) {
-                    Button("Clear", role: .destructive) { editor.clear() }
-                    Button("Cancel", role: .cancel) {}
-                } message: { Text("This removes all strokes from the shared canvas.") }
+            group {
+                brushButton
+                textButton
+                stickerButton
+                eraserButton
+                eyedropperButton
+                clearButton
+            }
         }
         .buttonBorderShape(.circle)
         .controlSize(.large)
         .padding(8)
     }
 
-    private func toolButton(_ title: String, image: String, selected: Bool = false, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+    private func undoButton(glass: Glass = .regular) -> some View {
+        toolButton("Undo", image: "CanvasUndo", symbol: "arrow.uturn.backward", enabled: editor.canUndo, glass: glass, action: editor.undo)
+    }
+
+    private func redoButton(glass: Glass = .regular) -> some View {
+        toolButton("Redo", image: "CanvasRedo", symbol: "arrow.uturn.forward", enabled: editor.canRedo, glass: glass, action: editor.redo)
+    }
+
+    private var brushButton: some View {
+        toolButton("Brush", image: "CanvasBrush", selected: editor.tool == .brush) { editor.tool = .brush }
+    }
+
+    private var eyedropperButton: some View {
+        toolButton("Eyedropper", image: "CanvasEyedropper", selected: editor.tool == .eyedropper) { editor.tool = .eyedropper }
+    }
+
+    private var eraserButton: some View {
+        toolButton("Eraser", image: "CanvasErase", selected: editor.tool == .eraser) { editor.tool = .eraser }
+    }
+
+    private var textButton: some View {
+        toolButton("Text", image: "CanvasText", selected: editor.tool == .text, enabled: editor.canEditElements) { editor.toggleText() }
+    }
+
+    private var stickerButton: some View {
+        toolButton("Stickers", image: "CanvasSticker", selected: editor.tool == .sticker, enabled: editor.canEditElements) { editor.toggleSticker() }
+    }
+
+    private var clearButton: some View {
+        toolButton("Clear canvas", image: "CanvasClear") { clearConfirmation = true }
+            .confirmationDialog("Clear canvas?", isPresented: $clearConfirmation, titleVisibility: .visible) {
+                Button("Clear", role: .destructive) { editor.clear() }
+                Button("Cancel", role: .cancel) {}
+            } message: { Text("This removes all strokes from the shared canvas.") }
+    }
+
+    private func widthButton(edge: Edge, glass: Glass = .regular) -> some View {
+        Button { widthOpen.toggle() } label: {
+            Circle().fill(brushColor)
+                .frame(width: 8 + (editor.width - 4) / 38 * 38, height: 8 + (editor.width - 4) / 38 * 38)
+                .frame(width: 56, height: 56)
+                // The whole glass circle opens the slider, not only the dot.
+                .contentShape(Circle())
+        }.buttonStyle(.plain)
+            .glassEffect(glass.interactive(), in: .circle)
+            .accessibilityLabel("Brush width")
+            .accessibilityValue("\(Int(editor.width))")
+            .popover(isPresented: $widthOpen, attachmentAnchor: .rect(.bounds), arrowEdge: edge) {
+                widthPicker.presentationCompactAdaptation(.popover)
+            }
+    }
+
+    private func paletteButton(edge: Edge, glass: Glass = .regular, opensRail: Bool = false) -> some View {
+        Button { if opensRail { setColourRail(collapsed: false) } else { paletteOpen = true } } label: {
+            ColourPaletteIcon(color: editor.selectedColor, size: 32)
+                .frame(width: 56, height: 56)
+                .contentShape(Circle())
+        }.buttonStyle(.plain)
+            .glassEffect(glass.interactive(), in: .circle)
+            .glassEffectID(opensRail ? Self.colourGlass : nil, in: glassSpace)
+            .glassEffectTransition(reduceMotion ? .materialize : .matchedGeometry)
+            .accessibilityLabel(opensRail ? "Show colours" : "Colour palette")
+            // A popover beside the button on iPad; a sheet on phones.
+            .popover(isPresented: $paletteOpen, attachmentAnchor: .rect(.bounds), arrowEdge: edge) {
+                colorPicker.presentationCompactAdaptation(.sheet)
+            }
+    }
+
+    private func toolButton(_ title: String, image: String, symbol: String? = nil, selected: Bool = false, enabled: Bool = true,
+                            glass: Glass = .regular, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(image).resizable().renderingMode(image == "CanvasText" ? .template : .original)
-                .scaledToFit().frame(width: 34, height: 34)
-                .foregroundStyle(MulberryDesign.ink)
+            Group {
+                // Undo and redo are plain SF Symbols; the tools keep their illustrations.
+                if let symbol {
+                    Image(systemName: symbol)
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(MulberryDesign.ink)
+                } else {
+                    Image(image).resizable().renderingMode(image == "CanvasText" ? .template : .original)
+                        .scaledToFit().frame(width: 34, height: 34)
+                        .foregroundStyle(MulberryDesign.ink)
+                }
+            }
                 .opacity(enabled ? 1 : 0.35)
                 .frame(width: 56, height: 56)
                 // The whole glass circle is the button, not only the drawn icon.
                 .contentShape(Circle())
         }.disabled(!enabled).accessibilityLabel(title).accessibilityAddTraits(selected ? .isSelected : [])
         .buttonStyle(.plain)
-        .glassEffect(.regular.tint(selected ? MulberryDesign.accent.opacity(0.12) : .clear).interactive(), in: .circle)
+        .glassEffect(glass.tint(selected ? MulberryDesign.accent.opacity(0.12) : .clear).interactive(), in: .circle)
         .overlay {
             if selected { Circle().strokeBorder(MulberryDesign.accent.opacity(0.4), lineWidth: 1.5).allowsHitTesting(false) }
         }
@@ -458,3 +600,4 @@ private struct PencilPalettePopover<Palette: View>: ViewModifier {
         return .rect(.rect(CGRect(origin: location, size: .zero)))
     }
 }
+

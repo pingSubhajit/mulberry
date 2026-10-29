@@ -96,9 +96,7 @@ struct PencilRadialPalette: View {
         case .eyedropper: tool(.eyedropper, "CanvasEyedropper", "Eyedropper")
         case .colour:
             Button { coloursOpen = true } label: {
-                Circle().fill(Color(uiColor: UIColor(argb: editor.selectedColor)))
-                    .frame(width: 42, height: 42)
-                    .overlay(Circle().strokeBorder(.white.opacity(0.6), lineWidth: 2))
+                ColourPaletteIcon(color: editor.selectedColor, size: 38)
                     .itemFrame()
             }
             .buttonStyle(RadialItemStyle())

@@ -10,6 +10,25 @@ struct CustomColourSheet: View {
     }
 }
 
+/// The colour palette button's face: the chosen colour inside a ring blending every hue.
+struct ColourPaletteIcon: View {
+    let color: UInt32
+    let size: CGFloat
+
+    private static let hues = stride(from: 0.0, through: 1.0, by: 1.0 / 12).map { Color(hue: $0, saturation: 0.8, brightness: 1) }
+
+    var body: some View {
+        ZStack {
+            Circle().strokeBorder(AngularGradient(colors: Self.hues, center: .center), lineWidth: size * 0.15)
+            Circle().fill(Color(uiColor: UIColor(argb: color)))
+                .overlay(Circle().strokeBorder(.primary.opacity(0.2), lineWidth: 0.5))
+                .padding(size * 0.23)
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct ConfirmColourButton: View {
     let action: () -> Void
     var body: some View {
