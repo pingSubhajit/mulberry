@@ -23,7 +23,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
             fatalError("Unable to open Mulberry's saved session: \(error)")
         }
     }()
-    private let router = AppRouter()
+    private let windowState = MainWindowState()
     private lazy var authController = AuthSessionController(
         configuration: configuration,
         api: api,
@@ -110,7 +110,6 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
                         syncController: self.syncController
                     )
                 }
-                self?.syncRouteWithAuthState()
                 self?.refreshStatusMenu()
             }
         }
@@ -239,7 +238,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
             keyEquivalent: ""
         ))
         appMenu.addItem(.separator())
-        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         appMenu.addItem(settingsItem)
         appMenu.addItem(.separator())
@@ -323,7 +322,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         menu.addItem(menuItem(bootstrap?.streakTitle ?? "Streak: --", action: #selector(openStreak)))
         menu.addItem(overlayMenu())
         menu.addItem(.separator())
-        menu.addItem(menuItem("Settings...", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(menuItem("Settings…", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(menuItem("Quit Mulberry", action: #selector(quitMulberry), keyEquivalent: "q"))
 
         statusItem?.menu = menu
@@ -363,14 +362,14 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         let submenu = NSMenu(title: "Overlay")
         let toggleTitle = overlayController.isVisible ? "Hide Overlay" : "Show Overlay"
         submenu.addItem(menuItem(toggleTitle, action: #selector(toggleOverlay)))
-        submenu.addItem(menuItem("Choose Display...", action: #selector(openOverlayDisplaySettings)))
+        submenu.addItem(menuItem("Choose Display…", action: #selector(openOverlayDisplaySettings)))
         submenu.addItem(menuItem("Reset Position", action: #selector(resetOverlayPosition)))
         item.submenu = submenu
         return item
     }
 
     @objc private func openMulberry() {
-        showMainWindow(route: defaultRouteForCurrentAuth())
+        showMainWindow()
     }
 
     @objc private func quickDraw() {
@@ -388,7 +387,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     }
 
     @objc private func openStreak() {
-        showMainWindow(route: .streak)
+        showMainWindow(showingStreak: true)
     }
 
     @objc private func toggleOverlay() {
@@ -438,10 +437,10 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         NSApp.terminate(nil)
     }
 
-    private func showMainWindow(route: AppRoute) {
+    private func showMainWindow(showingStreak: Bool = false) {
         if mainWindowController == nil {
             mainWindowController = MainWindowController(
-                router: router,
+                windowState: windowState,
                 authController: authController,
                 appStateController: appStateController,
                 syncController: syncController,
@@ -455,7 +454,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
             }
         }
 
-        router.open(normalizedRoute(route))
+        windowState.showsStreak = showingStreak
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         mainWindowController?.showWindow(nil)
@@ -466,44 +465,6 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     private func returnToAccessoryMode() {
         DispatchQueue.main.async { self.updateActivationPolicy() }
         updateSyncDemand()
-    }
-
-    private func defaultRouteForCurrentAuth() -> AppRoute {
-        switch authController.state {
-        case .signedIn:
-            .canvasHome
-        case .refreshing:
-            .bootstrap
-        case .signedOut, .signingIn, .failed:
-            .authLanding
-        }
-    }
-
-    private func normalizedRoute(_ route: AppRoute) -> AppRoute {
-        switch authController.state {
-        case .signedIn, .refreshing:
-            route
-        case .signedOut, .signingIn, .failed:
-            route == .settings ? .settings : .authLanding
-        }
-    }
-
-    private func syncRouteWithAuthState() {
-        guard mainWindowController?.window?.isVisible == true else {
-            return
-        }
-        switch authController.state {
-        case .signedIn:
-            if router.selectedRoute == .bootstrap || router.selectedRoute == .authLanding {
-                router.open(.canvasHome)
-            }
-        case .signedOut, .failed:
-            if router.selectedRoute != .settings && router.selectedRoute != .authLanding {
-                router.open(.authLanding)
-            }
-        case .signingIn, .refreshing:
-            break
-        }
     }
 
     private func statusDetailLine(bootstrap: BootstrapState?) -> String {
@@ -594,7 +555,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let onWindowClosed: () -> Void
 
     init(
-        router: AppRouter,
+        windowState: MainWindowState,
         authController: AuthSessionController,
         appStateController: AppStateController,
         syncController: CanvasSyncController,
@@ -607,7 +568,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     ) {
         self.onWindowClosed = onWindowClosed
         let view = MainWindowView(
-            router: router,
+            windowState: windowState,
             authController: authController,
             appStateController: appStateController,
             syncController: syncController,

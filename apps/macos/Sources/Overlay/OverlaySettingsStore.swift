@@ -28,9 +28,7 @@ public struct OverlayHotKeyStatus: Equatable, Sendable {
 
     public static let notRegistered = OverlayHotKeyStatus(isRegistered: false, problem: nil)
 
-    public static func registered(_ shortcut: String) -> OverlayHotKeyStatus {
-        OverlayHotKeyStatus(isRegistered: true, problem: nil)
-    }
+    public static let registered = OverlayHotKeyStatus(isRegistered: true, problem: nil)
 
     public static func failed(_ shortcut: String, code: Int32) -> OverlayHotKeyStatus {
         // eventHotKeyExistsErr: another app registered the same combination first.

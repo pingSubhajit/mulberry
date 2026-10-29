@@ -9,7 +9,7 @@ import SwiftUI
 /// One portrait panel of frosted glass holding the canvas, with the streak and profile in the
 /// window toolbar.
 struct MainWindowView: View {
-    @ObservedObject var router: AppRouter
+    @ObservedObject var windowState: MainWindowState
     @ObservedObject var authController: AuthSessionController
     @ObservedObject var appStateController: AppStateController
     @ObservedObject var syncController: CanvasSyncController
@@ -64,21 +64,14 @@ struct MainWindowView: View {
         case .refreshing:
             ProgressView()
         case .signedOut, .signingIn, .failed:
-            SignInPanel(authController: authController) { router.goHome() }
+            SignInPanel(authController: authController)
         }
-    }
-
-    private func routeBinding(_ routes: AppRoute...) -> Binding<Bool> {
-        Binding(
-            get: { routes.contains(router.selectedRoute) },
-            set: { open in if !open { router.goHome() } }
-        )
     }
 
     /// As on iPhone and iPad: Mulberry's streak bolt and the day count.
     private func streakButton(_ bootstrap: BootstrapState) -> some View {
         let days = bootstrap.currentStreakDays
-        return Button { router.open(.streak) } label: {
+        return Button { windowState.showsStreak = true } label: {
             HStack(spacing: 5) {
                 if let bolt = ToolbarArtwork.image("streak_bolt.png", height: 17) {
                     Image(nsImage: bolt)
@@ -93,7 +86,7 @@ struct MainWindowView: View {
         }
         .help("Daily streak")
         .accessibilityLabel("Daily streak: \(days) \(days == 1 ? "day" : "days")")
-        .popover(isPresented: routeBinding(.streak), arrowEdge: .bottom) {
+        .popover(isPresented: $windowState.showsStreak, arrowEdge: .bottom) {
             StreakPopover(streaks: streaks) {
                 await streaks.refresh(api: authController.api)
             }
@@ -202,7 +195,6 @@ private final class ProfileAvatar: ObservableObject {
 
 private struct SignInPanel: View {
     @ObservedObject var authController: AuthSessionController
-    let onSignedIn: () -> Void
 
     var body: some View {
         VStack(spacing: 18) {
@@ -214,10 +206,7 @@ private struct SignInPanel: View {
             Text("Mulberry")
                 .font(.largeTitle.weight(.semibold))
             Button {
-                Task {
-                    await authController.signIn()
-                    if authController.state.isSignedIn { onSignedIn() }
-                }
+                Task { await authController.signIn() }
             } label: {
                 Text(authController.state.isBusy ? "Signing In…" : "Sign in with Google")
                     .frame(maxWidth: 220)

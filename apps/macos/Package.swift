@@ -24,10 +24,6 @@ let package = Package(
         .library(name: "Overlay", targets: ["Overlay"]),
         .library(name: "QuickDraw", targets: ["QuickDraw"]),
         .library(name: "Stickers", targets: ["Stickers"]),
-        .library(name: "Reactions", targets: ["Reactions"]),
-        .library(name: "Notifications", targets: ["Notifications"]),
-        .library(name: "Settings", targets: ["Settings"]),
-        .library(name: "Diagnostics", targets: ["Diagnostics"]),
         .executable(
             name: "OverlayRegressionCheck",
             targets: ["OverlayRegressionCheck"]
@@ -60,10 +56,6 @@ let package = Package(
                 "Overlay",
                 "QuickDraw",
                 "Stickers",
-                "Reactions",
-                "Notifications",
-                "Settings",
-                "Diagnostics",
                 .product(name: "ProductCore", package: "apple"),
                 .product(name: "CanvasDrawing", package: "apple"),
                 .product(name: "StickerAssets", package: "apple")
@@ -78,10 +70,6 @@ let package = Package(
         .target(name: "Overlay", dependencies: ["CanvasRendering", .product(name: "ProductCore", package: "apple"), .product(name: "CanvasDrawing", package: "apple")]),
         .target(name: "QuickDraw", dependencies: ["Overlay"]),
         .target(name: "Stickers", dependencies: [.product(name: "ProductCore", package: "apple"), .product(name: "CanvasDrawing", package: "apple"), .product(name: "StickerAssets", package: "apple")]),
-        .target(name: "Reactions", dependencies: ["Networking"]),
-        .target(name: "Notifications"),
-        .target(name: "Settings", dependencies: ["Persistence"]),
-        .target(name: "Diagnostics"),
         .executableTarget(name: "OverlayRegressionCheck", dependencies: ["Overlay"]),
         .executableTarget(name: "CanvasRenderFixtureCheck", dependencies: ["CanvasRendering"]),
         .testTarget(

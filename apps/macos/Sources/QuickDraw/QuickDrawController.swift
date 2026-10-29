@@ -85,7 +85,7 @@ public final class QuickDrawController: NSObject {
             &hotKeyRef
         )
         if status == noErr, hotKeyHandler != nil {
-            overlayController.updateHotKeyStatus(.registered(shortcut.displayString))
+            overlayController.updateHotKeyStatus(.registered)
         } else {
             hotKeyRef = nil
             overlayController.updateHotKeyStatus(.failed(shortcut.displayString, code: status))
