@@ -526,6 +526,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         didSet {
             guard elementTool != oldValue else { return }
             elementGestures.forEach { $0.isEnabled = elementTool != nil }
+            reactionPress.isEnabled = elementTool != nil && UIDevice.current.userInterfaceIdiom == .phone
             endTransform(commit: false)
         }
     }
@@ -534,6 +535,10 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
     private var reactionHold: (start: CGPoint, timer: DispatchWorkItem)?
     /// The finger that opened the reactions, while it stays down.
     private weak var heldTouch: UITouch?
+    /// Where an erase or a colour pick will start, once the finger moves or lifts rather than holds.
+    private var deferredStart: CGPoint?
+    /// With text or stickers, their own gestures own the touches, so a long press opens the reactions.
+    private let reactionPress = UILongPressGestureRecognizer()
     // Eraser: a tap on text or a sticker deletes it; dragging off it erases strokes.
     private var elementToErase: (id: String, start: CGPoint)?
     private var elementGestures: [UIGestureRecognizer] = []
@@ -563,6 +568,13 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             gesture.delegate = self; gesture.isEnabled = false
             addGestureRecognizer(gesture)
         }
+        reactionPress.addTarget(self, action: #selector(elementHold(_:)))
+        reactionPress.minimumPressDuration = 0.5
+        reactionPress.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        reactionPress.delegate = self; reactionPress.isEnabled = false
+        addGestureRecognizer(reactionPress)
+        // A quick tap still places or edits; only a held finger becomes the reactions.
+        tap.require(toFail: reactionPress)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
@@ -589,18 +601,33 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         trackedTouch = touch
         hoverLayer.isHidden = true
         let point = touch.location(in: self)
+        // On iPhone, a finger held still opens the reactions, whatever the tool.
+        let holdable = UIDevice.current.userInterfaceIdiom == .phone && touch.type == .direct
         if editor?.tool == .eraser, let hit = elementLayer.renderer.hit(elementLayer.visible, at: point, canvasSize: bounds.size) {
             elementToErase = (hit.id, point)
+            if holdable { holdForReactions(at: point) }
+            return
+        }
+        // Erasing and picking a colour act as soon as they start, so on iPhone they wait until the
+        // finger moves or lifts, in case it is held for the reactions instead.
+        if holdable, editor?.tool == .eraser || editor?.tool == .eyedropper {
+            deferredStart = point
+            holdForReactions(at: point)
             return
         }
         editor?.begin(at: point, size: bounds.size)
-        if UIDevice.current.userInterfaceIdiom == .phone, touch.type == .direct, editor?.tool == .brush { holdForReactions(at: point) }
+        if holdable, editor?.tool == .brush { holdForReactions(at: point) }
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         if let held = heldTouch, touches.contains(held) { editor?.reactionPointer.location = held.location(in: self) }
         guard let touch = trackedTouch, touches.contains(touch) else { return }
         let point = touch.location(in: self)
         if let hold = reactionHold, hypot(point.x - hold.start.x, point.y - hold.start.y) > 10 { cancelHold() }
+        if let start = deferredStart {
+            guard hypot(point.x - start.x, point.y - start.y) > 10 else { return }
+            deferredStart = nil
+            editor?.begin(at: start, size: bounds.size)
+        }
         if let pending = elementToErase {
             guard hypot(point.x - pending.start.x, point.y - pending.start.y) > 10 else { return }
             elementToErase = nil
@@ -614,6 +641,8 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         if let held = heldTouch, touches.contains(held) { heldTouch = nil; editor?.reactionPointer.lift() }
         guard let touch = trackedTouch, touches.contains(touch) else { return }
         cancelHold()
+        // A tap: the erase or colour pick that waited happens now.
+        if let start = deferredStart { deferredStart = nil; editor?.begin(at: start, size: bounds.size) }
         if let pending = elementToErase {
             editor?.deleteElement(pending.id)
         } else {
@@ -626,7 +655,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         if let held = heldTouch, touches.contains(held) { heldTouch = nil; editor?.reactionPointer.location = nil }
         cancelHold()
         if elementToErase == nil { editor?.end() }
-        elementToErase = nil; trackedTouch = nil; predicted = []
+        elementToErase = nil; deferredStart = nil; trackedTouch = nil; predicted = []
         setNeedsDisplay()
     }
 
@@ -638,6 +667,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             // The rest of this touch neither draws nor erases.
             self.editor?.discardStroke()
             self.trackedTouch = nil; self.predicted = []
+            self.deferredStart = nil; self.elementToErase = nil
             self.setNeedsDisplay()
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             self.editor?.reactionRequest = ReactionRequest(location: point)
@@ -692,11 +722,24 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
 
     // UIView's own hook, which also answers as these recognizers' delegate.
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === reactionPress { return editor?.textSession == nil && editor?.stickerSession == nil }
         guard elementGestures.contains(gestureRecognizer) else { return super.gestureRecognizerShouldBegin(gestureRecognizer) }
         guard elementTool != nil, editor?.textSession == nil, editor?.stickerSession == nil else { return false }
         // Moving needs a target; a tap on empty canvas still places a new element.
         guard !(gestureRecognizer is UITapGestureRecognizer) else { return true }
         return elementTransform != nil || hitElement(at: gestureRecognizer.location(in: self)) != nil
+    }
+
+    @objc private func elementHold(_ gesture: UILongPressGestureRecognizer) {
+        guard let editor else { return }
+        switch gesture.state {
+        case .began:
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            editor.reactionRequest = ReactionRequest(location: gesture.location(in: self))
+        case .changed: editor.reactionPointer.location = gesture.location(in: self)
+        case .ended: editor.reactionPointer.lift()
+        default: editor.reactionPointer.location = nil
+        }
     }
 
     @objc private func elementTap(_ gesture: UITapGestureRecognizer) {
