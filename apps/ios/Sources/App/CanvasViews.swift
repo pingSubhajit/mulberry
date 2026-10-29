@@ -255,8 +255,8 @@ struct DoodleCanvasView: View {
             .accessibilityLabel("Hide colours")
             .padding(.bottom, 8)
         }
-        // As tall as the tool column beside it: two groups of 56 pt buttons, 10 pt apart, with 8 pt padding.
-        .frame(width: 60).frame(maxHeight: 10 * 56 + 8 * 10 + Self.groupGap + 16)
+        // As tall as the tool column beside it: three groups of 56 pt buttons, 10 pt apart, with 8 pt padding.
+        .frame(width: 60).frame(maxHeight: 10 * 56 + 7 * 10 + 2 * Self.groupGap + 16)
         .glassEffect(.regular, in: .capsule)
         .glassEffectID(Self.colourGlass, in: glassSpace)
         .glassEffectTransition(reduceMotion ? .materialize : .matchedGeometry)
@@ -332,18 +332,19 @@ struct DoodleCanvasView: View {
     /// The glass the colour column and the colour button share as one folds into the other.
     private static let colourGlass = "colours"
 
-    /// The space between the actions and the tools.
-    private static let groupGap: CGFloat = 40
+    /// The space between the groups: wide enough to read as apart, narrow enough that an 11-inch
+    /// iPad fits every button in a row, and in a column in landscape.
+    private static let groupGap: CGFloat = 24
 
     private func tools(_ axis: Axis, palette: Bool) -> some View {
         // Popovers open toward the canvas: above a row, to the right of the left-hand column.
         let edge: Edge = axis == .horizontal ? .bottom : .leading
         let groups = axis == .horizontal ? AnyLayout(HStackLayout(spacing: Self.groupGap)) : AnyLayout(VStackLayout(spacing: Self.groupGap))
         let group = axis == .horizontal ? AnyLayout(HStackLayout(spacing: 10)) : AnyLayout(VStackLayout(spacing: 10))
-        // The actions first, then the tools.
+        // Three groups: reactions on their own, then the actions, then the tools.
         return groups {
+            reactionButton(edge: edge)
             group {
-                reactionButton(edge: edge)
                 undoButton()
                 redoButton()
                 if palette { paletteButton(edge: edge, opensRail: axis == .vertical) }
