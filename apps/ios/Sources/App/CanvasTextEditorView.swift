@@ -215,7 +215,7 @@ struct CanvasTextEditorView: View {
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Colour \(String(format: "%06X", colour & 0xFFFFFF))")
+                    .accessibilityLabel(ColourNames.name(colour))
                     .accessibilityAddTraits(selected ? .isSelected : [])
                 }
                 Button { customColourOpen = true } label: {

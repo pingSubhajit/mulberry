@@ -135,7 +135,7 @@ struct PencilRadialPalette: View {
                         .overlay { if color == editor.selectedColor { Circle().strokeBorder(MulberryDesign.ink, lineWidth: 2) } }
                 }
                 .buttonStyle(RadialItemStyle())
-                .accessibilityLabel("Colour \(String(format: "%06X", color & 0xFFFFFF))")
+                .accessibilityLabel(ColourNames.name(color))
                 .accessibilityAddTraits(editor.selectedColor == color ? .isSelected : [])
             }
             Button { customColourOpen = true } label: {

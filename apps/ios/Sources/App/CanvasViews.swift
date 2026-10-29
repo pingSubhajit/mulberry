@@ -232,7 +232,7 @@ struct DoodleCanvasView: View {
                                 .contentShape(Circle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Colour \(String(format: "%06X", color & 0xFFFFFF))")
+                        .accessibilityLabel(ColourNames.name(color))
                         .accessibilityAddTraits(editor.selectedColor == color ? .isSelected : [])
                     }
                     Button { customColourOpen = true } label: {
@@ -556,7 +556,7 @@ struct DoodleCanvasView: View {
                             .overlay { if color == editor.selectedColor { Circle().strokeBorder(MulberryDesign.ink, lineWidth: 2) } }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Colour \(String(format: "%06X", color & 0xFFFFFF))")
+                    .accessibilityLabel(ColourNames.name(color))
                     .accessibilityAddTraits(editor.selectedColor == color ? .isSelected : [])
                 }
             }
@@ -585,7 +585,7 @@ struct DoodleCanvasView: View {
                                 .overlay(Circle().stroke(MulberryDesign.muted.opacity(0.3)))
                                 .overlay { if color == editor.selectedColor { Image(systemName: "checkmark").foregroundStyle(color == 0xFFF7F4EF || color == 0xFFFFE66D ? .black : .white) } }
                                 .frame(width: 44, height: 44)
-                        }.buttonStyle(.plain).accessibilityLabel("Colour \(String(format: "%06X", color & 0xFFFFFF))").accessibilityAddTraits(editor.selectedColor == color ? .isSelected : [])
+                        }.buttonStyle(.plain).accessibilityLabel(ColourNames.name(color)).accessibilityAddTraits(editor.selectedColor == color ? .isSelected : [])
                     }
                     Button { customColourOpen = true } label: {
                         CustomColourWell(color: editor.selectedColor)

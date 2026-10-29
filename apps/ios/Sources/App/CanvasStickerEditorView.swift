@@ -177,7 +177,8 @@ struct CanvasStickerEditorView: View {
         if let pack = catalog.selected {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 8)], spacing: 8) {
-                    ForEach(pack.stickers.sorted { $0.sortOrder < $1.sortOrder }) { sticker in
+                    let stickers = pack.stickers.sorted { $0.sortOrder < $1.sortOrder }
+                    ForEach(Array(stickers.enumerated()), id: \.element.id) { index, sticker in
                         let reference = StickerReference(packKey: pack.packKey, packVersion: pack.packVersion, stickerId: sticker.stickerId)
                         let selected = draft.sticker == reference
                         Button { draft.sticker = reference } label: {
@@ -191,7 +192,8 @@ struct CanvasStickerEditorView: View {
                                 .contentShape(RoundedRectangle(cornerRadius: 14))
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Sticker \(sticker.stickerId)")
+                        // Stickers have no names, so VoiceOver reads the pack and the place in it.
+                        .accessibilityLabel("\(pack.title), sticker \(index + 1) of \(stickers.count)")
                         .accessibilityAddTraits(selected ? .isSelected : [])
                     }
                 }
