@@ -1,5 +1,10 @@
 import Foundation
 
+public enum DeliveryError: Error, LocalizedError {
+    case invalidRevision
+    public var errorDescription: String? { "The image is not a Mulberry wallpaper file." }
+}
+
 public struct DeliveryEvent: Codable, Identifiable, Sendable {
     public let id: UUID
     public let timestamp: Date
