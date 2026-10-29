@@ -122,7 +122,9 @@ struct DoodleCanvasView: View {
                 // Centred between the middles of the navigation bar and the tools, so it runs under both.
                 .position(x: geometry.size.width / 2, y: (navigationMiddle + tools.midY) / 2)
             // The visible part of the canvas, between the bars.
-            CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty)
+            // Beside the undo and redo column rather than under its glass.
+            CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty,
+                                     squirrelLeading: (geometry.size.width - min(Self.compactWidth, geometry.size.width - 16)) / 2 + 8 + 56 + 8)
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
             // Between the bars, so the banner stays clear of both.
             StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
@@ -143,7 +145,7 @@ struct DoodleCanvasView: View {
             }
             .buttonBorderShape(.circle)
             .controlSize(.large)
-            .frame(maxWidth: 6 * 56 + 5 * 10 + 16)
+            .frame(maxWidth: Self.compactWidth)
             .padding(.horizontal, 8)
         }
         .frame(width: geometry.size.width, height: height, alignment: .top)
@@ -331,6 +333,9 @@ struct DoodleCanvasView: View {
 
     /// The glass the colour column and the colour button share as one folds into the other.
     private static let colourGlass = "colours"
+
+    /// The phone's controls: six 56 pt tools 10 pt apart, with 8 pt padding.
+    private static let compactWidth: CGFloat = 6 * 56 + 5 * 10 + 16
 
     /// The space between the groups: wide enough to read as apart, narrow enough that an 11-inch
     /// iPad fits every button in a row, and in a column in landscape.

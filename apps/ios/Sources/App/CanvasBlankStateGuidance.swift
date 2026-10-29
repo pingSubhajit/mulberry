@@ -3,6 +3,9 @@ import SwiftUI
 /// Android's Virgil prompt and Squee asset, with the same 1.8-second idle bob.
 struct CanvasBlankStateGuidance: View {
     let visible: Bool
+    /// Where Squee's left edge sits, when something else stands at the canvas's left foot.
+    /// Clear glass magnifies a picture this detailed into a blot, so Squee keeps clear of it.
+    var squirrelLeading: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -46,7 +49,7 @@ struct CanvasBlankStateGuidance: View {
                     squirrel
                 }
             }
-            .offset(x: shown || reduceMotion ? -22 : -squirrelHeight * 432 / 498 - 50)
+            .offset(x: shown || reduceMotion ? (squirrelLeading.map { $0 - 32 } ?? -22) : -squirrelHeight * 432 / 498 - 50)
             .opacity(shown ? 1 : 0)
             .animation(reduceMotion ? nil : .timingCurve(0.4, 0, 0.2, 1, duration: shown ? 0.32 : 0.26), value: shown)
         }
