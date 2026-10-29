@@ -3,6 +3,7 @@ import SwiftUI
 struct InviteEntryView: View {
     @ObservedObject var model: MulberryModel
     @State private var code = ""
+    @State private var helpOpen = false
     @FocusState private var focused: Bool
     @Environment(\.dismiss) private var dismiss
     var body: some View {
@@ -19,6 +20,9 @@ struct InviteEntryView: View {
                         .background(MulberryDesign.surface, in: RoundedRectangle(cornerRadius: 16))
                         .accessibilityLabel("Six-digit invite code").accessibilityIdentifier("inviteCode")
                         .onChange(of: code) { _, value in code = String(value.filter { $0.isASCII && $0.isNumber }.prefix(6)) }
+                    Button("What is this code?") { focused = false; helpOpen = true }
+                        .font(MulberryDesign.font(15, weight: "Medium"))
+                        .frame(maxWidth: .infinity, minHeight: 44)
                     InlineError(message: model.errorMessage)
                 }.padding(24).padding(.top, 16)
             }.scrollDismissesKeyboard(.interactively).background(MulberryDesign.background)
@@ -29,12 +33,14 @@ struct InviteEntryView: View {
                     }.padding(24).background(MulberryDesign.background)
                 }
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+                .fullScreenCover(isPresented: $helpOpen) { PairingHelpView { helpOpen = false } }
         }.interactiveDismissDisabled(model.busy)
     }
 }
 
 struct InviteAcceptanceView: View {
     @ObservedObject var model: MulberryModel
+    @State private var helpOpen = false
     var body: some View {
         ScrollView {
             VStack(spacing: 36) {
@@ -57,6 +63,12 @@ struct InviteAcceptanceView: View {
                         .frame(minHeight: 44).disabled(model.busy)
                 }.readableColumn().padding(24).background(MulberryDesign.background)
             }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("What is this code?", systemImage: "questionmark.circle") { helpOpen = true }
+                }
+            }
+            .fullScreenCover(isPresented: $helpOpen) { PairingHelpView { helpOpen = false } }
     }
 }
 
