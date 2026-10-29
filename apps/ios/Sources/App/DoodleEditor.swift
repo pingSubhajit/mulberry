@@ -125,8 +125,11 @@ final class DoodleEditor: ObservableObject {
         model.retryCanvasSave = { [weak self] in self?.retry() }
     }
 
-    var canUndo: Bool { active == nil && !saving && history.canUndo }
-    var canRedo: Bool { active == nil && !saving && history.canRedo }
+    /// Only the history decides these, so the buttons hold still while strokes are drawn and saved.
+    /// A tap mid-stroke is ignored rather than shown as disabled.
+    var canUndo: Bool { history.canUndo }
+    var canRedo: Bool { history.canRedo }
+    private var drawing: Bool { active != nil && !ended }
 
     /// Android keeps one colour for text and one for every other tool.
     var selectedColor: UInt32 {
@@ -206,12 +209,12 @@ final class DoodleEditor: ObservableObject {
     }
 
     func undo() {
-        guard canUndo else { return }
+        guard canUndo, !drawing else { return }
         do { queue(try history.undo(), preview: true) }
         catch { errorMessage = error.localizedDescription }
     }
     func redo() {
-        guard canRedo else { return }
+        guard canRedo, !drawing else { return }
         do { queue(try history.redo(), preview: true) }
         catch { errorMessage = error.localizedDescription }
     }
