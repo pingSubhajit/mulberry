@@ -1059,6 +1059,21 @@ private extension Comparable {
     }
 }
 
+/// Files shipped in Resources: in the app bundle, or in the source tree for `swift run`.
+enum AppResources {
+    static func url(_ path: String) -> URL? {
+        [
+            Bundle.main.resourceURL?.appendingPathComponent(path),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Resources/\(path)"),
+            URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Resources/\(path)")
+        ]
+        .compactMap { $0 }
+        .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+}
+
 /// The toolbar drawings from the iOS app, shipped in Resources/Toolbar.
 @MainActor
 enum ToolbarArtwork {
@@ -1078,15 +1093,7 @@ enum ToolbarArtwork {
 
     static func image(_ name: String) -> NSImage? {
         if let cached = cache[name] { return cached }
-        let candidates = [
-            Bundle.main.resourceURL?.appendingPathComponent("Toolbar/\(name)"),
-            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Resources/Toolbar/\(name)"),
-            URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-                .appendingPathComponent("Resources/Toolbar/\(name)")
-        ].compactMap { $0 }
-        guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
-              let image = NSImage(contentsOf: url) else { return nil }
+        guard let url = AppResources.url("Toolbar/\(name)"), let image = NSImage(contentsOf: url) else { return nil }
         // The text glyph is a single-colour SVG, tinted like a symbol; the others are illustrations.
         image.isTemplate = url.pathExtension == "svg"
         cache[name] = image

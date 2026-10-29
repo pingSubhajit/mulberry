@@ -109,23 +109,10 @@ struct MainWindowView: View {
             .help("Reactions")
             .accessibilityLabel("Reactions")
             .popover(isPresented: $reactionsOpen, arrowEdge: .bottom) {
-                HStack(spacing: 6) {
-                    ForEach(ReactionType.allCases) { reaction in
-                        Button {
-                            reactionsOpen = false
-                            Task { try? await authController.api.sendReaction(reaction) }
-                        } label: {
-                            Text(reaction.emoji)
-                                .font(.system(size: 26))
-                                .frame(width: 40, height: 40)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help(reaction.sendLabel)
-                        .accessibilityLabel(reaction.sendLabel)
-                    }
+                ReactionPicker { reaction in
+                    reactionsOpen = false
+                    Task { try? await authController.api.sendReaction(reaction) }
                 }
-                .padding(10)
             }
     }
 
