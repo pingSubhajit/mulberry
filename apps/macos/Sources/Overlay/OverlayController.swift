@@ -1,4 +1,5 @@
 import AppKit
+import CanvasDrawing
 import CanvasRendering
 import ProductCore
 import SwiftUI
@@ -54,9 +55,14 @@ public final class OverlayController: NSObject, ObservableObject {
         hotKeyStatus = status
     }
 
-    public func updateCanvasState(_ state: DrawingState, strokeRenderMode: CanvasStrokeRenderMode) {
+    public func updateCanvasState(
+        _ state: DrawingState,
+        strokeRenderMode: CanvasStrokeRenderMode,
+        stickerImages: [StickerReference: CanvasImage]
+    ) {
         canvasModel.state = state
         canvasModel.strokeRenderMode = strokeRenderMode
+        canvasModel.stickerImages = stickerImages
     }
 
     public func show() {

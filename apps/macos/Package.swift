@@ -63,18 +63,20 @@ let package = Package(
                 "Notifications",
                 "Settings",
                 "Diagnostics",
-                .product(name: "ProductCore", package: "apple")
+                .product(name: "ProductCore", package: "apple"),
+                .product(name: "CanvasDrawing", package: "apple"),
+                .product(name: "StickerAssets", package: "apple")
             ]
         ),
         .target(name: "Auth", dependencies: ["Networking", "Persistence", .product(name: "ProductCore", package: "apple")]),
         .target(name: "Networking", dependencies: [.product(name: "ProductCore", package: "apple")]),
         .target(name: "Sync", dependencies: [.product(name: "ProductCore", package: "apple")]),
-        .target(name: "CanvasRendering", dependencies: [.product(name: "ProductCore", package: "apple")]),
+        .target(name: "CanvasRendering", dependencies: [.product(name: "ProductCore", package: "apple"), .product(name: "CanvasDrawing", package: "apple")]),
         .target(name: "CanvasEditing", dependencies: [.product(name: "ProductCore", package: "apple")]),
         .target(name: "Persistence", dependencies: [.product(name: "ProductCore", package: "apple")]),
-        .target(name: "Overlay", dependencies: ["CanvasRendering", .product(name: "ProductCore", package: "apple")]),
+        .target(name: "Overlay", dependencies: ["CanvasRendering", .product(name: "ProductCore", package: "apple"), .product(name: "CanvasDrawing", package: "apple")]),
         .target(name: "QuickDraw", dependencies: ["Overlay"]),
-        .target(name: "Stickers", dependencies: ["Networking", "Persistence"]),
+        .target(name: "Stickers", dependencies: [.product(name: "ProductCore", package: "apple"), .product(name: "CanvasDrawing", package: "apple"), .product(name: "StickerAssets", package: "apple")]),
         .target(name: "Reactions", dependencies: ["Networking"]),
         .target(name: "Notifications"),
         .target(name: "Settings", dependencies: ["Persistence"]),
@@ -83,7 +85,7 @@ let package = Package(
         .executableTarget(name: "CanvasRenderFixtureCheck", dependencies: ["CanvasRendering"]),
         .testTarget(
             name: "CanvasRenderingTests",
-            dependencies: ["CanvasRendering", .product(name: "ProductCore", package: "apple")]
+            dependencies: ["CanvasRendering", .product(name: "ProductCore", package: "apple"), .product(name: "CanvasDrawing", package: "apple")]
         ),
         .testTarget(
             name: "CanvasEditingTests",

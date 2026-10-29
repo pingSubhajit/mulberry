@@ -8,6 +8,8 @@ import Persistence
 import ProductCore
 import QuickDraw
 import SwiftUI
+import StickerAssets
+import Stickers
 import Sync
 
 @MainActor
@@ -38,12 +40,18 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         api: api,
         store: DrawingStore(directory: MacLocalStore.drawingsDirectory)
     )
+    private lazy var stickerLoader: StickerImageLoader = {
+        let client = api
+        return StickerImageLoader(api: { client })
+    }()
     private let overlayController = OverlayController()
     private var quickDrawController: QuickDrawController?
     private var overlayStateCancellable: AnyCancellable?
     private var authStateCancellable: AnyCancellable?
     private var appStateCancellable: AnyCancellable?
     private var syncStateCancellable: AnyCancellable?
+    private var stickerCancellable: AnyCancellable?
+    private var syncWasReachable = true
     private var statusItem: NSStatusItem?
     private var mainWindowController: MainWindowController?
     private var lastOverlayPresenceReportSignature: OverlayPresenceReportSignature?
@@ -105,9 +113,15 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         syncStateCancellable = syncController.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self else { return }
+                self.loadStickerArtwork()
                 self.refreshOverlayCanvas()
                 self.refreshStatusMenu()
                 self.reportCurrentOverlayPresence()
+            }
+        }
+        stickerCancellable = stickerLoader.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.refreshOverlayCanvas()
             }
         }
         installStatusItem()
@@ -119,8 +133,20 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
             syncController.drawing,
             strokeRenderMode: CanvasStrokeRenderMode(
                 rawBackendValue: appStateController.loadState.bootstrap?.canvasStrokeRenderMode
-            )
+            ),
+            stickerImages: stickerLoader.images
         )
+    }
+
+    private func loadStickerArtwork() {
+        // Artwork that failed while offline is tried again once sync reaches the server.
+        let reachable = syncController.status.lastError == nil
+        if reachable && !syncWasReachable {
+            stickerLoader.retryUnavailable()
+        }
+        syncWasReachable = reachable
+        let user = authController.state.isSignedIn ? appStateController.loadState.bootstrap?.userId : nil
+        stickerLoader.load(for: syncController.drawing, user: user)
     }
 
     private func installApplicationIcon() {
@@ -328,7 +354,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
                 authController: authController,
                 appStateController: appStateController,
                 syncController: syncController,
-                overlayController: overlayController
+                overlayController: overlayController,
+                stickerLoader: stickerLoader
             ) { [weak self] in
                 self?.returnToAccessoryMode()
             }
@@ -478,6 +505,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         appStateController: AppStateController,
         syncController: CanvasSyncController,
         overlayController: OverlayController,
+        stickerLoader: StickerImageLoader,
         onWindowClosed: @escaping () -> Void
     ) {
         self.onWindowClosed = onWindowClosed
@@ -486,7 +514,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             authController: authController,
             appStateController: appStateController,
             syncController: syncController,
-            overlayController: overlayController
+            overlayController: overlayController,
+            stickerLoader: stickerLoader
         )
         let hostingController = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hostingController)

@@ -402,6 +402,42 @@ public struct CanvasStrokeEditingEngine: Sendable {
         return (try? history.redo()) ?? []
     }
 
+    // MARK: Text and stickers
+
+    /// Saves an edited text or sticker. Blank text is never saved: a new one is discarded and an
+    /// existing one deleted, as on Android and iOS. An unchanged edit saves nothing.
+    public mutating func commit(_ element: CanvasElement, isNew: Bool, in state: DrawingState) -> [DrawingOperation] {
+        let empty: Bool
+        switch element {
+        case let .text(text):
+            empty = text.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case let .sticker(sticker):
+            empty = sticker.sticker.stickerId.isEmpty
+        }
+        if isNew {
+            guard !empty else { return [] }
+            history.recordAdd(element)
+            return [.add(element)]
+        }
+        if empty {
+            return delete(elementID: element.id, in: state)
+        }
+        return update(element, in: state)
+    }
+
+    /// Moves, resizes or rotates an element already on the canvas, as one undo step.
+    public mutating func update(_ element: CanvasElement, in state: DrawingState) -> [DrawingOperation] {
+        guard let before = state.canvasElements.first(where: { $0.id == element.id }), before != element else { return [] }
+        history.recordUpdate(from: before, to: element)
+        return [.update(element)]
+    }
+
+    public mutating func delete(elementID: String, in state: DrawingState) -> [DrawingOperation] {
+        guard let existing = state.canvasElements.first(where: { $0.id == elementID }) else { return [] }
+        history.recordDelete(existing)
+        return [.delete(existing)]
+    }
+
     private mutating func flushAppendPoints(date: Date) -> [DrawingOperation] {
         guard let activeStroke, pendingAppendPoints.isEmpty == false else { return [] }
         let points = pendingAppendPoints

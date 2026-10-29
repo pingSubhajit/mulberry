@@ -1,4 +1,5 @@
 import AppKit
+import CanvasDrawing
 import Combine
 import CoreText
 import ProductCore
@@ -52,7 +53,7 @@ public enum CanvasRenderSurface: Sendable {
     case test
 }
 
-public struct CanvasRenderInput: Sendable {
+public struct CanvasRenderInput: @unchecked Sendable {
     public var state: DrawingState
     public var viewport: CGRect
     public var scale: CGFloat
@@ -60,6 +61,8 @@ public struct CanvasRenderInput: Sendable {
     public var surface: CanvasRenderSurface
     public var showsEditingBackground: Bool
     public var selectedElementID: String?
+    /// Decoded sticker artwork; stickers without it draw Android's placeholder.
+    public var stickerImages: [StickerReference: CanvasImage]
 
     public init(
         state: DrawingState,
@@ -68,7 +71,8 @@ public struct CanvasRenderInput: Sendable {
         strokeRenderMode: CanvasStrokeRenderMode = .dryBrush,
         surface: CanvasRenderSurface = .passiveOverlay,
         showsEditingBackground: Bool = false,
-        selectedElementID: String? = nil
+        selectedElementID: String? = nil,
+        stickerImages: [StickerReference: CanvasImage] = [:]
     ) {
         self.state = state
         self.viewport = viewport
@@ -77,6 +81,7 @@ public struct CanvasRenderInput: Sendable {
         self.surface = surface
         self.showsEditingBackground = showsEditingBackground
         self.selectedElementID = selectedElementID
+        self.stickerImages = stickerImages
     }
 }
 
@@ -88,30 +93,15 @@ public struct CanvasRenderResult: Sendable {
     }
 }
 
-public protocol CanvasStickerAssetResolving {
-    func image(for element: CanvasStickerElement) -> CGImage?
-}
-
-public struct EmptyStickerAssetResolver: CanvasStickerAssetResolving {
-    public init() {}
-    public func image(for element: CanvasStickerElement) -> CGImage? { nil }
-}
-
+/// Draws the canvas with the renderer the iPhone and iPad use, inside a Mac viewport,
+/// adding the Mac's editing background and selection ring.
 public final class CanvasRenderer {
-    private let fontResolver: CanvasFontResolver
-    private let stickerAssetResolver: CanvasStickerAssetResolving
-
-    public init(
-        fontResolver: CanvasFontResolver = CanvasFontResolver(),
-        stickerAssetResolver: CanvasStickerAssetResolving = EmptyStickerAssetResolver()
-    ) {
-        self.fontResolver = fontResolver
-        self.stickerAssetResolver = stickerAssetResolver
+    public init() {
+        CanvasFonts.registerBundledFonts()
     }
 
     @discardableResult
     public func render(_ input: CanvasRenderInput, in context: CGContext) -> CanvasRenderResult {
-        var diagnostics: [CanvasDiagnostic] = []
         context.saveGState()
         defer { context.restoreGState() }
 
@@ -120,155 +110,35 @@ public final class CanvasRenderer {
             context.fill(input.viewport)
         }
 
-        // Strokes still being drawn, on either side, are part of the state in drawing order.
-        input.state.strokes.forEach { stroke in
-            drawStroke(stroke, input: input, context: context)
-        }
-
+        context.translateBy(x: input.viewport.minX, y: input.viewport.minY)
+        let size = input.viewport.size
         let elements = input.state.canvasElements
-        for element in elements {
-            switch element {
-            case let .text(textElement):
-                diagnostics.append(contentsOf: drawTextElement(textElement, input: input, context: context))
-            case let .sticker(stickerElement):
-                diagnostics.append(contentsOf: drawStickerElement(stickerElement, input: input, context: context))
-            }
-        }
+        DoodleRenderer.draw(
+            input.state.strokes,
+            elements: elements,
+            stickerImages: input.stickerImages,
+            dry: input.strokeRenderMode == .dryBrush,
+            in: context,
+            size: size
+        )
 
         if let selectedElementID = input.selectedElementID,
            let selected = elements.first(where: { $0.id == selectedElementID }) {
-            drawSelection(for: selected, input: input, context: context)
+            drawSelection(for: selected, canvasSize: size, context: context)
         }
 
-        return CanvasRenderResult(diagnostics: diagnostics)
-    }
-
-    private func drawStroke(_ stroke: DrawingStroke, input: CanvasRenderInput, context: CGContext) {
-        let renderStroke = stroke.denormalized(in: input.viewport)
-        switch input.strokeRenderMode {
-        case .roundStroke:
-            RoundStrokeRenderer.draw(stroke: renderStroke, in: context)
-        case .dryBrush:
-            DryBrushStrokeRenderer.draw(stroke: renderStroke, in: context)
-        }
-    }
-
-    private func drawTextElement(
-        _ element: CanvasTextElement,
-        input: CanvasRenderInput,
-        context: CGContext
-    ) -> [CanvasDiagnostic] {
-        let center = element.center.denormalized(in: input.viewport)
-        let wrapWidth = max(CGFloat(element.boxWidth) * input.viewport.width, 1)
-        let font = fontResolver.font(for: element.font, size: 34)
-        let textColor: NSColor
-        let elementColor = NSColor(argb: element.colorArgb)
-        if element.backgroundPillEnabled {
-            textColor = elementColor.relativeLuminance > 0.55 ? .black : .white
-        } else {
-            textColor = elementColor
-        }
-
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = switch element.alignment {
-        case .left: .left
-        case .center: .center
-        case .right: .right
-        }
-        let attributed = NSAttributedString(
-            string: element.text,
-            attributes: [
-                .font: font,
-                .foregroundColor: textColor,
-                .paragraphStyle: paragraph
-            ]
-        )
-        let bounding = attributed.boundingRect(
-            with: CGSize(width: wrapWidth, height: CGFloat.greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        ).integral
-        let textRect = CGRect(
-            x: -wrapWidth / 2,
-            y: -bounding.height / 2,
-            width: wrapWidth,
-            height: max(bounding.height, 1)
-        )
-
-        context.saveGState()
-        context.translateBy(x: center.x, y: center.y)
-        context.rotate(by: CGFloat(element.rotationRad))
-        context.scaleBy(x: CGFloat(element.scale), y: CGFloat(element.scale))
-
-        if element.backgroundPillEnabled {
-            let padding: CGFloat = 12
-            let rect = textRect.insetBy(dx: -padding, dy: -padding)
-            context.setFillColor(elementColor.cgColor)
-            context.fillPath(
-                for: CGPath(
-                    roundedRect: rect,
-                    cornerWidth: 18,
-                    cornerHeight: 18,
-                    transform: nil
-                )
+        return CanvasRenderResult(diagnostics: elements.compactMap { element in
+            guard let sticker = element.sticker, input.stickerImages[sticker.sticker] == nil else { return nil }
+            return CanvasDiagnostic(
+                code: "missing_sticker_asset",
+                message: "Rendered sticker placeholder for \(sticker.sticker.packKey)#\(sticker.sticker.packVersion)/\(sticker.sticker.stickerId).",
+                severity: .info,
+                elementID: sticker.id
             )
-        }
-
-        attributed.draw(with: textRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
-        context.restoreGState()
-        return fontResolver.diagnostics(for: element.font)
+        })
     }
 
-    private func drawStickerElement(
-        _ element: CanvasStickerElement,
-        input: CanvasRenderInput,
-        context: CGContext
-    ) -> [CanvasDiagnostic] {
-        let center = element.center.denormalized(in: input.viewport)
-        let maxSize = max(CGFloat(element.renderScale) * input.viewport.width, 1)
-        let image = stickerAssetResolver.image(for: element)
-        let size = resolvedStickerSize(maxSize: maxSize, image: image)
-        let rect = CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height)
-
-        context.saveGState()
-        context.translateBy(x: center.x, y: center.y)
-        context.rotate(by: CGFloat(element.rotationRad))
-        if let image {
-            context.draw(image, in: rect)
-        } else {
-            drawStickerPlaceholder(rect: rect, element: element, context: context)
-        }
-        context.restoreGState()
-
-        guard image == nil else { return [] }
-        return [CanvasDiagnostic(
-            code: "missing_sticker_asset",
-            message: "Rendered sticker fallback for \(element.sticker.packKey)#\(element.sticker.packVersion)/\(element.sticker.stickerId).",
-            severity: .info,
-            elementID: element.id
-        )]
-    }
-
-    private func drawStickerPlaceholder(rect: CGRect, element: CanvasStickerElement, context: CGContext) {
-        let hue = CGFloat(abs(element.stableHash % 360)) / 360
-        let fill = NSColor(calibratedHue: hue, saturation: 0.32, brightness: 0.96, alpha: 0.72)
-        let stroke = NSColor(calibratedHue: hue, saturation: 0.42, brightness: 0.66, alpha: 0.95)
-        let path = CGPath(roundedRect: rect, cornerWidth: 18, cornerHeight: 18, transform: nil)
-        context.setFillColor(fill.cgColor)
-        context.addPath(path)
-        context.fillPath()
-        context.setStrokeColor(stroke.cgColor)
-        context.setLineWidth(2)
-        context.addPath(path)
-        context.strokePath()
-
-        let symbolRect = rect.insetBy(dx: rect.width * 0.28, dy: rect.height * 0.28)
-        context.setStrokeColor(stroke.withAlphaComponent(0.86).cgColor)
-        context.setLineWidth(max(2, min(rect.width, rect.height) * 0.04))
-        context.strokeEllipse(in: symbolRect)
-    }
-
-    private func drawSelection(for element: CanvasElement, input: CanvasRenderInput, context: CGContext) {
-        let center = element.center
+    private func drawSelection(for element: CanvasElement, canvasSize: CGSize, context: CGContext) {
         let scale: Double
         switch element {
         case let .text(text):
@@ -276,25 +146,13 @@ public final class CanvasRenderer {
         case let .sticker(sticker):
             scale = sticker.scale
         }
-        let point = center.denormalized(in: input.viewport)
-        let radius = max(16, CGFloat(scale) * input.viewport.width * 0.14)
+        let point = CGPoint(x: element.center.x * canvasSize.width, y: element.center.y * canvasSize.height)
+        let radius = max(16, CGFloat(scale) * canvasSize.width * 0.14)
         context.setStrokeColor(NSColor.controlAccentColor.cgColor)
         context.setLineWidth(2)
         context.setLineDash(phase: 0, lengths: [5, 5])
         context.strokeEllipse(in: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2))
         context.setLineDash(phase: 0, lengths: [])
-    }
-
-    private func resolvedStickerSize(maxSize: CGFloat, image: CGImage?) -> CGSize {
-        guard let image, image.width > 0, image.height > 0 else {
-            return CGSize(width: maxSize, height: maxSize)
-        }
-        let width = CGFloat(image.width)
-        let height = CGFloat(image.height)
-        if width >= height {
-            return CGSize(width: maxSize, height: maxSize * height / width)
-        }
-        return CGSize(width: maxSize * width / height, height: maxSize)
     }
 }
 
@@ -302,15 +160,18 @@ public final class CanvasRenderModel: ObservableObject {
     @Published public var state: DrawingState
     @Published public var strokeRenderMode: CanvasStrokeRenderMode
     @Published public var diagnostics: [CanvasDiagnostic]
+    @Published public var stickerImages: [StickerReference: CanvasImage]
 
     public init(
         state: DrawingState = DrawingState(),
         strokeRenderMode: CanvasStrokeRenderMode = .dryBrush,
-        diagnostics: [CanvasDiagnostic] = []
+        diagnostics: [CanvasDiagnostic] = [],
+        stickerImages: [StickerReference: CanvasImage] = [:]
     ) {
         self.state = state
         self.strokeRenderMode = strokeRenderMode
         self.diagnostics = diagnostics
+        self.stickerImages = stickerImages
     }
 }
 
@@ -358,7 +219,8 @@ public final class CanvasRenderView: NSView {
                 scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1,
                 strokeRenderMode: model.strokeRenderMode,
                 surface: surface,
-                showsEditingBackground: showsEditingBackground
+                showsEditingBackground: showsEditingBackground,
+                stickerImages: model.stickerImages
             ),
             in: context
         )
@@ -454,243 +316,30 @@ public enum CanvasRenderFixture {
     }
 }
 
-private enum RoundStrokeRenderer {
-    static func draw(stroke: RenderStroke, in context: CGContext) {
-        guard !stroke.points.isEmpty else { return }
-        context.setStrokeColor(NSColor(argb: stroke.colorArgb).cgColor)
-        context.setFillColor(NSColor(argb: stroke.colorArgb).cgColor)
-        context.setLineWidth(stroke.width)
-        context.setLineCap(.round)
-        context.setLineJoin(.round)
-
-        if stroke.points.count == 1, let point = stroke.points.first {
-            context.fillEllipse(in: CGRect(
-                x: point.x - stroke.width / 2,
-                y: point.y - stroke.width / 2,
-                width: stroke.width,
-                height: stroke.width
-            ))
-            return
-        }
-
-        context.beginPath()
-        context.move(to: stroke.points[0])
-        stroke.points.dropFirst().forEach { context.addLine(to: $0) }
-        context.strokePath()
-    }
-}
-
-private enum DryBrushStrokeRenderer {
-    static func draw(stroke: RenderStroke, in context: CGContext) {
-        guard stroke.points.count >= 2 else {
-            RoundStrokeRenderer.draw(stroke: stroke, in: context)
-            return
-        }
-        drawBody(stroke: stroke, in: context)
-        drawBristles(stroke: stroke, in: context)
-    }
-
-    private static func drawBody(stroke: RenderStroke, in context: CGContext) {
-        context.saveGState()
-        context.setStrokeColor(NSColor(argb: stroke.colorArgb).withAlphaComponent(132 / 255).cgColor)
-        context.setLineCap(.butt)
-        context.setLineJoin(.round)
-        context.setLineWidth(max(1.5, stroke.width * 0.42))
-        context.addPath(smoothPath(points: stroke.points))
-        context.strokePath()
-        context.restoreGState()
-    }
-
-    private static func drawBristles(stroke: RenderStroke, in context: CGContext) {
-        let bristleCount = Int((stroke.width / 2.6).rounded()).clamped(to: 6...14)
-        let bristleWidth = max(0.85, stroke.width / (CGFloat(bristleCount) * 1.75))
-        let halfWidth = stroke.width / 2
-
-        for index in 0..<bristleCount {
-            let lane = bristleCount == 1
-                ? 0
-                : -halfWidth + ((CGFloat(index) / CGFloat(bristleCount - 1)) * stroke.width)
-            let seed = stroke.seed(index: index)
-            let jitter = (CGFloat(seed & 0xFF) / 255 - 0.5) * stroke.width * 0.24
-            let alpha = CGFloat(164 + ((seed >> 8) % 70)) / 255
-            let widthJitter = 0.78 + (CGFloat((seed >> 16) & 0xFF) / 255) * 0.7
-
-            context.saveGState()
-            context.setStrokeColor(NSColor(argb: stroke.colorArgb).withAlphaComponent(alpha).cgColor)
-            context.setLineCap(.butt)
-            context.setLineJoin(.round)
-            context.setLineWidth(bristleWidth * widthJitter)
-            context.addPath(bristlePath(
-                points: stroke.points,
-                laneOffset: lane + jitter,
-                seed: seed,
-                strokeWidth: stroke.width
-            ))
-            context.strokePath()
-            context.restoreGState()
-        }
-    }
-
-    private static func smoothPath(points: [CGPoint]) -> CGPath {
-        let path = CGMutablePath()
-        path.move(to: points[0])
-        if points.count > 2 {
-            for index in 1..<(points.count - 1) {
-                let point = points[index]
-                let next = points[index + 1]
-                path.addQuadCurve(to: CGPoint(x: (point.x + next.x) / 2, y: (point.y + next.y) / 2), control: point)
-            }
-        }
-        path.addLine(to: points[points.count - 1])
-        return path
-    }
-
-    private static func bristlePath(points: [CGPoint], laneOffset: CGFloat, seed: Int, strokeWidth: CGFloat) -> CGPath {
-        let path = CGMutablePath()
-        var drawing = false
-        let startTrim = seed % 3
-        let endTrim = (seed >> 3) % 4
-
-        for index in points.indices {
-            let point = points[index]
-            let noise = seededNoise(seed: seed, index: index)
-            let shouldGap = index > startTrim &&
-                index < points.count - 1 - endTrim &&
-                noise < 0.085
-            if shouldGap {
-                drawing = false
-                continue
-            }
-
-            let normal = normalAt(index: index, points: points)
-            let tangent = tangentAt(index: index, points: points)
-            let feather = (seededNoise(seed: seed ^ 0x6D2B79F5, index: index) - 0.5) * strokeWidth * 0.18
-            let next = CGPoint(
-                x: point.x + normal.dx * laneOffset + tangent.dx * feather,
-                y: point.y + normal.dy * laneOffset + tangent.dy * feather
-            )
-            if !drawing {
-                path.move(to: next)
-                drawing = true
-            } else {
-                path.addLine(to: next)
-            }
-        }
-
-        return path
-    }
-
-    private static func normalAt(index: Int, points: [CGPoint]) -> CGVector {
-        let tangent = tangentAt(index: index, points: points)
-        return CGVector(dx: -tangent.dy, dy: tangent.dx)
-    }
-
-    private static func tangentAt(index: Int, points: [CGPoint]) -> CGVector {
-        let previous = points[max(0, index - 1)]
-        let next = points[min(points.count - 1, index + 1)]
-        let dx = next.x - previous.x
-        let dy = next.y - previous.y
-        let length = max(hypot(dx, dy), 0.001)
-        return CGVector(dx: dx / length, dy: dy / length)
-    }
-
-    private static func seededNoise(seed: Int, index: Int) -> CGFloat {
-        let mixed = Int32(truncatingIfNeeded: seed ^ Int(truncatingIfNeeded: Int32(index) &* Int32(bitPattern: 0x9E3779B9))).mixed
-        return CGFloat((UInt32(bitPattern: mixed) >> 1) & 0x7FFFFFFF) / CGFloat(Int32.max)
-    }
-}
-
-private struct RenderStroke {
-    let id: String
-    let colorArgb: UInt32
-    let width: CGFloat
-    let points: [CGPoint]
-
-    func seed(index: Int) -> Int {
-        var hash = Int32(0x45D9F3B)
-        for scalar in id.unicodeScalars {
-            hash = (hash &* 31) ^ Int32(bitPattern: scalar.value)
-        }
-        hash = (hash &* 31) ^ Int32(bitPattern: colorArgb)
-        hash = (hash &* 31) ^ Int32(widthFloatBits)
-        hash = (hash &* 31) ^ Int32(index)
-        return Int(UInt32(bitPattern: hash.mixed) & 0x7FFFFFFF)
-    }
-
-    private var widthFloatBits: UInt32 {
-        Float(width).bitPattern
-    }
-}
-
-public final class CanvasFontResolver {
-    private var registeredPostScriptNames: [CanvasTextFont: String] = [:]
-    private var fallbackDiagnostics: [CanvasTextFont: CanvasDiagnostic] = [:]
-
-    public init() {}
-
-    public func font(for canvasFont: CanvasTextFont, size: CGFloat) -> NSFont {
-        if let postScriptName = postScriptName(for: canvasFont),
-           let font = NSFont(name: postScriptName, size: size) {
-            return font
-        }
-        if canvasFont != .poppins {
-            fallbackDiagnostics[canvasFont] = CanvasDiagnostic(
-                code: "font_fallback",
-                message: "Canvas font \(canvasFont.rawValue) fell back to Poppins.",
-                severity: .info
-            )
-        }
-        if let fallbackName = postScriptName(for: .poppins),
-           let font = NSFont(name: fallbackName, size: size) {
-            return font
-        }
-        return NSFont.systemFont(ofSize: size)
-    }
-
-    public func diagnostics(for canvasFont: CanvasTextFont) -> [CanvasDiagnostic] {
-        fallbackDiagnostics[canvasFont].map { [$0] } ?? []
-    }
-
-    private func postScriptName(for canvasFont: CanvasTextFont) -> String? {
-        if let existing = registeredPostScriptNames[canvasFont] {
-            return existing
-        }
-        guard let url = fontURL(for: canvasFont),
-              let provider = CGDataProvider(url: url as CFURL),
-              let font = CGFont(provider) else {
-            return nil
-        }
-        CTFontManagerRegisterGraphicsFont(font, nil)
-        guard let postScriptName = font.postScriptName as String? else {
-            return nil
-        }
-        registeredPostScriptNames[canvasFont] = postScriptName
-        return postScriptName
-    }
-
-    private func fontURL(for canvasFont: CanvasTextFont) -> URL? {
-        let fileName = switch canvasFont {
-        case .poppins: "poppins_regular.ttf"
-        case .virgil: "virgil_regular.ttf"
-        case .dmSans: "dm_sans_regular.ttf"
-        case .spaceMono: "space_mono_regular.ttf"
-        case .playfairDisplay: "playfair_display_regular.ttf"
-        case .bangers: "bangers_regular.ttf"
-        case .permanentMarker: "permanent_marker_regular.ttf"
-        case .kalam: "kalam_regular.ttf"
-        case .oswald: "oswald_regular.ttf"
-        }
+/// The canvas fonts ship in the app's Resources/Fonts. iOS lists them in its Info.plist;
+/// the Mac registers them once at launch so the shared renderer finds them by name.
+public enum CanvasFonts {
+    private static let registered: Void = {
         let candidates = [
-            Bundle.main.resourceURL?.appendingPathComponent("Fonts/\(fileName)"),
-            URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                .appendingPathComponent("Resources/Fonts/\(fileName)"),
+            Bundle.main.resourceURL?.appendingPathComponent("Fonts"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Resources/Fonts"),
             URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("Resources/Fonts/\(fileName)")
+                .appendingPathComponent("Resources/Fonts")
         ].compactMap { $0 }
-        return candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) })
+        guard let directory = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
+              let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
+            return
+        }
+        for file in files where file.pathExtension == "ttf" {
+            CTFontManagerRegisterFontsForURL(file as CFURL, .process, nil)
+        }
+    }()
+
+    public static func registerBundledFonts() {
+        _ = registered
     }
 }
 
@@ -768,85 +417,20 @@ public enum CanvasOffscreenRenderer {
               let context = NSGraphicsContext(bitmapImageRep: bitmap)?.cgContext else {
             return nil
         }
+        context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        // A bitmap context starts bottom-up; the canvas draws top-down, as in the flipped view.
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1, y: -1)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
-        context.clear(CGRect(x: 0, y: 0, width: width, height: height))
         let result = renderer.render(input, in: context)
         NSGraphicsContext.restoreGraphicsState()
         return (bitmap, result)
     }
 }
 
-private extension DrawingStroke {
-    func denormalized(in viewport: CGRect) -> RenderStroke {
-        RenderStroke(
-            id: id,
-            colorArgb: colorArgb,
-            width: CGFloat(width) * min(max(viewport.width, 1), max(viewport.height, 1)),
-            points: points.map { $0.denormalized(in: viewport) }
-        )
-    }
-}
-
-private extension DrawingPoint {
-    func denormalized(in viewport: CGRect) -> CGPoint {
-        CGPoint(
-            x: viewport.minX + CGFloat(x) * viewport.width,
-            y: viewport.minY + CGFloat(y) * viewport.height
-        )
-    }
-}
-
-private extension CanvasStickerElement {
-    var stableHash: Int {
-        "\(sticker.packKey)-\(sticker.packVersion)-\(sticker.stickerId)".unicodeScalars.reduce(0) { partial, scalar in
-            Int(Int32(truncatingIfNeeded: partial) &* 31) ^ Int(scalar.value)
-        }
-    }
-}
-
-private extension NSColor {
-    convenience init(argb: UInt32) {
-        let alpha = CGFloat((argb >> 24) & 0xFF) / 255
-        let red = CGFloat((argb >> 16) & 0xFF) / 255
-        let green = CGFloat((argb >> 8) & 0xFF) / 255
-        let blue = CGFloat(argb & 0xFF) / 255
-        self.init(calibratedRed: red, green: green, blue: blue, alpha: alpha)
-    }
-
-    var relativeLuminance: CGFloat {
-        guard let rgb = usingColorSpace(.deviceRGB) else { return 0 }
-        return 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
-    }
-}
-
-private extension CGContext {
-    func fillPath(for path: CGPath) {
-        addPath(path)
-        fillPath()
-    }
-}
-
-private extension FloatingPoint {
-    func clamped(to range: ClosedRange<Self>) -> Self {
-        min(max(self, range.lowerBound), range.upperBound)
-    }
-}
-
 private extension Comparable {
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
-    }
-}
-
-private extension Int32 {
-    var mixed: Int32 {
-        var value = self
-        value = value ^ Int32(bitPattern: UInt32(bitPattern: value) >> 16)
-        value = value &* Int32(bitPattern: 0x7FEB352D)
-        value = value ^ Int32(bitPattern: UInt32(bitPattern: value) >> 15)
-        value = value &* Int32(bitPattern: 0x846CA68B)
-        value = value ^ Int32(bitPattern: UInt32(bitPattern: value) >> 16)
-        return value
     }
 }

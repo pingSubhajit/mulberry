@@ -1,9 +1,11 @@
 import AppKit
 import Auth
+import CanvasDrawing
 import CanvasEditing
 import CanvasRendering
 import Overlay
 import ProductCore
+import Stickers
 import Sync
 import SwiftUI
 
@@ -13,6 +15,7 @@ struct MainWindowView: View {
     @ObservedObject var appStateController: AppStateController
     @ObservedObject var syncController: CanvasSyncController
     @ObservedObject var overlayController: OverlayController
+    @ObservedObject var stickerLoader: StickerImageLoader
 
     var body: some View {
         HStack(spacing: 0) {
@@ -27,6 +30,7 @@ struct MainWindowView: View {
                     appStateController: appStateController,
                     syncController: syncController,
                     overlayController: overlayController,
+                    stickerLoader: stickerLoader,
                     onOpen: openRoute,
                     onPush: router.push
                 )
@@ -37,6 +41,7 @@ struct MainWindowView: View {
                         appStateController: appStateController,
                         syncController: syncController,
                         overlayController: overlayController,
+                        stickerLoader: stickerLoader,
                         onOpen: openRoute,
                         onPush: router.push
                     )
@@ -114,6 +119,7 @@ private struct RoutePlaceholderView: View {
     @ObservedObject var appStateController: AppStateController
     @ObservedObject var syncController: CanvasSyncController
     @ObservedObject var overlayController: OverlayController
+    @ObservedObject var stickerLoader: StickerImageLoader
     let onOpen: (AppRoute) -> Void
     let onPush: (AppRoute) -> Void
 
@@ -123,7 +129,8 @@ private struct RoutePlaceholderView: View {
                 FullAppCanvasEditor(
                     authController: authController,
                     appStateController: appStateController,
-                    syncController: syncController
+                    syncController: syncController,
+                    stickerLoader: stickerLoader
                 )
                 .padding(20)
             } else {
@@ -343,9 +350,25 @@ private struct FullAppCanvasEditor: View {
     @ObservedObject var authController: AuthSessionController
     @ObservedObject var appStateController: AppStateController
     @ObservedObject var syncController: CanvasSyncController
+    @ObservedObject var stickerLoader: StickerImageLoader
 
     @StateObject private var canvasModel = CanvasRenderModel()
     @State private var editor = CanvasStrokeEditingEngine()
+    @State private var elementRenderer = CanvasElementRenderer()
+    @State private var textSession: CanvasElementSession<CanvasTextElement>?
+    @State private var stickerSession: CanvasElementSession<CanvasStickerElement>?
+    @State private var drag: ElementDrag?
+
+    /// An element being dragged to a new place; it saves as one update when released.
+    private struct ElementDrag {
+        let original: CanvasElement
+        let start: CGPoint
+        var current: CanvasElement
+        var moved = false
+    }
+
+    private var editorOpen: Bool { textSession != nil || stickerSession != nil }
+    private var userID: String? { appStateController.loadState.bootstrap?.userId }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -360,11 +383,18 @@ private struct FullAppCanvasEditor: View {
                     syncSummary
                 }
                 .frame(width: 230)
+                .disabled(editorOpen)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .overlay { elementEditor }
         .onAppear(perform: syncCanvasModel)
         .onReceive(syncController.objectWillChange) { _ in
+            DispatchQueue.main.async {
+                syncCanvasModel()
+            }
+        }
+        .onReceive(stickerLoader.objectWillChange) { _ in
             DispatchQueue.main.async {
                 syncCanvasModel()
             }
@@ -427,6 +457,18 @@ private struct FullAppCanvasEditor: View {
                     onErase: { point in
                         submit(editor.eraseStroke(at: point, in: syncController.drawing, surfaceSize: proxy.size))
                     },
+                    onElementDown: { point in
+                        elementDown(at: point, canvasSize: proxy.size)
+                    },
+                    onElementDrag: { point in
+                        elementDragged(to: point, canvasSize: proxy.size)
+                    },
+                    onElementUp: {
+                        elementReleased()
+                    },
+                    onDoubleClick: { point in
+                        editElement(at: point, canvasSize: proxy.size)
+                    },
                     onEyedropper: { point in
                         sampleEyedropper(at: point, surfaceSize: proxy.size)
                     },
@@ -466,10 +508,12 @@ private struct FullAppCanvasEditor: View {
 
     private var toolTray: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(spacing: 6) {
                 toolButton("Brush", systemImage: "paintbrush.pointed", tool: .draw)
-                toolButton("Erase", systemImage: "eraser", tool: .erase)
-                toolButton("Pick", systemImage: "eyedropper", tool: .eyedropper)
+                toolButton("Eraser", systemImage: "eraser", tool: .erase)
+                toolButton("Text", systemImage: "textformat", tool: .text)
+                toolButton("Stickers", systemImage: "face.smiling", tool: .sticker)
+                toolButton("Eyedropper", systemImage: "eyedropper", tool: .eyedropper)
             }
 
             HStack {
@@ -589,10 +633,14 @@ private struct FullAppCanvasEditor: View {
         Button {
             editor.toolState.setActiveTool(tool)
         } label: {
-            Label(title, systemImage: systemImage)
+            Image(systemName: systemImage)
+                .frame(width: 18, height: 18)
         }
         .buttonStyle(.borderedProminent)
         .tint(editor.toolState.activeTool == tool ? .accentColor : .gray)
+        .help(title)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(editor.toolState.activeTool == tool ? .isSelected : [])
     }
 
     private var editingIsEnabled: Bool {
@@ -643,13 +691,134 @@ private struct FullAppCanvasEditor: View {
                 viewport: CGRect(origin: .zero, size: surfaceSize),
                 strokeRenderMode: canvasModel.strokeRenderMode,
                 surface: .fullApp,
-                showsEditingBackground: false
+                showsEditingBackground: false,
+                stickerImages: stickerLoader.images
             ),
             at: contentPoint
         ) else {
             return
         }
         editor.toolState.commitEyedropperColor(color)
+    }
+
+    // MARK: Text and stickers
+
+    @ViewBuilder private var elementEditor: some View {
+        if let session = textSession {
+            CanvasTextEditorOverlay(
+                session: session,
+                palette: CanvasEditingDefaults.palette,
+                onDone: { element in
+                    textSession = nil
+                    editor.toolState.textColorArgb = element.colorArgb
+                    submit(editor.commit(.text(element), isNew: session.isNew, in: syncController.drawing))
+                    syncCanvasModel()
+                },
+                onCancel: { textSession = nil; syncCanvasModel() },
+                onDelete: {
+                    textSession = nil
+                    if !session.isNew { submit(editor.delete(elementID: session.element.id, in: syncController.drawing)) }
+                    syncCanvasModel()
+                }
+            )
+            .id(session.element.id)
+        } else if let session = stickerSession, let userID {
+            CanvasStickerEditorOverlay(
+                session: session,
+                catalog: stickerLoader.catalog(user: userID),
+                user: userID,
+                store: stickerLoader.store,
+                onDone: { element in
+                    stickerSession = nil
+                    if !element.sticker.stickerId.isEmpty { stickerLoader.catalog(user: userID).use(element.sticker) }
+                    submit(editor.commit(.sticker(element), isNew: session.isNew, in: syncController.drawing))
+                    syncCanvasModel()
+                },
+                onCancel: { stickerSession = nil; syncCanvasModel() },
+                onDelete: {
+                    stickerSession = nil
+                    if !session.isNew { submit(editor.delete(elementID: session.element.id, in: syncController.drawing)) }
+                    syncCanvasModel()
+                }
+            )
+            .id(session.element.id)
+        }
+    }
+
+    private func normalized(_ renderedPoint: CGPoint, canvasSize: CGSize) -> DrawingPoint {
+        editor.viewportTransform.normalizedPoint(fromRenderedPoint: renderedPoint, surfaceSize: canvasSize)
+    }
+
+    private func element(at renderedPoint: CGPoint, canvasSize: CGSize) -> CanvasElement? {
+        elementRenderer.stickerImages = stickerLoader.images
+        let point = editor.viewportTransform.contentPoint(fromRenderedPoint: renderedPoint)
+        return elementRenderer.hit(syncController.drawing.canvasElements, at: point, canvasSize: canvasSize)
+    }
+
+    /// With the text or sticker tool, pressing an element starts moving it; pressing empty
+    /// canvas starts a new one there.
+    private func elementDown(at point: CGPoint, canvasSize: CGSize) {
+        guard !editorOpen else { return }
+        if let hit = element(at: point, canvasSize: canvasSize) {
+            drag = ElementDrag(original: hit, start: point, current: hit)
+            return
+        }
+        let center = normalized(point, canvasSize: canvasSize)
+        switch editor.toolState.activeTool {
+        case .text:
+            textSession = CanvasElementSession(element: CanvasTextElement(center: center, colorArgb: editor.toolState.textColorArgb), isNew: true)
+        case .sticker:
+            guard let userID else { return }
+            let sticker = stickerLoader.catalog(user: userID).defaultSticker ?? StickerReference(packKey: "", packVersion: 0, stickerId: "")
+            stickerSession = CanvasElementSession(element: CanvasStickerElement(center: center, sticker: sticker), isNew: true)
+        default:
+            return
+        }
+        syncCanvasModel()
+    }
+
+    private func elementDragged(to point: CGPoint, canvasSize: CGSize) {
+        guard var drag else { return }
+        let scale = max(editor.viewportTransform.scale, 0.0001)
+        let dx = (point.x - drag.start.x) / scale, dy = (point.y - drag.start.y) / scale
+        drag.moved = drag.moved || hypot(dx, dy) > 3
+        var moved = drag.original
+        moved.center = DrawingPoint(
+            x: min(1, max(0, moved.center.x + dx / max(canvasSize.width, 1))),
+            y: min(1, max(0, moved.center.y + dy / max(canvasSize.height, 1)))
+        )
+        drag.current = moved
+        self.drag = drag
+        syncCanvasModel()
+    }
+
+    /// A drag saves the new position; a click without moving opens the element's editor.
+    private func elementReleased() {
+        guard let drag else { return }
+        self.drag = nil
+        if drag.moved {
+            submit(editor.update(drag.current, in: syncController.drawing))
+        } else {
+            open(drag.original)
+        }
+        syncCanvasModel()
+    }
+
+    /// Double-clicking an element edits it with any tool.
+    private func editElement(at point: CGPoint, canvasSize: CGSize) -> Bool {
+        guard !editorOpen, let hit = element(at: point, canvasSize: canvasSize) else { return false }
+        open(hit)
+        return true
+    }
+
+    private func open(_ element: CanvasElement) {
+        switch element {
+        case let .text(text):
+            textSession = CanvasElementSession(element: text, isNew: false)
+        case let .sticker(sticker):
+            stickerSession = CanvasElementSession(element: sticker, isNew: false)
+        }
+        syncCanvasModel()
     }
 
     private func panViewport(by delta: CGSize, surfaceSize: CGSize) {
@@ -665,7 +834,17 @@ private struct FullAppCanvasEditor: View {
     }
 
     private func syncCanvasModel() {
-        canvasModel.state = syncController.drawing
+        var state = syncController.drawing
+        if let drag, drag.moved {
+            try? state.apply(.update(drag.current))
+        }
+        // The open editor shows the element, so the canvas behind it leaves it out.
+        if let editing = textSession.map({ CanvasElement.text($0.element) }) ?? stickerSession.map({ CanvasElement.sticker($0.element) }),
+           state.canvasElements.contains(where: { $0.id == editing.id }) {
+            try? state.apply(.delete(editing))
+        }
+        canvasModel.state = state
+        canvasModel.stickerImages = stickerLoader.images
         canvasModel.strokeRenderMode = CanvasStrokeRenderMode(
             rawBackendValue: appStateController.loadState.bootstrap?.canvasStrokeRenderMode
         )
@@ -679,6 +858,10 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
     var onDrawMove: (CGPoint) -> Void
     var onDrawEnd: () -> Void
     var onErase: (CGPoint) -> Void
+    var onElementDown: (CGPoint) -> Void
+    var onElementDrag: (CGPoint) -> Void
+    var onElementUp: () -> Void
+    var onDoubleClick: (CGPoint) -> Bool
     var onEyedropper: (CGPoint) -> Void
     var onPan: (CGSize) -> Void
     var onZoom: (CGFloat, CGPoint) -> Void
@@ -702,6 +885,10 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
             onDrawMove: onDrawMove,
             onDrawEnd: onDrawEnd,
             onErase: onErase,
+            onElementDown: onElementDown,
+            onElementDrag: onElementDrag,
+            onElementUp: onElementUp,
+            onDoubleClick: onDoubleClick,
             onEyedropper: onEyedropper,
             onPan: onPan,
             onZoom: onZoom,
@@ -717,6 +904,10 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
             var onDrawMove: (CGPoint) -> Void = { _ in }
             var onDrawEnd: () -> Void = {}
             var onErase: (CGPoint) -> Void = { _ in }
+            var onElementDown: (CGPoint) -> Void = { _ in }
+            var onElementDrag: (CGPoint) -> Void = { _ in }
+            var onElementUp: () -> Void = {}
+            var onDoubleClick: (CGPoint) -> Bool = { _ in false }
             var onEyedropper: (CGPoint) -> Void = { _ in }
             var onPan: (CGSize) -> Void = { _ in }
             var onZoom: (CGFloat, CGPoint) -> Void = { _, _ in }
@@ -725,6 +916,7 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
 
         var configuration = Configuration()
         private var isDrawing = false
+        private var isMovingElement = false
         private var isSpaceDown = false
         private var lastPanPoint: CGPoint?
 
@@ -744,12 +936,18 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
                 lastPanPoint = point
                 return
             }
+            if event.clickCount == 2, configuration.onDoubleClick(point) {
+                return
+            }
             switch configuration.activeTool {
             case .draw:
                 isDrawing = true
                 configuration.onDrawStart(point)
             case .eyedropper:
                 configuration.onEyedropper(point)
+            case .text, .sticker:
+                isMovingElement = true
+                configuration.onElementDown(point)
             default:
                 break
             }
@@ -768,13 +966,21 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
             if configuration.activeTool == .draw, isDrawing {
                 configuration.onDrawMove(point)
             }
+            if isMovingElement {
+                configuration.onElementDrag(point)
+            }
         }
 
         override func mouseUp(with event: NSEvent) {
             guard configuration.editingIsEnabled else {
                 isDrawing = false
+                isMovingElement = false
                 lastPanPoint = nil
                 return
+            }
+            if isMovingElement {
+                isMovingElement = false
+                configuration.onElementUp()
             }
             let point = convert(event.locationInWindow, from: nil)
             switch configuration.activeTool {
@@ -827,15 +1033,6 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
     }
 }
 
-private extension Color {
-    init(argb: UInt32) {
-        let alpha = Double((argb >> 24) & 0xFF) / 255
-        let red = Double((argb >> 16) & 0xFF) / 255
-        let green = Double((argb >> 8) & 0xFF) / 255
-        let blue = Double(argb & 0xFF) / 255
-        self.init(.sRGB, red: red, green: green, blue: blue, opacity: alpha)
-    }
-}
 
 private extension AppRoute {
     var isFullAppCanvasRoute: Bool {

@@ -40,7 +40,7 @@ pnpm smoke:macos
 
 ## Shared Code
 
-The backend client, Keychain session, canvas model, offline outbox and WebSocket sync come from `ProductCore` in [`packages/apple`](../../packages/apple), the same code the iPhone and iPad app runs. This app adds what is particular to the Mac: the menu bar, the desktop overlay and when it syncs, Quick Draw, Google sign-in through the browser, and its own renderer and editing tools.
+The iPhone and iPad app and this app share three targets in [`packages/apple`](../../packages/apple): `ProductCore` (backend client, Keychain session, canvas model, offline outbox and WebSocket sync), `CanvasDrawing` (the canvas renderer: strokes, text and stickers) and `StickerAssets` (sticker catalog, download and disk cache). This app adds what is particular to the Mac: the menu bar, the desktop overlay and when it syncs, Quick Draw, Google sign-in through the browser, and its pointer-driven editing tools and editors.
 
 Sign-in reads `MULBERRY_MAC_GOOGLE_CLIENT_ID` and `MULBERRY_MAC_GOOGLE_CLIENT_SECRET` from `apps/macos/.env` (see `.env.example`). The backend must list that client ID in `GOOGLE_ALLOWED_CLIENT_IDS`.
 

@@ -282,6 +282,99 @@ import Testing
     #expect(engine.canUndo == false)
 }
 
+// MARK: Text and stickers
+
+private func text(_ value: String = "Miss you") -> CanvasTextElement {
+    CanvasTextElement(id: "text-1", text: value, createdAt: 1, center: DrawingPoint(x: 0.4, y: 0.6), colorArgb: 0xFFB31329)
+}
+
+private let heart = StickerReference(packKey: "love", packVersion: 2, stickerId: "heart")
+
+private func applying(_ operations: [DrawingOperation], to state: DrawingState) throws -> DrawingState {
+    var next = state
+    for operation in operations { try next.apply(operation) }
+    return next
+}
+
+@Test func newTextCommitsAnAddAndBlankNewTextNothing() throws {
+    var engine = makeStrokeEngine()
+    #expect(engine.commit(.text(text("   ")), isNew: true, in: DrawingState()).isEmpty)
+    #expect(engine.canUndo == false)
+
+    let operations = engine.commit(.text(text()), isNew: true, in: DrawingState())
+    #expect(operations.map(\.type) == ["ADD_TEXT_ELEMENT"])
+    let state = try applying(operations, to: DrawingState())
+    #expect(state.canvasElements == [.text(text())])
+}
+
+@Test func editingExistingTextUpdatesOnlyWhenChangedAndBlankDeletes() throws {
+    var engine = makeStrokeEngine()
+    let state = try applying(engine.commit(.text(text()), isNew: true, in: DrawingState()), to: DrawingState())
+
+    #expect(engine.commit(.text(text()), isNew: false, in: state).isEmpty)
+
+    var edited = text("Love you")
+    edited.font = .virgil
+    edited.alignment = .left
+    edited.backgroundPillEnabled = true
+    edited.rotationRad = 0.3
+    edited.scale = 1.4
+    let update = engine.commit(.text(edited), isNew: false, in: state)
+    #expect(update.map(\.type) == ["UPDATE_TEXT_ELEMENT"])
+    // Every field travels in the Android payload.
+    #expect(try applying(update, to: state).canvasElements == [.text(edited)])
+
+    let cleared = engine.commit(.text(text("")), isNew: false, in: state)
+    #expect(cleared.map(\.type) == ["DELETE_TEXT_ELEMENT"])
+    #expect(cleared.first?.strokeId == "text-1")
+}
+
+@Test func elementUndoAndRedoEmitCompensatingOperations() throws {
+    var engine = makeStrokeEngine()
+    var state = try applying(engine.commit(.text(text()), isNew: true, in: DrawingState()), to: DrawingState())
+    let moved = CanvasElement.text({ var value = text(); value.center = DrawingPoint(x: 0.7, y: 0.2); return value }())
+    state = try applying(engine.update(moved, in: state), to: state)
+    state = try applying(engine.delete(elementID: "text-1", in: state), to: state)
+    #expect(state.canvasElements.isEmpty)
+
+    let undoDelete = engine.undo()
+    #expect(undoDelete.map(\.type) == ["ADD_TEXT_ELEMENT"])
+    state = try applying(undoDelete, to: state)
+    #expect(state.canvasElements == [moved])
+
+    let undoMove = engine.undo()
+    #expect(undoMove.map(\.type) == ["UPDATE_TEXT_ELEMENT"])
+    state = try applying(undoMove, to: state)
+    #expect(state.canvasElements == [.text(text())])
+
+    let undoAdd = engine.undo()
+    #expect(undoAdd.map(\.type) == ["DELETE_TEXT_ELEMENT"])
+    state = try applying(undoAdd, to: state)
+    #expect(state.canvasElements.isEmpty)
+
+    #expect(engine.redo().map(\.type) == ["ADD_TEXT_ELEMENT"])
+    #expect(engine.redo().map(\.type) == ["UPDATE_TEXT_ELEMENT"])
+    #expect(engine.redo().map(\.type) == ["DELETE_TEXT_ELEMENT"])
+}
+
+@Test func stickersCommitOnlyOnceChosenAndKeepEveryField() throws {
+    var engine = makeStrokeEngine()
+    let unchosen = CanvasStickerElement(id: "sticker-1", center: DrawingPoint(x: 0.5, y: 0.5), sticker: StickerReference(packKey: "", packVersion: 0, stickerId: ""))
+    #expect(engine.commit(.sticker(unchosen), isNew: true, in: DrawingState()).isEmpty)
+
+    let placed = CanvasStickerElement(id: "sticker-1", createdAt: 7, center: DrawingPoint(x: 0.3, y: 0.8), rotationRad: -0.4, scale: 0.5, sticker: heart)
+    let add = engine.commit(.sticker(placed), isNew: true, in: DrawingState())
+    #expect(add.map(\.type) == ["ADD_STICKER_ELEMENT"])
+    let state = try applying(add, to: DrawingState())
+    #expect(state.canvasElements == [.sticker(placed)])
+
+    var bigger = CanvasElement.sticker(placed)
+    bigger.scale(by: 100)
+    #expect(bigger.sticker?.scale == CanvasStickerElement.scaleRange.upperBound)
+    #expect(engine.update(bigger, in: state).map(\.type) == ["UPDATE_STICKER_ELEMENT"])
+    #expect(engine.delete(elementID: "sticker-1", in: state).map(\.type) == ["DELETE_STICKER_ELEMENT"])
+}
+
 private func drawingState(_ strokes: [DrawingStroke]) throws -> DrawingState {
     var state = DrawingState()
     for stroke in strokes {

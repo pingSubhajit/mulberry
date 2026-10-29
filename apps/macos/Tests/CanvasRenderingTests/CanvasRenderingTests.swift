@@ -1,3 +1,4 @@
+import CanvasDrawing
 import CanvasRendering
 import Foundation
 import ProductCore
@@ -55,11 +56,26 @@ import Testing
     ) == nil)
 }
 
-@Test func everyCanvasFontResolvesWithoutCrashing() {
-    let resolver = CanvasFontResolver()
+@Test func everyCanvasFontIsRegisteredUnderTheNameIOSUses() {
+    CanvasFonts.registerBundledFonts()
     for font in CanvasTextFont.allCases {
-        #expect(resolver.font(for: font, size: 24).pointSize > 0)
+        #expect(CanvasTextStyle.font(font, size: 24).fontName == CanvasTextStyle.postScriptName(font))
     }
+}
+
+@Test func offscreenRenderingIsTopDownLikeTheView() throws {
+    var state = DrawingState()
+    let stroke = DrawingStroke(
+        id: "top", colorArgb: 0xFF2457D6, width: 0.1, createdAt: 1,
+        points: [DrawingPoint(x: 0.2, y: 0.1), DrawingPoint(x: 0.8, y: 0.1)], finished: true
+    )
+    for operation in try DrawingOperation.restore(stroke) {
+        try state.apply(operation)
+    }
+    let input = CanvasRenderInput(state: state, viewport: CGRect(x: 0, y: 0, width: 100, height: 100), strokeRenderMode: .roundStroke)
+
+    #expect(CanvasOffscreenRenderer.sampleColor(input: input, at: CGPoint(x: 50, y: 10)) != nil)
+    #expect(CanvasOffscreenRenderer.sampleColor(input: input, at: CGPoint(x: 50, y: 90)) == nil)
 }
 
 @Test func strokeRenderModeParsesBackendAndAndroidValues() {
