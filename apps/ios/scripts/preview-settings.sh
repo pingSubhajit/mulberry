@@ -23,7 +23,7 @@ APP_SOURCES=(MulberryDesign CanvasGeometry DoodleRenderer CanvasElementRenderer 
   WallpaperLibrary ProductWallpaperService WallpaperNotifications PairingViews OnboardingViews SettingsViews)
 APP_FILES=(); for name in "${APP_SOURCES[@]}"; do APP_FILES+=("$IOS_ROOT/Sources/App/$name.swift"); done
 xcrun --sdk iphonesimulator swiftc -sdk "$SDK_PATH" -target "$(uname -m)-apple-ios27.0-simulator" -parse-as-library \
-  "$IOS_ROOT"/Sources/ProductCore/*.swift "$IOS_ROOT"/Sources/DeliveryCore/*.swift \
+  "$IOS_ROOT"/../../packages/apple/Sources/ProductCore/*.swift "$IOS_ROOT"/Sources/DeliveryCore/*.swift \
   "${APP_FILES[@]}" \
   "$IOS_ROOT/Tests/SettingsPreview/SettingsPreview.swift" \
   -o "$APP/SettingsPreview" 2>&1 | grep -v "^$" || true

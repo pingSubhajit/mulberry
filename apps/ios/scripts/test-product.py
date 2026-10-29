@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run iOS core tests against an isolated backend with an in-memory database."""
+"""Run the shared ProductCore tests against an isolated backend with an in-memory database."""
 import json
 import os
 from pathlib import Path
@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix='mulberry-contract-') as directory:
             env = dict(os.environ)
             env['MULBERRY_CONTRACT_SERVER'] = json.loads(ready.read_text())['url']
             env.setdefault('DEVELOPER_DIR', '/Applications/Xcode.app/Contents/Developer')
-            subprocess.run(['swift', 'test', '--package-path', str(root / 'apps/ios'), '--filter', 'ProductCoreTests'], env=env, check=True)
+            subprocess.run(['swift', 'test', '--package-path', str(root / 'packages/apple'), '--filter', 'ProductCoreTests'], env=env, check=True)
         finally:
             try:
                 os.killpg(server.pid, signal.SIGTERM)

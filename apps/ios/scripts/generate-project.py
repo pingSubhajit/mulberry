@@ -3,6 +3,7 @@
 from pathlib import Path
 import hashlib
 import json
+import os
 
 root = Path(__file__).resolve().parents[1]
 objects = {}
@@ -24,14 +25,17 @@ def quote(value, depth=0):
         return '(' + ', '.join(quote(v, depth) for v in value) + ')'
     return json.dumps(str(value))
 
+# ProductCore is shared with the Mac app from packages/apple. The app compiles its sources directly,
+# as the preview and check scripts do, rather than linking it as a separate module.
+product_core = root.parent.parent / 'packages/apple/Sources/ProductCore'
+sources = sorted(root.glob('Sources/**/*.swift')) + sorted(product_core.glob('*.swift'))
 # The widget extension draws Live Activities. It shares the activity's attributes and the reaction
 # types with the app, and nothing else.
-sources = sorted(root.glob('Sources/**/*.swift'))
 widget_only = {s for s in sources if s.is_relative_to(root / 'Sources/Widgets')}
-widget_shared = {s for s in sources if s.is_relative_to(root / 'Sources/Shared')} | {root / 'Sources/ProductCore/Reactions.swift'}
+widget_shared = {s for s in sources if s.is_relative_to(root / 'Sources/Shared')} | {product_core / 'Reactions.swift'}
 refs, builds, widget_builds = [], [], []
 for source in sources:
-    relative = str(source.relative_to(root))
+    relative = os.path.relpath(source, root)
     reference = add(relative, isa='PBXFileReference', lastKnownFileType='sourcecode.swift', path=relative, sourceTree='<group>')
     refs.append(reference)
     if source not in widget_only:

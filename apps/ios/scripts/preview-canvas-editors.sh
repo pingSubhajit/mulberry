@@ -19,7 +19,7 @@ PY
 xcrun actool "$IOS_ROOT/Resources/Assets.xcassets" --compile "$APP" --platform iphonesimulator --minimum-deployment-target 27.0 --target-device iphone > /tmp/mulberry-canvas-preview-assets.log 2>&1
 SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 xcrun --sdk iphonesimulator swiftc -sdk "$SDK_PATH" -target "$(uname -m)-apple-ios27.0-simulator" -parse-as-library \
-  "$IOS_ROOT"/Sources/ProductCore/*.swift "$IOS_ROOT/Sources/App/MulberryDesign.swift" \
+  "$IOS_ROOT"/../../packages/apple/Sources/ProductCore/*.swift "$IOS_ROOT/Sources/App/MulberryDesign.swift" \
   "$IOS_ROOT/Sources/App/CanvasGeometry.swift" "$IOS_ROOT/Sources/App/DoodleRenderer.swift" \
   "$IOS_ROOT/Sources/App/CanvasElementRenderer.swift" "$IOS_ROOT/Sources/App/CanvasTextEditorView.swift" \
   "$IOS_ROOT/Sources/App/CanvasEditorChrome.swift" "$IOS_ROOT/Sources/App/CanvasStickerEditorView.swift" \
