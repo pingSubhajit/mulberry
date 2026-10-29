@@ -66,6 +66,9 @@ struct FullAppCanvasEditor: View {
     /// another selection or a resized window settles it again.
     @State private var formatBarAnchor: CGPoint?
     @State private var formatBarEpoch = 0
+    /// Where the eyedropper is over the canvas, for its loupe.
+    @State private var eyedropperLoupe: CGPoint?
+    @State private var colourSampler = ColourSamplerCache()
     /// The title bar's height, which the canvas runs under but does not draw in.
     @State private var titleBarHeight: CGFloat = 52
 
@@ -78,7 +81,11 @@ struct FullAppCanvasEditor: View {
         let canvas: CGSize
         let epoch: Int
     }
-    @State private var stickerSession: CanvasElementSession<CanvasStickerElement>?
+    @State private var selectedStickerID: String?
+    /// The selected sticker while its frame is dragged, resized or rotated, before the change is saved.
+    @State private var stickerPreview: CanvasStickerElement?
+    /// The sticker bar's Replace panel.
+    @State private var replacingSticker = false
     @State private var drag: ElementDrag?
     /// A text or sticker pressed with the eraser: lifting without moving deletes it.
     @State private var elementToErase: (id: String, start: CGPoint)?
@@ -95,26 +102,28 @@ struct FullAppCanvasEditor: View {
         var moved = false
     }
 
-    /// Only the sticker editor covers the canvas; text is edited in place.
-    private var editorOpen: Bool { stickerSession != nil }
     private var userID: String? { appStateController.loadState.bootstrap?.userId }
 
     var body: some View {
         content
-            .overlay { elementEditor }
         .onAppear {
             syncCanvasModel()
             model.handleEscape = { escape() }
             model.finishEditing = { finishTyping(keepSelection: false) }
+            model.stickerPanel = { AnyView(stickerPanel(current: nil) { placeSticker($0, at: nil) }) }
         }
         // Leaving the Text tool finishes any typing and drops the selection, from any toolbar.
         .onChange(of: editor.toolState.activeTool) { _, tool in
+            if tool != .eyedropper { endEyedropperPreview() }
+            if tool != .sticker {
+                selectedStickerID = nil
+                replacingSticker = false
+            }
             guard tool != .text else { return }
             finishTyping(keepSelection: false)
             selectedTextID = nil
         }
         .onChange(of: textEdit != nil) { _, typing in model.isTyping = typing }
-        .onChange(of: stickerSession != nil) { _, editing in model.isEditingSticker = editing }
         .onReceive(syncController.objectWillChange) { _ in
             DispatchQueue.main.async {
                 syncCanvasModel()
@@ -145,8 +154,6 @@ struct FullAppCanvasEditor: View {
                     canvasSurface
                     toolbar(width: proxy.size.width)
                         .padding(.bottom, 14)
-                        .opacity(editorOpen ? 0 : 1)
-                        .disabled(editorOpen)
                 }
             }
             .toolbar {
@@ -154,12 +161,12 @@ struct FullAppCanvasEditor: View {
                     Button(action: model.undo) { Image(systemName: "arrow.uturn.backward") }
                         .keyboardShortcut("z", modifiers: .command)
                         // While typing, ⌘Z belongs to the text.
-                        .disabled(!editor.canUndo || editorOpen || textEdit != nil)
+                        .disabled(!editor.canUndo || textEdit != nil)
                         .help("Undo")
                         .accessibilityLabel("Undo")
                     Button(action: model.redo) { Image(systemName: "arrow.uturn.forward") }
                         .keyboardShortcut("z", modifiers: [.command, .shift])
-                        .disabled(!editor.canRedo || editorOpen || textEdit != nil)
+                        .disabled(!editor.canRedo || textEdit != nil)
                         .help("Redo")
                         .accessibilityLabel("Redo")
                 }
@@ -186,6 +193,11 @@ struct FullAppCanvasEditor: View {
         }
         if selectedTextID != nil {
             selectedTextID = nil
+            return true
+        }
+        if selectedStickerID != nil {
+            selectedStickerID = nil
+            replacingSticker = false
             return true
         }
         if editor.toolState.activeTool == .eyedropper {
@@ -224,6 +236,14 @@ struct FullAppCanvasEditor: View {
                     x: editor.viewportTransform.offset.x,
                     y: editor.viewportTransform.offset.y
                 )
+
+                // Squee waits on the empty canvas, clear of the window's tool row.
+                CanvasBlankStateGuidance(
+                    visible: canvasIsEmpty && textEdit == nil && editingIsEnabled,
+                    footInset: layout == .window ? toolRowClearance(width: proxy.size.width) : 12
+                )
+                .padding(.top, titleBarHeight)
+                .frame(width: proxy.size.width, height: proxy.size.height)
 
                 CanvasInputOverlayView(
                     activeTool: editor.toolState.activeTool,
@@ -267,6 +287,9 @@ struct FullAppCanvasEditor: View {
                     onEyedropper: { point in
                         sampleEyedropper(at: point, surfaceSize: proxy.size)
                     },
+                    onEyedropperHover: { point in
+                        previewEyedropper(at: point, surfaceSize: proxy.size)
+                    },
                     onCancel: {
                         if editor.toolState.activeTool == .eyedropper {
                             editor.toolState.setActiveTool(editor.toolState.previousTool)
@@ -277,6 +300,14 @@ struct FullAppCanvasEditor: View {
                 .padding(.top, titleBarHeight)
 
                 textLayers(canvasSize: proxy.size)
+                stickerLayers(canvasSize: proxy.size)
+
+                if let loupe = eyedropperLoupe, let colour = model.eyedropperPreview {
+                    EyedropperLoupe(colour: colour)
+                        .position(loupePosition(loupe, in: proxy.size))
+                        .allowsHitTesting(false)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                }
 
                 if editingIsEnabled == false {
                     Text(editingDisabledMessage)
@@ -291,6 +322,12 @@ struct FullAppCanvasEditor: View {
                 }
             }
             .coordinateSpace(name: CanvasSpace.name)
+            // A sticker dragged from the panel lands where it is dropped.
+            .dropDestination(for: String.self) { items, location in
+                guard editingIsEnabled, let sticker = items.lazy.compactMap(StickerDragPayload.sticker).first else { return false }
+                placeSticker(sticker, at: normalized(location, canvasSize: proxy.size))
+                return true
+            }
             // The canvas keeps its 9:20 geometry from the window's top, cropped under the title bar.
             .mask(alignment: .top) {
                 VStack(spacing: 0) {
@@ -334,7 +371,7 @@ struct FullAppCanvasEditor: View {
                 HStack(spacing: 0) {
                     ForEach(CanvasToolSlot.allCases) { slot in
                         if slot != .brush { Spacer(minLength: 4) }
-                        CanvasToolButton(slot, model: model, size: size, canvasIsEmpty: canvasIsEmpty)
+                        CanvasToolSlotButton(slot: slot, model: model, size: size, canvasIsEmpty: canvasIsEmpty, panelEdge: .top)
                     }
                 }
                 .padding(8)
@@ -343,6 +380,12 @@ struct FullAppCanvasEditor: View {
             .frame(maxWidth: 6 * size + 5 * 10 + 16)
         }
         .disabled(!editingIsEnabled)
+    }
+
+    /// The height the window's tool row takes from the canvas's foot, with a little air above it.
+    private func toolRowClearance(width: CGFloat) -> CGFloat {
+        let size = min(52, max(32, (width - 56) / 6.9))
+        return size + 16 + 14 + 12
     }
 
     private var tool: CanvasEditingTool { editor.toolState.activeTool }
@@ -392,48 +435,55 @@ struct FullAppCanvasEditor: View {
     }
 
     private func sampleEyedropper(at renderedPoint: CGPoint, surfaceSize: CGSize) {
-        let contentPoint = editor.viewportTransform.contentPoint(fromRenderedPoint: renderedPoint)
-        guard let color = CanvasOffscreenRenderer.sampleColor(
-            input: CanvasRenderInput(
-                state: syncController.drawing,
+        guard let color = sampledColour(at: renderedPoint, surfaceSize: surfaceSize) else { return }
+        editor.toolState.commitEyedropperColor(color)
+        endEyedropperPreview()
+        Haptics.select()
+    }
+
+    /// As the eyedropper moves: the colour under it on the buttons, and in a loupe beside it.
+    private func previewEyedropper(at renderedPoint: CGPoint?, surfaceSize: CGSize) {
+        guard let renderedPoint, editor.toolState.activeTool == .eyedropper else { return endEyedropperPreview() }
+        model.eyedropperPreview = sampledColour(at: renderedPoint, surfaceSize: surfaceSize)
+        withAnimation(.easeOut(duration: 0.12)) { eyedropperLoupe = renderedPoint }
+    }
+
+    private func endEyedropperPreview() {
+        if model.eyedropperPreview != nil { model.eyedropperPreview = nil }
+        if eyedropperLoupe != nil { withAnimation(.easeOut(duration: 0.12)) { eyedropperLoupe = nil } }
+    }
+
+    /// The colour under a point, read from the canvas drawn once offscreen until it changes.
+    private func sampledColour(at renderedPoint: CGPoint, surfaceSize: CGSize) -> UInt32? {
+        let key = ColourSamplerCache.Key(
+            state: syncController.drawing,
+            size: surfaceSize,
+            mode: canvasModel.strokeRenderMode,
+            stickers: stickerLoader.images.count
+        )
+        if colourSampler.key != key {
+            colourSampler.key = key
+            colourSampler.sampler = CanvasColourSampler(input: CanvasRenderInput(
+                state: key.state,
                 viewport: CGRect(origin: .zero, size: surfaceSize),
-                strokeRenderMode: canvasModel.strokeRenderMode,
+                strokeRenderMode: key.mode,
                 surface: .fullApp,
                 showsEditingBackground: false,
                 stickerImages: stickerLoader.images
-            ),
-            at: contentPoint
-        ) else {
-            return
+            ))
         }
-        editor.toolState.commitEyedropperColor(color)
+        return colourSampler.sampler?.colour(at: editor.viewportTransform.contentPoint(fromRenderedPoint: renderedPoint))
+    }
+
+    /// Up and to the left of the eyedropper's tip, clear of its glyph, kept on the canvas.
+    private func loupePosition(_ point: CGPoint, in size: CGSize) -> CGPoint {
+        let offset: CGFloat = 34
+        let x = point.x - offset < 24 ? point.x + offset : point.x - offset
+        let y = point.y - offset < titleBarHeight + 24 ? point.y + offset : point.y - offset
+        return CGPoint(x: min(max(x, 24), size.width - 24), y: y)
     }
 
     // MARK: Text and stickers
-
-    @ViewBuilder private var elementEditor: some View {
-        if let session = stickerSession, let userID {
-            CanvasStickerEditorOverlay(
-                session: session,
-                catalog: stickerLoader.catalog(user: userID),
-                user: userID,
-                store: stickerLoader.store,
-                onDone: { element in
-                    stickerSession = nil
-                    if !element.sticker.stickerId.isEmpty { stickerLoader.catalog(user: userID).use(element.sticker) }
-                    submit(editor.commit(.sticker(element), isNew: session.isNew, in: syncController.drawing))
-                    syncCanvasModel()
-                },
-                onCancel: { stickerSession = nil; syncCanvasModel() },
-                onDelete: {
-                    stickerSession = nil
-                    if !session.isNew { submit(editor.delete(elementID: session.element.id, in: syncController.drawing)) }
-                    syncCanvasModel()
-                }
-            )
-            .id(session.element.id)
-        }
-    }
 
     private func normalized(_ renderedPoint: CGPoint, canvasSize: CGSize) -> DrawingPoint {
         editor.viewportTransform.normalizedPoint(fromRenderedPoint: renderedPoint, surfaceSize: canvasSize)
@@ -450,10 +500,9 @@ struct FullAppCanvasEditor: View {
     }
 
     /// Text tool: clicking away from the text being typed finishes it; pressing a text selects it
-    /// and starts moving it; pressing empty canvas starts typing there. Stickers tool: pressing a
-    /// sticker starts moving it; pressing empty canvas places a new one.
+    /// and starts moving it; pressing empty canvas starts typing there. Sticker tool: pressing a
+    /// sticker selects it and starts moving it; pressing empty canvas deselects.
     private func elementDown(at point: CGPoint, canvasSize: CGSize) {
-        guard !editorOpen else { return }
         if editor.toolState.activeTool == .text {
             if textEdit != nil {
                 finishTyping(keepSelection: false)
@@ -471,17 +520,15 @@ struct FullAppCanvasEditor: View {
             )
             return
         }
+        guard editor.toolState.activeTool == .sticker else { return }
+        model.stickerPanelOpen = false
+        replacingSticker = false
         if let hit = element(at: point, canvasSize: canvasSize, where: { $0.sticker != nil }) {
+            selectedStickerID = hit.id
             drag = ElementDrag(original: hit, start: point, current: hit)
             return
         }
-        guard editor.toolState.activeTool == .sticker, let userID else { return }
-        let sticker = stickerLoader.catalog(user: userID).defaultSticker ?? StickerReference(packKey: "", packVersion: 0, stickerId: "")
-        stickerSession = CanvasElementSession(
-            element: CanvasStickerElement(center: normalized(point, canvasSize: canvasSize), sticker: sticker),
-            isNew: true
-        )
-        syncCanvasModel()
+        selectedStickerID = nil
     }
 
     private func elementDragged(to point: CGPoint, canvasSize: CGSize) {
@@ -496,22 +543,23 @@ struct FullAppCanvasEditor: View {
         )
         drag.current = moved
         self.drag = drag
-        // A text dragged straight away takes its frame and format bar with it.
-        if case let .text(text) = moved { textPreview = text }
+        // An element dragged straight away takes its frame and bar with it.
+        switch moved {
+        case let .text(text): textPreview = text
+        case let .sticker(sticker): stickerPreview = sticker
+        }
         syncCanvasModel()
     }
 
-    /// A drag saves the new position. A click without moving leaves text selected and opens a
-    /// sticker's editor.
+    /// A drag saves the new position. A click without moving leaves the element selected.
     private func elementReleased() {
         guard let drag else { return }
         self.drag = nil
         textPreview = nil
+        stickerPreview = nil
         formatBarEpoch += 1
         if drag.moved {
             submit(editor.update(drag.current, in: syncController.drawing))
-        } else if case .sticker = drag.original {
-            open(drag.original)
         }
         focusRequest += 1
         syncCanvasModel()
@@ -556,22 +604,18 @@ struct FullAppCanvasEditor: View {
         submit(operations)
     }
 
-    /// Double-clicking an element edits it with any tool.
+    /// Double-clicking an element with any tool edits a text's words, or selects a sticker with
+    /// its Replace panel open.
     private func editElement(at point: CGPoint, canvasSize: CGSize) -> Bool {
-        guard !editorOpen, let hit = element(at: point, canvasSize: canvasSize) else { return false }
-        open(hit)
-        return true
-    }
-
-    private func open(_ element: CanvasElement) {
-        switch element {
+        guard let hit = element(at: point, canvasSize: canvasSize) else { return false }
+        switch hit {
         case let .text(text):
             beginTyping(text)
-            return
         case let .sticker(sticker):
-            stickerSession = CanvasElementSession(element: sticker, isNew: false)
+            selectSticker(sticker.id)
+            replacingSticker = true
         }
-        syncCanvasModel()
+        return true
     }
 
     // MARK: Pointer
@@ -621,11 +665,12 @@ struct FullAppCanvasEditor: View {
             }
             .id(edit.element.id)
         } else if let selected = selectedText {
-            TextSelectionFrame(
+            ElementSelectionFrame(
                 geometry: textGeometry(textPreview ?? selected, canvasSize: canvasSize),
                 original: selected,
                 canvasSize: canvasSize,
                 zoom: zoom,
+                label: "Selected text: \(selected.text)",
                 onChange: { changed in
                     textPreview = changed
                     syncCanvasModel()
@@ -643,11 +688,13 @@ struct FullAppCanvasEditor: View {
         if let target = textEdit?.element ?? textPreview ?? selectedText {
             let geometry = textGeometry(target, canvasSize: canvasSize)
             let natural = formatBarPosition(geometry, canvasSize: canvasSize)
-            TextFormatBar(element: target, onChange: applyFormat, onDelete: deleteText)
-                // Never wider than the canvas; the bar picks the width that fits.
-                .frame(maxWidth: canvasSize.width - 16)
-                .onGeometryChange(for: CGSize.self) { $0.size } action: { formatBarSize = $0 }
-                .position(anchoredFormatBar(natural: natural, geometry: geometry))
+            // In its own panel over the window, so it shows whole even past the canvas's edge.
+            FloatingBar {
+                TextFormatBar(element: target, onChange: applyFormat, onDelete: deleteText)
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { formatBarSize = $0 }
+            }
+            .frame(width: 1, height: 1)
+            .position(anchoredFormatBar(natural: natural, geometry: geometry))
                 .onChange(of: FormatBarPlacement(
                     id: target.id, center: target.center, rotation: target.rotationRad,
                     zoom: zoom, offset: offset, canvas: canvasSize, epoch: formatBarEpoch
@@ -657,9 +704,173 @@ struct FullAppCanvasEditor: View {
         }
     }
 
+    // MARK: Sticker tool
+
+    private var selectedSticker: CanvasStickerElement? {
+        guard let selectedStickerID else { return nil }
+        return syncController.drawing.canvasElements.first { $0.id == selectedStickerID }?.sticker
+    }
+
+    /// The selected sticker as it looks right now: mid-drag, mid-resize, or as saved.
+    private var shownSticker: CanvasStickerElement? {
+        if let drag, drag.moved, case let .sticker(sticker) = drag.current, sticker.id == selectedStickerID { return sticker }
+        return stickerPreview ?? selectedSticker
+    }
+
+    @ViewBuilder private func stickerLayers(canvasSize: CGSize) -> some View {
+        if let selected = selectedSticker, let shown = shownSticker, textEdit == nil {
+            let geometry = stickerGeometry(shown, canvasSize: canvasSize)
+            ElementSelectionFrame(
+                geometry: geometry,
+                original: selected,
+                canvasSize: canvasSize,
+                zoom: editor.viewportTransform.scale,
+                label: "Selected sticker",
+                onChange: { changed in
+                    stickerPreview = changed
+                    syncCanvasModel()
+                },
+                onCommit: { changed in
+                    stickerPreview = nil
+                    submit(editor.update(.sticker(changed), in: syncController.drawing))
+                    formatBarEpoch += 1
+                    focusRequest += 1
+                    syncCanvasModel()
+                },
+                onEdit: { replacingSticker = true }
+            )
+            let natural = formatBarPosition(geometry, canvasSize: canvasSize)
+            FloatingBar {
+                StickerBar(
+                    sticker: shown,
+                    panel: { current, pick in AnyView(stickerPanel(current: current, pick: pick)) },
+                    replacing: $replacingSticker,
+                    onReplace: { reference in replace(selected, with: reference) },
+                    onStraighten: { straighten(selected) },
+                    onDuplicate: { duplicate(selected) },
+                    onDelete: { deleteSticker(selected) }
+                )
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { formatBarSize = $0 }
+            }
+            .frame(width: 1, height: 1)
+            .position(anchoredFormatBar(natural: natural, geometry: geometry))
+            .onChange(of: FormatBarPlacement(
+                id: shown.id, center: shown.center, rotation: shown.rotationRad,
+                zoom: editor.viewportTransform.scale, offset: editor.viewportTransform.offset, canvas: canvasSize, epoch: formatBarEpoch
+            ), initial: true) {
+                formatBarAnchor = natural
+            }
+        }
+    }
+
+    /// The sticker panel, for placing a new sticker or replacing the selected one's artwork.
+    @ViewBuilder private func stickerPanel(current: StickerReference?, pick: @escaping (StickerReference) -> Void) -> some View {
+        if let userID {
+            StickerPickerPanel(catalog: stickerLoader.catalog(user: userID), user: userID, store: stickerLoader.store, current: current, onPick: pick)
+        }
+    }
+
+    /// Where a sticker sits on screen, at its drawn size.
+    private func stickerGeometry(_ sticker: CanvasStickerElement, canvasSize: CGSize) -> ElementFrameGeometry {
+        let zoom = editor.viewportTransform.scale
+        let offset = editor.viewportTransform.offset
+        let size = CanvasStickerGeometry.size(sticker, image: stickerLoader.images[sticker.sticker], canvasWidth: canvasSize.width)
+        let width = size.width * zoom, height = size.height * zoom
+        return ElementFrameGeometry(
+            center: CGPoint(x: sticker.center.x * canvasSize.width * zoom + offset.x, y: sticker.center.y * canvasSize.height * zoom + offset.y),
+            body: CGRect(x: -width / 2, y: -height / 2, width: width, height: height),
+            angle: sticker.rotationRad
+        )
+    }
+
+    /// A new sticker: in the middle of the canvas from a click in the panel, or where it was
+    /// dropped. It arrives selected, with the Sticker tool chosen.
+    private func placeSticker(_ reference: StickerReference, at center: DrawingPoint?) {
+        let sticker = CanvasStickerElement(center: center ?? DrawingPoint(x: 0.5, y: 0.5), sticker: reference)
+        submit(editor.commit(.sticker(sticker), isNew: true, in: syncController.drawing))
+        if let userID { stickerLoader.catalog(user: userID).use(reference) }
+        finishTyping(keepSelection: false)
+        selectedTextID = nil
+        if editor.toolState.activeTool != .sticker { editor.toolState.setActiveTool(.sticker) }
+        model.stickerPanelOpen = false
+        selectSticker(sticker.id)
+        Haptics.select()
+    }
+
+    private func selectSticker(_ id: String) {
+        if editor.toolState.activeTool != .sticker { editor.toolState.setActiveTool(.sticker) }
+        selectedStickerID = id
+        formatBarEpoch += 1
+        focusRequest += 1
+        syncCanvasModel()
+    }
+
+    /// New artwork in the same place, at the same size and angle.
+    private func replace(_ sticker: CanvasStickerElement, with reference: StickerReference) {
+        var replaced = sticker
+        replaced.sticker = reference
+        submit(editor.update(.sticker(replaced), in: syncController.drawing))
+        if let userID { stickerLoader.catalog(user: userID).use(reference) }
+        focusRequest += 1
+        Haptics.select()
+    }
+
+    private func straighten(_ sticker: CanvasStickerElement) {
+        var level = sticker
+        level.rotationRad = 0
+        submit(editor.update(.sticker(level), in: syncController.drawing))
+        formatBarEpoch += 1
+        focusRequest += 1
+    }
+
+    /// A copy a little down and to the right, selected, as Figma's duplicate.
+    private func duplicate(_ sticker: CanvasStickerElement) {
+        let copy = CanvasStickerElement(
+            center: DrawingPoint(x: min(1, sticker.center.x + 0.04), y: min(1, sticker.center.y + 0.025)),
+            rotationRad: sticker.rotationRad,
+            scale: sticker.scale,
+            sticker: sticker.sticker
+        )
+        submit(editor.commit(.sticker(copy), isNew: true, in: syncController.drawing))
+        selectSticker(copy.id)
+    }
+
+    private func deleteSticker(_ sticker: CanvasStickerElement) {
+        submit(editor.delete(elementID: sticker.id, in: syncController.drawing))
+        selectedStickerID = nil
+        replacingSticker = false
+        focusRequest += 1
+        syncCanvasModel()
+    }
+
+    private func handleStickerKey(_ key: CanvasKey, sticker: CanvasStickerElement, canvasSize: CGSize) -> Bool {
+        switch key {
+        case .delete:
+            deleteSticker(sticker)
+        case .return:
+            replacingSticker = true
+        case .duplicate:
+            duplicate(sticker)
+        case .escape:
+            selectedStickerID = nil
+            replacingSticker = false
+        case let .arrow(dx, dy):
+            let zoom = editor.viewportTransform.scale
+            var moved = sticker
+            moved.center = DrawingPoint(
+                x: min(1, max(0, sticker.center.x + dx / (canvasSize.width * zoom))),
+                y: min(1, max(0, sticker.center.y + dy / (canvasSize.height * zoom)))
+            )
+            submit(editor.update(.sticker(moved), in: syncController.drawing))
+        case .undo, .redo, .clearCanvas, .tool:
+            return false
+        }
+        return true
+    }
+
     /// Where a text sits on screen. Text with nothing typed yet takes the
     /// height of one line at its wrap width.
-    private func textGeometry(_ text: CanvasTextElement, canvasSize: CGSize) -> TextFrameGeometry {
+    private func textGeometry(_ text: CanvasTextElement, canvasSize: CGSize) -> ElementFrameGeometry {
         let layout = elementRenderer.layout(for: text, canvasWidth: canvasSize.width)
         let zoom = editor.viewportTransform.scale
         let offset = editor.viewportTransform.offset
@@ -669,7 +880,7 @@ struct FullAppCanvasEditor: View {
             let height = CanvasTextStyle.baseSize * 1.3
             body = CGRect(x: -layout.size.width / 2, y: -height / 2, width: layout.size.width, height: height)
         }
-        return TextFrameGeometry(
+        return ElementFrameGeometry(
             center: CGPoint(x: text.center.x * canvasSize.width * zoom + offset.x, y: text.center.y * canvasSize.height * zoom + offset.y),
             body: CGRect(x: body.minX * scale, y: body.minY * scale, width: body.width * scale, height: body.height * scale),
             angle: text.rotationRad
@@ -678,7 +889,7 @@ struct FullAppCanvasEditor: View {
 
     /// The settled position. It moves only when the text would otherwise touch it, and then only
     /// as far as the text needs: style changes that keep clear of it never move it.
-    private func anchoredFormatBar(natural: CGPoint, geometry: TextFrameGeometry) -> CGPoint {
+    private func anchoredFormatBar(natural: CGPoint, geometry: ElementFrameGeometry) -> CGPoint {
         guard let anchor = formatBarAnchor else { return natural }
         let bounds = geometry.bounds
         let half = formatBarSize.height / 2
@@ -696,10 +907,12 @@ struct FullAppCanvasEditor: View {
     }
 
     /// Above the text, clear of the frame's rotate knob, or below it near the top of the window.
-    private func formatBarPosition(_ geometry: TextFrameGeometry, canvasSize: CGSize) -> CGPoint {
+    private func formatBarPosition(_ geometry: ElementFrameGeometry, canvasSize: CGSize) -> CGPoint {
         let bounds = geometry.bounds
         let half = formatBarSize.width / 2, height = formatBarSize.height
-        let x = min(max(bounds.midX, half + 8), max(half + 8, canvasSize.width - half - 8))
+        let x = formatBarSize.width + 16 > canvasSize.width
+            ? bounds.midX
+            : min(max(bounds.midX, half + 8), canvasSize.width - half - 8)
         let clearance: CGFloat = textEdit == nil ? 44 : 28
         let above = bounds.minY - clearance - height / 2
         // The window toolbar covers the canvas's top 60 points; the overlay has none.
@@ -709,7 +922,6 @@ struct FullAppCanvasEditor: View {
     }
 
     private func beginTyping(_ text: CanvasTextElement) {
-        guard !editorOpen else { return }
         editor.toolState.setActiveTool(.text)
         selectedTextID = text.id
         textEdit = CanvasElementSession(element: text, isNew: false)
@@ -751,10 +963,11 @@ struct FullAppCanvasEditor: View {
         syncCanvasModel()
     }
 
-    /// Delete removes the selected text, Return edits it, Esc deselects it, and the arrow keys
-    /// nudge it by a point, or ten with Shift.
+    /// Delete removes the selected text or sticker, Return edits the text's words or opens the
+    /// sticker's Replace panel, Command-D duplicates a sticker, Esc deselects, and the arrow keys
+    /// nudge by a point, or ten with Shift.
     private func handleKey(_ key: CanvasKey, canvasSize: CGSize) -> Bool {
-        guard !editorOpen, textEdit == nil else { return false }
+        guard textEdit == nil else { return false }
         switch key {
         case .undo:
             if editor.canUndo { model.undo() }
@@ -769,14 +982,18 @@ struct FullAppCanvasEditor: View {
             // Asks first, as the toolbar's Clear canvas does.
             if !canvasIsEmpty { model.engine.requestClearCanvas() }
             return true
-        case .delete, .return, .escape, .arrow:
+        case .delete, .return, .escape, .arrow, .duplicate:
             break
+        }
+        if let sticker = selectedSticker {
+            return handleStickerKey(key, sticker: sticker, canvasSize: canvasSize)
         }
         guard let selected = selectedText else { return false }
         switch key {
         case .delete:
             deleteText()
-        case .return:
+        case .return, .duplicate:
+            guard key == .return else { return false }
             beginTyping(selected)
         case .escape:
             selectedTextID = nil
@@ -802,8 +1019,11 @@ struct FullAppCanvasEditor: View {
         if let textPreview {
             try? state.apply(.update(.text(textPreview)))
         }
-        // Text being typed and an open sticker editor show the element themselves.
-        if let editing = textEdit.map({ CanvasElement.text($0.element) }) ?? stickerSession.map({ CanvasElement.sticker($0.element) }),
+        if let stickerPreview {
+            try? state.apply(.update(.sticker(stickerPreview)))
+        }
+        // Text being typed shows itself.
+        if let editing = textEdit.map({ CanvasElement.text($0.element) }),
            state.canvasElements.contains(where: { $0.id == editing.id }) {
             try? state.apply(.delete(editing))
         }
@@ -833,6 +1053,7 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
     var onDoubleClick: (CGPoint) -> Bool
     var onKey: (CanvasKey) -> Bool
     var onEyedropper: (CGPoint) -> Void
+    var onEyedropperHover: (CGPoint?) -> Void
     var onCancel: () -> Void
 
     func makeNSView(context: Context) -> InputView {
@@ -866,6 +1087,7 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
             onDoubleClick: onDoubleClick,
             onKey: onKey,
             onEyedropper: onEyedropper,
+            onEyedropperHover: onEyedropperHover,
             onCancel: onCancel
         )
     }
@@ -891,6 +1113,8 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
             var onDoubleClick: (CGPoint) -> Bool = { _ in false }
             var onKey: (CanvasKey) -> Bool = { _ in false }
             var onEyedropper: (CGPoint) -> Void = { _ in }
+            /// The pointer over the canvas with the eyedropper, or nil once it leaves.
+            var onEyedropperHover: (CGPoint?) -> Void = { _ in }
             var onCancel: () -> Void = {}
         }
 
@@ -946,10 +1170,13 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
 
         override func mouseMoved(with event: NSEvent) {
             updateCursor(at: event.locationInWindow)
+            guard configuration.activeTool == .eyedropper, configuration.editingIsEnabled else { return }
+            configuration.onEyedropperHover(appliedCursor != nil ? canvasPoint(event) : nil)
         }
 
         override func mouseExited(with event: NSEvent) {
             releaseCursor()
+            configuration.onEyedropperHover(nil)
         }
 
         /// A new tool, width or selection changes the pointer without the pointer moving.
@@ -1109,10 +1336,10 @@ enum ToolbarArtwork {
 
 /// The canvas's keyboard, the same in the window and in Quick Draw. The canvas only has the
 /// keyboard when no text is being typed, so single letters never fire mid-sentence.
-enum CanvasKey {
+enum CanvasKey: Equatable {
     case delete, `return`, escape
     case arrow(dx: CGFloat, dy: CGFloat)
-    case undo, redo, clearCanvas
+    case undo, redo, clearCanvas, duplicate
     case tool(CanvasEditingTool)
 
     init?(_ event: NSEvent) {
@@ -1121,6 +1348,10 @@ enum CanvasKey {
         if modifiers.contains(.command) {
             if event.keyCode == 51, modifiers.subtracting([.command, .function]).isEmpty {
                 self = .clearCanvas
+                return
+            }
+            if event.charactersIgnoringModifiers?.lowercased() == "d", modifiers.subtracting([.command]).isEmpty {
+                self = .duplicate
                 return
             }
             guard event.charactersIgnoringModifiers?.lowercased() == "z" else { return nil }
@@ -1208,5 +1439,35 @@ enum CanvasCursors {
             rect.fill(using: .sourceAtop)
             return true
         }
+    }
+}
+
+/// The canvas drawn once for the eyedropper, kept until the drawing, size or artwork changes.
+@MainActor
+final class ColourSamplerCache {
+    struct Key: Equatable {
+        let state: DrawingState
+        let size: CGSize
+        let mode: CanvasStrokeRenderMode
+        let stickers: Int
+    }
+
+    var key: Key?
+    var sampler: CanvasColourSampler?
+}
+
+/// The colour under the eyedropper, in a ringed circle beside it, as the iPhone's loupe.
+private struct EyedropperLoupe: View {
+    let colour: UInt32
+
+    var body: some View {
+        Circle()
+            .fill(Color(argb: colour))
+            .frame(width: 40, height: 40)
+            .overlay(Circle().strokeBorder(.white, lineWidth: 3))
+            .overlay(Circle().strokeBorder(.black.opacity(0.15), lineWidth: 0.5).padding(-0.5))
+            .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+            .animation(.easeOut(duration: 0.08), value: colour)
+            .accessibilityHidden(true)
     }
 }

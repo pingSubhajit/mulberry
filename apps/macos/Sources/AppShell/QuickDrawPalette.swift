@@ -52,7 +52,7 @@ struct QuickDrawPalette: View {
             }
             VStack(spacing: size * 0.18) {
                 ForEach(CanvasToolSlot.allCases) { slot in
-                    CanvasToolButton(slot, model: model, size: size, canvasIsEmpty: canvasIsEmpty)
+                    CanvasToolSlotButton(slot: slot, model: model, size: size, canvasIsEmpty: canvasIsEmpty, panelEdge: towardCanvas)
                 }
             }
             doneButton(size)

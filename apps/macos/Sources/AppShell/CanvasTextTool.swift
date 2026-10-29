@@ -8,9 +8,20 @@ import SwiftUI
 // and type in place; a frame moves, resizes and rotates the selected text; a floating bar sets
 // its style. What is typed is laid out by TextKit exactly as the shared renderer draws it.
 
-/// Where a text element sits on screen: its centre, its visible body around that centre before
-/// rotation (already scaled to screen points), and its rotation.
-struct TextFrameGeometry: Equatable {
+/// What the selection frame can move, resize and rotate: text and stickers alike.
+protocol CanvasTransformable: Equatable {
+    var center: DrawingPoint { get set }
+    var scale: Double { get set }
+    var rotationRad: Double { get set }
+    static var scaleRange: ClosedRange<Double> { get }
+}
+
+extension CanvasTextElement: CanvasTransformable {}
+extension CanvasStickerElement: CanvasTransformable {}
+
+/// Where a text or sticker sits on screen: its centre, its visible body around that centre
+/// before rotation (already scaled to screen points), and its rotation.
+struct ElementFrameGeometry: Equatable {
     var center: CGPoint
     var body: CGRect
     var angle: Double
@@ -225,19 +236,22 @@ final class InlineTextContainer: NSView {
 
 // MARK: Selection frame
 
-/// The selected text's frame: drag inside to move, a corner to resize, the knob above to rotate
-/// (Shift snaps to 15°), double-click to edit the words.
-struct TextSelectionFrame: View {
-    let geometry: TextFrameGeometry
-    let original: CanvasTextElement
+/// The selected text's or sticker's frame, as in Figma: drag inside to move, a corner to resize,
+/// the knob above to rotate (Shift snaps to 15°), double-click to edit the words or swap the
+/// sticker.
+struct ElementSelectionFrame<Element: CanvasTransformable>: View {
+    let geometry: ElementFrameGeometry
+    let original: Element
     let canvasSize: CGSize
     let zoom: CGFloat
-    let onChange: (CanvasTextElement) -> Void
-    let onCommit: (CanvasTextElement) -> Void
+    /// What VoiceOver calls the selection.
+    let label: String
+    let onChange: (Element) -> Void
+    let onCommit: (Element) -> Void
     let onEdit: () -> Void
 
-    @State private var start: CanvasTextElement?
-    @State private var latest: CanvasTextElement?
+    @State private var start: Element?
+    @State private var latest: Element?
 
     private let handle: CGFloat = 8
     private let rotateReach: CGFloat = 22
@@ -274,7 +288,7 @@ struct TextSelectionFrame: View {
         .rotationEffect(.radians(geometry.angle))
         .position(geometry.bodyCenter)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Selected text: \(original.text)")
+        .accessibilityLabel(label)
     }
 
     private var square: some View {
@@ -311,8 +325,8 @@ struct TextSelectionFrame: View {
                 let now = hypot(drag.location.x - center.x, drag.location.y - center.y)
                 guard before > 1 else { return }
                 var resized = from
-                resized.scale = min(CanvasTextElement.scaleRange.upperBound,
-                                    max(CanvasTextElement.scaleRange.lowerBound, from.scale * now / before))
+                resized.scale = min(Element.scaleRange.upperBound,
+                                    max(Element.scaleRange.lowerBound, from.scale * now / before))
                 update(resized)
             }
             .onEnded { _ in finish() }
@@ -338,7 +352,7 @@ struct TextSelectionFrame: View {
             .onEnded { _ in finish() }
     }
 
-    private func update(_ element: CanvasTextElement) {
+    private func update(_ element: Element) {
         latest = element
         onChange(element)
     }
@@ -523,7 +537,7 @@ struct TextFormatBar: View {
 
 /// The format bar's button: an icon in a 28-point square, softly filled on hover and filled
 /// more firmly when its option is on. Neutral, never the system's blue.
-private struct FormatButton: View {
+struct FormatButton: View {
     let title: String
     let symbol: String
     var selected = false
@@ -547,7 +561,7 @@ private struct FormatButton: View {
     }
 }
 
-private struct FormatSurface<Content: View>: View {
+struct FormatSurface<Content: View>: View {
     var selected = false
     @ViewBuilder let content: Content
     @State private var hovering = false

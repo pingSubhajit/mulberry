@@ -289,7 +289,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     }
 
     public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard let model = activeCanvasModel, !model.isTyping, !model.isEditingSticker else {
+        guard let model = activeCanvasModel, !model.isTyping else {
             return ![#selector(undo(_:)), #selector(redo(_:)), #selector(clearCanvas(_:))].contains(menuItem.action)
         }
         switch menuItem.action {

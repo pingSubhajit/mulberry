@@ -10,8 +10,13 @@ final class CanvasEditorModel: ObservableObject {
     @Published var engine = CanvasStrokeEditingEngine()
     /// Text is being typed in place: ⌘Z belongs to the text.
     @Published var isTyping = false
-    /// A sticker's editor is open over the canvas, which waits until it closes.
-    @Published var isEditingSticker = false
+    /// The sticker panel beside the Sticker tool's button.
+    @Published var stickerPanelOpen = false
+    /// Set by the canvas: the sticker panel's contents, which place what is picked.
+    var stickerPanel: () -> AnyView = { AnyView(EmptyView()) }
+    /// The colour under the eyedropper before a click picks it, shown on the colour and width
+    /// buttons as the iPhone shows it while a finger slides.
+    @Published var eyedropperPreview: UInt32?
     /// Set by the canvas: Esc finishes typing, deselects, or leaves the eyedropper. False when
     /// there was nothing to cancel.
     var handleEscape: () -> Bool = { false }
@@ -26,7 +31,13 @@ final class CanvasEditorModel: ObservableObject {
 
     var tool: CanvasEditingTool { engine.toolState.activeTool }
 
+    /// Choosing the Sticker tool opens its panel; choosing it again closes it.
     func select(_ tool: CanvasEditingTool) {
+        if tool == .sticker {
+            stickerPanelOpen = engine.toolState.activeTool == .sticker ? !stickerPanelOpen : true
+        } else {
+            stickerPanelOpen = false
+        }
         engine.toolState.setActiveTool(tool)
     }
 
@@ -166,17 +177,19 @@ struct CanvasColourButton: View {
 
     var body: some View {
         Button { open = true } label: {
-            ColourPaletteIcon(color: model.engine.toolState.selectedColorArgb, size: size * 0.62)
+            ColourPaletteIcon(color: model.eyedropperPreview ?? model.engine.toolState.selectedColorArgb, size: size * 0.62)
                 .frame(width: size, height: size)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .glassEffect(glass.interactive(), in: .circle)
-        .help("Colour")
+        .help("Colour: \(ColourNames.name(model.engine.toolState.selectedColorArgb))")
         .accessibilityLabel("Colour palette")
+        .accessibilityValue(ColourNames.name(model.engine.toolState.selectedColorArgb))
         .popover(isPresented: $open, arrowEdge: arrowEdge) {
             PaletteColourPicker(palette: CanvasEditingDefaults.palette, selected: model.engine.toolState.selectedColorArgb) { colour in
                 model.engine.toolState.setSelectedColor(colour)
+                Haptics.select()
                 open = false
             }
         }
@@ -196,7 +209,7 @@ struct CanvasWidthButton: View {
         let width = CGFloat(model.engine.toolState.selectedBrushWidthPx)
         let dot = size * (0.15 + 0.55 * (width - CGFloat(range.lowerBound)) / CGFloat(range.upperBound - range.lowerBound))
         Button { open = true } label: {
-            Circle().fill(Color(argb: model.engine.toolState.brushColorArgb))
+            Circle().fill(Color(argb: model.eyedropperPreview ?? model.engine.toolState.brushColorArgb))
                 .frame(width: dot, height: dot)
                 .frame(width: size, height: size)
                 .contentShape(Circle())
