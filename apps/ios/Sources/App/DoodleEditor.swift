@@ -77,6 +77,9 @@ final class DoodleEditor: ObservableObject {
     private(set) var previousTool: DoodleTool = .brush
     /// A double-tap or squeeze asking the canvas to show something.
     @Published var pencilRequest: PencilRequest?
+    /// The colour under the eyedropper while it is held or dragged. It is chosen when the finger
+    /// lifts, as on Android.
+    @Published private(set) var eyedropperPreview: UInt32?
     /// A finger held still on the phone's canvas, asking for the reactions there.
     @Published var reactionRequest: ReactionRequest?
     /// The held finger after the reactions open, so sliding onto one and letting go sends it.
@@ -166,19 +169,17 @@ final class DoodleEditor: ObservableObject {
             } catch { errorMessage = error.localizedDescription }
             receive()
         case .eraser: erase(at: point, size: size)
-        case .eyedropper:
-            // The canvas is transparent, so an empty spot shows the screen behind it.
-            let background = UIColor(MulberryDesign.background)
-            if let sampled = DoodleRenderer.color(at: point, strokes: strokes, elements: elements, stickerImages: stickerImages,
-                                                  dry: model.bootstrap?.canvasStrokeRenderMode == "dry", size: size, background: background) {
-                color = sampled; textColor = sampled; tool = .brush
-            }
+        case .eyedropper: eyedropperPreview = sample(at: point, size: size)
         case .text, .sticker: break
         }
     }
 
     func move(points: [CGPoint], size: CGSize) {
         guard validSession, errorMessage == nil else { return }
+        if tool == .eyedropper {
+            if let point = points.last, let sampled = sample(at: point, size: size) { eyedropperPreview = sampled }
+            return
+        }
         if tool == .eraser {
             for point in points { erase(at: point, size: size) }
             return
@@ -193,6 +194,11 @@ final class DoodleEditor: ObservableObject {
     }
 
     func end() {
+        if tool == .eyedropper, let picked = eyedropperPreview {
+            eyedropperPreview = nil
+            color = picked; textColor = picked; tool = .brush
+            return
+        }
         guard var stroke = active, !ended else { return }
         appendPoints()
         stroke.finished = true; active = stroke; ended = true
@@ -410,6 +416,15 @@ final class DoodleEditor: ObservableObject {
         }
     }
 
+    /// Lets go of the eyedropper without choosing, as when a second finger lands.
+    func cancelEyedropper() { eyedropperPreview = nil }
+
+    /// The colour at a point. The canvas is transparent, so an empty spot gives the screen behind it.
+    private func sample(at point: CGPoint, size: CGSize) -> UInt32? {
+        DoodleRenderer.color(at: point, strokes: strokes, elements: elements, stickerImages: stickerImages,
+                             dry: model.bootstrap?.canvasStrokeRenderMode == "dry", size: size, background: UIColor(MulberryDesign.background))
+    }
+
     private func normalized(_ point: CGPoint, _ size: CGSize) -> DrawingPoint {
         .init(x: min(1, max(0, point.x / max(1, size.width))), y: min(1, max(0, point.y / max(1, size.height))))
     }
@@ -551,6 +566,8 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
     private var predicted: [CGPoint] = []
     /// The brush or eraser outline under a hovering Pencil.
     private let hoverLayer = CAShapeLayer()
+    /// The eyedropper's colour, held above the finger so the finger does not hide it.
+    private let loupeLayer = CAShapeLayer()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -560,6 +577,15 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         addSubview(elementLayer)
         hoverLayer.isHidden = true
         layer.addSublayer(hoverLayer)
+        loupeLayer.isHidden = true
+        loupeLayer.path = UIBezierPath(ovalIn: CGRect(x: -22, y: -22, width: 44, height: 44)).cgPath
+        loupeLayer.strokeColor = UIColor.white.cgColor
+        loupeLayer.lineWidth = 3
+        loupeLayer.shadowColor = UIColor.black.cgColor
+        loupeLayer.shadowOpacity = 0.3
+        loupeLayer.shadowRadius = 6
+        loupeLayer.shadowOffset = CGSize(width: 0, height: 3)
+        layer.addSublayer(loupeLayer)
         addInteraction(UIPencilInteraction(delegate: self))
         addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(hover(_:))))
         let tap = UITapGestureRecognizer(target: self, action: #selector(elementTap(_:)))
@@ -619,6 +645,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             return
         }
         editor?.begin(at: point, size: bounds.size)
+        showLoupe(at: point)
         if holdable, editor?.tool == .brush { holdForReactions(at: point) }
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -637,6 +664,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             editor?.begin(at: point, size: bounds.size)
         }
         editor?.move(points: (event?.coalescedTouches(for: touch) ?? [touch]).map { $0.location(in: self) }, size: bounds.size)
+        showLoupe(at: point)
         predicted = editor?.tool == .brush ? (event?.predictedTouches(for: touch) ?? []).map { $0.location(in: self) } : []
         setNeedsDisplay()
     }
@@ -653,10 +681,12 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             editor?.end()
         }
         elementToErase = nil; trackedTouch = nil; predicted = []
+        showLoupe(at: nil)
     }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         if let held = heldTouch, touches.contains(held) { heldTouch = nil; editor?.reactionPointer.location = nil }
         cancelHold()
+        editor?.cancelEyedropper(); showLoupe(at: nil)
         if elementToErase == nil { editor?.end() }
         elementToErase = nil; deferredStart = nil; trackedTouch = nil; predicted = []
         setNeedsDisplay()
@@ -677,6 +707,19 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         }
         reactionHold = (point, timer)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: timer)
+    }
+
+    /// Shows the eyedropper's colour above a point while it is picking, or hides it.
+    private func showLoupe(at point: CGPoint?) {
+        guard let point, editor?.tool == .eyedropper, let color = editor?.eyedropperPreview else {
+            loupeLayer.isHidden = true
+            return
+        }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        loupeLayer.position = CGPoint(x: point.x, y: point.y - 64)
+        loupeLayer.fillColor = UIColor(argb: color).cgColor
+        loupeLayer.isHidden = false
+        CATransaction.commit()
     }
 
     private func cancelHold() {

@@ -270,7 +270,8 @@ struct DoodleCanvasView: View {
         }
     }
 
-    private var brushColor: Color { Color(uiColor: UIColor(argb: editor.color)) }
+    /// The eyedropper's colour shows on the colour and width buttons while it picks, as on Android.
+    private var brushColor: Color { Color(uiColor: UIColor(argb: editor.eyedropperPreview ?? editor.color)) }
 
     /// Quick, with the overshoot glass popovers have, so the glass bulges past its size and settles.
     /// Reduce Motion fades instead.
@@ -473,7 +474,7 @@ struct DoodleCanvasView: View {
 
     private func paletteButton(edge: Edge, glass: Glass = .regular, opensRail: Bool = false) -> some View {
         Button { if opensRail { setColourRail(collapsed: false) } else { paletteOpen = true } } label: {
-            ColourPaletteIcon(color: editor.selectedColor, size: 32)
+            ColourPaletteIcon(color: editor.eyedropperPreview ?? editor.selectedColor, size: 32)
                 .frame(width: 56, height: 56)
                 .contentShape(Circle())
         }.buttonStyle(.plain)
