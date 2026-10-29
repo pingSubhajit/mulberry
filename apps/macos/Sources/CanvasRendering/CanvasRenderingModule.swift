@@ -209,6 +209,9 @@ public final class CanvasRenderView: NSView {
 
     public override var isFlipped: Bool { true }
 
+    /// It only draws; the pointer belongs to the canvas input above it and to the title bar.
+    public override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
     public override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard let context = NSGraphicsContext.current?.cgContext else { return }

@@ -11,187 +11,7 @@ struct CanvasElementSession<Element: Equatable>: Equatable {
     let isNew: Bool
 }
 
-private let mulberryRed = Color(argb: 0xFFB31329)
-
-// MARK: Text
-
-/// Android's text editor, as on iPhone: the text is edited in place over a dimmed canvas,
-/// with its style controls along the bottom.
-struct CanvasTextEditorOverlay: View {
-    let palette: [UInt32]
-    let onDone: (CanvasTextElement) -> Void
-    let onCancel: () -> Void
-    let onDelete: () -> Void
-
-    @State private var draft: CanvasTextElement
-    @State private var rotationDegrees: Double
-    @State private var panel: Panel?
-    @FocusState private var focused: Bool
-    private let initialDegrees: Double
-
-    enum Panel { case font, size, rotation, colour }
-
-    init(
-        session: CanvasElementSession<CanvasTextElement>,
-        palette: [UInt32],
-        onDone: @escaping (CanvasTextElement) -> Void,
-        onCancel: @escaping () -> Void,
-        onDelete: @escaping () -> Void
-    ) {
-        self.palette = palette
-        self.onDone = onDone
-        self.onCancel = onCancel
-        self.onDelete = onDelete
-        var element = session.element
-        element.scale = min(CanvasTextElement.scaleRange.upperBound, max(CanvasTextElement.scaleRange.lowerBound, element.scale))
-        _draft = State(initialValue: element)
-        initialDegrees = degrees(fromRadians: element.rotationRad)
-        _rotationDegrees = State(initialValue: initialDegrees)
-    }
-
-    var body: some View {
-        GeometryReader { proxy in
-            CanvasEditorFrame(onBackdrop: finish, onCancel: onCancel, onDone: finish) {
-                textField(width: proxy.size.width)
-            } panel: {
-                panelContent
-            } controls: {
-                panelButton(.font, title: "Font", symbol: "textformat")
-                panelButton(.size, title: "Size", symbol: "textformat.size")
-                panelButton(.rotation, title: "Rotation", symbol: "rotate.right")
-                colourButton
-                CanvasEditorIconButton(title: "Alignment: \(alignmentName)", symbol: alignmentSymbol) { cycleAlignment() }
-                CanvasEditorIconButton(
-                    title: "Background",
-                    symbol: draft.backgroundPillEnabled ? "a.square.fill" : "a.square",
-                    selected: draft.backgroundPillEnabled
-                ) { draft.backgroundPillEnabled.toggle() }
-                Spacer(minLength: 12)
-                CanvasEditorIconButton(title: "Delete", symbol: "trash", action: onDelete)
-            }
-        }
-        .onAppear { focused = true }
-    }
-
-    private var fontSize: CGFloat { min(160, max(12, CanvasTextStyle.baseSize * draft.scale)) }
-
-    private var textAlignment: TextAlignment {
-        switch draft.alignment {
-        case .left: .leading
-        case .center: .center
-        case .right: .trailing
-        }
-    }
-
-    private func textField(width: CGFloat) -> some View {
-        // Android previews size by scaling the font, keeping the wrap width.
-        TextField("", text: $draft.text, prompt: Text("Type something").foregroundStyle(.white.opacity(0.45)), axis: .vertical)
-            .textFieldStyle(.plain)
-            .font(.custom(CanvasTextStyle.postScriptName(draft.font), fixedSize: fontSize))
-            .foregroundStyle(Color(argb: CanvasTextStyle.textColor(draft)))
-            .multilineTextAlignment(textAlignment)
-            .lineLimit(1...10)
-            .focused($focused)
-            .frame(width: max(120, (width - 96) * min(0.95, max(0.35, draft.boxWidth))))
-            .padding(.horizontal, draft.backgroundPillEnabled ? 18 : 0)
-            .padding(.vertical, draft.backgroundPillEnabled ? 14 : 0)
-            .background {
-                if draft.backgroundPillEnabled {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color(argb: draft.colorArgb))
-                }
-            }
-            .rotationEffect(.degrees(rotationDegrees))
-            .accessibilityLabel("Text")
-    }
-
-    @ViewBuilder private var panelContent: some View {
-        switch panel {
-        case .font:
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(CanvasTextFont.allCases, id: \.self) { font in
-                        let selected = draft.font == font
-                        Button { draft.font = font } label: {
-                            Text(CanvasTextStyle.displayName(font))
-                                .font(.custom(CanvasTextStyle.postScriptName(font), fixedSize: 15))
-                                .padding(.horizontal, 14)
-                                .frame(height: 32)
-                                .background(.white.opacity(selected ? 0.16 : 0.06), in: Capsule())
-                                .overlay { if selected { Capsule().strokeBorder(mulberryRed, lineWidth: 2) } }
-                                .contentShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(selected ? .isSelected : [])
-                    }
-                }
-            }
-        case .size:
-            CanvasEditorSlider(value: $draft.scale, range: CanvasTextElement.scaleRange, label: "Size") {
-                Text("Aa").font(.system(size: 11, weight: .semibold))
-            } maximum: {
-                Text("Aa").font(.system(size: 17, weight: .semibold))
-            }
-        case .rotation:
-            CanvasEditorRotation(degrees: $rotationDegrees)
-        case .colour:
-            CanvasEditorPalette(palette: palette, colour: $draft.colorArgb)
-        case nil:
-            EmptyView()
-        }
-    }
-
-    private func panelButton(_ target: Panel, title: String, symbol: String) -> some View {
-        CanvasEditorIconButton(title: title, symbol: symbol, selected: panel == target) {
-            panel = panel == target ? nil : target
-        }
-    }
-
-    private var colourButton: some View {
-        Button { panel = panel == .colour ? nil : .colour } label: {
-            Circle().fill(Color(argb: draft.colorArgb))
-                .padding(3)
-                .background(Circle().fill(AngularGradient(colors: [.red, .yellow, .green, .cyan, .blue, .purple, .red], center: .center)))
-                .frame(width: 20, height: 20)
-                .frame(width: 34, height: 34)
-                .background(.white.opacity(panel == .colour ? 0.16 : 0), in: RoundedRectangle(cornerRadius: 8))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Colour")
-        .accessibilityLabel("Colour")
-    }
-
-    private var alignmentSymbol: String {
-        switch draft.alignment {
-        case .left: "text.alignleft"
-        case .center: "text.aligncenter"
-        case .right: "text.alignright"
-        }
-    }
-
-    private var alignmentName: String {
-        switch draft.alignment {
-        case .left: "Left"
-        case .center: "Centre"
-        case .right: "Right"
-        }
-    }
-
-    private func cycleAlignment() {
-        switch draft.alignment {
-        case .left: draft.alignment = .center
-        case .center: draft.alignment = .right
-        case .right: draft.alignment = .left
-        }
-    }
-
-    private func finish() {
-        var element = draft
-        // An untouched slider keeps the exact angle, so an unchanged edit saves nothing.
-        if rotationDegrees != initialDegrees { element.rotationRad = rotationDegrees * .pi / 180 }
-        onDone(element)
-    }
-}
+let mulberryRed = Color(argb: 0xFFB31329)
 
 // MARK: Stickers
 
@@ -390,6 +210,7 @@ private struct CanvasEditorFrame<Content: View, Panel: View, Controls: View>: Vi
                 .background(.ultraThinMaterial)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onBackdrop)
+                .ignoresSafeArea()
             VStack(spacing: 14) {
                 HStack {
                     Spacer()
@@ -468,38 +289,6 @@ private struct CanvasEditorRotation: View {
     }
 }
 
-private struct CanvasEditorPalette: View {
-    let palette: [UInt32]
-    @Binding var colour: UInt32
-
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach(palette, id: \.self) { candidate in
-                let selected = colour == candidate
-                Button { colour = candidate } label: {
-                    Circle().fill(Color(argb: candidate))
-                        .frame(width: 22, height: 22)
-                        .overlay(Circle().strokeBorder(selected ? mulberryRed : .white.opacity(0.25), lineWidth: selected ? 2.5 : 1))
-                        .padding(2)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? .isSelected : [])
-            }
-            ColorPicker("Custom colour", selection: custom, supportsOpacity: false)
-                .labelsHidden()
-                .help("Custom colour")
-        }
-    }
-
-    private var custom: Binding<Color> {
-        Binding(
-            get: { Color(argb: colour) },
-            set: { colour = NSColor($0).usingColorSpace(.sRGB).map(argb(of:)) ?? colour }
-        )
-    }
-}
-
 /// Keeps a slider's angle in -180...180 whatever angle a gesture left behind.
 private func degrees(fromRadians radians: Double) -> Double {
     var value = (radians * 180 / .pi).truncatingRemainder(dividingBy: 360)
@@ -508,10 +297,6 @@ private func degrees(fromRadians radians: Double) -> Double {
     return value
 }
 
-private func argb(of color: NSColor) -> UInt32 {
-    let channel = { (value: CGFloat) in UInt32((min(1, max(0, value)) * 255).rounded()) }
-    return 0xFF000000 | channel(color.redComponent) << 16 | channel(color.greenComponent) << 8 | channel(color.blueComponent)
-}
 
 extension Color {
     init(argb: UInt32) {

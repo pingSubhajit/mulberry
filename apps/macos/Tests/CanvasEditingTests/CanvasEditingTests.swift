@@ -32,6 +32,12 @@ import Testing
     ])
 }
 
+@Test func aToolIsAlwaysSelectedStartingWithTheBrush() {
+    let state = CanvasEditingToolState()
+    #expect(state.activeTool == .draw)
+    #expect(CanvasEditingTool.allCases == [.draw, .erase, .text, .sticker, .eyedropper])
+}
+
 @Test func selectedColorAndEyedropperMatchAndroidToolBehavior() {
     var state = CanvasEditingToolState()
     #expect(state.selectedColorArgb == CanvasEditingDefaults.defaultColorArgb)
@@ -152,7 +158,7 @@ import Testing
     let metadata = CanvasEditingMetadata(
         toolState: CanvasEditingToolState(
             activeTool: .text,
-            lastNonNoneTool: .draw,
+            previousTool: .draw,
             brushColorArgb: 0xFF2457D6,
             textColorArgb: 0xFFFFE66D,
             selectedBrushWidthPx: 99
@@ -164,7 +170,7 @@ import Testing
     let loaded = try JSONDecoder().decode(CanvasEditingMetadata.self, from: JSONEncoder().encode(metadata))
 
     #expect(loaded == metadata)
-    #expect(loaded.toolState.lastNonNoneTool == .text)
+    #expect(loaded.toolState.previousTool == .text)
     #expect(loaded.toolState.selectedBrushWidthPx == CanvasEditingDefaults.maxBrushWidthPx)
 }
 

@@ -212,6 +212,12 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         false
     }
 
+    /// Opening Mulberry again from Finder, Spotlight or the Dock shows its window.
+    public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { openMulberry() }
+        return true
+    }
+
     public func applicationWillTerminate(_ notification: Notification) {
         syncController.stop()
         quickDrawController?.stop()
@@ -518,13 +524,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             stickerLoader: stickerLoader
         )
         let hostingController = NSHostingController(rootView: view)
-        let window = NSWindow(contentViewController: hostingController)
+        // The window owns its size; SwiftUI's toolbar items appear in the window's toolbar.
+        hostingController.sizingOptions = []
+        hostingController.sceneBridgingOptions = [.toolbars]
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: Self.defaultContentSize()),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = hostingController
         window.title = "Mulberry"
-        let contentSize = NSSize(width: 920, height: 640)
-        window.setContentSize(contentSize)
-        window.contentAspectRatio = contentSize
-        window.minSize = NSSize(width: 760, height: 529)
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.titleVisibility = .hidden
+        // Not titlebarAppearsTransparent: with it, macOS makes the window jump each time it is
+        // dragged onto another display. The macOS 26 title bar is glass over the content anyway.
+        // Clear, so the frosted glass behind the canvas shows the desktop softly.
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        // The canvas's own portrait shape, at any size.
+        window.contentAspectRatio = Self.canvasAspect
+        window.contentMinSize = Self.minimumSize
+        window.setContentSize(Self.defaultContentSize())
         window.center()
         window.isReleasedWhenClosed = false
         super.init(window: window)
@@ -533,6 +553,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    /// 10:20: a little wider than the phones' 9:20 canvas, which sits centred inside.
+    private static let canvasAspect = NSSize(width: 10, height: 20)
+
+    /// Small enough for a 13-inch laptop, large enough for the toolbar's full row.
+    private static let minimumSize = NSSize(width: 380, height: 760)
+
+    /// Enforces the minimum here too: the hosted SwiftUI view can reset the window's
+    /// minimum, and the aspect ratio alone lets the window shrink without limit.
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        let width = max(Self.minimumSize.width, frameSize.width)
+        // With a full-size content view the frame and the content are the same size.
+        return NSSize(width: width, height: width * Self.canvasAspect.height / Self.canvasAspect.width)
+    }
+
+    /// As tall as the screen comfortably allows, never smaller than the minimum.
+    private static func defaultContentSize() -> NSSize {
+        let available = NSScreen.main?.visibleFrame.height ?? 900
+        let height = max(800, min(980, available - 40))
+        return NSSize(width: height * canvasAspect.width / canvasAspect.height, height: height)
     }
 
     func windowWillClose(_ notification: Notification) {

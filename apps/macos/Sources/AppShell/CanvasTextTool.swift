@@ -1,0 +1,564 @@
+import AppKit
+import CanvasDrawing
+import CanvasEditing
+import ProductCore
+import SwiftUI
+
+// Text on the Mac canvas works the way pointer and keyboard tools do: with the Text tool, click
+// and type in place; a frame moves, resizes and rotates the selected text; a floating bar sets
+// its style. What is typed is laid out by TextKit exactly as the shared renderer draws it.
+
+/// Where a text element sits on screen: its centre, its visible body around that centre before
+/// rotation (already scaled to screen points), and its rotation.
+struct TextFrameGeometry: Equatable {
+    var center: CGPoint
+    var body: CGRect
+    var angle: Double
+
+    /// The body's own centre on screen, after rotation about the element's centre.
+    var bodyCenter: CGPoint {
+        let cosine = cos(angle), sine = sin(angle)
+        return CGPoint(
+            x: center.x + body.midX * cosine - body.midY * sine,
+            y: center.y + body.midX * sine + body.midY * cosine
+        )
+    }
+
+    /// The upright box that holds the rotated body, for placing the format bar.
+    var bounds: CGRect {
+        let cosine = cos(angle), sine = sin(angle)
+        let points = [
+            CGPoint(x: body.minX, y: body.minY), CGPoint(x: body.maxX, y: body.minY),
+            CGPoint(x: body.minX, y: body.maxY), CGPoint(x: body.maxX, y: body.maxY)
+        ].map { CGPoint(x: center.x + $0.x * cosine - $0.y * sine, y: center.y + $0.x * sine + $0.y * cosine) }
+        let xs = points.map(\.x), ys = points.map(\.y)
+        return CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+    }
+}
+
+// MARK: Typing in place
+
+/// The text being typed, drawn by AppKit's text view at the element's size, wrap width, rotation
+/// and colours, with the background pill behind it. Clicks outside it fall through to the canvas.
+struct InlineTextEditor: NSViewRepresentable {
+    @Binding var draft: CanvasTextElement
+    let canvasSize: CGSize
+    let zoom: CGFloat
+    let offset: CGPoint
+    /// Changes when a format bar control should hand typing back to the text.
+    let refocus: Int
+    /// Esc: stop typing and keep the text selected.
+    let onFinish: () -> Void
+
+    func makeNSView(context: Context) -> InlineTextHost {
+        let host = InlineTextHost()
+        host.textView.delegate = context.coordinator
+        host.textView.string = draft.text
+        DispatchQueue.main.async {
+            host.window?.makeFirstResponder(host.textView)
+            host.textView.setSelectedRange(NSRange(location: (host.textView.string as NSString).length, length: 0))
+        }
+        return host
+    }
+
+    func updateNSView(_ host: InlineTextHost, context: Context) {
+        context.coordinator.parent = self
+        host.apply(draft, canvasSize: canvasSize, zoom: zoom, offset: offset)
+        if context.coordinator.refocus != refocus {
+            context.coordinator.refocus = refocus
+            host.window?.makeFirstResponder(host.textView)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: InlineTextEditor
+        var refocus: Int
+
+        init(parent: InlineTextEditor) {
+            self.parent = parent
+            refocus = parent.refocus
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            parent.draft.text = textView.string
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            if selector == #selector(NSResponder.cancelOperation(_:)) {
+                parent.onFinish()
+                return true
+            }
+            return false
+        }
+    }
+}
+
+final class InlineTextHost: NSView {
+    let container = InlineTextContainer()
+    var textView: NSTextView { container.textView }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        addSubview(container)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var isFlipped: Bool { true }
+
+    /// Only the text itself takes the pointer; a click elsewhere finishes typing on the canvas.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point), hit !== self else { return nil }
+        return hit
+    }
+
+    func apply(_ element: CanvasTextElement, canvasSize: CGSize, zoom: CGFloat, offset: CGPoint) {
+        let scale = CGFloat(element.scale) * zoom
+        container.apply(element, wrap: max(1, CGFloat(element.boxWidth) * canvasSize.width) * scale, scale: scale)
+        let center = CGPoint(
+            x: element.center.x * canvasSize.width * zoom + offset.x,
+            y: element.center.y * canvasSize.height * zoom + offset.y
+        )
+        // Rotate about the element's centre, as the renderer does: place upright, then turn.
+        container.frameCenterRotation = 0
+        let size = container.fittingSize
+        container.frame = CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
+        container.frameCenterRotation = element.rotationRad * 180 / .pi
+    }
+}
+
+/// The text view inside a margin wide enough for the background pill, which it draws itself.
+final class InlineTextContainer: NSView {
+    let textView: NSTextView
+    private var pill: (color: NSColor, radius: CGFloat)?
+    private var padding: CGFloat = 0
+    private var textSize = CGSize.zero
+
+    override init(frame: NSRect) {
+        // TextKit 1, the same layout engine the canvas renderer draws with.
+        let storage = NSTextStorage()
+        let manager = NSLayoutManager()
+        let textContainer = NSTextContainer(size: CGSize(width: 100, height: CGFloat.greatestFiniteMagnitude))
+        textContainer.lineFragmentPadding = 0
+        textContainer.widthTracksTextView = false
+        manager.addTextContainer(textContainer)
+        storage.addLayoutManager(manager)
+        textView = NSTextView(frame: .zero, textContainer: textContainer)
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.textContainerInset = .zero
+        textView.isVerticallyResizable = false
+        textView.isHorizontallyResizable = false
+        textView.focusRingType = .none
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        super.init(frame: frame)
+        addSubview(textView)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var isFlipped: Bool { true }
+
+    override var fittingSize: NSSize {
+        NSSize(width: textSize.width + padding * 2, height: textSize.height + padding * 2)
+    }
+
+    func apply(_ element: CanvasTextElement, wrap: CGFloat, scale: CGFloat) {
+        let font = CanvasTextStyle.font(element.font, size: CanvasTextStyle.baseSize * scale)
+        let colour = NSColor(argb: CanvasTextStyle.textColor(element))
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = CanvasTextStyle.alignment(element.alignment)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: colour, .paragraphStyle: paragraph]
+        if let storage = textView.textStorage {
+            storage.setAttributes(attributes, range: NSRange(location: 0, length: storage.length))
+        }
+        textView.typingAttributes = attributes
+        textView.insertionPointColor = colour
+        textView.selectedTextAttributes = [.backgroundColor: colour.withAlphaComponent(0.25)]
+
+        padding = element.backgroundPillEnabled ? CanvasTextStyle.pillPadding * scale : 2
+        pill = element.backgroundPillEnabled ? (NSColor(argb: element.colorArgb), CanvasTextStyle.pillCornerRadius * scale) : nil
+
+        guard let manager = textView.layoutManager, let textContainer = textView.textContainer else { return }
+        textContainer.size = CGSize(width: wrap, height: .greatestFiniteMagnitude)
+        manager.ensureLayout(for: textContainer)
+        let lineHeight = manager.defaultLineHeight(for: font)
+        let used = manager.usedRect(for: textContainer)
+        textSize = CGSize(width: wrap, height: max(lineHeight, ceil(used.height)))
+        textView.frame = CGRect(x: padding, y: padding, width: textSize.width, height: textSize.height)
+        needsDisplay = true
+    }
+
+    /// The pill hugs the typed lines, as the renderer's tight bounds do.
+    override func draw(_ dirtyRect: NSRect) {
+        guard let pill, let manager = textView.layoutManager, let textContainer = textView.textContainer else { return }
+        var left = CGFloat.infinity, right = -CGFloat.infinity
+        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: textContainer)) { _, used, _, _, _ in
+            left = min(left, used.minX)
+            right = max(right, used.maxX)
+        }
+        if !(left.isFinite && right > left) {
+            // Empty: a narrow pill around the caret.
+            let caret = textView.alignment == .left ? 0 : textView.alignment == .right ? textSize.width : textSize.width / 2
+            left = caret - 4
+            right = caret + 4
+        }
+        let rect = CGRect(x: padding + left, y: padding, width: right - left, height: textSize.height)
+            .insetBy(dx: -padding, dy: -padding)
+        pill.color.setFill()
+        NSBezierPath(roundedRect: rect, xRadius: pill.radius, yRadius: pill.radius).fill()
+    }
+}
+
+// MARK: Selection frame
+
+/// The selected text's frame: drag inside to move, a corner to resize, the knob above to rotate
+/// (Shift snaps to 15°), double-click to edit the words.
+struct TextSelectionFrame: View {
+    let geometry: TextFrameGeometry
+    let original: CanvasTextElement
+    let canvasSize: CGSize
+    let zoom: CGFloat
+    let onChange: (CanvasTextElement) -> Void
+    let onCommit: (CanvasTextElement) -> Void
+    let onEdit: () -> Void
+
+    @State private var start: CanvasTextElement?
+    @State private var latest: CanvasTextElement?
+
+    private let handle: CGFloat = 8
+    private let rotateReach: CGFloat = 22
+
+    var body: some View {
+        let size = geometry.body.size
+        ZStack {
+            Rectangle()
+                .strokeBorder(mulberryRed, lineWidth: 1.25)
+                .contentShape(Rectangle())
+                .gesture(moveGesture)
+                .simultaneousGesture(TapGesture(count: 2).onEnded(onEdit))
+                .pointerStyle(.grabIdle)
+            ForEach(Corner.allCases, id: \.self) { corner in
+                square
+                    .position(x: corner.x * size.width, y: corner.y * size.height)
+                    .gesture(scaleGesture)
+                    .pointerStyle(corner.resizeStyle)
+            }
+            Rectangle().fill(mulberryRed).frame(width: 1.25, height: rotateReach - handle / 2)
+                .position(x: size.width / 2, y: -(rotateReach - handle / 2) / 2)
+                .allowsHitTesting(false)
+            Circle()
+                .fill(.white)
+                .overlay(Circle().strokeBorder(mulberryRed, lineWidth: 1.25))
+                .frame(width: handle + 2, height: handle + 2)
+                .frame(width: 22, height: 22)
+                .contentShape(Circle())
+                .position(x: size.width / 2, y: -rotateReach)
+                .gesture(rotateGesture)
+                .help("Rotate")
+        }
+        .frame(width: size.width, height: size.height)
+        .rotationEffect(.radians(geometry.angle))
+        .position(geometry.bodyCenter)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Selected text: \(original.text)")
+    }
+
+    private var square: some View {
+        Rectangle()
+            .fill(.white)
+            .overlay(Rectangle().strokeBorder(mulberryRed, lineWidth: 1.25))
+            .frame(width: handle, height: handle)
+            .frame(width: 18, height: 18)
+            .contentShape(Rectangle())
+    }
+
+    private var moveGesture: some Gesture {
+        DragGesture(minimumDistance: 2, coordinateSpace: .named(CanvasSpace.name))
+            .onChanged { drag in
+                let from = start ?? original
+                if start == nil { start = original }
+                var moved = from
+                moved.center = DrawingPoint(
+                    x: min(1, max(0, from.center.x + drag.translation.width / (canvasSize.width * zoom))),
+                    y: min(1, max(0, from.center.y + drag.translation.height / (canvasSize.height * zoom)))
+                )
+                update(moved)
+            }
+            .onEnded { _ in finish() }
+    }
+
+    private var scaleGesture: some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(CanvasSpace.name))
+            .onChanged { drag in
+                let from = start ?? original
+                if start == nil { start = original }
+                let center = geometry.center
+                let before = hypot(drag.startLocation.x - center.x, drag.startLocation.y - center.y)
+                let now = hypot(drag.location.x - center.x, drag.location.y - center.y)
+                guard before > 1 else { return }
+                var resized = from
+                resized.scale = min(CanvasTextElement.scaleRange.upperBound,
+                                    max(CanvasTextElement.scaleRange.lowerBound, from.scale * now / before))
+                update(resized)
+            }
+            .onEnded { _ in finish() }
+    }
+
+    private var rotateGesture: some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(CanvasSpace.name))
+            .onChanged { drag in
+                let from = start ?? original
+                if start == nil { start = original }
+                let center = geometry.center
+                let turned = atan2(drag.location.y - center.y, drag.location.x - center.x)
+                    - atan2(drag.startLocation.y - center.y, drag.startLocation.x - center.x)
+                var angle = from.rotationRad + turned
+                if NSEvent.modifierFlags.contains(.shift) {
+                    let step = Double.pi / 12
+                    angle = (angle / step).rounded() * step
+                }
+                var rotated = from
+                rotated.rotationRad = angle
+                update(rotated)
+            }
+            .onEnded { _ in finish() }
+    }
+
+    private func update(_ element: CanvasTextElement) {
+        latest = element
+        onChange(element)
+    }
+
+    /// One drag is one change, saved when the pointer lifts.
+    private func finish() {
+        if let latest { onCommit(latest) }
+        start = nil
+        latest = nil
+    }
+
+    private enum Corner: CaseIterable {
+        case topLeft, topRight, bottomLeft, bottomRight
+
+        var x: CGFloat { self == .topLeft || self == .bottomLeft ? 0 : 1 }
+        var y: CGFloat { self == .topLeft || self == .topRight ? 0 : 1 }
+
+        var resizeStyle: PointerStyle {
+            switch self {
+            case .topLeft, .bottomRight: .frameResize(position: .topLeading)
+            case .topRight, .bottomLeft: .frameResize(position: .topTrailing)
+            }
+        }
+    }
+}
+
+/// The canvas layer's coordinate space, shared by the selection frame's gestures.
+enum CanvasSpace {
+    static let name = "canvas"
+}
+
+// MARK: Format bar
+
+/// The style of the selected or typed text, floating above it: font, size, colour, alignment,
+/// background and delete. Neutral like the canvas's other glass, with Mulberry's own button.
+struct TextFormatBar: View {
+    let element: CanvasTextElement
+    let onChange: (CanvasTextElement) -> Void
+    let onDelete: () -> Void
+
+    @State private var colourOpen = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Full where it fits. Narrower canvases drop the dividers first, and only then trade the
+    /// font's name for an Aa button.
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            bar(showsName: true, dividers: true)
+            bar(showsName: true, dividers: false)
+            bar(showsName: false, dividers: true)
+            bar(showsName: false, dividers: false)
+        }
+        // A new font changes the bar's width: it eases to the new size around its centre.
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: element.font)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: points)
+    }
+
+    private func bar(showsName: Bool, dividers: Bool) -> some View {
+        HStack(spacing: 2) {
+            fontMenu(showsName: showsName)
+            if dividers { divider }
+            FormatButton(title: "Smaller", symbol: "minus", enabled: element.scale > CanvasTextElement.scaleRange.lowerBound) {
+                resize(by: 1 / 1.1)
+            }
+            Text("\(points)")
+                .font(.system(size: 13, weight: .medium))
+                .monospacedDigit()
+                .contentTransition(.numericText(value: Double(points)))
+                .frame(minWidth: 26)
+                .accessibilityLabel("Size \(points) points")
+            FormatButton(title: "Larger", symbol: "plus", enabled: element.scale < CanvasTextElement.scaleRange.upperBound) {
+                resize(by: 1.1)
+            }
+            if dividers { divider }
+            colourButton
+            HStack(spacing: 2) {
+                alignment(.left, symbol: "text.alignleft", title: "Align left")
+                alignment(.center, symbol: "text.aligncenter", title: "Centre")
+                alignment(.right, symbol: "text.alignright", title: "Align right")
+            }
+            FormatButton(
+                title: "Background",
+                symbol: element.backgroundPillEnabled ? "a.square.fill" : "a.square",
+                selected: element.backgroundPillEnabled
+            ) {
+                set(\.backgroundPillEnabled, !element.backgroundPillEnabled)
+            }
+            if dividers { divider }
+            FormatButton(title: "Delete", symbol: "trash", action: onDelete)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .glassEffect(.regular, in: Capsule())
+        .fixedSize()
+    }
+
+    /// Text size in points at the canvas's own scale, 34 being the default.
+    private var points: Int {
+        Int((CanvasTextStyle.baseSize * element.scale).rounded())
+    }
+
+    private var divider: some View {
+        Divider().frame(height: 18).padding(.horizontal, 3)
+    }
+
+    private func fontMenu(showsName: Bool) -> some View {
+        Menu {
+            Picker("Font", selection: Binding(get: { element.font }, set: { set(\.font, $0) })) {
+                ForEach(CanvasTextFont.allCases, id: \.self) { font in
+                    Text(CanvasTextStyle.displayName(font)).tag(font)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            FormatSurface {
+                if showsName {
+                    HStack(spacing: 5) {
+                        Text(CanvasTextStyle.displayName(element.font))
+                            .font(.custom(CanvasTextStyle.postScriptName(element.font), size: 15))
+                            .contentTransition(.interpolate)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 76, alignment: .leading)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(height: 28)
+                } else {
+                    Text("Aa")
+                        .font(.custom(CanvasTextStyle.postScriptName(element.font), size: 15))
+                        .frame(width: 28, height: 28)
+                }
+            }
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Font")
+        .accessibilityLabel("Font: \(CanvasTextStyle.displayName(element.font))")
+    }
+
+    private var colourButton: some View {
+        Button { colourOpen = true } label: {
+            FormatSurface(selected: colourOpen) {
+                ColourPaletteIcon(color: element.colorArgb, size: 19)
+                    .frame(width: 28, height: 28)
+            }
+        }
+        .buttonStyle(.plain)
+        .help("Colour")
+        .accessibilityLabel("Text colour")
+        .popover(isPresented: $colourOpen, arrowEdge: .bottom) {
+            PaletteColourPicker(palette: CanvasEditingDefaults.palette, selected: element.colorArgb) { colour in
+                set(\.colorArgb, colour)
+                colourOpen = false
+            }
+        }
+    }
+
+    private func alignment(_ value: CanvasTextAlign, symbol: String, title: String) -> some View {
+        FormatButton(title: title, symbol: symbol, selected: element.alignment == value) {
+            set(\.alignment, value)
+        }
+    }
+
+    private func resize(by factor: Double) {
+        set(\.scale, min(CanvasTextElement.scaleRange.upperBound, max(CanvasTextElement.scaleRange.lowerBound, element.scale * factor)))
+    }
+
+    private func set<Value>(_ keyPath: WritableKeyPath<CanvasTextElement, Value>, _ value: Value) {
+        var updated = element
+        updated[keyPath: keyPath] = value
+        onChange(updated)
+    }
+}
+
+/// The format bar's button: an icon in a 28-point square, softly filled on hover and filled
+/// more firmly when its option is on. Neutral, never the system's blue.
+private struct FormatButton: View {
+    let title: String
+    let symbol: String
+    var selected = false
+    var enabled = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            FormatSurface(selected: selected) {
+                Image(systemName: symbol)
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 28, height: 28)
+            }
+            .opacity(enabled ? 1 : 0.35)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .help(title)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+private struct FormatSurface<Content: View>: View {
+    var selected = false
+    @ViewBuilder let content: Content
+    @State private var hovering = false
+
+    var body: some View {
+        content
+            .foregroundStyle(.primary)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.primary.opacity(selected ? 0.16 : hovering ? 0.07 : 0))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}

@@ -6,21 +6,17 @@ public enum CanvasEditingModule {
     public static let name = "CanvasEditing"
 }
 
+/// One tool is always selected, as on iPhone and iPad; the brush is the default.
 public enum CanvasEditingTool: String, Codable, CaseIterable, Sendable {
-    case none = "NONE"
     case draw = "DRAW"
     case erase = "ERASE"
     case text = "TEXT"
     case sticker = "STICKER"
     case eyedropper = "EYEDROPPER"
 
-    public var updatesLastNonNoneTool: Bool {
-        switch self {
-        case .draw, .erase, .text, .sticker:
-            true
-        case .none, .eyedropper:
-            false
-        }
+    /// The eyedropper is a moment's detour: picking a colour returns to the tool before it.
+    public var isReturnedTo: Bool {
+        self != .eyedropper
     }
 }
 
@@ -62,25 +58,25 @@ public enum CanvasEditingDefaults {
 
 public struct CanvasEditingToolState: Codable, Equatable, Sendable {
     public var activeTool: CanvasEditingTool
-    public var lastNonNoneTool: CanvasEditingTool
+    public var previousTool: CanvasEditingTool
     public var brushColorArgb: UInt32
     public var textColorArgb: UInt32
     public var selectedBrushWidthPx: Float
 
     public init(
-        activeTool: CanvasEditingTool = .none,
-        lastNonNoneTool: CanvasEditingTool = .draw,
+        activeTool: CanvasEditingTool = .draw,
+        previousTool: CanvasEditingTool = .draw,
         brushColorArgb: UInt32 = CanvasEditingDefaults.defaultColorArgb,
         textColorArgb: UInt32 = CanvasEditingDefaults.defaultColorArgb,
         selectedBrushWidthPx: Float = CanvasEditingDefaults.defaultBrushWidthPx
     ) {
         self.activeTool = activeTool
-        self.lastNonNoneTool = lastNonNoneTool.updatesLastNonNoneTool ? lastNonNoneTool : .draw
+        self.previousTool = previousTool.isReturnedTo ? previousTool : .draw
         self.brushColorArgb = brushColorArgb
         self.textColorArgb = textColorArgb
         self.selectedBrushWidthPx = CanvasEditingDefaults.clampedBrushWidth(selectedBrushWidthPx)
-        if activeTool.updatesLastNonNoneTool {
-            self.lastNonNoneTool = activeTool
+        if activeTool.isReturnedTo {
+            self.previousTool = activeTool
         }
     }
 
@@ -90,8 +86,8 @@ public struct CanvasEditingToolState: Codable, Equatable, Sendable {
 
     public mutating func setActiveTool(_ tool: CanvasEditingTool) {
         activeTool = tool
-        if tool.updatesLastNonNoneTool {
-            lastNonNoneTool = tool
+        if tool.isReturnedTo {
+            previousTool = tool
         }
     }
 
@@ -106,7 +102,7 @@ public struct CanvasEditingToolState: Codable, Equatable, Sendable {
     public mutating func commitEyedropperColor(_ colorArgb: UInt32) {
         brushColorArgb = colorArgb
         textColorArgb = colorArgb
-        activeTool = lastNonNoneTool
+        activeTool = previousTool
     }
 
     public mutating func setBrushWidth(_ widthPx: Float) {
