@@ -68,7 +68,15 @@ public final class CanvasSyncController: ObservableObject {
     @Published public private(set) var connectionState: MacSyncConnectionState = .signedOut
     @Published public private(set) var demand: CanvasSyncDemand = .idle
     @Published public private(set) var status = MacSyncStatusSnapshot()
+    /// The canvas as this Mac shows it: the last saved document, plus edits made here that are
+    /// still being saved.
     @Published public private(set) var drawing = DrawingState()
+    /// The last saved document's canvas, before this Mac's unsaved edits.
+    private var savedDrawing = DrawingState()
+    /// Edits made here and not yet in a saved document, in the order they were made. They show at
+    /// once; saving them takes a disk write, and the canvas would otherwise show the old state,
+    /// such as a moved sticker back in its old place, until the write finished.
+    private var unsaved: [DrawingOperation] = []
 
     public static let defaultOverlayRecoveryInterval: Duration = .seconds(3)
     public static let defaultOverlayFreshnessWindow: TimeInterval = 6
@@ -118,7 +126,7 @@ public final class CanvasSyncController: ObservableObject {
         guard next != session else { return }
         stopRunningSync()
         session = next
-        drawing = DrawingState()
+        clearDrawing()
         documentVersion = nil
         hasLoadedDocument = false
         lastSuccessfulRecoveryAt = nil
@@ -141,7 +149,7 @@ public final class CanvasSyncController: ObservableObject {
     /// Signed out: forget the canvas on screen. Saved documents stay scoped to their account.
     public func reset() {
         stop(signedOut: true)
-        drawing = DrawingState()
+        clearDrawing()
         lastSuccessfulRecoveryAt = nil
         lastError = nil
         refreshStatus(pending: 0)
@@ -151,6 +159,10 @@ public final class CanvasSyncController: ObservableObject {
     public func submit(_ operations: [DrawingOperation]) {
         guard let session, operations.isEmpty == false else { return }
         let live = live
+        // Shown now, and saved in the background.
+        unsaved.append(contentsOf: operations)
+        publishDrawing()
+        let ids = Set(operations.map(\.id))
         Task {
             do {
                 let document: DrawingDocument
@@ -160,8 +172,14 @@ public final class CanvasSyncController: ObservableObject {
                     document = try await store.enqueue(userId: session.userID, pairSessionId: session.pairSessionID, operations: operations)
                 }
                 guard self.session == session else { return }
+                unsaved.removeAll { ids.contains($0.id) }
                 accept(document)
+                publishDrawing()
             } catch {
+                guard self.session == session else { return }
+                // Not saved, so not shown either.
+                unsaved.removeAll { ids.contains($0.id) }
+                publishDrawing()
                 recordError("Your drawing could not be saved. \(error.localizedDescription)")
             }
         }
@@ -299,12 +317,29 @@ public final class CanvasSyncController: ObservableObject {
         guard let session, document.userId == session.userID, document.pairSessionId == session.pairSessionID else { return }
         if let documentVersion, document.version < documentVersion { return }
         do {
-            drawing = try document.visible
+            savedDrawing = try document.visible
+            // Edits this document already holds are no longer only this Mac's.
+            let saved = Set(document.pending.map(\.id))
+            unsaved.removeAll { saved.contains($0.id) }
+            publishDrawing()
             documentVersion = document.version
             refreshStatus(pending: document.pending.count)
         } catch {
             recordError("The canvas needs to sync again. \(error.localizedDescription)")
         }
+    }
+
+    /// The saved canvas with this Mac's edits that are still being saved laid over it.
+    private func publishDrawing() {
+        var state = savedDrawing
+        for operation in unsaved { try? state.apply(operation) }
+        if state != drawing { drawing = state }
+    }
+
+    private func clearDrawing() {
+        savedDrawing = DrawingState()
+        unsaved = []
+        drawing = DrawingState()
     }
 
     private func stop(signedOut: Bool) {

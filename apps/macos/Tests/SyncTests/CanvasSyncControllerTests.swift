@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import ProductCore
 import Sync
@@ -180,5 +181,44 @@ func editsMadeWhileIdleAreSavedThenSentWhenTheWindowConnects() async throws {
     #expect(await server.log.count == 3)
     #expect(controller.drawing.finishedStrokes == [drawn])
     #expect(controller.status.lastAppliedServerRevision == 3)
+    controller.stop()
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func editsShowAtOnceAndNeverFlashBackWhileTheyAreSaved() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let server = CanvasServer()
+    let controller = try makeController(server: server, directory: directory)
+    controller.updateSession(userID: user, pairSessionID: pair, shouldSync: true)
+    try await waitUntil { controller.connectionState == .disconnected }
+
+    let sticker = CanvasStickerElement(center: .init(x: 0.2, y: 0.2), sticker: StickerReference(packKey: "pack", packVersion: 1, stickerId: "one"))
+    var centres: [Double] = []
+    let watcher = controller.$drawing.sink { state in
+        if let shown = state.canvasElements.first(where: { $0.id == sticker.id })?.sticker { centres.append(shown.center.x) }
+    }
+    defer { watcher.cancel() }
+
+    // Placed, then moved twice in quick succession, as a drag and a nudge would.
+    controller.submit([.add(.sticker(sticker))])
+    #expect(controller.drawing.canvasElements.first?.sticker?.center.x == 0.2)
+    var moved = sticker
+    moved.center = .init(x: 0.5, y: 0.2)
+    controller.submit([.update(.sticker(moved))])
+    #expect(controller.drawing.canvasElements.first?.sticker?.center.x == 0.5)
+    moved.center = .init(x: 0.6, y: 0.2)
+    controller.submit([.update(.sticker(moved))])
+    #expect(controller.drawing.canvasElements.first?.sticker?.center.x == 0.6)
+
+    try await waitUntil { controller.status.pendingCount == 3 }
+    #expect(controller.drawing.canvasElements.first?.sticker?.center.x == 0.6)
+    // Never back to an earlier place once moved on, while the saves caught up.
+    var furthest = 0.0
+    for centre in centres {
+        #expect(centre >= furthest)
+        furthest = max(furthest, centre)
+    }
     controller.stop()
 }
