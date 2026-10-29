@@ -89,8 +89,8 @@ struct PencilRadialPalette: View {
 
     @ViewBuilder private func button(_ item: Item) -> some View {
         switch item {
-        case .undo: action("CanvasUndo", "Undo", enabled: editor.canUndo) { editor.undo() }
-        case .redo: action("CanvasRedo", "Redo", enabled: editor.canRedo) { editor.redo() }
+        case .undo: action("arrow.uturn.backward", "Undo", enabled: editor.canUndo) { editor.undo() }
+        case .redo: action("arrow.uturn.forward", "Redo", enabled: editor.canRedo) { editor.redo() }
         case .eraser: tool(.eraser, "CanvasErase", "Eraser")
         case .brush: tool(.brush, "CanvasBrush", "Brush")
         case .eyedropper: tool(.eyedropper, "CanvasEyedropper", "Eyedropper")
@@ -176,16 +176,19 @@ struct PencilRadialPalette: View {
         .accessibilityShowsLargeContentViewer { Image(image); Text(title) }
     }
 
-    private func action(_ image: String, _ title: String, enabled: Bool, perform: @escaping () -> Void) -> some View {
+    /// Undo and redo are the same plain SF Symbols as on the toolbar; the tools keep their illustrations.
+    private func action(_ symbol: String, _ title: String, enabled: Bool, perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
-            Image(image).resizable().scaledToFit().frame(width: 38, height: 38)
+            Image(systemName: symbol)
+                .font(.system(size: 26, weight: .medium))
+                .foregroundStyle(MulberryDesign.ink)
                 .opacity(enabled ? 1 : 0.35)
                 .itemFrame()
         }
         .buttonStyle(RadialItemStyle())
         .disabled(!enabled)
         .accessibilityLabel(title)
-        .accessibilityShowsLargeContentViewer { Image(image); Text(title) }
+        .accessibilityShowsLargeContentViewer { Image(systemName: symbol); Text(title) }
     }
 }
 
