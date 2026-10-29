@@ -27,12 +27,12 @@ type TermsSection = {
 const terms = {
   title: "Mulberry Terms of Use",
   effectiveDate: "April 23, 2026",
-  lastUpdated: "April 23, 2026",
+  lastUpdated: "October 29, 2026",
   operator: "Subhajit Kundu",
   address: "ITI Crossing, Kalyani, West Bengal, India, 741235",
   contact: "subha60kundu@gmail.com",
   intro:
-    "These Terms of Use explain the rules for using Mulberry, a private Android app for two people to share a drawing canvas that can appear on each other's wallpaper.",
+    "These Terms of Use explain the rules for using Mulberry, a private app for Android, iPhone, and iPad for two people to share a drawing canvas that can appear on each other's wallpaper.",
   sections: [
     {
       id: "acceptance",
@@ -73,12 +73,12 @@ const terms = {
         {
           type: "paragraph",
           text:
-            "Mulberry provides a paired-device experience where two users can share a private drawing canvas. Shared drawings may sync between paired users and may appear locally through the Android live wallpaper experience."
+            "Mulberry provides a paired-device experience where two users can share a private drawing canvas. Shared drawings may sync between paired users and may appear locally on your wallpaper: through the live wallpaper on Android, or through a Shortcuts automation you set up on iPhone and iPad."
         },
         {
           type: "paragraph",
           text:
-            "Mulberry is not a public social network, publishing platform, marketplace, payment service, emergency communication tool, or backup service. Background sync, push delivery, wallpapers, and device behavior may depend on Android, Google services, network availability, and device settings."
+            "Mulberry is not a public social network, publishing platform, marketplace, payment service, emergency communication tool, or backup service. Background sync, push delivery, wallpapers, and device behavior may depend on Android, iOS, iPadOS, Google and Apple services, the Shortcuts app, network availability, and device settings."
         }
       ]
     },
@@ -188,12 +188,12 @@ const terms = {
         {
           type: "paragraph",
           text:
-            "Mulberry depends on third-party services, including Google Sign-In, Android platform services, Firebase Cloud Messaging, Firebase Crashlytics, Google Analytics, Sentry, Better Stack Logs, PostHog, Supabase, Railway, and Google Play distribution. Those services may have their own terms and policies."
+            "Mulberry depends on third-party services, including Google Sign-In, Android and Apple platform services, Firebase Cloud Messaging, Apple Push Notification service, Firebase Crashlytics, PostHog, Canny, Supabase, Fly.io, and distribution through Google Play and the App Store. Those services may have their own terms and policies."
         },
         {
           type: "paragraph",
           text:
-            "Your use of Google Play, Android, Google accounts, or other third-party services is governed by the applicable third-party terms. Mulberry is not responsible for third-party service outages, account decisions, platform restrictions, or policy changes."
+            "Your use of Google Play, the App Store, Android, iOS, Google accounts, Apple accounts, or other third-party services is governed by the applicable third-party terms. Mulberry is not responsible for third-party service outages, account decisions, platform restrictions, or policy changes."
         }
       ]
     },
@@ -424,7 +424,8 @@ export default function TermsPage() {
             <div className="mt-5 grid gap-4 text-base leading-8 text-muted-foreground">
               <p>
                 These terms are written for Mulberry's current India-only,
-                two-person Android app launch and should be read with the{" "}
+                two-person launch on Android, iPhone, and iPad and should be
+                read with the{" "}
                 <Link href="/privacy" className="font-medium text-brand">
                   Privacy Policy
                 </Link>

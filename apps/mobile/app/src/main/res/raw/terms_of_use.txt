@@ -1,16 +1,16 @@
 Mulberry Terms of Use
 
 Effective date: April 23, 2026
-Last updated: April 23, 2026
+Last updated: October 29, 2026
 Operator: Subhajit Kundu
 Address: ITI Crossing, Kalyani, West Bengal, India, 741235
 Contact: subha60kundu@gmail.com
 
-These Terms of Use explain the rules for using Mulberry, a private Android app for two people to share a drawing canvas that can appear on each other's wallpaper.
+These Terms of Use explain the rules for using Mulberry, a private app for Android, iPhone, and iPad for two people to share a drawing canvas that can appear on each other's wallpaper.
 
 Overview
 
-These terms are written for Mulberry's current India-only, two-person Android app launch and should be read with the Privacy Policy.
+These terms are written for Mulberry's current India-only, two-person launch on Android, iPhone, and iPad and should be read with the Privacy Policy.
 
 1. Acceptance of these terms
 
@@ -26,9 +26,9 @@ If Mulberry becomes available outside India, these terms may be updated before t
 
 3. The Mulberry service
 
-Mulberry provides a paired-device experience where two users can share a private drawing canvas. Shared drawings may sync between paired users and may appear locally through the Android live wallpaper experience.
+Mulberry provides a paired-device experience where two users can share a private drawing canvas. Shared drawings may sync between paired users and may appear locally on your wallpaper: through the live wallpaper on Android, or through a Shortcuts automation you set up on iPhone and iPad.
 
-Mulberry is not a public social network, publishing platform, marketplace, payment service, emergency communication tool, or backup service. Background sync, push delivery, wallpapers, and device behavior may depend on Android, Google services, network availability, and device settings.
+Mulberry is not a public social network, publishing platform, marketplace, payment service, emergency communication tool, or backup service. Background sync, push delivery, wallpapers, and device behavior may depend on Android, iOS, iPadOS, Google and Apple services, the Shortcuts app, network availability, and device settings.
 
 4. Accounts, sign-in, and security
 
@@ -73,9 +73,9 @@ You are responsible for your device settings, lock screen visibility, screenshot
 
 9. Third-party services and app store terms
 
-Mulberry depends on third-party services, including Google Sign-In, Android platform services, Firebase Cloud Messaging, Firebase Crashlytics, Google Analytics, Sentry, Better Stack Logs, PostHog, Supabase, Railway, and Google Play distribution. Those services may have their own terms and policies.
+Mulberry depends on third-party services, including Google Sign-In, Android and Apple platform services, Firebase Cloud Messaging, Apple Push Notification service, Firebase Crashlytics, PostHog, Canny, Supabase, Fly.io, and distribution through Google Play and the App Store. Those services may have their own terms and policies.
 
-Your use of Google Play, Android, Google accounts, or other third-party services is governed by the applicable third-party terms. Mulberry is not responsible for third-party service outages, account decisions, platform restrictions, or policy changes.
+Your use of Google Play, the App Store, Android, iOS, Google accounts, Apple accounts, or other third-party services is governed by the applicable third-party terms. Mulberry is not responsible for third-party service outages, account decisions, platform restrictions, or policy changes.
 
 10. Fees and paid features
 
