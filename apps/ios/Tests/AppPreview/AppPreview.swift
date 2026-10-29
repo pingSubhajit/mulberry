@@ -56,6 +56,10 @@ private actor PreviewTransport: BackendTransport {
     static func signOut() {}
     static func isCancellation(_ error: Error) -> Bool { false }
 }
+enum CrashReporting {
+    static func testCrash() -> Never { fatalError("Preview test crash") }
+    static func testError() {}
+}
 @MainActor final class PushRegistration {
     static let shared = PushRegistration()
     static let deviceId = "app-preview"

@@ -743,6 +743,10 @@ private struct DeveloperSettingsView: View {
                     }
                     if let status { Text(status).font(.callout) }
                 }
+                Section {
+                    Button("Send test error") { CrashReporting.testError(); status = "Test error sent to Crashlytics." }
+                    Button("Crash now", role: .destructive) { CrashReporting.testCrash() }
+                } header: { Text("Crash reporting") } footer: { Text("A crash is reported when Mulberry next opens.") }
             }
         }.navigationTitle("Developer options").navigationBarTitleDisplayMode(.inline)
     }

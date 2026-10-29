@@ -29,7 +29,7 @@ xcrun actool "$IOS_ROOT/Resources/Assets.xcassets" --compile "$APP" --platform i
 APP_FILES=()
 for file in "$IOS_ROOT"/Sources/App/*.swift; do
   case "$(basename "$file")" in
-    MulberryDeliveryApp.swift|AppRuntime.swift|GoogleAuthentication.swift|PushRegistration.swift|NotificationBridge.swift) ;;
+    MulberryDeliveryApp.swift|AppRuntime.swift|GoogleAuthentication.swift|PushRegistration.swift|NotificationBridge.swift|CrashReporting.swift) ;;
     *) APP_FILES+=("$file") ;;
   esac
 done
