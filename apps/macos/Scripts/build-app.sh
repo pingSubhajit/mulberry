@@ -15,6 +15,12 @@ EXECUTABLE_PATH="${MACOS_DIR}/MulberryMac"
 INFO_PLIST_TEMPLATE="Configuration/Info.plist"
 INFO_PLIST_PATH="${CONTENTS_DIR}/Info.plist"
 ENTITLEMENTS_PATH="${ENTITLEMENTS_PATH:-Configuration/Debug.entitlements}"
+# Signing with a stable identity lets the Keychain keep trusting rebuilds; ad hoc signatures change
+# every build, so macOS asks for the login password again. Use an Apple Development certificate when
+# this Mac has one, unless MULBERRY_MAC_CODESIGN_IDENTITY names another ("-" signs ad hoc).
+if [ -z "${MULBERRY_MAC_CODESIGN_IDENTITY:-}" ]; then
+  MULBERRY_MAC_CODESIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Apple Development: [^"]*\)".*/\1/p' | head -n 1)"
+fi
 SIGNING_IDENTITY="${MULBERRY_MAC_CODESIGN_IDENTITY:--}"
 
 swift build -c "${CONFIGURATION}" --product MulberryMac
