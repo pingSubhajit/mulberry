@@ -27,9 +27,16 @@ public struct StrokeStart: Codable, Equatable, Sendable {
     public let width: Double
     public let createdAt: Int64
     public let firstPoint: DrawingPoint
+
+    public init(id: String, colorArgb: UInt32, width: Double, createdAt: Int64, firstPoint: DrawingPoint) {
+        self.id = id; self.colorArgb = colorArgb; self.width = width; self.createdAt = createdAt; self.firstPoint = firstPoint
+    }
 }
 
-public struct StrokePoints: Codable, Equatable, Sendable { public let points: [DrawingPoint] }
+public struct StrokePoints: Codable, Equatable, Sendable {
+    public let points: [DrawingPoint]
+    public init(points: [DrawingPoint]) { self.points = points }
+}
 
 public struct DrawingOperation: Codable, Equatable, Identifiable, Sendable {
     public let clientOperationId: String
@@ -49,6 +56,16 @@ public struct DrawingOperation: Codable, Equatable, Identifiable, Sendable {
         self.type = type; self.strokeId = strokeId; self.payload = payload
         self.clientCreatedAt = clientCreatedAt; self.clientLocalDate = clientLocalDate
         self.serverRevision = serverRevision; self.createdAt = createdAt
+    }
+
+    /// Starts a stroke at its first point; later points follow as `appendPoints`.
+    public static func startStroke(_ stroke: DrawingStroke) throws -> DrawingOperation {
+        guard let first = stroke.points.first else { throw DrawingError.invalidStroke }
+        return DrawingOperation(type: "ADD_STROKE", strokeId: stroke.id, payload: try .encoded(StrokeStart(id: stroke.id, colorArgb: stroke.colorArgb, width: stroke.width, createdAt: stroke.createdAt, firstPoint: first)))
+    }
+
+    public static func appendPoints(_ points: [DrawingPoint], to strokeId: String) throws -> DrawingOperation {
+        DrawingOperation(type: "APPEND_POINTS", strokeId: strokeId, payload: try .encoded(StrokePoints(points: points)))
     }
 
     /// Restoring a stroke (redo or undo-delete) uses fresh operation IDs, so the server

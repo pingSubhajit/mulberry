@@ -149,12 +149,14 @@ public actor BackendClient {
         return result.operations
     }
 
-    public func setPresence(deviceId: String, configured: Bool, enabled: Bool, canSeeLatestDrawings: Bool, details: [String: JSONValue]) async throws -> BootstrapState {
+    /// Reports whether this device shows the partner's latest drawings: the iPhone and iPad
+    /// wallpaper Shortcut, or the Mac's desktop overlay.
+    public func setPresence(surface: PresenceSurfaceType = .iosShortcut, deviceId: String, configured: Bool, enabled: Bool, canSeeLatestDrawings: Bool, details: [String: JSONValue]) async throws -> BootstrapState {
         let body: [String: JSONValue] = [
             "deviceInstanceId": .string(deviceId), "configured": .bool(configured), "enabled": .bool(enabled),
             "canSeeLatestDrawings": .bool(canSeeLatestDrawings), "details": .object(details)
         ]
-        return try await json("me/presence-surfaces/IOS_SHORTCUT", method: "PUT", body: body)
+        return try await json("me/presence-surfaces/\(surface.rawValue)", method: "PUT", body: body)
     }
 
     public func registerPushToken(_ token: String, environment: String) async throws {

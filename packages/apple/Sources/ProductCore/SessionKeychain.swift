@@ -41,5 +41,11 @@ public struct SessionKeychain: SessionTokenStore {
 
 private struct KeychainFailure: LocalizedError {
     let status: OSStatus
-    var errorDescription: String? { "Mulberry could not access your saved sign-in. Please unlock your phone and try again." }
+    var errorDescription: String? {
+        #if os(iOS)
+        "Mulberry could not access your saved sign-in. Please unlock your phone and try again."
+        #else
+        "Mulberry could not access your saved sign-in. Please try again."
+        #endif
+    }
 }

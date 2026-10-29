@@ -88,6 +88,11 @@ public struct PresenceSummary: Codable, Equatable, Sendable {
     public let surfaces: [PresenceSurface]
 }
 
+/// The backend's names for the places a device can show the shared canvas.
+public enum PresenceSurfaceType: String, Sendable {
+    case iosShortcut = "IOS_SHORTCUT", macOverlay = "MACOS_OVERLAY"
+}
+
 public struct PresenceSurface: Codable, Equatable, Sendable {
     public let surfaceType: String
     public let deviceInstanceId: String
