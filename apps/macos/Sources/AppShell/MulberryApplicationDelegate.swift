@@ -62,6 +62,9 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     private let preferences = MacPreferences()
     private let launchAtLogin = LaunchAtLogin()
     private let streaks = StreakModel()
+    private lazy var reactions = ReactionsModel(api: { [unowned self] in api }, deviceID: store.installationID)
+    private var reactionPolling: Task<Void, Never>?
+    private var surfaceObservers: [NSObjectProtocol] = []
     private lazy var accountSettings = AccountSettings(api: { [unowned self] in api }) { [weak self] bootstrap in
         guard let self else { return }
         appStateController.apply(bootstrap, syncController: syncController)
@@ -100,6 +103,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 self.updateSyncDemand()
                 self.refreshStatusMenu()
                 self.reportCurrentOverlayPresence()
+                self.updateReactionSurface()
             }
         }
         authStateCancellable = authController.objectWillChange.sink { [weak self] _ in
@@ -121,6 +125,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 self.updateSyncDemand()
                 self.refreshOverlayCanvas()
                 self.refreshStatusMenu()
+                self.bindReactions()
             }
         }
         syncStateCancellable = syncController.objectWillChange.sink { [weak self] _ in
@@ -138,6 +143,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             }
         }
         installStatusItem()
+        installReactions()
         preferencesCancellable = preferences.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.applyPreferences() }
         }
@@ -169,6 +175,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 syncController: syncController,
                 stickerLoader: stickerLoader,
                 model: quickDrawEditorModel,
+                reactions: reactions,
                 layout: .quickDraw
             ))
         }
@@ -241,7 +248,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 sendReaction: { [unowned self] reaction in send(reaction) },
                 exportDrawing: { [unowned self] in exportDrawing() },
                 canExportDrawing: { [unowned self] in !canvasIsEmpty },
-                canSendReactions: { [unowned self] in appStateController.loadState.bootstrap?.isPaired == true },
+                canSendReactions: { [unowned self] in reactions.canSend },
                 setDryBrush: { [unowned self] enabled in Task { _ = await accountSettings.setDryBrush(enabled) } }
             )
         )
@@ -316,7 +323,61 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     }
 
     private func send(_ reaction: ReactionType) {
-        Task { try? await api.sendReaction(reaction) }
+        Task { await reactions.send(reaction) }
+    }
+
+    // MARK: Reactions
+
+    /// The partner's reactions, played over a canvas on screen. The Mac looks every five seconds
+    /// while paired, as the iPhone does while open, until reaction pushes can reach it.
+    private func installReactions() {
+        let center = NotificationCenter.default
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+                     NSWindow.didBecomeKeyNotification, NSWindow.didMiniaturizeNotification,
+                     NSWindow.didDeminiaturizeNotification, NSWindow.willCloseNotification,
+                     NSWindow.didChangeOcclusionStateNotification] {
+            surfaceObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                // After the window has finished closing or hiding.
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.updateReactionSurface() } }
+            })
+        }
+        bindReactions()
+    }
+
+    private func bindReactions() {
+        let bootstrap = appStateController.loadState.bootstrap
+        let paired = bootstrap?.isPaired == true
+        reactions.bind(userId: authController.state.isSignedIn ? bootstrap?.userId : nil, pairSessionId: paired ? bootstrap?.pairSessionId : nil)
+        if paired, reactionPolling == nil {
+            #if DEBUG
+            Task { await reactions.runDebugArrivals() }
+            #endif
+            reactionPolling = Task { [weak self] in
+                while !Task.isCancelled {
+                    await self?.reactions.check()
+                    try? await Task.sleep(for: .seconds(5))
+                }
+            }
+        } else if !paired {
+            reactionPolling?.cancel()
+            reactionPolling = nil
+        }
+        updateReactionSurface()
+    }
+
+    /// Which canvas is in front of the person: Quick Draw while it is open, else the window
+    /// while Mulberry is the active app and the window shows.
+    private func updateReactionSurface() {
+        let surface: ReactionsModel.Surface?
+        if overlayController.isQuickDrawActive {
+            surface = .quickDraw
+        } else if NSApp.isActive, let window = mainWindowController?.window, window.isVisible, !window.isMiniaturized,
+                  window.occlusionState.contains(.visible), appStateController.loadState.bootstrap?.isPaired == true {
+            surface = .window
+        } else {
+            surface = nil
+        }
+        if reactions.surface != surface { reactions.surface = surface }
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -502,6 +563,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 stickerLoader: stickerLoader,
                 editorModel: windowEditorModel,
                 streaks: streaks,
+                reactions: reactions,
                 openSettings: { [weak self] in self?.showSettings(nil) }
             ) { [weak self] in
                 self?.returnToAccessoryMode()
@@ -514,6 +576,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         mainWindowController?.showWindow(nil)
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
         updateSyncDemand()
+        updateReactionSurface()
     }
 
     private func returnToAccessoryMode() {
@@ -617,6 +680,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         stickerLoader: StickerImageLoader,
         editorModel: CanvasEditorModel,
         streaks: StreakModel,
+        reactions: ReactionsModel,
         openSettings: @escaping () -> Void,
         onWindowClosed: @escaping () -> Void
     ) {
@@ -630,6 +694,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             stickerLoader: stickerLoader,
             editorModel: editorModel,
             streaks: streaks,
+            reactions: reactions,
             openSettings: openSettings
         )
         let hostingController = NSHostingController(rootView: view)

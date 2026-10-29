@@ -22,6 +22,7 @@ struct FullAppCanvasEditor: View {
     @ObservedObject var syncController: CanvasSyncController
     @ObservedObject var stickerLoader: StickerImageLoader
     @ObservedObject var model: CanvasEditorModel
+    let reactions: ReactionsModel
     let layout: CanvasEditorLayout
 
     init(
@@ -30,6 +31,7 @@ struct FullAppCanvasEditor: View {
         syncController: CanvasSyncController,
         stickerLoader: StickerImageLoader,
         model: CanvasEditorModel,
+        reactions: ReactionsModel,
         layout: CanvasEditorLayout = .window
     ) {
         self.authController = authController
@@ -37,6 +39,7 @@ struct FullAppCanvasEditor: View {
         self.syncController = syncController
         self.stickerLoader = stickerLoader
         self.model = model
+        self.reactions = reactions
         self.layout = layout
         // The overlay has no title bar to keep clear of.
         _titleBarHeight = State(initialValue: layout == .window ? 52 : 0)
@@ -199,6 +202,8 @@ struct FullAppCanvasEditor: View {
             let height = min(window.size.height, window.size.width * 20 / 9)
             canvasLayers
                 .frame(width: height * 9 / 20, height: height)
+                // The partner's reactions arrive over the drawing, as on the phones.
+                .overlay { ReactionStage(reactions: reactions, surface: layout == .window ? .window : .quickDraw) }
                 .clipped()
                 .position(x: window.size.width / 2, y: window.size.height / 2)
         }

@@ -17,6 +17,7 @@ struct MainWindowView: View {
     @ObservedObject var stickerLoader: StickerImageLoader
     let editorModel: CanvasEditorModel
     @ObservedObject var streaks: StreakModel
+    let reactions: ReactionsModel
     let openSettings: () -> Void
     @StateObject private var avatar = ProfileAvatar()
     @State private var reactionsOpen = false
@@ -53,7 +54,8 @@ struct MainWindowView: View {
                         appStateController: appStateController,
                         syncController: syncController,
                         stickerLoader: stickerLoader,
-                        model: editorModel
+                        model: editorModel,
+                        reactions: reactions
                     )
                 } else {
                     UnpairedPanel()
@@ -100,7 +102,7 @@ struct MainWindowView: View {
             .popover(isPresented: $reactionsOpen, arrowEdge: .bottom) {
                 ReactionPicker { reaction in
                     reactionsOpen = false
-                    Task { try? await authController.api.sendReaction(reaction) }
+                    Task { await reactions.send(reaction) }
                 }
             }
     }

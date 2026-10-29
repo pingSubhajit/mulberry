@@ -136,3 +136,157 @@ private struct ReactionButtonStyle: ButtonStyle {
             .animation(.snappy(duration: 0.12), value: configuration.isPressed)
     }
 }
+
+
+/// The reaction just sent rises, wiggles and drops away, after Android's sent overlay.
+struct ReactionSentBurst: View {
+    let sent: ReactionsModel.Sent
+    let done: () -> Void
+    @State private var start = Date()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let slide = 0.17, hold = 0.38, fall = 0.26
+    private static let duration = slide + hold + fall + 0.05
+
+    var body: some View {
+        TimelineView(.animation) { context in
+            let t = context.date.timeIntervalSince(start)
+            let pose = reduceMotion ? Self.stillPose(t) : Self.pose(t)
+            ReactionArtwork(type: sent.type, size: 128, time: t)
+                .rotationEffect(.degrees(pose.rotation))
+                .scaleEffect(pose.scale)
+                .offset(x: pose.x, y: pose.y)
+                .opacity(pose.opacity)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .task(id: sent) {
+            start = .now
+            try? await Task.sleep(for: .seconds(Self.duration))
+            if !Task.isCancelled { done() }
+        }
+    }
+
+    private struct Pose { var x = 0.0, y = 0.0, scale = 1.0, rotation = 0.0, opacity = 1.0 }
+
+    private static func pose(_ t: Double) -> Pose {
+        let rise = ease(min(1, t / slide)), out = ease(min(1, max(0, (t - slide - hold) / fall)))
+        let leaving = t > slide + hold
+        // Rises 30 pt, sways while held, then drops 34 pt as it fades.
+        let y = 18 - 30 * rise + 34 * out
+        let swayEnvelope = min(1, t / slide) * (leaving ? 1 - 0.75 * out : 1)
+        let x = leaving ? 10 * sin(out * .pi) - 6 * out * out : 0
+        return Pose(x: x, y: y, scale: 0.92 + 0.14 * rise - 0.11 * out,
+                    rotation: sin(2 * .pi * 3.5 * t) * 5 * swayEnvelope,
+                    opacity: min(1, t / 0.11) * (1 - out))
+    }
+
+    private static func stillPose(_ t: Double) -> Pose {
+        Pose(opacity: min(1, t / 0.15) * (1 - min(1, max(0, (t - slide - hold) / fall))))
+    }
+
+    private static func ease(_ x: Double) -> Double { x < 0.5 ? 2 * x * x : 1 - pow(-2 * x + 2, 2) / 2 }
+}
+
+/// The partner's reactions arriving, as Android plays them on the wallpaper: they rise into
+/// place, bob together for a moment, then drift down like leaves and fade.
+struct ReactionArrivalView: View {
+    let arrival: ReactionsModel.Arrival
+    let done: () -> Void
+    @State private var start = Date()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let slide = 0.26, wiggle = 1.2, fall = 0.85, fadeIn = 0.16, fadeOut = 0.65
+    static let duration = slide + wiggle + fall
+
+    var body: some View {
+        let arrangement = ReactionArrangement(arrival.batch)
+        GeometryReader { geometry in
+            let size = geometry.size
+            let base = max(28, min(size.width, size.height) * 0.24)
+            TimelineView(.animation) { context in
+                let t = context.date.timeIntervalSince(start)
+                let motion = reduceMotion ? Motion(opacity: Self.opacity(t)) : Self.motion(t, size: size)
+                ZStack {
+                    ForEach(Array(arrangement.glyphs.enumerated()), id: \.offset) { index, glyph in
+                        ReactionArtwork(type: glyph.type, size: base * glyph.scale, time: t)
+                            .rotationEffect(.degrees(reduceMotion ? 0 : sin(2 * .pi * 3.2 * t + Double(index) * 0.7) * motion.wiggle))
+                            .position(x: size.width * glyph.x + motion.x, y: size.height * glyph.y + motion.y)
+                    }
+                    if let caption = arrangement.caption {
+                        // The caption holds still while the reactions move.
+                        Text(caption)
+                            .font(.custom("Virgil3YOFF", size: max(18, min(size.width, size.height) * 0.045), relativeTo: .title3))
+                            .foregroundStyle(.primary.opacity(0.92))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 48)
+                            .position(x: size.width / 2, y: size.height * 0.76)
+                    }
+                }
+                .opacity(motion.opacity)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityElement()
+        .accessibilityLabel(Self.announcement(arrival.batch))
+        .task(id: arrival) {
+            start = .now
+            AccessibilityNotification.Announcement(Self.announcement(arrival.batch)).post()
+            try? await Task.sleep(for: .seconds(Self.duration))
+            if !Task.isCancelled { done() }
+        }
+    }
+
+    private struct Motion { var x = 0.0, y = 0.0, wiggle = 0.0, opacity = 1.0 }
+
+    private static func motion(_ t: Double, size: CGSize) -> Motion {
+        let height = size.height
+        let falling = max(0, min(1, (t - slide - wiggle) / fall))
+        let start = height * 0.06, raised = -height * 0.035, end = height * 0.09
+        let y: Double
+        if t < slide { y = start + (raised - start) * easeOutBack(t / slide) }
+        else if t < slide + wiggle { y = raised + sin(2 * .pi * 3.2 * (t - slide)) * height * 0.006 }
+        else { y = raised + (end - raised) * falling * falling }
+        let x = t < slide + wiggle ? 0 : sin(2 * .pi * 1.15 * (t - slide - wiggle)) * size.width * 0.035 * (1 - falling * 0.35)
+        let wiggleAmount = 7.5 * min(1, t / slide) * (t < slide + wiggle ? 1 : 1 - falling * 0.55)
+        return Motion(x: x, y: y, wiggle: wiggleAmount, opacity: opacity(t))
+    }
+
+    private static func opacity(_ t: Double) -> Double {
+        let fadeStart = slide + wiggle + fall - fadeOut
+        if t < fadeIn { return t / fadeIn }
+        if t < fadeStart { return 1 }
+        let progress = min(1, (t - fadeStart) / fadeOut)
+        return 1 - progress * progress
+    }
+
+    private static func easeOutBack(_ x: Double) -> Double {
+        let c1 = 1.70158, c3 = c1 + 1
+        return 1 + c3 * pow(x - 1, 3) + c1 * pow(x - 1, 2)
+    }
+
+    static func announcement(_ batch: PendingReactionBatch) -> String {
+        let parts = ReactionType.allCases.filter { batch.count($0) > 0 }.map { "\(batch.count($0)) \($0.emoji)" }
+        return "Your partner sent " + parts.joined(separator: ", ")
+    }
+}
+
+/// The partner's reactions arriving, and the one just sent leaving, over a canvas.
+struct ReactionStage: View {
+    @ObservedObject var reactions: ReactionsModel
+    let surface: ReactionsModel.Surface
+
+    var body: some View {
+        ZStack {
+            if reactions.surface == surface, let arrival = reactions.arrival {
+                ReactionArrivalView(arrival: arrival) { Task { await reactions.played(arrival) } }
+                    .id(arrival.id)
+            }
+            if reactions.surface == surface, let sent = reactions.sent {
+                ReactionSentBurst(sent: sent) { reactions.finishedSending(sent) }
+                    .id(sent.id)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
