@@ -24,13 +24,20 @@ def quote(value, depth=0):
         return '(' + ', '.join(quote(v, depth) for v in value) + ')'
     return json.dumps(str(value))
 
+# The widget extension draws Live Activities. It shares the activity's attributes and the reaction
+# types with the app, and nothing else.
 sources = sorted(root.glob('Sources/**/*.swift'))
-refs, builds = [], []
+widget_only = {s for s in sources if s.is_relative_to(root / 'Sources/Widgets')}
+widget_shared = {s for s in sources if s.is_relative_to(root / 'Sources/Shared')} | {root / 'Sources/ProductCore/Reactions.swift'}
+refs, builds, widget_builds = [], [], []
 for source in sources:
     relative = str(source.relative_to(root))
     reference = add(relative, isa='PBXFileReference', lastKnownFileType='sourcecode.swift', path=relative, sourceTree='<group>')
     refs.append(reference)
-    builds.append(add('build:' + relative, isa='PBXBuildFile', fileRef=reference))
+    if source not in widget_only:
+        builds.append(add('build:' + relative, isa='PBXBuildFile', fileRef=reference))
+    if source in widget_only or source in widget_shared:
+        widget_builds.append(add('widget-build:' + relative, isa='PBXBuildFile', fileRef=reference))
 resources = add('resources', isa='PBXFileReference', lastKnownFileType='folder', path='ShortcutTemplates', sourceTree='<group>')
 resource_build = add('resources-build', isa='PBXBuildFile', fileRef=resources)
 asset_ref = add('assets', isa='PBXFileReference', lastKnownFileType='folder.assetcatalog', path='Resources/Assets.xcassets', sourceTree='<group>')
@@ -54,8 +61,12 @@ firebase_product = add('firebase-product', isa='XCSwiftPackageProductDependency'
 firebase_build = add('firebase-build', isa='PBXBuildFile', productRef=firebase_product)
 firebase_phase = add('firebase-config-phase', isa='PBXShellScriptBuildPhase', buildActionMask='2147483647', files=[], inputPaths=[], outputPaths=[], runOnlyForDeploymentPostprocessing='0', shellPath='/bin/sh', shellScript='python3 "$SRCROOT/scripts/copy-client-config.py"', alwaysOutOfDate='1', name='Copy public Firebase client configuration')
 product = add('product', isa='PBXFileReference', explicitFileType='wrapper.application', path='MulberryDelivery.app', sourceTree='BUILT_PRODUCTS_DIR')
-products = add('products', isa='PBXGroup', name='Products', children=[product], sourceTree='<group>')
-main = add('main', isa='PBXGroup', children=refs + icon_refs + [resources, asset_ref, font_ref, legal_ref, config_ref, debug_config_ref, products], sourceTree='<group>')
+widget_product = add('widget-product', isa='PBXFileReference', explicitFileType='wrapper.app-extension', path='MulberryWidgets.appex', sourceTree='BUILT_PRODUCTS_DIR')
+widget_assets_ref = add('widget-assets', isa='PBXFileReference', lastKnownFileType='folder.assetcatalog', path='Resources/WidgetAssets.xcassets', sourceTree='<group>')
+widget_assets_build = add('widget-assets-build', isa='PBXBuildFile', fileRef=widget_assets_ref)
+widget_plist_ref = add('widget-plist', isa='PBXFileReference', lastKnownFileType='text.plist.xml', path='Configuration/Widgets-Info.plist', sourceTree='<group>')
+products = add('products', isa='PBXGroup', name='Products', children=[product, widget_product], sourceTree='<group>')
+main = add('main', isa='PBXGroup', children=refs + icon_refs + [resources, asset_ref, font_ref, legal_ref, config_ref, debug_config_ref, widget_assets_ref, widget_plist_ref, products], sourceTree='<group>')
 sources_phase = add('sources-phase', isa='PBXSourcesBuildPhase', buildActionMask='2147483647', files=builds, runOnlyForDeploymentPostprocessing='0')
 resources_phase = add('resources-phase', isa='PBXResourcesBuildPhase', buildActionMask='2147483647', files=[resource_build, asset_build, font_build, legal_build] + icon_builds, runOnlyForDeploymentPostprocessing='0')
 frameworks_phase = add('frameworks-phase', isa='PBXFrameworksBuildPhase', buildActionMask='2147483647', files=[google_build, firebase_build], runOnlyForDeploymentPostprocessing='0')
@@ -75,10 +86,30 @@ for mode in ['Debug', 'Release']:
         'CODE_SIGN_STYLE': 'Automatic', 'TARGETED_DEVICE_FAMILY': '1,2', 'SUPPORTED_PLATFORMS': 'iphoneos iphonesimulator',
         'SUPPORTS_MACCATALYST': 'NO', 'GENERATE_INFOPLIST_FILE': 'NO', 'ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS': 'YES',
     }))
+widget_configs = []
+for mode in ['Debug', 'Release']:
+    widget_configs.append(add('widget-' + mode, isa='XCBuildConfiguration', name=mode, baseConfigurationReference=debug_config_ref if mode == 'Debug' else config_ref, buildSettings={
+        'PRODUCT_NAME': 'MulberryWidgets',
+        'PRODUCT_BUNDLE_IDENTIFIER': 'com.subhajit.mulberry.dev.widgets' if mode == 'Debug' else 'com.subhajit.mulberry.widgets',
+        'INFOPLIST_FILE': 'Configuration/Widgets-Info.plist', 'GENERATE_INFOPLIST_FILE': 'NO',
+        'CODE_SIGN_STYLE': 'Automatic', 'TARGETED_DEVICE_FAMILY': '1,2', 'SUPPORTED_PLATFORMS': 'iphoneos iphonesimulator',
+        'SUPPORTS_MACCATALYST': 'NO', 'SKIP_INSTALL': 'YES', 'APPLICATION_EXTENSION_API_ONLY': 'YES',
+        'LD_RUNPATH_SEARCH_PATHS': '$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks',
+        'SWIFT_ACTIVE_COMPILATION_CONDITIONS': '$(inherited) WIDGET_EXTENSION' + (' DEBUG' if mode == 'Debug' else ''),
+    }))
+widget_list = add('widget-configs', isa='XCConfigurationList', buildConfigurations=widget_configs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
+widget_sources = add('widget-sources-phase', isa='PBXSourcesBuildPhase', buildActionMask='2147483647', files=widget_builds, runOnlyForDeploymentPostprocessing='0')
+widget_resources = add('widget-resources-phase', isa='PBXResourcesBuildPhase', buildActionMask='2147483647', files=[widget_assets_build], runOnlyForDeploymentPostprocessing='0')
+widget_frameworks = add('widget-frameworks-phase', isa='PBXFrameworksBuildPhase', buildActionMask='2147483647', files=[], runOnlyForDeploymentPostprocessing='0')
+widget_target = add('widget-target', isa='PBXNativeTarget', name='MulberryWidgets', productName='MulberryWidgets', productType='com.apple.product-type.app-extension', productReference=widget_product, buildConfigurationList=widget_list, buildPhases=[widget_sources, widget_frameworks, widget_resources], dependencies=[], buildRules=[])
+widget_proxy = add('widget-proxy', isa='PBXContainerItemProxy', containerPortal=oid('project'), proxyType='1', remoteGlobalIDString=widget_target, remoteInfo='MulberryWidgets')
+widget_dependency = add('widget-dependency', isa='PBXTargetDependency', target=widget_target, targetProxy=widget_proxy)
+widget_embed_build = add('widget-embed-build', isa='PBXBuildFile', fileRef=widget_product, settings={'ATTRIBUTES': ['RemoveHeadersOnCopy']})
+widget_embed = add('widget-embed-phase', isa='PBXCopyFilesBuildPhase', buildActionMask='2147483647', dstPath='', dstSubfolderSpec='13', files=[widget_embed_build], name='Embed Foundation Extensions', runOnlyForDeploymentPostprocessing='0')
 project_list = add('project-configs', isa='XCConfigurationList', buildConfigurations=project_configs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
 target_list = add('target-configs', isa='XCConfigurationList', buildConfigurations=target_configs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
-target = add('app-target', isa='PBXNativeTarget', name='MulberryDelivery', productName='MulberryDelivery', productType='com.apple.product-type.application', productReference=product, buildConfigurationList=target_list, buildPhases=[sources_phase, frameworks_phase, resources_phase, firebase_phase], dependencies=[], buildRules=[], packageProductDependencies=[google_product, firebase_product])
-project = add('project', isa='PBXProject', attributes={'LastUpgradeCheck': '2710'}, buildConfigurationList=project_list, compatibilityVersion='Xcode 14.0', developmentRegion='en', knownRegions=['en', 'Base'], mainGroup=main, productRefGroup=products, projectDirPath='', projectRoot='', targets=[target], packageReferences=[google_package, firebase_package])
+target = add('app-target', isa='PBXNativeTarget', name='MulberryDelivery', productName='MulberryDelivery', productType='com.apple.product-type.application', productReference=product, buildConfigurationList=target_list, buildPhases=[sources_phase, frameworks_phase, resources_phase, firebase_phase, widget_embed], dependencies=[widget_dependency], buildRules=[], packageProductDependencies=[google_product, firebase_product])
+project = add('project', isa='PBXProject', attributes={'LastUpgradeCheck': '2710'}, buildConfigurationList=project_list, compatibilityVersion='Xcode 14.0', developmentRegion='en', knownRegions=['en', 'Base'], mainGroup=main, productRefGroup=products, projectDirPath='', projectRoot='', targets=[target, widget_target], packageReferences=[google_package, firebase_package])
 folder = root / 'MulberryDelivery.xcodeproj'
 folder.mkdir(exist_ok=True)
 (folder / 'project.pbxproj').write_text('// !$*UTF8*$!\n' + quote({'archiveVersion': '1', 'classes': {}, 'objectVersion': '56', 'objects': objects, 'rootObject': project}) + '\n')

@@ -34,7 +34,13 @@ struct MulberryRootView: View {
                 }
             } else { mainCanvas }
         }
-        .task { _ = try? WallpaperRenderSize.current(); await model.restore(); wallpapers.load(user: model.userId) }
+        .task {
+            _ = try? WallpaperRenderSize.current(); await model.restore(); wallpapers.load(user: model.userId)
+            #if DEBUG
+            await ReactionActivities.runLaunchArgument(partnerName: model.bootstrap?.partnerDisplayName ?? "Your partner",
+                                                       partnerPhotoURL: model.bootstrap?.partnerPhotoUrl)
+            #endif
+        }
         .task(id: model.bootstrap?.userPhotoUrl) { await loadProfilePhoto() }
         .onChange(of: model.userId) { _, user in wallpapers.load(user: user) }
         .onChange(of: quickActions.pending) { _, _ in handleQuickAction() }
@@ -47,6 +53,7 @@ struct MulberryRootView: View {
             Button("Clear doodles", role: .destructive) { Task { await model.clearCanvas() } }
         } message: { Text("This removes the shared drawing for both of you.") }
         .task(id: phase) {
+            if phase == .background { ReactionActivities.appBackgrounded() }
             await model.setActive(phase == .active, updateWallpaper: phase == .background)
             guard phase == .active else { return }
             while !Task.isCancelled {

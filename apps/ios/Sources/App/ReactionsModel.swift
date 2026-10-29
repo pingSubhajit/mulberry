@@ -14,6 +14,8 @@ final class ReactionsModel: ObservableObject {
     struct Arrival: Identifiable, Equatable {
         let id = UUID()
         let batch: PendingReactionBatch
+        /// Played from the Live Activity rather than claimed from the server, so nothing to confirm.
+        var local = false
     }
 
     struct Sent: Identifiable, Equatable {
@@ -68,17 +70,27 @@ final class ReactionsModel: ObservableObject {
         guard watching, arrival == nil, !checking, let user, let pair, let api = try? AppRuntime.api() else { return }
         checking = true
         defer { checking = false }
-        guard let batch = try? await api.pendingReactions(quick: true), batch.total > 0,
-              let status = try? await api.leaseReactionPlayback(generation: batch.generation, deviceId: PushRegistration.deviceId),
-              status == .claimed, watching, self.user == user, self.pair == pair, arrival == nil else { return }
-        arrival = Arrival(batch: batch)
+        if let batch = try? await api.pendingReactions(quick: true), batch.total > 0,
+           let status = try? await api.leaseReactionPlayback(generation: batch.generation, deviceId: PushRegistration.deviceId),
+           status == .claimed {
+            guard watching, self.user == user, self.pair == pair, arrival == nil else { return }
+            arrival = Arrival(batch: batch)
+        } else if let shown = ReactionActivities.unplayed, watching, self.user == user, arrival == nil {
+            // Another device already played the batch, or the server had none, but this one still
+            // shows reactions in the Dynamic Island: play those, then let the activity go.
+            arrival = Arrival(batch: shown, local: true)
+        }
     }
 
     /// Playback finished on screen: the batch is played on every device.
     func played(_ played: Arrival) async {
         guard arrival == played else { return }
         arrival = nil
-        try? await AppRuntime.api().confirmReactionPlayback(generation: played.batch.generation, deviceId: PushRegistration.deviceId)
+        // Seen on the canvas, so the Dynamic Island and the Lock Screen can let them go.
+        await ReactionActivities.endAll()
+        if !played.local {
+            try? await AppRuntime.api().confirmReactionPlayback(generation: played.batch.generation, deviceId: PushRegistration.deviceId)
+        }
         // More may have arrived while this batch played.
         await check()
     }
