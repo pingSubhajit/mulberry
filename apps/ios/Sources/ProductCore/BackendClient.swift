@@ -165,6 +165,26 @@ public actor BackendClient {
         let _: JSONValue = try await json("devices/fcm-token", method: "DELETE", body: ["token": token])
     }
 
+    public func sendReaction(_ type: ReactionType) async throws {
+        let _: JSONValue = try await json("reactions/send", method: "POST", body: ["reactionType": type.rawValue])
+    }
+
+    public func pendingReactions(quick: Bool = false) async throws -> PendingReactionBatch? {
+        struct Pending: Decodable, Sendable { let pending: PendingReactionBatch? }
+        let result: Pending = try await get("reactions/pending", quick: quick)
+        return result.pending
+    }
+
+    public func leaseReactionPlayback(generation: Int, deviceId: String) async throws -> ReactionLeaseStatus {
+        struct Lease: Decodable, Sendable { let status: ReactionLeaseStatus }
+        let result: Lease = try await json("reactions/lease", method: "POST", body: ReactionPlayback(generation: generation, deviceId: deviceId))
+        return result.status
+    }
+
+    public func confirmReactionPlayback(generation: Int, deviceId: String) async throws {
+        let _: JSONValue = try await json("reactions/confirm", method: "POST", body: ReactionPlayback(generation: generation, deviceId: deviceId))
+    }
+
     private func get<Response: Decodable & Sendable>(_ path: String, query: [URLQueryItem] = [], authenticated: Bool = true, quick: Bool = false) async throws -> Response {
         try await decode(makeRequest(path, query: query), authenticated: authenticated, quick: quick)
     }
@@ -275,4 +295,9 @@ public actor BackendClient {
             throw BackendError.rejected(response.statusCode, failure?.message ?? failure?.error ?? "Mulberry could not finish this request. Please try again.")
         }
     }
+}
+
+private struct ReactionPlayback: Encodable, Sendable {
+    let generation: Int
+    let deviceId: String
 }
