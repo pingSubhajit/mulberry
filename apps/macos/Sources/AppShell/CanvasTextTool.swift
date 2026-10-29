@@ -446,7 +446,7 @@ struct TextFormatBar: View {
 
     private func fontMenu(showsName: Bool) -> some View {
         Menu {
-            Picker("Font", selection: Binding(get: { element.font }, set: { set(\.font, $0) })) {
+            Picker("Font", selection: Binding(get: { element.font }, set: { set(\.font, $0); Haptics.select() })) {
                 ForEach(CanvasTextFont.allCases, id: \.self) { font in
                     Text(CanvasTextStyle.displayName(font)).tag(font)
                 }
@@ -497,6 +497,7 @@ struct TextFormatBar: View {
         .popover(isPresented: $colourOpen, arrowEdge: .bottom) {
             PaletteColourPicker(palette: CanvasEditingDefaults.palette, selected: element.colorArgb) { colour in
                 set(\.colorArgb, colour)
+                Haptics.select()
                 colourOpen = false
             }
         }
@@ -505,6 +506,7 @@ struct TextFormatBar: View {
     private func alignment(_ value: CanvasTextAlign, symbol: String, title: String) -> some View {
         FormatButton(title: title, symbol: symbol, selected: element.alignment == value) {
             set(\.alignment, value)
+            Haptics.select()
         }
     }
 

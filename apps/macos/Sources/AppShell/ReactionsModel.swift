@@ -95,6 +95,7 @@ final class ReactionsModel: ObservableObject {
         do {
             try await api().sendReaction(type)
             guard self.user == user else { return false }
+            Haptics.tap()
             // Shown leaving only over a canvas on screen, never queued for later.
             if surface != nil { sent = Sent(type: type) }
             return true

@@ -346,6 +346,21 @@ public enum CanvasFonts {
     }
 }
 
+/// The canvas drawn once, offscreen, to read colours from as the eyedropper moves over it.
+public final class CanvasColourSampler {
+    private let bitmap: NSBitmapImageRep
+
+    public init?(input: CanvasRenderInput, renderer: CanvasRenderer = CanvasRenderer()) {
+        guard let output = CanvasOffscreenRenderer.renderBitmap(input: input, renderer: renderer) else { return nil }
+        bitmap = output.bitmap
+    }
+
+    /// The colour under a point of the canvas, or nil where nothing is drawn.
+    public func colour(at point: CGPoint) -> UInt32? {
+        CanvasOffscreenRenderer.colour(in: bitmap, at: point)
+    }
+}
+
 public enum CanvasOffscreenRenderer {
     public static func renderPNG(
         input: CanvasRenderInput,
@@ -365,8 +380,11 @@ public enum CanvasOffscreenRenderer {
         at point: CGPoint,
         renderer: CanvasRenderer = CanvasRenderer()
     ) -> UInt32? {
-        guard let output = renderBitmap(input: input, renderer: renderer) else { return nil }
-        let bitmap = output.bitmap
+        CanvasColourSampler(input: input, renderer: renderer)?.colour(at: point)
+    }
+
+    /// Reads a colour from an already drawn bitmap.
+    static func colour(in bitmap: NSBitmapImageRep, at point: CGPoint) -> UInt32? {
         let x = Int(point.x.rounded(.down))
         let y = Int(point.y.rounded(.down))
         guard x >= 0, y >= 0, x < bitmap.pixelsWide, y < bitmap.pixelsHigh,
@@ -398,7 +416,7 @@ public enum CanvasOffscreenRenderer {
         return false
     }
 
-    private static func renderBitmap(
+    static func renderBitmap(
         input: CanvasRenderInput,
         renderer: CanvasRenderer
     ) -> (bitmap: NSBitmapImageRep, result: CanvasRenderResult)? {

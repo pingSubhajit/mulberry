@@ -253,6 +253,8 @@ struct PaletteColourPicker: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .help(ColourNames.name(color))
+                .accessibilityLabel(ColourNames.name(color))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
             let custom = !palette.contains(selected)

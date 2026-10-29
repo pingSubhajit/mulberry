@@ -231,6 +231,7 @@ struct ReactionArrivalView: View {
         .accessibilityLabel(Self.announcement(arrival.batch))
         .task(id: arrival) {
             start = .now
+            Haptics.tap()
             AccessibilityNotification.Announcement(Self.announcement(arrival.batch)).post()
             try? await Task.sleep(for: .seconds(Self.duration))
             if !Task.isCancelled { done() }
