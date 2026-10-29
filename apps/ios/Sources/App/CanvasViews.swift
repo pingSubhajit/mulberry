@@ -448,7 +448,7 @@ struct DoodleCanvasView: View {
     }
 
     private var clearButton: some View {
-        toolButton("Clear canvas", image: "CanvasClear") { clearConfirmation = true }
+        toolButton("Clear canvas", image: "CanvasClear", enabled: !(editor.strokes.isEmpty && editor.elements.isEmpty)) { clearConfirmation = true }
             .confirmationDialog("Clear canvas?", isPresented: $clearConfirmation, titleVisibility: .visible) {
                 Button("Clear", role: .destructive) { editor.clear() }
                 Button("Cancel", role: .cancel) {}
