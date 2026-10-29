@@ -60,7 +60,7 @@ struct FullAppCanvasEditor: View {
     @State private var typingFocus = 0
     @State private var formatBarSize = CGSize.zero
     /// Where the format bar settled for this text. Style changes leave it there; moving the text,
-    /// another selection or a zoom settles it again.
+    /// another selection or a resized window settles it again.
     @State private var formatBarAnchor: CGPoint?
     @State private var formatBarEpoch = 0
     /// What the pointer is over, kept only as the pointer it needs so moving does not redraw.
@@ -110,7 +110,6 @@ struct FullAppCanvasEditor: View {
             model.handleEscape = { escape() }
             model.finishEditing = { finishTyping(keepSelection: false) }
         }
-        .background { zoomShortcuts }
         // Leaving the Text tool finishes any typing and drops the selection, from any toolbar.
         .onChange(of: editor.toolState.activeTool) { _, tool in
             guard tool != .text else { return }
@@ -267,12 +266,6 @@ struct FullAppCanvasEditor: View {
                     onEyedropper: { point in
                         sampleEyedropper(at: point, surfaceSize: proxy.size)
                     },
-                    onPan: { delta in
-                        panViewport(by: delta, surfaceSize: proxy.size)
-                    },
-                    onZoom: { factor, anchor in
-                        editor.viewportTransform = editor.viewportTransform.zoomed(by: factor, around: anchor)
-                    },
                     onCancel: {
                         if editor.toolState.activeTool == .eyedropper {
                             editor.toolState.setActiveTool(editor.toolState.previousTool)
@@ -368,22 +361,6 @@ struct FullAppCanvasEditor: View {
 
     private var canvasIsEmpty: Bool {
         syncController.drawing.strokes.isEmpty && syncController.drawing.elements.isEmpty
-    }
-
-    /// Zooming has no buttons; it stays on the keyboard, the trackpad and the scroll wheel.
-    private var zoomShortcuts: some View {
-        Group {
-            Button("Zoom In") { zoom(by: 1.2) }.keyboardShortcut("=", modifiers: .command)
-            Button("Zoom Out") { zoom(by: 1 / 1.2) }.keyboardShortcut("-", modifiers: .command)
-            Button("Actual Size") { editor.viewportTransform = CanvasViewportTransform() }.keyboardShortcut("0", modifiers: .command)
-        }
-        .opacity(0)
-        .frame(width: 0, height: 0)
-        .accessibilityHidden(true)
-    }
-
-    private func zoom(by factor: CGFloat) {
-        editor.viewportTransform = editor.viewportTransform.zoomed(by: factor, around: CGPoint(x: 200, y: 400))
     }
 
     private var editingIsEnabled: Bool {
@@ -692,7 +669,7 @@ struct FullAppCanvasEditor: View {
         }
     }
 
-    /// Where a text sits on screen, at the canvas's zoom. Text with nothing typed yet takes the
+    /// Where a text sits on screen. Text with nothing typed yet takes the
     /// height of one line at its wrap width.
     private func textGeometry(_ text: CanvasTextElement, canvasSize: CGSize) -> TextFrameGeometry {
         let layout = elementRenderer.layout(for: text, canvasWidth: canvasSize.width)
@@ -829,18 +806,6 @@ struct FullAppCanvasEditor: View {
         return true
     }
 
-    private func panViewport(by delta: CGSize, surfaceSize: CGSize) {
-        guard editor.viewportTransform.scale > CanvasEditingDefaults.minViewportScale else { return }
-        let scale = editor.viewportTransform.scale
-        let minX = -surfaceSize.width * (scale - 1)
-        let minY = -surfaceSize.height * (scale - 1)
-        let nextOffset = CGPoint(
-            x: (editor.viewportTransform.offset.x + delta.width).clamped(to: minX...0),
-            y: (editor.viewportTransform.offset.y + delta.height).clamped(to: minY...0)
-        )
-        editor.viewportTransform = CanvasViewportTransform(scale: scale, offset: nextOffset)
-    }
-
     private func syncCanvasModel() {
         var state = syncController.drawing
         if let drag, drag.moved {
@@ -879,8 +844,6 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
     var onDoubleClick: (CGPoint) -> Bool
     var onKey: (CanvasKey) -> Bool
     var onEyedropper: (CGPoint) -> Void
-    var onPan: (CGSize) -> Void
-    var onZoom: (CGFloat, CGPoint) -> Void
     var onCancel: () -> Void
 
     func makeNSView(context: Context) -> InputView {
@@ -911,8 +874,6 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
             onDoubleClick: onDoubleClick,
             onKey: onKey,
             onEyedropper: onEyedropper,
-            onPan: onPan,
-            onZoom: onZoom,
             onCancel: onCancel
         )
     }
@@ -936,8 +897,6 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
             var onDoubleClick: (CGPoint) -> Bool = { _ in false }
             var onKey: (CanvasKey) -> Bool = { _ in false }
             var onEyedropper: (CGPoint) -> Void = { _ in }
-            var onPan: (CGSize) -> Void = { _ in }
-            var onZoom: (CGFloat, CGPoint) -> Void = { _, _ in }
             var onCancel: () -> Void = {}
         }
 
@@ -952,8 +911,6 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
         private var isDrawing = false
         private var isMovingElement = false
         private var isErasing = false
-        private var isSpaceDown = false
-        private var lastPanPoint: CGPoint?
 
         override var acceptsFirstResponder: Bool { true }
 
@@ -977,10 +934,6 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
             let point = canvasPoint(event)
             window?.makeFirstResponder(self)
             guard configuration.editingIsEnabled else { return }
-            if isSpaceDown {
-                lastPanPoint = point
-                return
-            }
             if event.clickCount == 2, configuration.onDoubleClick(point) {
                 return
             }
@@ -1002,13 +955,6 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
         override func mouseDragged(with event: NSEvent) {
             guard configuration.editingIsEnabled else { return }
             let point = canvasPoint(event)
-            if isSpaceDown {
-                if let lastPanPoint {
-                    configuration.onPan(CGSize(width: point.x - lastPanPoint.x, height: point.y - lastPanPoint.y))
-                }
-                lastPanPoint = point
-                return
-            }
             if configuration.activeTool == .draw, isDrawing {
                 configuration.onDrawMove(point)
             }
@@ -1025,7 +971,6 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
                 isDrawing = false
                 isMovingElement = false
                 isErasing = false
-                lastPanPoint = nil
                 return
             }
             if isMovingElement {
@@ -1047,20 +992,6 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
             }
             isDrawing = false
             isErasing = false
-            lastPanPoint = nil
-        }
-
-        override func scrollWheel(with event: NSEvent) {
-            if event.modifierFlags.contains(.command) {
-                let factor = event.scrollingDeltaY > 0 ? 1.08 : 1 / 1.08
-                configuration.onZoom(factor, canvasPoint(event))
-            } else {
-                configuration.onPan(CGSize(width: event.scrollingDeltaX, height: event.scrollingDeltaY))
-            }
-        }
-
-        override func magnify(with event: NSEvent) {
-            configuration.onZoom(1 + event.magnification, canvasPoint(event))
         }
 
         override func keyDown(with event: NSEvent) {
@@ -1071,20 +1002,7 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
                 configuration.onCancel()
                 return
             }
-            if event.keyCode == 49 {
-                isSpaceDown = true
-                return
-            }
             super.keyDown(with: event)
-        }
-
-        override func keyUp(with event: NSEvent) {
-            if event.keyCode == 49 {
-                isSpaceDown = false
-                lastPanPoint = nil
-                return
-            }
-            super.keyUp(with: event)
         }
     }
 }
