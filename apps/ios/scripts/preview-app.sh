@@ -35,7 +35,7 @@ for file in "$IOS_ROOT"/Sources/App/*.swift; do
 done
 SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 xcrun --sdk iphonesimulator swiftc -sdk "$SDK_PATH" -target "$(uname -m)-apple-ios27.0-simulator" -parse-as-library \
-  "$IOS_ROOT"/../../packages/apple/Sources/ProductCore/*.swift "$IOS_ROOT"/Sources/DeliveryCore/*.swift "$IOS_ROOT"/Sources/Shared/*.swift "${APP_FILES[@]}" \
+  "$IOS_ROOT"/../../packages/apple/Sources/ProductCore/*.swift "$IOS_ROOT"/../../packages/apple/Sources/CanvasDrawing/*.swift "$IOS_ROOT"/../../packages/apple/Sources/StickerAssets/*.swift "$IOS_ROOT"/Sources/DeliveryCore/*.swift "$IOS_ROOT"/Sources/Shared/*.swift "${APP_FILES[@]}" \
   "$IOS_ROOT/Tests/AppPreview/AppPreview.swift" -o "$APP/AppPreview" 2>&1 | grep -E "error|warning: .*AppPreview" || true
 test -x "$APP/AppPreview"
 xcrun simctl install "$DEVICE" "$APP"

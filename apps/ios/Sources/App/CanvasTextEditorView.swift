@@ -103,7 +103,7 @@ struct CanvasTextEditorView: View {
         let measured = draft.text.isEmpty
             ? NSString(string: "Type something").size(withAttributes: [.font: UIFont(name: "Poppins-Regular", size: 28) ?? .systemFont(ofSize: 28)]).width
             : NSString(string: draft.text).boundingRect(with: CGSize(width: wrap, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin,
-                                                        attributes: [.font: CanvasTextStyle.uiFont(draft.font, size: fontSize)], context: nil).width
+                                                        attributes: [.font: CanvasTextStyle.font(draft.font, size: fontSize)], context: nil).width
         // Leave room for the caret at the end of the longest line.
         return min(wrap, ceil(measured) + 6)
     }

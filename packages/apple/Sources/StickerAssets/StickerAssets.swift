@@ -1,31 +1,47 @@
+import Combine
+import Foundation
 import ImageIO
-import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
+#if canImport(ProductCore)
+import ProductCore
+#endif
+#if canImport(CanvasDrawing)
+import CanvasDrawing
+#endif
+
+/// How the sticker store and catalog reach the backend. The apps pass a closure so the
+/// store never holds a stale client after sign-out.
+public typealias StickerBackend = @Sendable () async throws -> BackendClient
 
 /// Android's StickerAssetStore: artwork is downloaded once per user and pack
 /// version, refreshed through the API when a signed URL has expired, and kept
 /// within a 250 MB budget by evicting the least recently used pack versions.
-actor StickerAssetStore {
-    static let shared = StickerAssetStore()
-    static let coverID = "__cover"
+public actor StickerAssetStore {
+    public static let coverID = "__cover"
     private static let budgetBytes: Int64 = 250 * 1024 * 1024
 
     private let root: URL
     private let session: URLSession
     private var inFlight: [URL: Task<URL?, Never>] = [:]
     private var touched: [URL: Date] = [:]
-    private let images = NSCache<NSString, UIImage>()
+    private let images = NSCache<NSString, CanvasImage>()
+    private let api: StickerBackend
 
-    init(root: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Mulberry/Stickers", isDirectory: true),
-         session: URLSession = .shared) {
-        self.root = root; self.session = session
+    public init(api: @escaping StickerBackend,
+                root: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("Mulberry/Stickers", isDirectory: true),
+                session: URLSession = .shared) {
+        self.api = api; self.root = root; self.session = session
         images.totalCostLimit = 96 * 1024 * 1024
     }
 
     /// A decoded image, downsampled when `maxPixelSize` is set. Returns nil while offline
     /// if the artwork was never downloaded.
-    func image(_ sticker: StickerReference, variant: StickerAssetVariant, user: String, hint: String? = nil, maxPixelSize: Int? = nil) async -> UIImage? {
+    public func image(_ sticker: StickerReference, variant: StickerAssetVariant, user: String, hint: String? = nil, maxPixelSize: Int? = nil) async -> CanvasImage? {
         let key = "\(user)|\(sticker.packKey)|\(sticker.packVersion)|\(sticker.stickerId)|\(variant.rawValue)|\(maxPixelSize ?? 0)" as NSString
         if let cached = images.object(forKey: key) { return cached }
         guard let file = await file(sticker, variant: variant, user: user, hint: hint),
@@ -40,12 +56,16 @@ actor StickerAssetStore {
             cgImage = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
         }
         guard let cgImage else { return nil }
+        #if canImport(UIKit)
         let image = UIImage(cgImage: cgImage)
+        #else
+        let image = NSImage(cgImage: cgImage, size: CGSize(width: cgImage.width, height: cgImage.height))
+        #endif
         images.setObject(image, forKey: key, cost: cgImage.bytesPerRow * cgImage.height)
         return image
     }
 
-    func file(_ sticker: StickerReference, variant: StickerAssetVariant, user: String, hint: String? = nil) async -> URL? {
+    public func file(_ sticker: StickerReference, variant: StickerAssetVariant, user: String, hint: String? = nil) async -> URL? {
         guard let destination = destination(sticker, variant: variant, user: user) else { return nil }
         if FileManager.default.fileExists(atPath: destination.path) {
             touch(destination.deletingLastPathComponent())
@@ -59,7 +79,7 @@ actor StickerAssetStore {
         return result
     }
 
-    func removeAll(user: String) {
+    public func removeAll(user: String) {
         guard let folder = userFolder(user) else { return }
         try? FileManager.default.removeItem(at: folder)
         images.removeAllObjects()
@@ -100,7 +120,7 @@ actor StickerAssetStore {
 
     private func freshURL(_ sticker: StickerReference, variant: StickerAssetVariant) async -> URL? {
         do {
-            let api = try await MainActor.run { try AppRuntime.api() }
+            let api = try await self.api()
             let value: String
             if sticker.stickerId == Self.coverID {
                 let pack = try await api.stickerPack(sticker.packKey, version: sticker.packVersion)
@@ -159,13 +179,16 @@ actor StickerAssetStore {
 /// Android keeps the pack list for six hours and pack details indefinitely,
 /// because a published pack version never changes.
 @MainActor
-final class StickerCatalog: ObservableObject {
-    @Published private(set) var packs: [StickerPackSummary] = []
-    @Published private(set) var selected: StickerPackDetail?
-    @Published private(set) var loading = false
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var lastUsed: StickerReference?
-    let user: String?
+public final class StickerCatalog: ObservableObject {
+    @Published public private(set) var packs: [StickerPackSummary] = []
+    @Published public private(set) var selected: StickerPackDetail?
+    @Published public private(set) var loading = false
+    @Published public private(set) var errorMessage: String?
+    @Published public private(set) var lastUsed: StickerReference?
+    public let user: String?
+    private let api: StickerBackend
+    private let store: StickerAssetStore
+    private let directory: URL
     private var lastAttempt: Date?
     private var loadTask: Task<Void, Never>?
     private static let revalidateInterval: TimeInterval = 6 * 60 * 60
@@ -173,8 +196,12 @@ final class StickerCatalog: ObservableObject {
 
     private struct CachedPacks: Codable { let fetchedAt: Date; let packs: [StickerPackSummary] }
 
-    init(user: String?) {
+    /// `directory` holds each account's cached pack list and pack details.
+    public init(user: String?, api: @escaping StickerBackend, store: StickerAssetStore, directory: URL) {
         self.user = user
+        self.api = api
+        self.store = store
+        self.directory = directory
         if let user, let data = UserDefaults.standard.data(forKey: Self.lastUsedKey(user)) {
             lastUsed = try? JSONDecoder().decode(StickerReference.self, from: data)
         }
@@ -182,29 +209,29 @@ final class StickerCatalog: ObservableObject {
 
     /// The sticker a new placement starts with: the last one used, else the
     /// first sticker of the open pack.
-    var defaultSticker: StickerReference? {
+    public var defaultSticker: StickerReference? {
         if let lastUsed { return lastUsed }
         guard let selected, let first = selected.stickers.min(by: { $0.sortOrder < $1.sortOrder }) else { return nil }
         return .init(packKey: selected.packKey, packVersion: selected.packVersion, stickerId: first.stickerId)
     }
 
-    func load(force: Bool = false) {
+    public func load(force: Bool = false) {
         guard user != nil, loadTask == nil else { return }
         if !force, !packs.isEmpty, let lastAttempt, Date().timeIntervalSince(lastAttempt) < 10 { return }
         loadTask = Task { await refresh(force: force); loadTask = nil }
     }
 
-    func select(_ pack: StickerPackSummary) {
+    public func select(_ pack: StickerPackSummary) {
         Task { await open(packKey: pack.packKey, version: pack.packVersion) }
     }
 
-    func use(_ sticker: StickerReference) {
+    public func use(_ sticker: StickerReference) {
         lastUsed = sticker
         guard let user, let data = try? JSONEncoder().encode(sticker) else { return }
         UserDefaults.standard.set(data, forKey: Self.lastUsedKey(user))
     }
 
-    func thumbnailHint(for sticker: StickerReference) -> String? {
+    public func thumbnailHint(for sticker: StickerReference) -> String? {
         guard let selected, selected.packKey == sticker.packKey, selected.packVersion == sticker.packVersion else { return nil }
         return selected.stickers.first { $0.stickerId == sticker.stickerId }?.thumbnailUrl
     }
@@ -218,7 +245,7 @@ final class StickerCatalog: ObservableObject {
         if stale {
             if packs.isEmpty { loading = true; errorMessage = nil }
             do {
-                let fresh = try await AppRuntime.api().stickerPacks()
+                let fresh = try await api().stickerPacks()
                 guard user == self.user else { return }
                 packs = fresh; errorMessage = nil
                 write(CachedPacks(fetchedAt: .now, packs: fresh), "packs.json")
@@ -244,7 +271,7 @@ final class StickerCatalog: ObservableObject {
         loading = true; errorMessage = nil
         defer { loading = false }
         do {
-            let detail = try await AppRuntime.api().stickerPack(packKey, version: version)
+            let detail = try await api().stickerPack(packKey, version: version)
             selected = detail
             write(detail, name)
             prefetch(detail, user: user)
@@ -255,9 +282,10 @@ final class StickerCatalog: ObservableObject {
 
     private func prefetch(_ pack: StickerPackDetail, user: String) {
         let stickers = pack.stickers.sorted { $0.sortOrder < $1.sortOrder }.prefix(Self.prefetchCount)
+        let store = store
         Task.detached(priority: .utility) {
             for sticker in stickers {
-                _ = await StickerAssetStore.shared.file(.init(packKey: pack.packKey, packVersion: pack.packVersion, stickerId: sticker.stickerId),
+                _ = await store.file(.init(packKey: pack.packKey, packVersion: pack.packVersion, stickerId: sticker.stickerId),
                                                         variant: .thumbnail, user: user, hint: sticker.thumbnailUrl)
             }
         }
@@ -265,7 +293,7 @@ final class StickerCatalog: ObservableObject {
 
     private var folder: URL? {
         guard let user, UUID(uuidString: user) != nil else { return nil }
-        return AppRuntime.directory.appendingPathComponent("StickerCatalog/\(user.lowercased())", isDirectory: true)
+        return directory.appendingPathComponent(user.lowercased(), isDirectory: true)
     }
 
     private func read<Value: Decodable>(_ type: Value.Type, _ name: String) -> Value? {
@@ -280,29 +308,4 @@ final class StickerCatalog: ObservableObject {
     }
 
     private static func lastUsedKey(_ user: String) -> String { "stickerLastUsed.\(user)" }
-}
-
-/// A sticker or pack cover loaded from the asset store, with a quiet placeholder.
-struct StickerArtwork: View {
-    let sticker: StickerReference
-    let user: String?
-    var variant: StickerAssetVariant = .thumbnail
-    var hint: String?
-    var maxPixelSize = 384
-    @State private var image: UIImage?
-
-    var body: some View {
-        Group {
-            if let image {
-                Image(uiImage: image).resizable().scaledToFit().transition(.opacity)
-            } else {
-                RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.08))
-            }
-        }
-        .task(id: sticker) {
-            guard let user else { return }
-            let loaded = await StickerAssetStore.shared.image(sticker, variant: variant, user: user, hint: hint, maxPixelSize: maxPixelSize)
-            withAnimation(.easeOut(duration: 0.15)) { image = loaded }
-        }
-    }
 }

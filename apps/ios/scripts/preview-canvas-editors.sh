@@ -20,10 +20,10 @@ xcrun actool "$IOS_ROOT/Resources/Assets.xcassets" --compile "$APP" --platform i
 SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 xcrun --sdk iphonesimulator swiftc -sdk "$SDK_PATH" -target "$(uname -m)-apple-ios27.0-simulator" -parse-as-library \
   "$IOS_ROOT"/../../packages/apple/Sources/ProductCore/*.swift "$IOS_ROOT/Sources/App/MulberryDesign.swift" \
-  "$IOS_ROOT/Sources/App/CanvasGeometry.swift" "$IOS_ROOT/Sources/App/DoodleRenderer.swift" \
-  "$IOS_ROOT/Sources/App/CanvasElementRenderer.swift" "$IOS_ROOT/Sources/App/CanvasTextEditorView.swift" \
+  "$IOS_ROOT/Sources/App/CanvasViewportStore.swift" "$IOS_ROOT/Sources/App/DoodleWallpaper.swift" \
+  "$IOS_ROOT"/../../packages/apple/Sources/CanvasDrawing/*.swift "$IOS_ROOT/Sources/App/CanvasTextEditorView.swift" \
   "$IOS_ROOT/Sources/App/CanvasEditorChrome.swift" "$IOS_ROOT/Sources/App/CanvasStickerEditorView.swift" \
-  "$IOS_ROOT/Sources/App/StickerAssets.swift" \
+  "$IOS_ROOT/Sources/App/StickerArtwork.swift" "$IOS_ROOT"/../../packages/apple/Sources/StickerAssets/*.swift \
   "$IOS_ROOT/Sources/App/CustomColourSheet.swift" "$IOS_ROOT/Sources/App/DoodleEditor.swift" \
   "$IOS_ROOT/Sources/App/MulberryModel.swift" "$IOS_ROOT/Sources/App/StreakModel.swift" \
   "$IOS_ROOT/Sources/App/WallpaperLibrary.swift" "$IOS_ROOT/Sources/App/ProductWallpaperService.swift" \

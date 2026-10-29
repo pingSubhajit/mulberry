@@ -25,10 +25,11 @@ def quote(value, depth=0):
         return '(' + ', '.join(quote(v, depth) for v in value) + ')'
     return json.dumps(str(value))
 
-# ProductCore is shared with the Mac app from packages/apple. The app compiles its sources directly,
-# as the preview and check scripts do, rather than linking it as a separate module.
-product_core = root.parent.parent / 'packages/apple/Sources/ProductCore'
-sources = sorted(root.glob('Sources/**/*.swift')) + sorted(product_core.glob('*.swift'))
+# ProductCore, CanvasDrawing and StickerAssets are shared with the Mac app from packages/apple. The
+# app compiles their sources directly, as the preview and check scripts do, rather than linking separate modules.
+shared = root.parent.parent / 'packages/apple/Sources'
+product_core = shared / 'ProductCore'
+sources = sorted(root.glob('Sources/**/*.swift')) + [file for target in ['ProductCore', 'CanvasDrawing', 'StickerAssets'] for file in sorted((shared / target).glob('*.swift'))]
 # The widget extension draws Live Activities. It shares the activity's attributes and the reaction
 # types with the app, and nothing else.
 widget_only = {s for s in sources if s.is_relative_to(root / 'Sources/Widgets')}
