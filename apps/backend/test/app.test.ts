@@ -334,6 +334,67 @@ describe("Mulberry backend", () => {
     expect(leaseAfterConfirm.json().status).toBe("NO_PENDING")
   })
 
+  it("returns the recipient's pending reaction batch until it is confirmed", async () => {
+    const { inviter, recipient } = await pairUsers()
+
+    const empty = await app.inject({
+      method: "GET",
+      url: "/reactions/pending",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(empty.statusCode).toBe(200)
+    expect(empty.json().pending).toBeNull()
+
+    for (const reactionType of ["HEART", "HEART", "SPARKLE"]) {
+      const sent = await app.inject({
+        method: "POST",
+        url: "/reactions/send",
+        headers: bearer(inviter.accessToken),
+        payload: { reactionType },
+      })
+      expect(sent.statusCode).toBe(200)
+    }
+
+    const pending = await app.inject({
+      method: "GET",
+      url: "/reactions/pending",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(pending.statusCode).toBe(200)
+    const batch = pending.json().pending
+    expect(batch.heartCount).toBe(2)
+    expect(batch.sparkleCount).toBe(1)
+    expect(batch.kissCount).toBe(0)
+
+    const senderView = await app.inject({
+      method: "GET",
+      url: "/reactions/pending",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(senderView.json().pending).toBeNull()
+
+    const lease = await app.inject({
+      method: "POST",
+      url: "/reactions/lease",
+      headers: bearer(recipient.accessToken),
+      payload: { generation: batch.generation, deviceId: "device-a" },
+    })
+    expect(lease.json().status).toBe("CLAIMED")
+    await app.inject({
+      method: "POST",
+      url: "/reactions/confirm",
+      headers: bearer(recipient.accessToken),
+      payload: { generation: batch.generation, deviceId: "device-a" },
+    })
+
+    const played = await app.inject({
+      method: "GET",
+      url: "/reactions/pending",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(played.json().pending).toBeNull()
+  })
+
   it("starts a new reaction generation when a new reaction arrives during an active lease", async () => {
     const { inviter, recipient } = await pairUsers()
     await registerFcmToken(recipient.accessToken, "recipient-token")

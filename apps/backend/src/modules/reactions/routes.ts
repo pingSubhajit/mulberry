@@ -8,6 +8,10 @@ export function registerReactionRoutes(app: FastifyInstance, service: ReactionsS
     return service.sendReaction(requireBearerToken(request), body?.reactionType ?? "")
   })
 
+  app.get("/reactions/pending", async (request) => {
+    return service.pendingReactions(requireBearerToken(request))
+  })
+
   app.post("/reactions/lease", async (request) => {
     const body = request.body as { generation?: unknown; deviceId?: unknown }
     return service.leaseReactionPlayback(requireBearerToken(request), body)

@@ -11,6 +11,16 @@ const REACTION_SEND_RATE_LIMIT_REFILL_TOKENS_PER_SEC = 1
 
 type NormalizedReactionType = "HEART" | "HUG" | "KISS" | "SMILE" | "LAUGH" | "SPARKLE"
 
+interface PendingReactionBatch {
+  generation: number
+  heartCount: number
+  hugCount: number
+  kissCount: number
+  smileCount: number
+  laughCount: number
+  sparkleCount: number
+}
+
 export class ReactionsService {
   constructor(
     private readonly db: Database,
@@ -110,6 +120,60 @@ export class ReactionsService {
     })
 
     return { ok: true, ...updated }
+  }
+
+  /**
+   * The recipient's unplayed batch, for clients that cannot rely on the reaction push arriving
+   * (iOS delivers it only while Mulberry is open). Playback still goes through lease and confirm.
+   */
+  async pendingReactions(accessToken: string): Promise<{ pending: PendingReactionBatch | null }> {
+    const context = await requireSessionContext(this.db, accessToken)
+    const pairSession = await getPairSession(this.db, context.user.id)
+    if (!pairSession) {
+      throw new HttpError(400, "User is not paired")
+    }
+
+    const rows = await this.db.query<{
+      pair_session_id: string | null
+      generation: number
+      heart_count: number
+      hug_count: number
+      kiss_count: number
+      smile_count: number
+      laugh_count: number
+      sparkle_count: number
+    }>(
+      `
+      SELECT
+        pair_session_id,
+        generation,
+        heart_count,
+        hug_count,
+        kiss_count,
+        smile_count,
+        laugh_count,
+        sparkle_count
+      FROM reaction_inboxes
+      WHERE recipient_user_id = $1
+      `,
+      [context.user.id],
+    )
+    const row = rows.rows[0]
+    if (!row || (row.pair_session_id ?? "") !== pairSession.id) {
+      return { pending: null }
+    }
+
+    const batch: PendingReactionBatch = {
+      generation: Number(row.generation) || 0,
+      heartCount: Number(row.heart_count) || 0,
+      hugCount: Number(row.hug_count) || 0,
+      kissCount: Number(row.kiss_count) || 0,
+      smileCount: Number(row.smile_count) || 0,
+      laughCount: Number(row.laugh_count) || 0,
+      sparkleCount: Number(row.sparkle_count) || 0,
+    }
+    const total = batch.heartCount + batch.hugCount + batch.kissCount + batch.smileCount + batch.laughCount + batch.sparkleCount
+    return { pending: total > 0 && batch.generation > 0 ? batch : null }
   }
 
   async leaseReactionPlayback(
