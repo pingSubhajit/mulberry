@@ -12,6 +12,8 @@ struct CanvasBlankStateGuidance: View {
     @State private var entered = false
 
     private var shown: Bool { visible && entered }
+    /// The iPad's larger canvas gets a larger prompt.
+    private let pad = UIDevice.current.userInterfaceIdiom == .pad
     private var squirrelHeight: CGFloat { typeSize.isAccessibilitySize ? 96 : 160 }
 
     /// Fills the visible canvas: the prompt sits in its middle and Squee at its foot.
@@ -19,13 +21,13 @@ struct CanvasBlankStateGuidance: View {
         ZStack(alignment: .bottomLeading) {
             VStack(spacing: 10) {
                 Text("Draw them something cute")
-                    .font(.custom("Virgil3YOFF", size: 20, relativeTo: .title3))
+                    .font(.custom("Virgil3YOFF", size: pad ? 24 : 20, relativeTo: .title3))
                     .foregroundStyle(MulberryDesign.accent)
                 Text("Whatever you draw will appear at the wallpaper of their phone")
-                    .font(.custom("Virgil3YOFF", size: 14, relativeTo: .subheadline))
+                    .font(.custom("Virgil3YOFF", size: pad ? 17 : 14, relativeTo: .subheadline))
                     .foregroundStyle(MulberryDesign.muted)
                     .lineSpacing(3)
-                    .frame(maxWidth: 252)
+                    .frame(maxWidth: pad ? 300 : 252)
             }
             .tracking(0.25)
             .multilineTextAlignment(.center)
