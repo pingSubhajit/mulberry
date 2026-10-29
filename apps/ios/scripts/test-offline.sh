@@ -17,5 +17,6 @@ xcrun --sdk iphonesimulator swiftc -sdk "$SDK_PATH" -target "$(uname -m)-apple-i
   "$IOS_ROOT/Sources/App/StreakModel.swift" "$IOS_ROOT/Sources/App/MulberryDesign.swift" "$IOS_ROOT/Sources/App/CanvasGeometry.swift" "$IOS_ROOT/Sources/App/DoodleRenderer.swift" "$IOS_ROOT/Sources/App/CanvasElementRenderer.swift" "$IOS_ROOT/Sources/App/StickerAssets.swift" \
   "$IOS_ROOT/Sources/App/DoodleEditor.swift" "$IOS_ROOT/Sources/App/MulberryModel.swift" "$IOS_ROOT/Sources/App/WallpaperLibrary.swift" \
   "$IOS_ROOT/Sources/App/ProductWallpaperService.swift" "$IOS_ROOT/Sources/App/WallpaperNotifications.swift" \
+  "$IOS_ROOT/Sources/App/ReactionsModel.swift" "$IOS_ROOT/Sources/App/ReactionActivities.swift" "$IOS_ROOT"/Sources/Shared/*.swift \
   "$IOS_ROOT/Tests/Offline/OfflineWallpaperChecks.swift" -o "$APP/OfflineChecks"
 xcrun simctl spawn "${1:-booted}" "$APP/OfflineChecks"
