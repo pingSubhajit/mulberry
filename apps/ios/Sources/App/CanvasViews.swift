@@ -8,6 +8,8 @@ struct DoodleCanvasView: View {
     @State private var customColourOpen = false
     @State private var paletteHeight: CGFloat = 280
     @State private var clearConfirmation = false
+    /// The reactions, opened from their button.
+    @State private var reactionsOpen = false
     @State private var toolbarFrame = CGRect.zero
     /// The floating palette a Pencil squeeze or double-tap asked for, at the Pencil's tip.
     @State private var pencilPalette: PencilRequest?
@@ -63,6 +65,7 @@ struct DoodleCanvasView: View {
             // A tap beside the canvas puts the palette away too.
             .background { if radialAt != nil { Color.clear.contentShape(.rect).onTapGesture { closeRadial() } } }
             .overlay { radialPalette(in: geometry.size) }
+            .overlay { reactionArc(in: geometry.size) }
             .animation(reduceMotion ? nil : .spring(duration: 0.22, bounce: 0.15), value: radialAt)
         }
         .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { wideWindow = $0 }
@@ -90,10 +93,13 @@ struct DoodleCanvasView: View {
             .onChange(of: model.drawing) { _, _ in editor.receive() }
             .onChange(of: model.canvasClearVersion) { _, _ in editor.resetHistory() }
             .onChange(of: scenePhase) { _, value in
-                if value != .active { editor.end(); radialAt = nil }
+                if value != .active { editor.end(); radialAt = nil; editor.reactionRequest = nil }
                 else if editor.errorMessage != nil { editor.retry() }
+                model.reactions.watching = value == .active
             }
-            .onDisappear { editor.end() }
+            // The partner's reactions play while the canvas is on screen.
+            .onAppear { model.reactions.watching = scenePhase == .active }
+            .onDisappear { editor.end(); model.reactions.watching = false }
             .fullScreenCover(item: $editor.textSession) { session in
                 CanvasTextEditorView(session: session, palette: DoodleEditor.palette,
                                      onDone: editor.commitText, onDelete: editor.deleteEditingText)
@@ -121,11 +127,13 @@ struct DoodleCanvasView: View {
             // Between the bars, so the banner stays clear of both.
             StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
+            ReactionStage(reactions: model.reactions)
+                .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
             // Actions stand apart from the tools: undo and redo on the left, colour and width on the right.
             VStack(spacing: 28) {
                 HStack(alignment: .bottom) {
                     // Clear glass lets them blend into the canvas, apart from the tools below.
-                    VStack(spacing: 10) { undoButton(glass: .clear); redoButton(glass: .clear) }
+                    VStack(spacing: 10) { reactionButton(edge: .bottom, glass: .clear); undoButton(glass: .clear); redoButton(glass: .clear) }
                     Spacer()
                     VStack(spacing: 10) { paletteButton(edge: .trailing, glass: .clear); widthButton(edge: .trailing, glass: .clear) }
                 }
@@ -176,6 +184,7 @@ struct DoodleCanvasView: View {
                 CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty)
                     .padding(.bottom, 16)
                 StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
+                ReactionStage(reactions: model.reactions)
             }
             .frame(width: size.width, height: max(0, visibleBottom - visibleTop))
             .position(x: center.x, y: (visibleTop + visibleBottom) / 2)
@@ -247,7 +256,7 @@ struct DoodleCanvasView: View {
             .padding(.bottom, 8)
         }
         // As tall as the tool column beside it: two groups of 56 pt buttons, 10 pt apart, with 8 pt padding.
-        .frame(width: 60).frame(maxHeight: 9 * 56 + 7 * 10 + Self.groupGap + 16)
+        .frame(width: 60).frame(maxHeight: 10 * 56 + 8 * 10 + Self.groupGap + 16)
         .glassEffect(.regular, in: .capsule)
         .glassEffectID(Self.colourGlass, in: glassSpace)
         .glassEffectTransition(reduceMotion ? .materialize : .matchedGeometry)
@@ -334,6 +343,7 @@ struct DoodleCanvasView: View {
         // The actions first, then the tools.
         return groups {
             group {
+                reactionButton(edge: edge)
                 undoButton()
                 redoButton()
                 if palette { paletteButton(edge: edge, opensRail: axis == .vertical) }
@@ -351,6 +361,56 @@ struct DoodleCanvasView: View {
         .buttonBorderShape(.circle)
         .controlSize(.large)
         .padding(8)
+    }
+
+    private func reactionButton(edge: Edge, glass: Glass = .regular) -> some View {
+        toolButton("Reactions", image: "", symbol: "heart", glass: glass) { reactionsOpen = true }
+            .popover(isPresented: $reactionsOpen, attachmentAnchor: .rect(.bounds), arrowEdge: edge) {
+                reactionPicker.presentationCompactAdaptation(.popover)
+            }
+    }
+
+    /// The reactions on an arc over a finger held on the phone's canvas, kept on screen. A tap
+    /// anywhere else puts them away without drawing.
+    @ViewBuilder private func reactionArc(in size: CGSize) -> some View {
+        if let request = editor.reactionRequest {
+            let tip = CGPoint(x: surfaceFrame.minX + request.location.x, y: surfaceFrame.minY + request.location.y)
+            let reach = ReactionRadialPicker.reach
+            // Over the finger unless that would run under the navigation bar.
+            let below = tip.y - reach < 0
+            let centre = CGPoint(x: min(max(tip.x, reach), size.width - reach), y: tip.y)
+            ZStack {
+                Color.clear.contentShape(.rect).onTapGesture { closeReactions() }
+                    .accessibilityHidden(true)
+                ReactionRadialPicker(pointer: editor.reactionPointer, below: below, tipOffset: tip.x - centre.x,
+                                     // The pointer is in the canvas's coordinates; the arc's frame starts here.
+                                     origin: CGPoint(x: centre.x - reach - surfaceFrame.minX, y: centre.y - reach - surfaceFrame.minY),
+                                     send: sendFromArc, dismiss: closeReactions)
+                    .position(centre)
+            }
+            .transition(reduceMotion ? .opacity : .asymmetric(
+                insertion: .identity,
+                removal: .scale(scale: 0.2, anchor: UnitPoint(x: tip.x / size.width, y: tip.y / size.height))
+                    .combined(with: .opacity)))
+        }
+    }
+
+    private func closeReactions() {
+        guard editor.reactionRequest != nil else { return }
+        withAnimation(reduceMotion ? .easeOut(duration: 0.1) : .spring(duration: 0.16, bounce: 0)) { editor.reactionRequest = nil }
+    }
+
+    private func sendFromArc(_ type: ReactionType) {
+        closeReactions()
+        Task { await model.reactions.send(type) }
+    }
+
+    /// Choosing one sends it and puts the reactions away.
+    private var reactionPicker: some View {
+        ReactionPicker { type in
+            reactionsOpen = false
+            Task { await model.reactions.send(type) }
+        }
     }
 
     private func undoButton(glass: Glass = .regular) -> some View {
@@ -601,3 +661,21 @@ private struct PencilPalettePopover<Palette: View>: ViewModifier {
     }
 }
 
+/// The partner's reactions arriving, and the one just sent leaving, over the canvas.
+private struct ReactionStage: View {
+    @ObservedObject var reactions: ReactionsModel
+
+    var body: some View {
+        ZStack {
+            if let arrival = reactions.arrival {
+                ReactionArrivalView(arrival: arrival) { Task { await reactions.played(arrival) } }
+                    .id(arrival.id)
+            }
+            if let sent = reactions.sent {
+                ReactionSentBurst(sent: sent) { reactions.finishedSending(sent) }
+                    .id(sent.id)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}

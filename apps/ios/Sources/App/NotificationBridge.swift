@@ -26,7 +26,9 @@ final class NotificationBridge: NSObject, UIApplicationDelegate, UNUserNotificat
     }
 
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
-        // Only the user-enabled Shortcuts automation changes wallpaper.
+        // Only the user-enabled Shortcuts automation changes wallpaper. A reaction push only
+        // arrives while Mulberry runs, and asks the canvas to fetch and play it.
+        if userInfo["type"] as? String == "REACTION" { NotificationCenter.default.post(name: .mulberryReactionPush, object: nil) }
         completionHandler(.noData)
     }
 

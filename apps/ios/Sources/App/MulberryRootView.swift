@@ -52,6 +52,8 @@ struct MulberryRootView: View {
                 await model.refresh()
                 await setup.refresh()
                 await PushRegistration.shared.refresh()
+                // Reaction pushes are not guaranteed to arrive, so the canvas also looks for them.
+                await model.reactions.check()
                 try? await Task.sleep(for: .seconds(5))
             }
         }

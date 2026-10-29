@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 final class MulberryModel: ObservableObject {
     let streaks = StreakModel()
+    let reactions = ReactionsModel()
     @Published var showStreak = false
     @Published var showPairingConfirmation = false
     @Published private(set) var bootstrap: BootstrapState?
@@ -182,6 +183,7 @@ final class MulberryModel: ObservableObject {
         GoogleAuthentication.signOut()
         HomeQuickActions.shared.pending = nil
         streaks.bind(userId: nil, pairSessionId: nil)
+        reactions.bind(userId: nil, pairSessionId: nil)
         showStreak = false; showPairingConfirmation = false
         bootstrap = nil; drawing = DrawingState(); draft = ProfileDraft()
         createdInvite = nil; showSettings = false; showInviteEntry = false
@@ -198,6 +200,7 @@ final class MulberryModel: ObservableObject {
         let pairingConfirmed = PairingCelebration.shouldPresent(previous: bootstrap, current: state)
         bootstrap = state
         streaks.bind(userId: state.userId, pairSessionId: state.isPaired ? state.pairSessionId : nil, baselineDays: state.currentStreakDays)
+        reactions.bind(userId: state.userId, pairSessionId: state.isPaired ? state.pairSessionId : nil)
         if !state.isPaired { showStreak = false; showPairingConfirmation = false }
         if pairingConfirmed {
             showPairingConfirmation = true
@@ -262,6 +265,7 @@ final class MulberryModel: ObservableObject {
         if (try? await api.signedInUserId) == nil && bootstrap != nil {
             await sync?.stop(); syncObserver?.cancel(); sync = nil
             streaks.bind(userId: nil, pairSessionId: nil)
+            reactions.bind(userId: nil, pairSessionId: nil)
             showStreak = false; showPairingConfirmation = false
             bootstrap = nil; drawing = DrawingState()
         }

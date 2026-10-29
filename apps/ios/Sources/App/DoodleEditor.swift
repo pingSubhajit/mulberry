@@ -77,6 +77,10 @@ final class DoodleEditor: ObservableObject {
     private(set) var previousTool: DoodleTool = .brush
     /// A double-tap or squeeze asking the canvas to show something.
     @Published var pencilRequest: PencilRequest?
+    /// A finger held still on the phone's canvas, asking for the reactions there.
+    @Published var reactionRequest: ReactionRequest?
+    /// The held finger after the reactions open, so sliding onto one and letting go sends it.
+    let reactionPointer = ReactionPointer()
     /// Counts touches that start on the canvas, so the squeeze palette closes as drawing begins.
     @Published private(set) var canvasTouches = 0
     func canvasTouched() { canvasTouches += 1 }
@@ -192,6 +196,13 @@ final class DoodleEditor: ObservableObject {
         history.recordDraw(stroke)
         queue([.init(type: "FINISH_STROKE", strokeId: stroke.id)])
         receive()
+    }
+
+    /// A held finger opens the reactions instead of drawing, so the dot it left goes, without an undo step.
+    func discardStroke() {
+        guard let stroke = active, !ended else { return }
+        active = nil; ended = false
+        queue([.init(type: "FINISH_STROKE", strokeId: stroke.id), .init(type: "DELETE_STROKE", strokeId: stroke.id)], preview: true)
     }
 
     func undo() {
@@ -519,6 +530,10 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         }
     }
     private weak var trackedTouch: UITouch?
+    /// On iPhone, a finger held still on the canvas opens the reactions, as on Android.
+    private var reactionHold: (start: CGPoint, timer: DispatchWorkItem)?
+    /// The finger that opened the reactions, while it stays down.
+    private weak var heldTouch: UITouch?
     // Eraser: a tap on text or a sticker deletes it; dragging off it erases strokes.
     private var elementToErase: (id: String, start: CGPoint)?
     private var elementGestures: [UIGestureRecognizer] = []
@@ -579,10 +594,13 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             return
         }
         editor?.begin(at: point, size: bounds.size)
+        if UIDevice.current.userInterfaceIdiom == .phone, touch.type == .direct, editor?.tool == .brush { holdForReactions(at: point) }
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if let held = heldTouch, touches.contains(held) { editor?.reactionPointer.location = held.location(in: self) }
         guard let touch = trackedTouch, touches.contains(touch) else { return }
         let point = touch.location(in: self)
+        if let hold = reactionHold, hypot(point.x - hold.start.x, point.y - hold.start.y) > 10 { cancelHold() }
         if let pending = elementToErase {
             guard hypot(point.x - pending.start.x, point.y - pending.start.y) > 10 else { return }
             elementToErase = nil
@@ -593,7 +611,9 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         setNeedsDisplay()
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if let held = heldTouch, touches.contains(held) { heldTouch = nil; editor?.reactionPointer.lift() }
         guard let touch = trackedTouch, touches.contains(touch) else { return }
+        cancelHold()
         if let pending = elementToErase {
             editor?.deleteElement(pending.id)
         } else {
@@ -603,9 +623,32 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         elementToErase = nil; trackedTouch = nil; predicted = []
     }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if let held = heldTouch, touches.contains(held) { heldTouch = nil; editor?.reactionPointer.location = nil }
+        cancelHold()
         if elementToErase == nil { editor?.end() }
         elementToErase = nil; trackedTouch = nil; predicted = []
         setNeedsDisplay()
+    }
+
+    private func holdForReactions(at point: CGPoint) {
+        let timer = DispatchWorkItem { [weak self] in
+            guard let self, let touch = self.trackedTouch else { return }
+            self.reactionHold = nil
+            self.heldTouch = touch
+            // The rest of this touch neither draws nor erases.
+            self.editor?.discardStroke()
+            self.trackedTouch = nil; self.predicted = []
+            self.setNeedsDisplay()
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            self.editor?.reactionRequest = ReactionRequest(location: point)
+        }
+        reactionHold = (point, timer)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: timer)
+    }
+
+    private func cancelHold() {
+        reactionHold?.timer.cancel()
+        reactionHold = nil
     }
 
     // MARK: Apple Pencil
@@ -734,6 +777,23 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
     private func normalized(_ point: CGPoint) -> DrawingPoint {
         .init(x: min(1, max(0, point.x / max(1, bounds.width))), y: min(1, max(0, point.y / max(1, bounds.height))))
     }
+}
+
+/// Where the finger that opened the reactions is, in the canvas's coordinates, while it is down.
+@MainActor
+final class ReactionPointer: ObservableObject {
+    @Published var location: CGPoint?
+    /// Counts the times the finger lifted after sliding, to choose the reaction under it.
+    @Published private(set) var lifts = 0
+    func lift() {
+        if location != nil { lifts += 1 }
+        location = nil
+    }
+}
+
+struct ReactionRequest: Equatable {
+    let location: CGPoint
+    let id = UUID()
 }
 
 struct PencilRequest: Equatable {
