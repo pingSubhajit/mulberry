@@ -32,6 +32,9 @@ public actor DrawingWebSocket: DrawingSocketTransport {
     private let task: URLSessionWebSocketTask
     public init(url: URL, session: URLSession = .shared) {
         task = session.webSocketTask(with: url)
+        // READY replays everything a device missed in one message. URLSession's 1 MB default
+        // rejects a new device's first sync of a long-lived canvas.
+        task.maximumMessageSize = 64 * 1024 * 1024
         task.resume()
     }
     public func send(_ text: String) async throws { try await task.send(.string(text)) }
