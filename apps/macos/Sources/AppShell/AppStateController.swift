@@ -132,6 +132,12 @@ public final class AppStateController: ObservableObject {
         }
     }
 
+    /// A profile, partner or pairing change made in Settings: the canvas follows a new pairing.
+    public func apply(_ bootstrap: BootstrapState, syncController: CanvasSyncController) {
+        publish(bootstrap)
+        updateSyncSession(syncController: syncController)
+    }
+
     private func publish(_ bootstrap: BootstrapState) {
         guard bootstrap.userId == lastLoadedUserID else { return }
         loadState = .loaded(bootstrap)

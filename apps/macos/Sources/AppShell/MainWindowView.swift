@@ -7,7 +7,7 @@ import Sync
 import SwiftUI
 
 /// One portrait panel of frosted glass holding the canvas, with the streak and profile in the
-/// window toolbar. Settings opens as a sheet until it is designed.
+/// window toolbar.
 struct MainWindowView: View {
     @ObservedObject var router: AppRouter
     @ObservedObject var authController: AuthSessionController
@@ -16,8 +16,9 @@ struct MainWindowView: View {
     @ObservedObject var overlayController: OverlayController
     @ObservedObject var stickerLoader: StickerImageLoader
     let editorModel: CanvasEditorModel
+    @ObservedObject var streaks: StreakModel
+    let openSettings: () -> Void
     @StateObject private var avatar = ProfileAvatar()
-    @StateObject private var streaks = StreakModel()
     @State private var reactionsOpen = false
 
     var body: some View {
@@ -39,14 +40,6 @@ struct MainWindowView: View {
             }
             .task(id: appStateController.loadState.bootstrap?.userPhotoUrl) {
                 await avatar.load(appStateController.loadState.bootstrap?.userPhotoUrl)
-            }
-            .sheet(isPresented: routeBinding(.settings, .overlayStatus)) {
-                SettingsSheet(
-                    authController: authController,
-                    appStateController: appStateController,
-                    syncController: syncController,
-                    overlayController: overlayController
-                ) { router.goHome() }
             }
     }
 
@@ -121,7 +114,7 @@ struct MainWindowView: View {
 
     private func profileMenu(_ bootstrap: BootstrapState) -> some View {
         Menu {
-            Button("Settings…") { router.open(.settings) }
+            Button("Settings…", action: openSettings)
                 .keyboardShortcut(",", modifiers: .command)
             Divider()
             Button("Sign Out") {
@@ -262,56 +255,3 @@ private struct UnpairedPanel: View {
     }
 }
 
-/// Placeholder until settings are designed: the account, the overlay and sync status.
-private struct SettingsSheet: View {
-    @ObservedObject var authController: AuthSessionController
-    @ObservedObject var appStateController: AppStateController
-    @ObservedObject var syncController: CanvasSyncController
-    @ObservedObject var overlayController: OverlayController
-    let onDone: () -> Void
-
-    var body: some View {
-        Form {
-            Section("Account") {
-                LabeledContent("Signed in as", value: authController.state.statusDetail)
-                if let bootstrap = appStateController.loadState.bootstrap {
-                    LabeledContent("Partner", value: bootstrap.partnerTitle)
-                }
-            }
-            Section("Overlay") {
-                Toggle("Show overlay", isOn: Binding(
-                    get: { overlayController.isVisible },
-                    set: { $0 ? overlayController.show() : overlayController.hide() }
-                ))
-                Picker("Display", selection: Binding(
-                    get: { overlayController.selectedDisplayID ?? overlayController.displays.first?.id },
-                    set: { if let id = $0 { overlayController.selectDisplay(id: id) } }
-                )) {
-                    ForEach(overlayController.displays) { display in
-                        Text(display.name).tag(Optional(display.id))
-                    }
-                }
-                Button("Reset Position", action: overlayController.resetPosition)
-                LabeledContent("Quick Draw", value: overlayController.hotKeyStatus.problem ?? "Ready")
-            }
-            Section("Sync") {
-                LabeledContent("Status", value: syncController.connectionState.title)
-                LabeledContent("Revision", value: "\(syncController.status.lastAppliedServerRevision)")
-                if syncController.status.pendingCount > 0 {
-                    LabeledContent("Waiting to send", value: "\(syncController.status.pendingCount)")
-                }
-                if let error = syncController.status.lastError {
-                    Text(error).foregroundStyle(.secondary)
-                }
-                Button("Recover Canvas Now", action: syncController.recoverNow)
-            }
-        }
-        .formStyle(.grouped)
-        .frame(width: 420, height: 480)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done", action: onDone)
-            }
-        }
-    }
-}

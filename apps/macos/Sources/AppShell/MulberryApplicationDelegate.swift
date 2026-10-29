@@ -57,6 +57,15 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     private var syncWasReachable = true
     private var statusItem: NSStatusItem?
     private var mainWindowController: MainWindowController?
+    private var settingsWindowController: SettingsWindowController?
+    private let preferences = MacPreferences()
+    private let launchAtLogin = LaunchAtLogin()
+    private let streaks = StreakModel()
+    private lazy var accountSettings = AccountSettings(api: { [unowned self] in api }) { [weak self] bootstrap in
+        guard let self else { return }
+        appStateController.apply(bootstrap, syncController: syncController)
+    }
+    private var preferencesCancellable: AnyCancellable?
     private var lastOverlayPresenceReportSignature: OverlayPresenceReportSignature?
 
     public override init() {
@@ -73,7 +82,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         let quickDrawController = QuickDrawController(overlayController: overlayController)
         self.quickDrawController = quickDrawController
         installQuickDraw()
-        quickDrawController.start(shortcut: .standard)
+        quickDrawController.start(shortcut: preferences.quickDrawShortcut)
         syncController.onPairingChanged = { [weak self] in
             guard let self else { return }
             Task {
@@ -129,6 +138,25 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
             }
         }
         installStatusItem()
+        preferencesCancellable = preferences.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.applyPreferences() }
+        }
+        applyPreferences()
+    }
+
+    /// The menu bar icon, the Dock icon and Quick Draw's shortcut follow Settings.
+    private func applyPreferences() {
+        statusItem?.isVisible = preferences.showsMenuBarIcon
+        quickDrawController?.setShortcut(preferences.quickDrawShortcut)
+        updateActivationPolicy()
+        refreshStatusMenu()
+    }
+
+    /// In the Dock while a window is open, or always when Settings says so.
+    private func updateActivationPolicy() {
+        let windowOpen = mainWindowController?.window?.isVisible == true || settingsWindowController?.isVisible == true
+        let policy: NSApplication.ActivationPolicy = preferences.showsInDock || windowOpen ? .regular : .accessory
+        if NSApp.activationPolicy() != policy { NSApp.setActivationPolicy(policy) }
     }
 
     /// Quick Draw edits the shared canvas on the overlay with the window's editor, its tools in a
@@ -315,11 +343,12 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
 
     private func quickDrawMenuItem() -> NSMenuItem {
         let title = overlayController.isQuickDrawActive ? "Exit Quick Draw" : "Quick Draw"
+        let shortcut = preferences.quickDrawShortcut
         return menuItem(
             title,
             action: #selector(quickDraw),
-            keyEquivalent: "m",
-            modifierMask: [.command, .control]
+            keyEquivalent: shortcut.key,
+            modifierMask: shortcut.modifiers
         )
     }
 
@@ -374,11 +403,35 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     }
 
     @objc private func openOverlayDisplaySettings() {
-        showMainWindow(route: .overlayStatus)
+        showSettings(.desktop)
     }
 
     @objc private func openSettings() {
-        showMainWindow(route: .settings)
+        showSettings(nil)
+    }
+
+    private func showSettings(_ pane: SettingsPane?) {
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController(environment: SettingsEnvironment(
+                authController: authController,
+                appStateController: appStateController,
+                syncController: syncController,
+                overlayController: overlayController,
+                preferences: preferences,
+                launchAtLogin: launchAtLogin,
+                account: accountSettings,
+                streaks: streaks,
+                recordingShortcut: { [weak self] recording in
+                    recording ? self?.quickDrawController?.suspendShortcut() : self?.quickDrawController?.resumeShortcut()
+                }
+            )) { [weak self] in
+                // After the window has closed.
+                DispatchQueue.main.async { self?.updateActivationPolicy() }
+            }
+        }
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindowController?.show(pane)
     }
 
     @objc private func quitMulberry() {
@@ -394,7 +447,9 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
                 syncController: syncController,
                 overlayController: overlayController,
                 stickerLoader: stickerLoader,
-                editorModel: windowEditorModel
+                editorModel: windowEditorModel,
+                streaks: streaks,
+                openSettings: { [weak self] in self?.showSettings(nil) }
             ) { [weak self] in
                 self?.returnToAccessoryMode()
             }
@@ -409,7 +464,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     }
 
     private func returnToAccessoryMode() {
-        NSApp.setActivationPolicy(.accessory)
+        DispatchQueue.main.async { self.updateActivationPolicy() }
         updateSyncDemand()
     }
 
@@ -546,6 +601,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         overlayController: OverlayController,
         stickerLoader: StickerImageLoader,
         editorModel: CanvasEditorModel,
+        streaks: StreakModel,
+        openSettings: @escaping () -> Void,
         onWindowClosed: @escaping () -> Void
     ) {
         self.onWindowClosed = onWindowClosed
@@ -556,7 +613,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             syncController: syncController,
             overlayController: overlayController,
             stickerLoader: stickerLoader,
-            editorModel: editorModel
+            editorModel: editorModel,
+            streaks: streaks,
+            openSettings: openSettings
         )
         let hostingController = NSHostingController(rootView: view)
         // The window owns its size; SwiftUI's toolbar items appear in the window's toolbar.
