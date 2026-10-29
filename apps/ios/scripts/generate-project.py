@@ -46,6 +46,11 @@ font_ref = add('fonts', isa='PBXFileReference', lastKnownFileType='folder', path
 font_build = add('fonts-build', isa='PBXBuildFile', fileRef=font_ref)
 legal_ref = add('legal', isa='PBXFileReference', lastKnownFileType='folder', path='Resources/Legal', sourceTree='<group>')
 legal_build = add('legal-build', isa='PBXBuildFile', fileRef=legal_ref)
+# Each bundle declares its own data use and API reasons.
+privacy_ref = add('privacy-manifest', isa='PBXFileReference', lastKnownFileType='text.xml', path='Resources/PrivacyInfo.xcprivacy', sourceTree='<group>')
+privacy_build = add('privacy-manifest-build', isa='PBXBuildFile', fileRef=privacy_ref)
+widget_privacy_ref = add('widget-privacy-manifest', isa='PBXFileReference', lastKnownFileType='text.xml', path='Resources/Widgets/PrivacyInfo.xcprivacy', sourceTree='<group>')
+widget_privacy_build = add('widget-privacy-manifest-build', isa='PBXBuildFile', fileRef=widget_privacy_ref)
 icon_refs, icon_builds = [], []
 for icon in ['AppIcon', 'AppIconDev']:
     reference = add(icon, isa='PBXFileReference', lastKnownFileType='folder.iconcomposer.icon', path=f'Resources/{icon}.icon', sourceTree='<group>')
@@ -77,9 +82,9 @@ widget_assets_ref = add('widget-assets', isa='PBXFileReference', lastKnownFileTy
 widget_assets_build = add('widget-assets-build', isa='PBXBuildFile', fileRef=widget_assets_ref)
 widget_plist_ref = add('widget-plist', isa='PBXFileReference', lastKnownFileType='text.plist.xml', path='Configuration/Widgets-Info.plist', sourceTree='<group>')
 products = add('products', isa='PBXGroup', name='Products', children=[product, widget_product], sourceTree='<group>')
-main = add('main', isa='PBXGroup', children=refs + icon_refs + [resources, asset_ref, font_ref, legal_ref, config_ref, debug_config_ref, widget_assets_ref, widget_plist_ref, products], sourceTree='<group>')
+main = add('main', isa='PBXGroup', children=refs + icon_refs + [resources, asset_ref, font_ref, legal_ref, config_ref, debug_config_ref, widget_assets_ref, widget_plist_ref, privacy_ref, widget_privacy_ref, products], sourceTree='<group>')
 sources_phase = add('sources-phase', isa='PBXSourcesBuildPhase', buildActionMask='2147483647', files=builds, runOnlyForDeploymentPostprocessing='0')
-resources_phase = add('resources-phase', isa='PBXResourcesBuildPhase', buildActionMask='2147483647', files=[resource_build, asset_build, font_build, legal_build] + icon_builds, runOnlyForDeploymentPostprocessing='0')
+resources_phase = add('resources-phase', isa='PBXResourcesBuildPhase', buildActionMask='2147483647', files=[resource_build, asset_build, font_build, legal_build, privacy_build] + icon_builds, runOnlyForDeploymentPostprocessing='0')
 frameworks_phase = add('frameworks-phase', isa='PBXFrameworksBuildPhase', buildActionMask='2147483647', files=[google_build, firebase_build, crashlytics_build], runOnlyForDeploymentPostprocessing='0')
 project_configs, target_configs = [], []
 for mode in ['Debug', 'Release']:
@@ -112,7 +117,7 @@ for mode in ['Debug', 'Release']:
     }))
 widget_list = add('widget-configs', isa='XCConfigurationList', buildConfigurations=widget_configs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
 widget_sources = add('widget-sources-phase', isa='PBXSourcesBuildPhase', buildActionMask='2147483647', files=widget_builds, runOnlyForDeploymentPostprocessing='0')
-widget_resources = add('widget-resources-phase', isa='PBXResourcesBuildPhase', buildActionMask='2147483647', files=[widget_assets_build], runOnlyForDeploymentPostprocessing='0')
+widget_resources = add('widget-resources-phase', isa='PBXResourcesBuildPhase', buildActionMask='2147483647', files=[widget_assets_build, widget_privacy_build], runOnlyForDeploymentPostprocessing='0')
 widget_frameworks = add('widget-frameworks-phase', isa='PBXFrameworksBuildPhase', buildActionMask='2147483647', files=[], runOnlyForDeploymentPostprocessing='0')
 widget_target = add('widget-target', isa='PBXNativeTarget', name='MulberryWidgets', productName='MulberryWidgets', productType='com.apple.product-type.app-extension', productReference=widget_product, buildConfigurationList=widget_list, buildPhases=[widget_sources, widget_frameworks, widget_resources], dependencies=[], buildRules=[])
 widget_proxy = add('widget-proxy', isa='PBXContainerItemProxy', containerPortal=oid('project'), proxyType='1', remoteGlobalIDString=widget_target, remoteInfo='MulberryWidgets')
