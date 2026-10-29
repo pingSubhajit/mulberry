@@ -40,6 +40,9 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         api: api,
         store: DrawingStore(directory: MacLocalStore.drawingsDirectory)
     )
+    /// The window's canvas and Quick Draw's each keep their own tools and undo history.
+    private lazy var windowEditorModel = CanvasEditorModel { [weak self] in self?.syncController.submit($0) }
+    private lazy var quickDrawEditorModel = CanvasEditorModel { [weak self] in self?.syncController.submit($0) }
     private lazy var stickerLoader: StickerImageLoader = {
         let client = api
         return StickerImageLoader(api: { client })
@@ -69,6 +72,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         // existing process instead of allowing parallel app instances.
         let quickDrawController = QuickDrawController(overlayController: overlayController)
         self.quickDrawController = quickDrawController
+        installQuickDraw()
         quickDrawController.start()
         syncController.onPairingChanged = { [weak self] in
             guard let self else { return }
@@ -125,6 +129,34 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
             }
         }
         installStatusItem()
+    }
+
+    /// Quick Draw edits the shared canvas on the overlay with the window's editor, its tools in a
+    /// panel beside the overlay.
+    private func installQuickDraw() {
+        overlayController.makeQuickDrawCanvas = { [unowned self] in
+            NSHostingView(rootView: FullAppCanvasEditor(
+                authController: authController,
+                appStateController: appStateController,
+                syncController: syncController,
+                stickerLoader: stickerLoader,
+                model: quickDrawEditorModel,
+                layout: .quickDraw
+            ))
+        }
+        overlayController.makeQuickDrawPalette = { [unowned self] side in
+            NSHostingView(rootView: QuickDrawPalette(
+                model: quickDrawEditorModel,
+                syncController: syncController,
+                side: side,
+                dragOverlay: { [unowned self] mouseDown, dropped in
+                    overlayController.dragQuickDraw(with: mouseDown, dropped: dropped)
+                },
+                done: { [unowned self] in quickDrawController?.exitQuickDraw() }
+            ))
+        }
+        overlayController.quickDrawEscape = { [unowned self] in quickDrawEditorModel.handleEscape() }
+        overlayController.quickDrawWillExit = { [unowned self] in quickDrawEditorModel.finishEditing() }
     }
 
     /// The overlay draws the shared canvas in the pair's stroke style.
@@ -361,7 +393,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
                 appStateController: appStateController,
                 syncController: syncController,
                 overlayController: overlayController,
-                stickerLoader: stickerLoader
+                stickerLoader: stickerLoader,
+                editorModel: windowEditorModel
             ) { [weak self] in
                 self?.returnToAccessoryMode()
             }
@@ -512,6 +545,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         syncController: CanvasSyncController,
         overlayController: OverlayController,
         stickerLoader: StickerImageLoader,
+        editorModel: CanvasEditorModel,
         onWindowClosed: @escaping () -> Void
     ) {
         self.onWindowClosed = onWindowClosed
@@ -521,7 +555,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             appStateController: appStateController,
             syncController: syncController,
             overlayController: overlayController,
-            stickerLoader: stickerLoader
+            stickerLoader: stickerLoader,
+            editorModel: editorModel
         )
         let hostingController = NSHostingController(rootView: view)
         // The window owns its size; SwiftUI's toolbar items appear in the window's toolbar.

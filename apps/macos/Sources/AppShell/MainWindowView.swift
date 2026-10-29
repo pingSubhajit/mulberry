@@ -15,6 +15,7 @@ struct MainWindowView: View {
     @ObservedObject var syncController: CanvasSyncController
     @ObservedObject var overlayController: OverlayController
     @ObservedObject var stickerLoader: StickerImageLoader
+    let editorModel: CanvasEditorModel
     @StateObject private var avatar = ProfileAvatar()
     @State private var reactionsOpen = false
 
@@ -60,7 +61,8 @@ struct MainWindowView: View {
                         authController: authController,
                         appStateController: appStateController,
                         syncController: syncController,
-                        stickerLoader: stickerLoader
+                        stickerLoader: stickerLoader,
+                        model: editorModel
                     )
                 } else {
                     UnpairedPanel()

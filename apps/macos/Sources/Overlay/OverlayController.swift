@@ -26,11 +26,23 @@ public final class OverlayController: NSObject, ObservableObject {
         resolveSelectedDisplay().name
     }
 
+    /// Quick Draw's canvas editor and its tools, made by the app, which owns sync and editing.
+    public var makeQuickDrawCanvas: (() -> NSView)?
+    public var makeQuickDrawPalette: ((HorizontalEdge) -> NSView)?
+    /// Esc in Quick Draw: finishes typing, deselects or leaves the eyedropper first. False when
+    /// there was nothing to cancel, so Esc leaves Quick Draw.
+    public var quickDrawEscape: (() -> Bool)?
+    /// Called before Quick Draw closes, so text being typed is kept.
+    public var quickDrawWillExit: (() -> Void)?
+
     private let settingsStore: OverlaySettingsStore
     private var panel: OverlayPanel?
-    private var palettePanel: OverlayPanel?
+    private var palettePanel: QuickDrawPalettePanel?
+    private var paletteSide: HorizontalEdge = .leading
+    private var passiveView: NSView?
+    /// The grip is dragging: the overlay moves with the palette, so nothing else repositions it.
+    private var isDragging = false
     private let canvasModel: CanvasRenderModel
-    private let debugModel = OverlayDebugDrawingModel()
     private let passiveLevel = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)
     private let quickDrawLevel = NSWindow.Level.floating
 
@@ -123,13 +135,17 @@ public final class OverlayController: NSObject, ObservableObject {
         }
 
         mode = .quickDraw
-        debugModel.isQuickDrawActive = true
         panel.styleMask = [.borderless, .resizable]
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         panel.level = quickDrawLevel
         panel.ignoresMouseEvents = false
-        panel.isMovableByWindowBackground = true
+        // Drawing, not dragging: the palette's grip moves the overlay.
+        panel.isMovableByWindowBackground = false
         panel.contentAspectRatio = Self.aspectRatio
+        if let canvas = makeQuickDrawCanvas?() {
+            passiveView = panel.contentView
+            panel.contentView = canvas
+        }
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         showPalette()
@@ -138,10 +154,14 @@ public final class OverlayController: NSObject, ObservableObject {
 
     public func exitQuickDraw() {
         guard mode == .quickDraw else { return }
+        quickDrawWillExit?()
         persistFrame()
         mode = .passive
-        debugModel.isQuickDrawActive = false
-        palettePanel?.orderOut(nil)
+        closePalette()
+        if let passiveView {
+            panel?.contentView = passiveView
+            self.passiveView = nil
+        }
 
         panel?.styleMask = [.borderless, .nonactivatingPanel]
         panel?.level = passiveLevel
@@ -153,8 +173,61 @@ public final class OverlayController: NSObject, ObservableObject {
         updateFrameDescription()
     }
 
-    public func clearDebugStrokes() {
-        debugModel.clear()
+    /// Drags the overlay by the palette's grip. The window server drags the palette, carrying the
+    /// overlay as its child window, as it drags any window by its title bar: between displays too,
+    /// each with its own Spaces, which a window moved in code cannot cross. `dropped` is called once
+    /// the button is released and the overlay has settled.
+    public func dragQuickDraw(with mouseDown: NSEvent, dropped: @escaping @MainActor () -> Void) {
+        guard mode == .quickDraw, let palette = palettePanel else { return dropped() }
+        isDragging = true
+        palette.performDrag(with: mouseDown)
+        Task { @MainActor [weak self] in
+            // The drag runs in the window server; the app only learns it ended from the button.
+            while NSEvent.pressedMouseButtons & 1 != 0 {
+                try? await Task.sleep(for: .milliseconds(30))
+            }
+            guard let self else { return }
+            isDragging = false
+            settleAfterDrag()
+            dropped()
+        }
+    }
+
+    /// Takes the display the overlay was dropped on, fits the overlay inside it, and puts the
+    /// palette beside it on whichever side has room.
+    private func settleAfterDrag() {
+        guard let panel else { return }
+        let centre = CGPoint(x: panel.frame.midX, y: panel.frame.midY)
+        let displays = displays
+        if let display = displays.first(where: { $0.screenFrame.contains(centre) })
+            ?? displays.min(by: { distance(from: centre, to: $0.screenFrame) < distance(from: centre, to: $1.screenFrame) }) {
+            selectedDisplayID = display.id
+            let settled = clampedFrame(panel.frame, to: display.visibleFrame)
+            if settled != panel.frame {
+                palettePanel?.removeChildWindow(panel)
+                panel.setFrame(settled, display: true)
+                if let palette = palettePanel { palette.addChildWindow(panel, ordered: .above) }
+                placePaletteBesideOverlay()
+            }
+        }
+        if preferredPaletteSide(for: panel.frame) != paletteSide {
+            closePalette()
+            showPalette()
+        }
+        persistCurrentSettings()
+        updateFrameDescription()
+    }
+
+    private func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        hypot(max(rect.minX - point.x, 0, point.x - rect.maxX), max(rect.minY - point.y, 0, point.y - rect.maxY))
+    }
+
+    /// Esc while Quick Draw is open. True when it was handled.
+    public func handleQuickDrawEscape() -> Bool {
+        guard mode == .quickDraw else { return false }
+        if quickDrawEscape?() == true { return true }
+        exitQuickDraw()
+        return true
     }
 
     private func show(persist: Bool) {
@@ -205,50 +278,64 @@ public final class OverlayController: NSObject, ObservableObject {
 
     private func showPalette() {
         guard let panel else { return }
-        if palettePanel == nil {
-            let palette = OverlayPanel(
-                contentRect: paletteFrame(relativeTo: panel.frame),
-                styleMask: [.borderless, .nonactivatingPanel],
-                backing: .buffered,
-                defer: false
-            )
-            palette.backgroundColor = .clear
-            palette.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-            palette.hasShadow = true
-            palette.hidesOnDeactivate = false
-            palette.isOpaque = false
-            palette.level = quickDrawLevel
-            palette.contentView = NSHostingView(
-                rootView: QuickDrawPaletteView(
-                    model: debugModel,
-                    onDone: { [weak self] in self?.exitQuickDraw() },
-                    onClear: { [weak self] in self?.clearDebugStrokes() }
-                )
-            )
-            palettePanel = palette
-        }
+        paletteSide = preferredPaletteSide(for: panel.frame)
+        let palette = QuickDrawPalettePanel(
+            contentRect: paletteFrame(relativeTo: panel.frame),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        palette.backgroundColor = .clear
+        palette.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        palette.hasShadow = false
+        palette.hidesOnDeactivate = false
+        palette.isOpaque = false
+        palette.level = quickDrawLevel
+        palette.contentView = makeQuickDrawPalette?(paletteSide)
+        palettePanel = palette
+        palette.orderFrontRegardless()
+        // The window server moves a child with its parent, in the same frame.
+        palette.addChildWindow(panel, ordered: .above)
+    }
 
-        palettePanel?.setFrame(paletteFrame(relativeTo: panel.frame), display: true)
-        palettePanel?.level = quickDrawLevel
-        palettePanel?.orderFrontRegardless()
+    /// Puts the palette back beside the overlay after the overlay itself moved or resized. The
+    /// overlay is detached meanwhile, or moving the palette would carry it along again.
+    private func placePaletteBesideOverlay() {
+        guard mode == .quickDraw, let panel, let palette = palettePanel else { return }
+        let frame = paletteFrame(relativeTo: panel.frame)
+        guard frame != palette.frame else { return }
+        palette.removeChildWindow(panel)
+        palette.setFrame(frame, display: true)
+        palette.addChildWindow(panel, ordered: .above)
+    }
+
+    private func closePalette() {
+        guard let palette = palettePanel else { return }
+        // Detached first: ordering out a parent orders out its children too.
+        if let panel { palette.removeChildWindow(panel) }
+        palette.orderOut(nil)
+        palette.contentView = nil
+        palettePanel = nil
+    }
+
+    /// The width of the tool column beside the overlay.
+    private static let paletteWidth: CGFloat = 80
+    private static let paletteGap: CGFloat = 12
+
+    /// On the overlay's left, as on the iPad, unless the screen has no room there.
+    private func preferredPaletteSide(for overlayFrame: NSRect) -> HorizontalEdge {
+        let screen = resolveSelectedDisplay().visibleFrame
+        return overlayFrame.minX - Self.paletteGap - Self.paletteWidth >= screen.minX ? .leading : .trailing
     }
 
     private func paletteFrame(relativeTo overlayFrame: NSRect) -> NSRect {
-        let preferred = NSRect(
-            x: overlayFrame.maxX + 12,
-            y: overlayFrame.midY - 86,
-            width: 250,
-            height: 172
-        )
-        let screen = resolveSelectedDisplay()
-        if screen.visibleFrame.contains(preferred) {
-            return preferred
-        }
-        return NSRect(
-            x: max(screen.visibleFrame.minX + 12, overlayFrame.minX - preferred.width - 12),
-            y: min(max(screen.visibleFrame.minY + 12, preferred.minY), screen.visibleFrame.maxY - preferred.height - 12),
-            width: preferred.width,
-            height: preferred.height
+        NSRect(
+            x: paletteSide == .leading
+                ? overlayFrame.minX - Self.paletteGap - Self.paletteWidth
+                : overlayFrame.maxX + Self.paletteGap,
+            y: overlayFrame.minY,
+            width: Self.paletteWidth,
+            height: overlayFrame.height
         )
     }
 
@@ -405,16 +492,14 @@ public final class OverlayController: NSObject, ObservableObject {
 
 extension OverlayController: NSWindowDelegate {
     public func windowDidMove(_ notification: Notification) {
-        if mode == .quickDraw {
-            palettePanel?.setFrame(paletteFrame(relativeTo: panel?.frame ?? .zero), display: true)
-        }
+        // Mid-drag the overlay is following the palette; the frame is saved when it is dropped.
+        guard !isDragging else { return }
+        placePaletteBesideOverlay()
         persistFrame()
     }
 
     public func windowDidResize(_ notification: Notification) {
-        if mode == .quickDraw {
-            palettePanel?.setFrame(paletteFrame(relativeTo: panel?.frame ?? .zero), display: true)
-        }
+        placePaletteBesideOverlay()
         persistFrame()
     }
 
@@ -432,4 +517,10 @@ public enum FullscreenGuardResult: Equatable, Sendable {
 final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+}
+
+/// Quick Draw's tools. Clicking them leaves the overlay key, so the keyboard stays with the canvas.
+final class QuickDrawPalettePanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 }

@@ -9,14 +9,45 @@ import Stickers
 import Sync
 import SwiftUI
 
+/// Where the canvas editor is shown: the main window, with its toolbars, or Quick Draw, on the
+/// desktop overlay with its tools in a panel beside it.
+enum CanvasEditorLayout {
+    case window
+    case quickDraw
+}
+
 struct FullAppCanvasEditor: View {
     @ObservedObject var authController: AuthSessionController
     @ObservedObject var appStateController: AppStateController
     @ObservedObject var syncController: CanvasSyncController
     @ObservedObject var stickerLoader: StickerImageLoader
+    @ObservedObject var model: CanvasEditorModel
+    let layout: CanvasEditorLayout
+
+    init(
+        authController: AuthSessionController,
+        appStateController: AppStateController,
+        syncController: CanvasSyncController,
+        stickerLoader: StickerImageLoader,
+        model: CanvasEditorModel,
+        layout: CanvasEditorLayout = .window
+    ) {
+        self.authController = authController
+        self.appStateController = appStateController
+        self.syncController = syncController
+        self.stickerLoader = stickerLoader
+        self.model = model
+        self.layout = layout
+        // The overlay has no title bar to keep clear of.
+        _titleBarHeight = State(initialValue: layout == .window ? 52 : 0)
+    }
 
     @StateObject private var canvasModel = CanvasRenderModel()
-    @State private var editor = CanvasStrokeEditingEngine()
+    /// The shared editing engine, read and changed in place.
+    private var editor: CanvasStrokeEditingEngine {
+        get { model.engine }
+        nonmutating set { model.engine = newValue }
+    }
     @State private var elementRenderer = CanvasElementRenderer()
     /// Text being typed in place on the canvas. A new one is not on the canvas until it is finished.
     @State private var textEdit: CanvasElementSession<CanvasTextElement>?
@@ -56,9 +87,8 @@ struct FullAppCanvasEditor: View {
     @State private var elementToErase: (id: String, start: CGPoint)?
     /// Strokes already erased in this drag, before the deletions come back from sync.
     @State private var erasedThisDrag: Set<String> = []
-    @State private var paletteOpen = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var widthOpen = false
+    @Environment(\.colorScheme) private var colorScheme
 
     /// An element being dragged to a new place; it saves as one update when released.
     private struct ElementDrag {
@@ -73,33 +103,21 @@ struct FullAppCanvasEditor: View {
     private var userID: String? { appStateController.loadState.bootstrap?.userId }
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .bottom) {
-                canvasSurface
-                toolbar(width: proxy.size.width)
-                    .padding(.bottom, 14)
-                    .opacity(editorOpen ? 0 : 1)
-                    .disabled(editorOpen)
-            }
+        content
+            .overlay { elementEditor }
+        .onAppear {
+            syncCanvasModel()
+            model.handleEscape = { escape() }
+            model.finishEditing = { finishTyping(keepSelection: false) }
         }
         .background { zoomShortcuts }
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                Button { submit(editor.undo()) } label: { Image(systemName: "arrow.uturn.backward") }
-                    .keyboardShortcut("z", modifiers: .command)
-                    // While typing, ⌘Z belongs to the text.
-                    .disabled(!editor.canUndo || editorOpen || textEdit != nil)
-                    .help("Undo")
-                    .accessibilityLabel("Undo")
-                Button { submit(editor.redo()) } label: { Image(systemName: "arrow.uturn.forward") }
-                    .keyboardShortcut("z", modifiers: [.command, .shift])
-                    .disabled(!editor.canRedo || editorOpen || textEdit != nil)
-                    .help("Redo")
-                    .accessibilityLabel("Redo")
-            }
+        // Leaving the Text tool finishes any typing and drops the selection, from any toolbar.
+        .onChange(of: editor.toolState.activeTool) { _, tool in
+            guard tool != .text else { return }
+            finishTyping(keepSelection: false)
+            selectedTextID = nil
         }
-        .overlay { elementEditor }
-        .onAppear(perform: syncCanvasModel)
+        .onChange(of: textEdit != nil) { _, typing in model.isTyping = typing }
         .onReceive(syncController.objectWillChange) { _ in
             DispatchQueue.main.async {
                 syncCanvasModel()
@@ -122,10 +140,68 @@ struct FullAppCanvasEditor: View {
         }
     }
 
+    @ViewBuilder private var content: some View {
+        switch layout {
+        case .window:
+            GeometryReader { proxy in
+                ZStack(alignment: .bottom) {
+                    canvasSurface
+                    toolbar(width: proxy.size.width)
+                        .padding(.bottom, 14)
+                        .opacity(editorOpen ? 0 : 1)
+                        .disabled(editorOpen)
+                }
+            }
+            .toolbar {
+                ToolbarItemGroup(placement: .navigation) {
+                    Button(action: model.undo) { Image(systemName: "arrow.uturn.backward") }
+                        .keyboardShortcut("z", modifiers: .command)
+                        // While typing, ⌘Z belongs to the text.
+                        .disabled(!editor.canUndo || editorOpen || textEdit != nil)
+                        .help("Undo")
+                        .accessibilityLabel("Undo")
+                    Button(action: model.redo) { Image(systemName: "arrow.uturn.forward") }
+                        .keyboardShortcut("z", modifiers: [.command, .shift])
+                        .disabled(!editor.canRedo || editorOpen || textEdit != nil)
+                        .help("Redo")
+                        .accessibilityLabel("Redo")
+                }
+            }
+        case .quickDraw:
+            // The window's frosted glass behind the drawing while it is being edited on the desktop,
+            // a little clearer. Glass lifts towards white; in Dark Mode a dark tint keeps it smoky.
+            canvasSurface
+                .background {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(colorScheme == .dark ? Color.black.opacity(0.35) : Color(nsColor: .windowBackgroundColor).opacity(0.3))
+                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        }
+    }
+
+    /// Esc, in order: finish typing, deselect the text, leave the eyedropper. False when there was
+    /// nothing to cancel.
+    private func escape() -> Bool {
+        if textEdit != nil {
+            finishTyping(keepSelection: true)
+            return true
+        }
+        if selectedTextID != nil {
+            selectedTextID = nil
+            return true
+        }
+        if editor.toolState.activeTool == .eyedropper {
+            editor.toolState.setActiveTool(editor.toolState.previousTool)
+            return true
+        }
+        return false
+    }
+
     /// The shared canvas keeps the phones' 9:20 shape, centred in the slightly wider window.
     private var canvasSurface: some View {
         GeometryReader { window in
-            let _ = updateTitleBarHeight(window.safeAreaInsets.top)
+            let _ = layout == .window ? updateTitleBarHeight(window.safeAreaInsets.top) : ()
             let height = min(window.size.height, window.size.width * 20 / 9)
             canvasLayers
                 .frame(width: height * 9 / 20, height: height)
@@ -267,25 +343,18 @@ struct FullAppCanvasEditor: View {
             HStack {
                 Spacer()
                 VStack(spacing: 10) {
-                    paletteButton(size, glass: .clear)
-                    widthButton(size, glass: .clear)
+                    CanvasColourButton(model: model, size: size, glass: .clear)
+                    CanvasWidthButton(model: model, size: size, glass: .clear)
                 }
             }
             .padding(.trailing, 8)
             .frame(width: width)
             GlassEffectContainer(spacing: 4) {
                 HStack(spacing: 0) {
-                    toolButton("Brush", artwork: "brush.png", size: size, selected: tool == .draw) { select(.draw) }
-                    Spacer(minLength: 4)
-                    toolButton("Text", artwork: "text.svg", size: size, selected: tool == .text) { select(.text) }
-                    Spacer(minLength: 4)
-                    toolButton("Stickers", artwork: "sticker.png", size: size, selected: tool == .sticker) { select(.sticker) }
-                    Spacer(minLength: 4)
-                    toolButton("Eraser", artwork: "eraser.png", size: size, selected: tool == .erase) { select(.erase) }
-                    Spacer(minLength: 4)
-                    toolButton("Eyedropper", artwork: "eyedropper.png", size: size, selected: tool == .eyedropper) { select(.eyedropper) }
-                    Spacer(minLength: 4)
-                    toolButton("Clear canvas", artwork: "clear.png", size: size, enabled: !canvasIsEmpty) { editor.requestClearCanvas() }
+                    ForEach(CanvasToolSlot.allCases) { slot in
+                        if slot != .brush { Spacer(minLength: 4) }
+                        CanvasToolButton(slot, model: model, size: size, canvasIsEmpty: canvasIsEmpty)
+                    }
                 }
                 .padding(8)
             }
@@ -299,100 +368,6 @@ struct FullAppCanvasEditor: View {
 
     private var canvasIsEmpty: Bool {
         syncController.drawing.strokes.isEmpty && syncController.drawing.elements.isEmpty
-    }
-
-    private func select(_ tool: CanvasEditingTool) {
-        if tool != .text {
-            finishTyping(keepSelection: false)
-            selectedTextID = nil
-        }
-        editor.toolState.setActiveTool(tool)
-    }
-
-    private func toolButton(
-        _ title: String,
-        artwork: String? = nil,
-        symbol: String? = nil,
-        size: CGFloat,
-        selected: Bool = false,
-        enabled: Bool = true,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Group {
-                // Undo and redo are SF Symbols; the tools keep the iOS illustrations.
-                if let symbol {
-                    Image(systemName: symbol).font(.system(size: size * 0.44, weight: .medium))
-                } else if let artwork, let image = ToolbarArtwork.image(artwork) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .renderingMode(image.isTemplate ? .template : .original)
-                        .scaledToFit()
-                        .frame(width: size * 0.72, height: size * 0.72)
-                }
-            }
-            .foregroundStyle(.primary)
-            .opacity(enabled ? 1 : 0.35)
-            .frame(width: size, height: size)
-            // The whole glass circle is the button, not only the drawing.
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .glassEffect(.regular.tint(selected ? mulberryRed.opacity(0.12) : .clear).interactive(), in: .circle)
-        .overlay {
-            if selected { Circle().strokeBorder(mulberryRed.opacity(0.4), lineWidth: 1.5).allowsHitTesting(false) }
-        }
-        .help(title)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    private func paletteButton(_ size: CGFloat, glass: Glass = .regular) -> some View {
-        Button { paletteOpen = true } label: {
-            ColourPaletteIcon(color: editor.toolState.selectedColorArgb, size: size * 0.62)
-                .frame(width: size, height: size)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .glassEffect(glass.interactive(), in: .circle)
-        .help("Colour")
-        .accessibilityLabel("Colour palette")
-        .popover(isPresented: $paletteOpen, arrowEdge: .leading) {
-            PaletteColourPicker(palette: CanvasEditingDefaults.palette, selected: editor.toolState.selectedColorArgb) { color in
-                editor.toolState.setSelectedColor(color)
-                paletteOpen = false
-            }
-        }
-    }
-
-    private func widthButton(_ size: CGFloat, glass: Glass = .regular) -> some View {
-        let range = CanvasEditingDefaults.minBrushWidthPx...CanvasEditingDefaults.maxBrushWidthPx
-        let width = CGFloat(editor.toolState.selectedBrushWidthPx)
-        let dot = size * (0.15 + 0.55 * (width - CGFloat(range.lowerBound)) / CGFloat(range.upperBound - range.lowerBound))
-        return Button { widthOpen = true } label: {
-            Circle().fill(Color(argb: editor.toolState.brushColorArgb))
-                .frame(width: dot, height: dot)
-                .frame(width: size, height: size)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .glassEffect(glass.interactive(), in: .circle)
-        .help("Brush width")
-        .accessibilityLabel("Brush width")
-        .accessibilityValue("\(Int(editor.toolState.selectedBrushWidthPx))")
-        .popover(isPresented: $widthOpen, arrowEdge: .leading) {
-            VerticalWidthSlider(
-                value: Binding(
-                    get: { editor.toolState.selectedBrushWidthPx },
-                    set: { editor.toolState.setBrushWidth($0) }
-                ),
-                range: range,
-                colour: NSColor(argb: editor.toolState.brushColorArgb)
-            )
-            .frame(width: 24, height: 180)
-            .padding(14)
-        }
     }
 
     /// Zooming has no buttons; it stays on the keyboard, the trackpad and the scroll wheel.
@@ -743,11 +718,13 @@ struct FullAppCanvasEditor: View {
         let bounds = geometry.bounds
         let half = formatBarSize.height / 2
         // Clear of the rotate knob above a selected text; closer while typing.
-        let gap: CGFloat = textEdit == nil ? 30 : 8
+        // Pushed only on real contact: the rotate knob above a selected text, the text itself
+        // while typing. The natural place leaves headroom for styling to grow into.
+        let gap: CGFloat = textEdit == nil ? 30 : 6
         if anchor.y < bounds.minY {
             let highest = bounds.minY - gap - half
             // No room left above: take the natural place below.
-            if highest - half < 60 { return natural }
+            if highest - half < (layout == .window ? 60 : 8) { return natural }
             return CGPoint(x: anchor.x, y: min(anchor.y, highest))
         }
         return CGPoint(x: anchor.x, y: max(anchor.y, bounds.maxY + gap + half))
@@ -758,10 +735,11 @@ struct FullAppCanvasEditor: View {
         let bounds = geometry.bounds
         let half = formatBarSize.width / 2, height = formatBarSize.height
         let x = min(max(bounds.midX, half + 8), max(half + 8, canvasSize.width - half - 8))
-        let clearance: CGFloat = textEdit == nil ? 36 : 14
+        let clearance: CGFloat = textEdit == nil ? 44 : 28
         let above = bounds.minY - clearance - height / 2
-        // The window toolbar covers the canvas's top 60 points.
-        let y = above - height / 2 >= 60 ? above : bounds.maxY + clearance + height / 2
+        // The window toolbar covers the canvas's top 60 points; the overlay has none.
+        let top: CGFloat = layout == .window ? 60 : 8
+        let y = above - height / 2 >= top ? above : bounds.maxY + clearance + height / 2
         return CGPoint(x: x, y: y)
     }
 
@@ -811,7 +789,25 @@ struct FullAppCanvasEditor: View {
     /// Delete removes the selected text, Return edits it, Esc deselects it, and the arrow keys
     /// nudge it by a point, or ten with Shift.
     private func handleKey(_ key: CanvasKey, canvasSize: CGSize) -> Bool {
-        guard textEdit == nil, let selected = selectedText else { return false }
+        guard !editorOpen, textEdit == nil else { return false }
+        switch key {
+        case .undo:
+            if editor.canUndo { model.undo() }
+            return true
+        case .redo:
+            if editor.canRedo { model.redo() }
+            return true
+        case let .tool(tool):
+            model.select(tool)
+            return true
+        case .clearCanvas:
+            // Asks first, as the toolbar's Clear canvas does.
+            if !canvasIsEmpty { model.engine.requestClearCanvas() }
+            return true
+        case .delete, .return, .escape, .arrow:
+            break
+        }
+        guard let selected = selectedText else { return false }
         switch key {
         case .delete:
             deleteText()
@@ -827,6 +823,8 @@ struct FullAppCanvasEditor: View {
                 y: min(1, max(0, selected.center.y + dy / (canvasSize.height * zoom)))
             )
             submit(editor.update(.text(moved), in: syncController.drawing))
+        case .undo, .redo, .clearCanvas, .tool:
+            break
         }
         return true
     }
@@ -1132,13 +1130,27 @@ enum ToolbarArtwork {
     }
 }
 
-/// The keys the canvas handles for a selected text.
+/// The canvas's keyboard, the same in the window and in Quick Draw. The canvas only has the
+/// keyboard when no text is being typed, so single letters never fire mid-sentence.
 enum CanvasKey {
     case delete, `return`, escape
     case arrow(dx: CGFloat, dy: CGFloat)
+    case undo, redo, clearCanvas
+    case tool(CanvasEditingTool)
 
     init?(_ event: NSEvent) {
-        let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let step: CGFloat = modifiers.contains(.shift) ? 10 : 1
+        if modifiers.contains(.command) {
+            if event.keyCode == 51, modifiers.subtracting([.command, .function]).isEmpty {
+                self = .clearCanvas
+                return
+            }
+            guard event.charactersIgnoringModifiers?.lowercased() == "z" else { return nil }
+            self = modifiers.contains(.shift) ? .redo : .undo
+            return
+        }
+        guard modifiers.subtracting([.shift, .function, .numericPad]).isEmpty else { return nil }
         switch event.keyCode {
         case 51, 117: self = .delete
         case 36, 76: self = .return
@@ -1147,7 +1159,11 @@ enum CanvasKey {
         case 124: self = .arrow(dx: step, dy: 0)
         case 125: self = .arrow(dx: 0, dy: step)
         case 126: self = .arrow(dx: 0, dy: -step)
-        default: return nil
+        default:
+            guard let tool = CanvasToolSlot.allCases.first(where: { $0.shortcut == event.charactersIgnoringModifiers?.lowercased() })?.tool else {
+                return nil
+            }
+            self = .tool(tool)
         }
     }
 }

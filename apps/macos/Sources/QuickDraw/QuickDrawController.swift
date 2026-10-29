@@ -47,6 +47,15 @@ public final class QuickDrawController: NSObject {
         overlayController.exitQuickDraw()
     }
 
+    /// The shortcut opens Quick Draw, and closes it again.
+    public func toggleQuickDraw() {
+        if overlayController.isQuickDrawActive {
+            exitQuickDraw()
+        } else {
+            enterQuickDraw()
+        }
+    }
+
     private func registerHotKey() {
         let hotKeyID = EventHotKeyID(signature: quickDrawHotKeySignature, id: quickDrawHotKeyID)
         let registrationStatus = RegisterEventHotKey(
@@ -91,7 +100,7 @@ public final class QuickDrawController: NSObject {
 
                 let controller = Unmanaged<QuickDrawController>.fromOpaque(userData).takeUnretainedValue()
                 Task { @MainActor in
-                    controller.enterQuickDraw()
+                    controller.toggleQuickDraw()
                 }
                 return noErr
             },
@@ -109,12 +118,12 @@ public final class QuickDrawController: NSObject {
     }
 
     private func installKeyMonitor() {
+        // Esc belongs to Quick Draw only while it is open; elsewhere it passes through untouched.
+        // In Quick Draw it finishes typing, deselects or leaves the eyedropper before closing.
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53 else { return event }
-            Task { @MainActor in
-                self?.exitQuickDraw()
-            }
-            return nil
+            let handled = MainActor.assumeIsolated { self?.overlayController.handleQuickDrawEscape() ?? false }
+            return handled ? nil : event
         }
     }
 
