@@ -358,14 +358,25 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     private func bindReactions() {
         let bootstrap = appStateController.loadState.bootstrap
         let paired = bootstrap?.isPaired == true
-        reactions.bind(userId: authController.state.isSignedIn ? bootstrap?.userId : nil, pairSessionId: paired ? bootstrap?.pairSessionId : nil)
+        let user = authController.state.isSignedIn ? bootstrap?.userId : nil
+        reactions.bind(userId: user, pairSessionId: paired ? bootstrap?.pairSessionId : nil)
+        streaks.bind(userId: user, pairSessionId: paired ? bootstrap?.pairSessionId : nil, baselineDays: bootstrap?.currentStreakDays)
         if paired, reactionPolling == nil {
             #if DEBUG
             Task { await reactions.runDebugArrivals() }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                streaks.runDebugLevelUp()
+            }
             #endif
+            // Reactions every five seconds; the streak every thirty, so its level-up lands soon
+            // after the day's first drawing or reaction.
             reactionPolling = Task { [weak self] in
+                var tick = 0
                 while !Task.isCancelled {
                     await self?.reactions.check()
+                    if tick % 6 == 0, let self { await self.streaks.refresh(api: self.api) }
+                    tick += 1
                     try? await Task.sleep(for: .seconds(5))
                 }
             }
@@ -588,6 +599,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
         updateSyncDemand()
         updateReactionSurface()
+        Task { await streaks.refresh(api: api) }
     }
 
     private func returnToAccessoryMode() {

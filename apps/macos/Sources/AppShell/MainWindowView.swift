@@ -57,6 +57,12 @@ struct MainWindowView: View {
                         model: editorModel,
                         reactions: reactions
                     )
+                    // The level-up banner below the title bar, and its confetti over everything.
+                    .overlay(alignment: .top) {
+                        StreakCanvasCelebration(streaks: streaks) { windowState.showsStreak = true }
+                            .padding(.top, 44)
+                            .ignoresSafeArea()
+                    }
                 } else {
                     UnpairedPanel()
                 }
