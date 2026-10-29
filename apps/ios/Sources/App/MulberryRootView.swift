@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 
 struct MulberryRootView: View {
@@ -8,6 +9,7 @@ struct MulberryRootView: View {
     @State private var setupOpen = false
     @State private var setupAfterSettings = false
     @ObservedObject private var quickActions = HomeQuickActions.shared
+    @Environment(\.requestReview) private var requestReview
     @State private var quickClearConfirmation = false
     @State private var profilePhoto: UIImage?
     @State private var wallpaperOpen = false
@@ -50,6 +52,14 @@ struct MulberryRootView: View {
         // Hidden doodles bring reminders until they are shown again; becoming active tops them up.
         .task(id: "\(model.userId ?? "")|\(wallpapers.showDrawings)|\(model.bootstrap?.isPaired == true)|\(phase == .active)") {
             await DoodlesOffReminders.sync(user: model.userId, hidden: !wallpapers.showDrawings, paired: model.bootstrap?.isPaired == true)
+        }
+        // A 3-day streak earns an App Store review ask, a moment after the canvas settles.
+        .task(id: "\(model.bootstrap?.currentStreakDays ?? 0)|\(phase == .active)") {
+            guard phase == .active, model.bootstrap?.isPaired == true, (model.bootstrap?.currentStreakDays ?? 0) >= 3 else { return }
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled, !model.showSettings, !model.showStreak, !setupOpen,
+                  ReviewPrompt.reserve(streakDays: model.bootstrap?.currentStreakDays ?? 0) else { return }
+            requestReview()
         }
         .onChange(of: wallpapers.showDrawings) { _, _ in publishQuickActions() }
         .onReceive(model.reactions.$lastUsed.removeDuplicates()) { _ in publishQuickActions() }
