@@ -23,21 +23,20 @@ public struct OverlayDisplay: Identifiable, Equatable, Sendable {
 
 public struct OverlayHotKeyStatus: Equatable, Sendable {
     public let isRegistered: Bool
-    public let message: String
+    /// Why the shortcut is not working, when it is not.
+    public let problem: String?
 
-    public static let notRegistered = OverlayHotKeyStatus(
-        isRegistered: false,
-        message: "Command-Control-M has not been registered yet."
-    )
+    public static let notRegistered = OverlayHotKeyStatus(isRegistered: false, problem: nil)
 
-    public static func registered() -> OverlayHotKeyStatus {
-        OverlayHotKeyStatus(isRegistered: true, message: "Command-Control-M is registered.")
+    public static func registered(_ shortcut: String) -> OverlayHotKeyStatus {
+        OverlayHotKeyStatus(isRegistered: true, problem: nil)
     }
 
-    public static func failed(code: Int32) -> OverlayHotKeyStatus {
+    public static func failed(_ shortcut: String, code: Int32) -> OverlayHotKeyStatus {
+        // eventHotKeyExistsErr: another app registered the same combination first.
         OverlayHotKeyStatus(
             isRegistered: false,
-            message: "Command-Control-M could not be registered. OSStatus \(code)."
+            problem: code == -9878 ? "Another app already uses \(shortcut)." : "\(shortcut) could not be set up (\(code))."
         )
     }
 }

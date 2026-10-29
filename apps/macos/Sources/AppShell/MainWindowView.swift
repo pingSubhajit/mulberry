@@ -292,7 +292,7 @@ private struct SettingsSheet: View {
                     }
                 }
                 Button("Reset Position", action: overlayController.resetPosition)
-                LabeledContent("Quick Draw", value: overlayController.hotKeyStatus.message)
+                LabeledContent("Quick Draw", value: overlayController.hotKeyStatus.problem ?? "Ready")
             }
             Section("Sync") {
                 LabeledContent("Status", value: syncController.connectionState.title)

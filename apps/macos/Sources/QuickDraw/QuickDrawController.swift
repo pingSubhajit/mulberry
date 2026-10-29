@@ -12,6 +12,7 @@ public final class QuickDrawController: NSObject {
     private var hotKeyHandler: EventHandlerRef?
     private var keyMonitor: Any?
     private var didInstallAppLifecycleObserver = false
+    public private(set) var shortcut = QuickDrawShortcut.standard
 
     public init(overlayController: OverlayController) {
         self.overlayController = overlayController
@@ -19,10 +20,7 @@ public final class QuickDrawController: NSObject {
     }
 
     public func stop() {
-        if let hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
-            self.hotKeyRef = nil
-        }
+        unregisterHotKey()
         if let hotKeyHandler {
             RemoveEventHandler(hotKeyHandler)
             self.hotKeyHandler = nil
@@ -33,7 +31,9 @@ public final class QuickDrawController: NSObject {
         }
     }
 
-    public func start() {
+    public func start(shortcut: QuickDrawShortcut) {
+        self.shortcut = shortcut
+        installHotKeyHandler()
         registerHotKey()
         installKeyMonitor()
         observeAppLifecycle()
@@ -56,27 +56,56 @@ public final class QuickDrawController: NSObject {
         }
     }
 
+    /// Takes a new shortcut, freeing the old one. If another app holds it, the status says so.
+    public func setShortcut(_ shortcut: QuickDrawShortcut) {
+        guard shortcut != self.shortcut || hotKeyRef == nil else { return }
+        self.shortcut = shortcut
+        unregisterHotKey()
+        registerHotKey()
+    }
+
+    /// While a new shortcut is being recorded, pressing the current one records it instead of
+    /// opening Quick Draw.
+    public func suspendShortcut() {
+        unregisterHotKey()
+    }
+
+    public func resumeShortcut() {
+        if hotKeyRef == nil { registerHotKey() }
+    }
+
     private func registerHotKey() {
         let hotKeyID = EventHotKeyID(signature: quickDrawHotKeySignature, id: quickDrawHotKeyID)
-        let registrationStatus = RegisterEventHotKey(
-            UInt32(kVK_ANSI_M),
-            UInt32(cmdKey | controlKey),
+        let status = RegisterEventHotKey(
+            UInt32(shortcut.keyCode),
+            shortcut.carbonModifiers,
             hotKeyID,
             GetApplicationEventTarget(),
             0,
             &hotKeyRef
         )
-
-        guard registrationStatus == noErr else {
-            overlayController.updateHotKeyStatus(.failed(code: registrationStatus))
-            return
+        if status == noErr, hotKeyHandler != nil {
+            overlayController.updateHotKeyStatus(.registered(shortcut.displayString))
+        } else {
+            hotKeyRef = nil
+            overlayController.updateHotKeyStatus(.failed(shortcut.displayString, code: status))
         }
+    }
 
+    private func unregisterHotKey() {
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+            self.hotKeyRef = nil
+        }
+    }
+
+    private func installHotKeyHandler() {
+        guard hotKeyHandler == nil else { return }
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
         )
-        let handlerStatus = InstallEventHandler(
+        InstallEventHandler(
             GetApplicationEventTarget(),
             { _, event, userData in
                 var receivedHotKeyID = EventHotKeyID()
@@ -109,12 +138,6 @@ public final class QuickDrawController: NSObject {
             Unmanaged.passUnretained(self).toOpaque(),
             &hotKeyHandler
         )
-
-        if handlerStatus == noErr {
-            overlayController.updateHotKeyStatus(.registered())
-        } else {
-            overlayController.updateHotKeyStatus(.failed(code: handlerStatus))
-        }
     }
 
     private func installKeyMonitor() {

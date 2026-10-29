@@ -73,7 +73,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         let quickDrawController = QuickDrawController(overlayController: overlayController)
         self.quickDrawController = quickDrawController
         installQuickDraw()
-        quickDrawController.start()
+        quickDrawController.start(shortcut: .standard)
         syncController.onPairingChanged = { [weak self] in
             guard let self else { return }
             Task {
