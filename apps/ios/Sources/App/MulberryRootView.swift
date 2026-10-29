@@ -42,6 +42,7 @@ struct MulberryRootView: View {
         .onChange(of: model.restoring) { _, _ in handleQuickAction() }
         .onChange(of: model.bootstrap) { _, _ in publishQuickActions(); handleQuickAction() }
         .onChange(of: wallpapers.showDrawings) { _, _ in publishQuickActions() }
+        .onReceive(model.reactions.$lastUsed.removeDuplicates()) { _ in publishQuickActions() }
         .confirmationDialog("Clear all doodles?", isPresented: $quickClearConfirmation, titleVisibility: .visible) {
             Button("Clear doodles", role: .destructive) { Task { await model.clearCanvas() } }
         } message: { Text("This removes the shared drawing for both of you.") }
@@ -102,7 +103,8 @@ struct MulberryRootView: View {
     }
 
     private func publishQuickActions() {
-        quickActions.publish(signedIn: model.userId != nil, paired: model.bootstrap?.isPaired == true, showDrawings: wallpapers.showDrawings)
+        quickActions.publish(signedIn: model.userId != nil, paired: model.bootstrap?.isPaired == true,
+                             showDrawings: wallpapers.showDrawings, reaction: model.reactions.lastUsed)
     }
 
     private func handleQuickAction() {
@@ -112,6 +114,9 @@ struct MulberryRootView: View {
         model.showSettings = false; model.showInviteEntry = false
         switch action {
         case .wallpaper: wallpaperOpen = true
+        case .react:
+            wallpaperOpen = false
+            if model.bootstrap?.isPaired == true { Task { await model.reactions.send(model.reactions.lastUsed) } }
         case .clear:
             wallpaperOpen = false
             if model.bootstrap?.isPaired == true { quickClearConfirmation = true }

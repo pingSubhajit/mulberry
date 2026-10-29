@@ -33,5 +33,7 @@ struct MulberryShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: GetLatestWallpaperIntent(), phrases: ["Get the latest wallpaper from \(.applicationName)"],
                     shortTitle: "Get wallpaper", systemImageName: "photo")
+        AppShortcut(intent: SendReactionIntent(), phrases: ["Send love in \(.applicationName)", "Send a \(\.$reaction) in \(.applicationName)"],
+                    shortTitle: "Send a reaction", systemImageName: "heart")
     }
 }
