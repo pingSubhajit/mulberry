@@ -10,6 +10,8 @@ final class CanvasEditorModel: ObservableObject {
     @Published var engine = CanvasStrokeEditingEngine()
     /// Text is being typed in place: ⌘Z belongs to the text.
     @Published var isTyping = false
+    /// A sticker's editor is open over the canvas, which waits until it closes.
+    @Published var isEditingSticker = false
     /// Set by the canvas: Esc finishes typing, deselects, or leaves the eyedropper. False when
     /// there was nothing to cancel.
     var handleEscape: () -> Bool = { false }

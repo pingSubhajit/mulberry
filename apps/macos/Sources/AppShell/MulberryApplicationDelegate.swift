@@ -13,7 +13,7 @@ import Stickers
 import Sync
 
 @MainActor
-public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate {
+public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private let configuration = MacAppConfiguration.current
     private let store = MacLocalStore()
     private lazy var api: BackendClient = {
@@ -24,6 +24,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         }
     }()
     private let windowState = MainWindowState()
+    private var mainMenuController: MainMenuController?
     private lazy var authController = AuthSessionController(
         configuration: configuration,
         api: api,
@@ -228,43 +229,94 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     }
 
     private func installMainMenu() {
-        let mainMenu = NSMenu(title: "Main Menu")
+        let controller = MainMenuController(
+            preferences: preferences,
+            launchAtLogin: launchAtLogin,
+            overlayController: overlayController,
+            appStateController: appStateController,
+            actions: MainMenuController.Actions(
+                showCanvas: { [unowned self] in openMulberry() },
+                openSettings: { [unowned self] pane in showSettings(pane) },
+                toggleQuickDraw: { [unowned self] in quickDraw() },
+                sendReaction: { [unowned self] reaction in send(reaction) },
+                exportDrawing: { [unowned self] in exportDrawing() },
+                canExportDrawing: { [unowned self] in !canvasIsEmpty },
+                canSendReactions: { [unowned self] in appStateController.loadState.bootstrap?.isPaired == true },
+                setDryBrush: { [unowned self] enabled in Task { _ = await accountSettings.setDryBrush(enabled) } }
+            )
+        )
+        controller.install()
+        mainMenuController = controller
+    }
 
-        let appMenuItem = NSMenuItem()
-        let appMenu = NSMenu(title: "Mulberry")
-        appMenu.addItem(NSMenuItem(
-            title: "About Mulberry",
-            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
-            keyEquivalent: ""
-        ))
-        appMenu.addItem(.separator())
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        settingsItem.target = self
-        appMenu.addItem(settingsItem)
-        appMenu.addItem(.separator())
-        let quitItem = NSMenuItem(title: "Quit Mulberry", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        quitItem.target = NSApp
-        appMenu.addItem(quitItem)
-        appMenuItem.submenu = appMenu
-        mainMenu.addItem(appMenuItem)
+    // MARK: Canvas commands from the Edit menu
 
-        let windowMenuItem = NSMenuItem()
-        let windowMenu = NSMenu(title: "Window")
-        windowMenu.addItem(NSMenuItem(
-            title: "Minimize",
-            action: #selector(NSWindow.performMiniaturize(_:)),
-            keyEquivalent: "m"
-        ))
-        windowMenu.addItem(NSMenuItem(
-            title: "Close",
-            action: #selector(NSWindow.performClose(_:)),
-            keyEquivalent: "w"
-        ))
-        windowMenuItem.submenu = windowMenu
-        mainMenu.addItem(windowMenuItem)
-        NSApp.windowsMenu = windowMenu
+    /// The canvas the Edit menu acts on: Quick Draw's while it is open, else the window's while
+    /// it is the key window.
+    private var activeCanvasModel: CanvasEditorModel? {
+        if overlayController.isQuickDrawActive { return quickDrawEditorModel }
+        if let window = mainWindowController?.window, window.isKeyWindow { return windowEditorModel }
+        return nil
+    }
 
-        NSApp.mainMenu = mainMenu
+    private var canvasIsEmpty: Bool {
+        syncController.drawing.strokes.isEmpty && syncController.drawing.elements.isEmpty
+    }
+
+    /// Text being typed answers Undo and Command-Delete itself, before the chain reaches here.
+    private var typingInText: Bool {
+        NSApp.keyWindow?.firstResponder is NSText
+    }
+
+    @objc func undo(_ sender: Any?) {
+        activeCanvasModel?.undo()
+    }
+
+    @objc func redo(_ sender: Any?) {
+        activeCanvasModel?.redo()
+    }
+
+    @objc func clearCanvas(_ sender: Any?) {
+        activeCanvasModel?.engine.requestClearCanvas()
+    }
+
+    public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard let model = activeCanvasModel, !model.isTyping, !model.isEditingSticker else {
+            return ![#selector(undo(_:)), #selector(redo(_:)), #selector(clearCanvas(_:))].contains(menuItem.action)
+        }
+        switch menuItem.action {
+        case #selector(undo(_:)): return model.engine.canUndo
+        case #selector(redo(_:)): return model.engine.canRedo
+        // Disabled, Command-Delete passes on to a text field to delete to the line's start.
+        case #selector(clearCanvas(_:)): return !typingInText && !canvasIsEmpty
+        default: return true
+        }
+    }
+
+    /// Draws the shared canvas at the phones' 9:20 wallpaper size and saves it as a PNG.
+    private func exportDrawing() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "Mulberry Drawing \(Date().formatted(.iso8601.year().month().day())).png"
+        panel.canCreateDirectories = true
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let input = CanvasRenderInput(
+            state: syncController.drawing,
+            viewport: CGRect(x: 0, y: 0, width: 1080, height: 2400),
+            strokeRenderMode: CanvasStrokeRenderMode(rawBackendValue: appStateController.loadState.bootstrap?.canvasStrokeRenderMode),
+            stickerImages: stickerLoader.images
+        )
+        do {
+            guard let png = CanvasOffscreenRenderer.renderPNG(input: input)?.data else { throw CocoaError(.fileWriteUnknown) }
+            try png.write(to: url, options: .atomic)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
+    private func send(_ reaction: ReactionType) {
+        Task { try? await api.sendReaction(reaction) }
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -317,7 +369,9 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
         menu.addItem(.separator())
         menu.addItem(menuItem("Open Mulberry", action: #selector(openMulberry)))
         menu.addItem(quickDrawMenuItem())
-        menu.addItem(disabledItem("Send Heart"))
+        let heart = menuItem("Send Love", action: #selector(sendHeart))
+        heart.isEnabled = bootstrap?.isPaired == true
+        menu.addItem(heart)
         menu.addItem(.separator())
         menu.addItem(menuItem(bootstrap?.streakTitle ?? "Streak: --", action: #selector(openStreak)))
         menu.addItem(overlayMenu())
@@ -383,7 +437,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate 
     }
 
     @objc private func sendHeart() {
-        // Disabled until reactions and authenticated networking land.
+        send(.heart)
     }
 
     @objc private func openStreak() {

@@ -111,6 +111,7 @@ struct FullAppCanvasEditor: View {
             selectedTextID = nil
         }
         .onChange(of: textEdit != nil) { _, typing in model.isTyping = typing }
+        .onChange(of: stickerSession != nil) { _, editing in model.isEditingSticker = editing }
         .onReceive(syncController.objectWillChange) { _ in
             DispatchQueue.main.async {
                 syncCanvasModel()

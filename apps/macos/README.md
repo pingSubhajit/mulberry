@@ -1,11 +1,11 @@
 # Mulberry for macOS
 
-This is the permanent native macOS app workspace for Mulberry. It starts as a Swift Package for Phase 1 speed, while the build scripts produce a `.app` bundle shape so the project can move toward signing, notarization, and DMG packaging without keeping production code in the overlay prototype.
+The native Mac app: a menu bar app that keeps the shared canvas on the desktop, opens a portrait canvas window, and lets you draw over the desktop with Quick Draw. It is a Swift package; the build scripts assemble a signed `.app` bundle.
 
 ## Requirements
 
-- macOS 14 or newer
-- Xcode 16 or newer, or a command-line Swift 6 toolchain
+- macOS 26 or newer (Liquid Glass)
+- Xcode 26 or newer
 
 ## Development
 
@@ -15,60 +15,52 @@ Run the app directly:
 pnpm --dir apps/macos run dev
 ```
 
-The app starts in menu-bar mode without a Dock icon. Choose **Open Mulberry** from the menu bar item to show the main window; while that window is open, Mulberry appears in the Dock.
-
-Build and assemble a local app bundle:
+Build and assemble a local app bundle, signed with your Apple Development certificate:
 
 ```bash
 pnpm --dir apps/macos run build
 open .build/app/Mulberry.app
 ```
 
-Run the macOS smoke target:
+Run the smoke checks (unit tests, overlay regression, canvas render fixtures and the app bundle):
 
 ```bash
 pnpm --dir apps/macos run smoke
 ```
 
-From the repository root, the same commands are available as:
+From the repository root, the same commands are `pnpm dev:macos`, `pnpm build:macos` and `pnpm smoke:macos`.
 
-```bash
-pnpm dev:macos
-pnpm build:macos
-pnpm smoke:macos
-```
+Sign-in reads `MULBERRY_MAC_GOOGLE_CLIENT_ID` and `MULBERRY_MAC_GOOGLE_CLIENT_SECRET` from `apps/macos/.env` (see `.env.example`). The backend must list that client ID in `GOOGLE_ALLOWED_CLIENT_IDS`.
 
 ## Shared Code
 
 The iPhone and iPad app and this app share three targets in [`packages/apple`](../../packages/apple): `ProductCore` (backend client, Keychain session, canvas model, offline outbox and WebSocket sync), `CanvasDrawing` (the canvas renderer: strokes, text and stickers) and `StickerAssets` (sticker catalog, download and disk cache). This app adds what is particular to the Mac: the menu bar, the desktop overlay and when it syncs, Quick Draw, Google sign-in through the browser, and its pointer-driven editing tools and editors.
 
-Sign-in reads `MULBERRY_MAC_GOOGLE_CLIENT_ID` and `MULBERRY_MAC_GOOGLE_CLIENT_SECRET` from `apps/macos/.env` (see `.env.example`). The backend must list that client ID in `GOOGLE_ALLOWED_CLIENT_IDS`.
+## What the App Does
 
-## Phase 1 Scope
+- **Menu bar.** Mulberry runs as a menu bar app. Its menu shows the partner and sync state, opens the canvas, starts Quick Draw, sends love, opens the streak, and controls the overlay. The icon can be hidden in Settings; the Dock icon then stays on so Mulberry is always reachable.
+- **Desktop overlay.** A transparent, click-through window behind other windows shows the shared canvas on a chosen display, at a chosen strength. Its display, frame, visibility and strength are saved per Mac.
+- **Canvas window.** A fixed 9:20 portrait panel of frosted glass, with the iPad's tools: brush, text, stickers, eraser, eyedropper and clear, plus undo and redo, colour and width. The toolbar holds reactions, the streak and the profile menu.
+- **Quick Draw.** Control-Command-M by default, from any app: the overlay comes forward over a glass panel with the tools in a column beside it. Its grip drags the drawing between displays. Esc or Done closes it.
+- **Keyboard.** B, T, S, E and I pick the brush, text, stickers, eraser and eyedropper; Command-Z and Shift-Command-Z undo and redo this Mac's own edits; Command-Delete clears the canvas after asking; Delete removes a selected text.
+- **Menus.** Mulberry, File (Quick Draw, Send Reaction, Export Drawing), Edit (undo, redo, the clipboard, Clear Canvas), Settings (the overlay, dry brush, login and menu bar options), Window and Help.
+- **Settings.** Its own window: your account and photo; open at login, menu bar and Dock, Quick Draw's shortcut and dry brush strokes; the desktop overlay; your partner's profile, pairing and whether their wallpaper shows your drawings; sync diagnostics; and About.
 
-The Phase 1 shell intentionally contains only the permanent app foundation:
+## Structure
 
-- native AppKit/SwiftUI executable under `apps/macos`;
-- module folders for app shell, auth, networking, sync, canvas, persistence, overlay, Quick Draw, notifications, and settings;
-- accessory-mode launch behavior;
-- status bar item;
-- blank primary window opened from the status menu;
-- bundle metadata, entitlements placeholders, and local build scripts.
+`Sources/` holds one target per concern:
 
-Overlay behavior, Google Sign-In, sync, persistence, canvas rendering, and packaging/notarization are later PRD phases.
+| Target | Holds |
+| --- | --- |
+| `AppShell` | The app delegate, menus, canvas window, Quick Draw panel, editors, Settings and the streak and reactions popovers |
+| `Auth` | Google sign-in through the browser and the saved session |
+| `Networking` | The backend client's configuration for this Mac |
+| `Sync` | When the canvas syncs, over WebSocket or by catching up |
+| `CanvasRendering` | The canvas view, fonts and offscreen rendering |
+| `CanvasEditing` | The editing engine: tools, strokes, elements and undo history |
+| `Persistence` | Local storage for the session and cached state |
+| `Overlay` | The desktop overlay window and its settings |
+| `QuickDraw` | Quick Draw's global shortcut |
+| `Stickers` | Sticker artwork loading for the canvas |
 
-## Phase 3 Overlay And Quick Draw Behavior
-
-The app shell now includes the initial routing, overlay, and Quick Draw platform model:
-
-- the main app window has a typed route model and a sidebar for Canvas, Overlay, Pairing, Streak, and Settings;
-- Settings is a route inside the main app window;
-- the status menu reuses one main window and one overlay window;
-- Send Heart is visible but disabled until reactions and networking land;
-- Overlay > Show/Hide Overlay toggles the transparent click-through overlay;
-- Overlay > Choose Display opens the Overlay route in the main window;
-- Overlay > Reset Position recenters the overlay on the selected display;
-- the overlay defaults to a 9:20 portrait frame, sized for desktop at 450 x 1000 points before display clamping;
-- overlay visibility, selected display, and frame are persisted in UserDefaults;
-- Command-Control-M enters Quick Draw using a temporary debug drawing layer;
-- Quick Draw raises the overlay, enables input, shows the debug tool palette, and exits on Done, Escape, or app deactivation.
+Push notifications and a notarised, Developer ID-signed DMG wait for the paid Apple Developer account.
