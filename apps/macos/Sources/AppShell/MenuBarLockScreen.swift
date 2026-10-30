@@ -1,5 +1,7 @@
 import AppKit
+import CanvasDrawing
 import CoreText
+import IOKit.ps
 import ProductCore
 import ProductUI
 import SwiftUI
@@ -37,6 +39,8 @@ final class LockScreenModel: ObservableObject {
     @Published var railOpen = false
     /// The drawing, drawn as a picture at the screen's width so it clips and settles with the rest.
     @Published var drawing: NSImage?
+    /// This Mac's battery, for the status bar; nil on a Mac without one.
+    @Published var battery: Int?
     /// Past the lock screen, on the home screen.
     @Published var unlocked = false
     /// How far a swipe in progress has carried the lock screen, in points; up is negative.
@@ -129,6 +133,7 @@ final class LockScreenPanelController {
         previousApp = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
         presence.shown = false
         // It always opens on the lock screen.
+        model.battery = MacBattery.level()
         model.unlocked = false
         model.swipe = 0
         model.railOpen = false
@@ -349,7 +354,7 @@ struct LockScreenView: View {
                 // carrying the clock.
                 foot.opacity(reduceMotion ? 1 : max(0, 1 - progress * 2.4))
                 VStack(spacing: 0) {
-                    clock.padding(.top, 50)
+                    clock.padding(.top, 52)
                     Spacer(minLength: 0)
                 }
                 .opacity(reduceMotion ? 1 : max(0, 1 - progress * 1.2))
@@ -358,11 +363,14 @@ struct LockScreenView: View {
             .opacity(reduceMotion ? 1 - progress : 1)
             .allowsHitTesting(!model.unlocked)
             VStack(spacing: 0) {
-                // The island stays put, as the status bar does; on the home screen it locks again.
-                DynamicIsland(reactions: reactions, partnerName: model.partnerName)
-                    .contentShape(.capsule)
-                    .onTapGesture { if model.unlocked { model.setUnlocked(false) } }
-                    .padding(.top, 10)
+                // The island and the status bar stay put; on the home screen the island locks again.
+                ZStack(alignment: .top) {
+                    StatusBar(unlocked: model.unlocked, battery: model.battery)
+                    DynamicIsland(reactions: reactions, partnerName: model.partnerName)
+                        .contentShape(.capsule)
+                        .onTapGesture { if model.unlocked { model.setUnlocked(false) } }
+                }
+                .padding(.top, 10)
                 Spacer(minLength: 0)
             }
             ReactionStage(reactions: reactions, surface: .menuBar)
@@ -404,7 +412,10 @@ struct LockScreenView: View {
     }
 
     /// The shared canvas at the wallpaper's width, as the partner's phone lays it over theirs.
-    static let canvasSize = CGSize(width: screen.width, height: screen.width * 20 / 9)
+    /// The drawing as the partner's iPhone lays it over its wallpaper: in the proportions of an
+    /// iPhone's drawing area, about 402 by 752 points between its navigation bar and its tools,
+    /// fitted whole inside the screen and centred.
+    static let canvasSize = CanvasGeometry.placement(canvas: CGSize(width: 402, height: 752), inside: screen).size
 
     @ViewBuilder private var drawing: some View {
         if let image = model.drawing {
@@ -412,7 +423,6 @@ struct LockScreenView: View {
                 .resizable()
                 .frame(width: Self.canvasSize.width, height: Self.canvasSize.height)
                 .frame(width: Self.screen.width, height: Self.screen.height)
-                .clipped()
                 .allowsHitTesting(false)
                 .accessibilityLabel("Your shared drawing")
         }
@@ -450,11 +460,13 @@ struct LockScreenView: View {
     /// The date in the clock's ink, over the time in Liquid Glass, as iOS 26 draws its lock screen.
     private var clock: some View {
         TimelineView(.everyMinute) { context in
-            VStack(spacing: 8) {
-                Text(context.date, format: .dateTime.weekday(.wide).day().month(.wide))
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Self.ink)
-                GlassClock(date: context.date, ink: Self.ink)
+            VStack(spacing: 6) {
+                // Short, as the iPhone writes it: "Fri 30 Oct".
+                Text("\(context.date.formatted(.dateTime.weekday(.abbreviated))) \(context.date.formatted(.dateTime.day())) \(context.date.formatted(.dateTime.month(.abbreviated)))")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.22), radius: 3, y: 1)
+                GlassClock(date: context.date)
             }
             .accessibilityElement(children: .combine)
         }
@@ -576,38 +588,49 @@ struct LockScreenView: View {
     }
 }
 
-/// The lock screen's time in real Liquid Glass, as iOS 26 draws its clock: the system glass in
-/// the shape of the numerals themselves, bending the wallpaper at their edges, tinted a touch
-/// with the wallpaper's ink.
+/// The lock screen's time in real Liquid Glass, as iOS 26 draws its clock: clear, neutral glass
+/// in the shape of the numerals themselves, moulded at its edges, lit along the top and shaded
+/// along the bottom, and casting a soft shadow onto the wallpaper.
 private struct GlassClock: View {
     let date: Date
-    let ink: Color
 
     var body: some View {
         let time = date.formatted(.dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
         let numerals = GlyphOutline(time)
-        Color.clear
-            .frame(width: numerals.size.width, height: numerals.size.height)
-            .glassEffect(.regular.tint(ink.opacity(0.3)), in: numerals)
-            .accessibilityElement()
-            .accessibilityLabel(time)
+        ZStack {
+            // The shadow the glass casts.
+            numerals.fill(.white.opacity(0.04))
+                .shadow(color: .black.opacity(0.28), radius: 9, y: 6)
+            Color.clear.glassEffect(.regular, in: numerals)
+            // The moulded rim: light along the upper edges, shade along the lower, inside the glass.
+            numerals
+                .stroke(LinearGradient(colors: [.white.opacity(0.95), .white.opacity(0.15), .clear],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 3.2)
+                .clipShape(numerals)
+            numerals
+                .stroke(LinearGradient(colors: [.clear, .black.opacity(0.22)], startPoint: .center, endPoint: .bottom), lineWidth: 4)
+                .clipShape(numerals)
+        }
+        .frame(width: numerals.size.width, height: numerals.size.height)
+        .accessibilityElement()
+        .accessibilityLabel(time)
     }
 }
 
-/// A line of text as a shape: the lock screen clock's face, tall, condensed and heavy, with
+/// A line of text as a shape: the lock screen clock's face, rounded and bold, set tight, with
 /// figures of one width so the time holds still as it changes.
 private struct GlyphOutline: Shape {
     let outline: Path
     let size: CGSize
 
     init(_ string: String) {
-        let base = NSFont.systemFont(ofSize: 86, weight: .heavy, width: .condensed)
-        let descriptor = base.fontDescriptor.addingAttributes([.featureSettings: [[
+        let base = NSFont.systemFont(ofSize: 92, weight: .bold)
+        let descriptor = (base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor).addingAttributes([.featureSettings: [[
             NSFontDescriptor.FeatureKey.typeIdentifier: kNumberSpacingType,
             NSFontDescriptor.FeatureKey.selectorIdentifier: kMonospacedNumbersSelector
         ]]])
-        let font = NSFont(descriptor: descriptor, size: 86) ?? base
-        let line = CTLineCreateWithAttributedString(NSAttributedString(string: string, attributes: [.font: font]))
+        let font = NSFont(descriptor: descriptor, size: 92) ?? base
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: string, attributes: [.font: font, .kern: -2.5]))
         var ascent: CGFloat = 0
         _ = CTLineGetTypographicBounds(line, &ascent, nil, nil)
         let path = CGMutablePath()
@@ -633,6 +656,74 @@ private struct GlyphOutline: Shape {
 
     func path(in rect: CGRect) -> Path {
         outline.offsetBy(dx: rect.minX + (rect.width - size.width) / 2, dy: rect.minY + (rect.height - size.height) / 2)
+    }
+}
+
+/// The iPhone's status bar: on the lock screen a carrier's name at the left, on the home screen
+/// the time; at the right the signal, Wi-Fi and this Mac's battery.
+private struct StatusBar: View {
+    let unlocked: Bool
+    let battery: Int?
+
+    var body: some View {
+        HStack(alignment: .top) {
+            Group {
+                if unlocked {
+                    TimelineView(.everyMinute) { context in
+                        Text(context.date, format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                    }
+                } else {
+                    Text("Mulberry")
+                }
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .frame(height: 26)
+            .padding(.leading, 26)
+            Spacer()
+            HStack(spacing: 4) {
+                Image(systemName: "cellularbars").opacity(0.4)
+                Image(systemName: "wifi")
+                BatteryGlyph(level: battery ?? 100)
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .frame(height: 26)
+            .padding(.trailing, 20)
+        }
+        .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.22), radius: 3, y: 1)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The iPhone's battery: a white pill with the level written inside it.
+private struct BatteryGlyph: View {
+    let level: Int
+
+    var body: some View {
+        HStack(spacing: 1) {
+            Text("\(level)")
+                .font(.system(size: 9.5, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(.black)
+                .frame(width: 23, height: 12)
+                .background(.white, in: .rect(cornerRadius: 3.5, style: .continuous))
+            Capsule().fill(.white.opacity(0.5)).frame(width: 1.5, height: 4)
+        }
+    }
+}
+
+/// This Mac's battery level, as a percentage, from its power sources.
+enum MacBattery {
+    static func level() -> Int? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+        for source in sources {
+            guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
+                  let current = description[kIOPSCurrentCapacityKey] as? Int,
+                  let maximum = description[kIOPSMaxCapacityKey] as? Int, maximum > 0 else { continue }
+            return min(100, current * 100 / maximum)
+        }
+        return nil
     }
 }
 
