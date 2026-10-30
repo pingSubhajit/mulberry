@@ -10,8 +10,9 @@ import ProductCore
 /// when a canvas next opens.
 @MainActor
 final class ReactionsModel: ObservableObject {
-    /// Where a canvas is on screen to play reactions over.
-    enum Surface { case window, quickDraw }
+    /// Where a canvas is on screen to play reactions over: the window, Quick Draw, or the menu
+    /// bar's lock screen.
+    enum Surface { case window, quickDraw, menuBar }
 
     typealias Arrival = ReactionArrival
     typealias Sent = SentReaction

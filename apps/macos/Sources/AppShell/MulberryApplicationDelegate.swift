@@ -57,6 +57,15 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     private var stickerCancellable: AnyCancellable?
     private var syncWasReachable = true
     private var statusItem: NSStatusItem?
+    /// The right click's menu; a left click opens the lock screen.
+    private var statusMenu = NSMenu()
+    private let lockScreenModel = LockScreenModel()
+    private var lockScreenDrawingKey: LockScreenDrawingKey?
+    private lazy var lockScreen = LockScreenPanelController(
+        model: lockScreenModel,
+        reactions: reactions,
+        statusButton: { [unowned self] in statusItem?.button }
+    )
     private var mainWindowController: MainWindowController?
     private var settingsWindowController: SettingsWindowController?
     private let preferences = MacPreferences()
@@ -205,6 +214,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             stickerImages: stickerLoader.images,
             stickerTimeline: stickerLoader.timeline
         )
+        refreshLockScreen()
     }
 
     private func loadStickerArtwork() {
@@ -394,11 +404,14 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     /// while Mulberry is the active app and the window shows.
     private func updateReactionSurface() {
         let surface: ReactionsModel.Surface?
+        let paired = appStateController.loadState.bootstrap?.isPaired == true
         if overlayController.isQuickDrawActive {
             surface = .quickDraw
         } else if NSApp.isActive, let window = mainWindowController?.window, window.isVisible, !window.isMiniaturized,
-                  window.occlusionState.contains(.visible), appStateController.loadState.bootstrap?.isPaired == true {
+                  window.occlusionState.contains(.visible), paired {
             surface = .window
+        } else if lockScreen.isOpen, paired {
+            surface = .menuBar
         } else {
             surface = nil
         }
@@ -431,8 +444,77 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             item.button?.title = "Mulberry"
         }
         item.button?.toolTip = "Mulberry"
+        // A click opens the lock screen; a right click, or a Control-click, the menu.
+        item.button?.target = self
+        item.button?.action = #selector(statusItemClicked)
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem = item
+        lockScreen.visibilityChanged = { [unowned self] in
+            updateReactionSurface()
+            updateSyncDemand()
+            refreshLockScreen()
+            // The home screen's streak widget, fresh as the lock screen opens.
+            if lockScreen.isOpen, appStateController.loadState.bootstrap?.isPaired == true {
+                Task { [weak self] in
+                    guard let self else { return }
+                    await streaks.refresh(api: api)
+                    refreshLockScreen()
+                }
+            }
+        }
+        lockScreenModel.actions = LockScreenModel.Actions(
+            quickDraw: { [unowned self] in if !overlayController.isQuickDrawActive { quickDraw() } },
+            openCanvas: { [unowned self] in openMulberry() },
+            openStreak: { [unowned self] in showMainWindow(showingStreak: true) },
+            toggleOverlay: { [unowned self] in toggleOverlay() },
+            openSettings: { [unowned self] in showSettings(nil) },
+            send: { [unowned self] reaction in send(reaction) }
+        )
         refreshStatusMenu()
+    }
+
+    @objc private func statusItemClicked() {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            lockScreen.close()
+            statusItem?.menu = statusMenu
+            statusItem?.button?.performClick(nil)
+            statusItem?.menu = nil
+        } else {
+            lockScreen.toggle()
+        }
+    }
+
+    /// The lock screen's partner, streak and overlay, and the drawing on it.
+    private func refreshLockScreen() {
+        let bootstrap = appStateController.loadState.bootstrap
+        let model = lockScreenModel
+        let account: LockScreenModel.Account = !authController.state.isSignedIn ? .signedOut : bootstrap?.isPaired == true ? .paired : .unpaired
+        if model.account != account { model.account = account }
+        let partner = bootstrap?.partnerDisplayName?.nonEmpty ?? "Your partner"
+        if model.partnerName != partner { model.partnerName = partner }
+        if model.partnerPhotoURL != bootstrap?.partnerPhotoUrl { model.partnerPhotoURL = bootstrap?.partnerPhotoUrl }
+        if model.streak != streaks.streak { model.streak = streaks.streak }
+        if model.overlayShown != overlayController.isVisible { model.overlayShown = overlayController.isVisible }
+        guard lockScreen.isOpen else { return }
+        let drawing = syncController.drawing
+        let latest = (drawing.strokes.map(\.createdAt) + drawing.canvasElements.map { element in
+            switch element {
+            case let .text(text): text.createdAt
+            case let .sticker(sticker): sticker.createdAt
+            }
+        }).max()
+        let updated = latest.map { Date(timeIntervalSince1970: TimeInterval($0) / 1_000) }
+        if model.updatedAt != updated { model.updatedAt = updated }
+        // Drawn again only when the drawing, its stroke style or its sticker artwork changes.
+        let mode = CanvasStrokeRenderMode(rawBackendValue: bootstrap?.canvasStrokeRenderMode)
+        let key = LockScreenDrawingKey(drawing: drawing, mode: mode, stickers: stickerLoader.images.count)
+        guard key != lockScreenDrawingKey else { return }
+        lockScreenDrawingKey = key
+        let input = CanvasRenderInput(state: drawing, viewport: .zero, strokeRenderMode: mode,
+                                      surface: .passiveOverlay, stickerImages: stickerLoader.images)
+        model.drawing = CanvasOffscreenRenderer.renderImage(input: input, size: LockScreenView.canvasSize,
+                                                            scale: statusItem?.button?.window?.backingScaleFactor ?? 2)
     }
 
     private func loadStatusBarImage() -> NSImage? {
@@ -447,25 +529,16 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         return NSImage(contentsOf: developmentURL)
     }
 
+    /// The right click's menu, for the keyboard and for quitting: the lock screen holds the rest.
     private func refreshStatusMenu() {
         let menu = NSMenu()
-        let bootstrap = appStateController.loadState.bootstrap
-        menu.addItem(disabledItem(bootstrap?.partnerTitle ?? authController.state.statusTitle))
-        menu.addItem(disabledItem(statusDetailLine(bootstrap: bootstrap)))
-        menu.addItem(.separator())
         menu.addItem(menuItem("Open Mulberry", action: #selector(openMulberry)))
         menu.addItem(quickDrawMenuItem())
-        let heart = menuItem("Send Love", action: #selector(sendHeart))
-        heart.isEnabled = bootstrap?.isPaired == true
-        menu.addItem(heart)
-        menu.addItem(.separator())
-        menu.addItem(menuItem(bootstrap?.streakTitle ?? "Streak: --", action: #selector(openStreak)))
-        menu.addItem(overlayMenu())
         menu.addItem(.separator())
         menu.addItem(menuItem("Settings…", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(menuItem("Quit Mulberry", action: #selector(quitMulberry), keyEquivalent: "q"))
-
-        statusItem?.menu = menu
+        statusMenu = menu
+        refreshLockScreen()
     }
 
     private func menuItem(
@@ -491,23 +564,6 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         )
     }
 
-    private func disabledItem(_ title: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
-    }
-
-    private func overlayMenu() -> NSMenuItem {
-        let item = NSMenuItem(title: "Overlay", action: nil, keyEquivalent: "")
-        let submenu = NSMenu(title: "Overlay")
-        let toggleTitle = overlayController.isVisible ? "Hide Overlay" : "Show Overlay"
-        submenu.addItem(menuItem(toggleTitle, action: #selector(toggleOverlay)))
-        submenu.addItem(menuItem("Choose Display…", action: #selector(openOverlayDisplaySettings)))
-        submenu.addItem(menuItem("Reset Position", action: #selector(resetOverlayPosition)))
-        item.submenu = submenu
-        return item
-    }
-
     @objc private func openMulberry() {
         showMainWindow()
     }
@@ -522,27 +578,10 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         refreshStatusMenu()
     }
 
-    @objc private func sendHeart() {
-        send(.heart)
-    }
-
-    @objc private func openStreak() {
-        showMainWindow(showingStreak: true)
-    }
-
     @objc private func toggleOverlay() {
         overlayController.toggle()
         updateSyncDemand()
         refreshStatusMenu()
-    }
-
-    @objc private func resetOverlayPosition() {
-        overlayController.resetPosition()
-        refreshStatusMenu()
-    }
-
-    @objc private func openOverlayDisplaySettings() {
-        showSettings(.desktop)
     }
 
     @objc private func openSettings() {
@@ -610,17 +649,6 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         updateSyncDemand()
     }
 
-    private func statusDetailLine(bootstrap: BootstrapState?) -> String {
-        guard authController.state.isSignedIn, bootstrap?.isPaired == true else {
-            return authController.state.statusDetail
-        }
-        let revision = syncController.status.lastAppliedServerRevision
-        if let lastError = syncController.status.lastError, syncController.connectionState != .connected {
-            return "\(syncController.connectionState.title): \(lastError)"
-        }
-        return "\(syncController.demand.title) · \(syncController.connectionState.title) · rev \(revision)"
-    }
-
     private func syncCurrentSession() {
         guard case let .signedIn(session) = authController.state,
               let bootstrap = appStateController.loadState.bootstrap,
@@ -647,7 +675,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             return
         }
 
-        if mainWindowController?.window?.isVisible == true || overlayController.isQuickDrawActive {
+        // The lock screen shows the drawing live too.
+        if mainWindowController?.window?.isVisible == true || overlayController.isQuickDrawActive || lockScreen.isOpen {
             syncController.updateDemand(.foregroundWebSocket)
         } else if overlayController.isVisible {
             syncController.updateDemand(.overlayRecovery)
@@ -785,4 +814,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             onWindowClosed()
         }
     }
+}
+
+/// What the lock screen's picture of the drawing was drawn from.
+private struct LockScreenDrawingKey: Equatable {
+    let drawing: DrawingState
+    let mode: CanvasStrokeRenderMode
+    let stickers: Int
 }
