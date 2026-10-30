@@ -44,6 +44,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     /// The window's canvas and Quick Draw's each keep their own tools and undo history.
     private lazy var windowEditorModel = CanvasEditorModel { [weak self] in self?.syncController.submit($0) }
     private lazy var quickDrawEditorModel = CanvasEditorModel { [weak self] in self?.syncController.submit($0) }
+    /// The window's and Quick Draw's tools, shared and remembered per account and pair.
+    private lazy var toolMemory = CanvasToolMemory(models: [windowEditorModel, quickDrawEditorModel])
     private lazy var stickerLoader: StickerImageLoader = {
         let client = api
         return StickerImageLoader(api: { client })
@@ -384,6 +386,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         let paired = bootstrap?.isPaired == true
         let user = authController.state.isSignedIn ? bootstrap?.userId : nil
         reactions.bind(userId: user, pairSessionId: paired ? bootstrap?.pairSessionId : nil)
+        toolMemory.bind(user: user, pair: paired ? bootstrap?.pairSessionId : nil)
         streaks.bind(userId: user, pairSessionId: paired ? bootstrap?.pairSessionId : nil, baselineDays: bootstrap?.currentStreakDays)
         if paired, reactionPolling == nil {
             #if DEBUG
