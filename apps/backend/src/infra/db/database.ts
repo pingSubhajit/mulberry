@@ -1,4 +1,5 @@
 import pg from "pg"
+import { DRAWING_OPERATION_TYPES } from "../../contracts/canvas.js"
 
 export interface Database {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<{ rows: T[] }>
@@ -18,6 +19,9 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
 
     ALTER TABLE users
       ADD COLUMN IF NOT EXISTS google_picture_url TEXT;
+
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS first_drew_at TIMESTAMPTZ;
 
     CREATE TABLE IF NOT EXISTS user_profiles (
       user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -309,7 +313,41 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
 
     CREATE INDEX IF NOT EXISTS reaction_send_rate_limits_updated_idx
       ON reaction_send_rate_limits(updated_at);
+
+    CREATE TABLE IF NOT EXISTS schema_backfills (
+      name TEXT PRIMARY KEY,
+      ran_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `)
+
+  await runBackfills(db)
+}
+
+/** Data backfills that go with the schema above, each run once. */
+export async function runBackfills(db: Pick<Database, "query">): Promise<void> {
+  await runBackfillOnce(db, "users.first_drew_at", `
+    UPDATE users
+    SET first_drew_at = drew.first_at
+    FROM (
+      SELECT actor_user_id, MIN(created_at) AS first_at
+      FROM canvas_operations
+      WHERE type IN (${DRAWING_OPERATION_TYPES.map((type) => `'${type}'`).join(", ")})
+      GROUP BY actor_user_id
+    ) AS drew
+    WHERE users.id = drew.actor_user_id
+      AND users.first_drew_at IS NULL
+  `)
+}
+
+/**
+ * Runs a data backfill the first time the server starts with it, rather than on every start. The
+ * statement is idempotent, so two servers starting together and both running it is harmless.
+ */
+async function runBackfillOnce(db: Pick<Database, "query">, name: string, statement: string): Promise<void> {
+  const ran = await db.query(`SELECT name FROM schema_backfills WHERE name = $1`, [name])
+  if (ran.rows.length > 0) return
+  await db.query(statement)
+  await db.query(`INSERT INTO schema_backfills (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [name])
 }
 
 export async function createDatabase(databaseUrl: string): Promise<Database> {

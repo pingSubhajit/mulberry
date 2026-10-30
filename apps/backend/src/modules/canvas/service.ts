@@ -9,6 +9,7 @@ import type {
   ClientCanvasOperation,
   ClientCanvasOperationBatch,
 } from "../../contracts/canvas.js"
+import { DRAWING_OPERATION_TYPES } from "../../contracts/canvas.js"
 import type { CanvasOperationRecord } from "../../contracts/dbRecords.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
 import type { AnalyticsClient } from "../../infra/analytics/analytics.js"
@@ -251,6 +252,13 @@ export class CanvasService {
           acceptedRecords.push(acceptedRecord)
           if (this.shouldRecordPairActivityForOperation(acceptedRecord.type)) {
             await this.streakService.recordPairActivityDay(tx, context.pairSession.id, operation.clientLocalDate)
+            if (!shouldRecordUserDrew) {
+              // The account's first drawing, on any device or pair: the apps celebrate it once.
+              await tx.query(
+                `UPDATE users SET first_drew_at = NOW() WHERE id = $1 AND first_drew_at IS NULL`,
+                [context.user.id],
+              )
+            }
             shouldEnqueueCanvasNudge = true
             shouldRecordUserDrew = true
           }
@@ -452,11 +460,7 @@ export class CanvasService {
   }
 
   private shouldRecordPairActivityForOperation(type: string): boolean {
-    return type === "FINISH_STROKE" ||
-      type === "ADD_TEXT_ELEMENT" ||
-      type === "UPDATE_TEXT_ELEMENT" ||
-      type === "ADD_STICKER_ELEMENT" ||
-      type === "UPDATE_STICKER_ELEMENT"
+    return DRAWING_OPERATION_TYPES.some((drawing) => drawing === type)
   }
 
   private async getLatestCanvasRevision(pairSessionId: string): Promise<number> {

@@ -44,7 +44,7 @@ export async function requireSessionContext(db: Pick<Database, "query">, accessT
   }
 
   const userRows = await db.query<UserRecord>(
-    `SELECT id, google_subject, email, google_picture_url FROM users WHERE id = $1`,
+    `SELECT id, google_subject, email, google_picture_url, first_drew_at FROM users WHERE id = $1`,
     [session.user_id],
   )
   const user = userRows.rows[0]
@@ -74,7 +74,7 @@ export async function requireSessionByRefreshToken(
 
 export async function getUserById(db: Pick<Database, "query">, userId: string): Promise<UserRecord | null> {
   const rows = await db.query<UserRecord>(
-    `SELECT id, google_subject, email, google_picture_url FROM users WHERE id = $1`,
+    `SELECT id, google_subject, email, google_picture_url, first_drew_at FROM users WHERE id = $1`,
     [userId],
   )
   return rows.rows[0] ?? null

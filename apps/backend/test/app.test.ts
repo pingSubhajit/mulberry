@@ -3,7 +3,7 @@ import { createHmac } from "node:crypto"
 import type { FastifyInstance } from "fastify"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createApp } from "../src/app/createApp.js"
-import { runMigrations, type Database } from "../src/infra/db/database.js"
+import { runBackfills, runMigrations, type Database } from "../src/infra/db/database.js"
 import { PushDispatchService } from "../src/infra/push/dispatchService.js"
 import type { MulberryPushMessage, PushSender } from "../src/infra/push/types.js"
 import type {
@@ -2277,6 +2277,70 @@ describe("Mulberry backend", () => {
     })
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().currentStreakDays).toBe(2)
+  })
+
+  it("records an account's first drawing once, across pairs, for the apps to celebrate", async () => {
+    const { inviter, recipient: invitee } = await pairUsers()
+    const hasDrawn = async (accessToken: string) =>
+      (await app.inject({ method: "GET", url: "/bootstrap", headers: bearer(accessToken) })).json().hasDrawn
+
+    expect(await hasDrawn(inviter.accessToken)).toBe(false)
+    expect(await hasDrawn(invitee.accessToken)).toBe(false)
+
+    const draw = (operations: unknown[]) =>
+      app.inject({
+        method: "POST",
+        url: "/canvas/ops/batch",
+        headers: bearer(inviter.accessToken),
+        payload: { batchId: `first-draw-${operations.length}`, clientCreatedAt: new Date().toISOString(), operations },
+      })
+
+    // A stroke still being drawn is not a drawing yet.
+    expect((await draw([addStrokeOperation("first-add", "first-stroke", 10, 10)])).statusCode).toBe(200)
+    expect(await hasDrawn(inviter.accessToken)).toBe(false)
+
+    expect((await draw([
+      addStrokeOperation("first-add", "first-stroke", 10, 10),
+      finishStrokeOperation("first-finish", "first-stroke"),
+    ])).statusCode).toBe(200)
+    expect(await hasDrawn(inviter.accessToken)).toBe(true)
+    expect(await hasDrawn(invitee.accessToken)).toBe(false)
+
+    const first = await db.query<{ first_drew_at: Date }>(`SELECT first_drew_at FROM users WHERE id = $1`, [inviter.userId])
+    await draw([finishStrokeOperation("second-finish", "first-stroke")])
+    const later = await db.query<{ first_drew_at: Date }>(`SELECT first_drew_at FROM users WHERE id = $1`, [inviter.userId])
+    expect(later.rows[0].first_drew_at).toEqual(first.rows[0].first_drew_at)
+  })
+
+  it("backfills earlier drawings into the first-drawing record only once", async () => {
+    const { inviter, recipient: invitee } = await pairUsers()
+    await app.inject({
+      method: "POST",
+      url: "/canvas/ops/batch",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        batchId: "backfill-batch",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          addStrokeOperation("backfill-add", "backfill-stroke", 10, 10),
+          finishStrokeOperation("backfill-finish", "backfill-stroke"),
+        ],
+      },
+    })
+
+    // As if the drawing happened before the server recorded first drawings.
+    await db.query(`UPDATE users SET first_drew_at = NULL`)
+    await db.query(`DELETE FROM schema_backfills`)
+    await runBackfills(db)
+    const drew = await db.query<{ id: string; first_drew_at: Date | null }>(`SELECT id, first_drew_at FROM users`)
+    expect(drew.rows.find((row) => row.id === inviter.userId)?.first_drew_at).not.toBeNull()
+    expect(drew.rows.find((row) => row.id === invitee.userId)?.first_drew_at).toBeNull()
+
+    // Already run: a later start leaves the record alone.
+    await db.query(`UPDATE users SET first_drew_at = NULL`)
+    await runBackfills(db)
+    const after = await db.query<{ first_drew_at: Date | null }>(`SELECT first_drew_at FROM users WHERE id = $1`, [inviter.userId])
+    expect(after.rows[0].first_drew_at).toBeNull()
   })
 
   it("can clear today's streak activity day via debug route", async () => {

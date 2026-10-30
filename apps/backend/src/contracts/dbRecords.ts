@@ -8,6 +8,7 @@ export interface UserRecord {
   google_subject: string
   email: string
   google_picture_url: string | null
+  first_drew_at: string | Date | null
 }
 
 export interface ProfileRecord {

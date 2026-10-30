@@ -14,6 +14,15 @@ export const CanvasOperationTypes = [
 
 export type CanvasOperationType = (typeof CanvasOperationTypes)[number]
 
+/** Operations that put something of the person's own on the canvas: they count as drawing. */
+export const DRAWING_OPERATION_TYPES: readonly CanvasOperationType[] = [
+  "FINISH_STROKE",
+  "ADD_TEXT_ELEMENT",
+  "UPDATE_TEXT_ELEMENT",
+  "ADD_STICKER_ELEMENT",
+  "UPDATE_STICKER_ELEMENT",
+]
+
 export interface CanvasOperationEnvelope {
   clientOperationId: string
   actorUserId: string

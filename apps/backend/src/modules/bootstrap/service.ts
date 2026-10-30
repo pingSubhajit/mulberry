@@ -91,6 +91,7 @@ export class BootstrapService {
       partnerProfileNextUpdateAt: pairSession ? this.partnerProfileNextUpdateAt(profile) : null,
       pairedAt: pairSession ? new Date(pairSession.created_at).toISOString() : null,
       currentStreakDays: pairSession ? await this.streakService.currentStreakDays(pairSession.id) : 0,
+      hasDrawn: Boolean(user?.first_drew_at),
       pairingStatus: pairSession
         ? "PAIRED"
         : pendingInvite

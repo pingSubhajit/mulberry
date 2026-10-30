@@ -28,6 +28,8 @@ export interface BootstrapResponse {
   partnerProfileNextUpdateAt: string | null
   pairedAt: string | null
   currentStreakDays: number
+  /** Whether the account has ever drawn, on any device or pair: the first drawing is celebrated once. */
+  hasDrawn: boolean
   pairingStatus: PairingStatus
   pairSessionId: string | null
   invite: InviteSummary | null

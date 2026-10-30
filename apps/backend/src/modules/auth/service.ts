@@ -47,7 +47,7 @@ export class AuthService {
 
   private async findOrCreateUser(identity: GoogleIdentity): Promise<UserRecord> {
     const existing = await this.db.query<UserRecord>(
-      `SELECT id, google_subject, email, google_picture_url FROM users WHERE google_subject = $1`,
+      `SELECT id, google_subject, email, google_picture_url, first_drew_at FROM users WHERE google_subject = $1`,
       [identity.subject],
     )
     if (existing.rows[0]) {
@@ -69,6 +69,7 @@ export class AuthService {
       google_subject: identity.subject,
       email: identity.email,
       google_picture_url: identity.pictureUrl,
+      first_drew_at: null,
     }
     await this.db.query(
       `INSERT INTO users (id, google_subject, email, google_picture_url) VALUES ($1, $2, $3, $4)`,
