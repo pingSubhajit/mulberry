@@ -8,7 +8,7 @@ import ProductCore
 /// renderer. Text and stickers paint above every stroke, as Android's element overlay does.
 public enum DoodleRenderer {
     public static func draw(_ strokes: [DrawingStroke], elements: [CanvasElement] = [], stickerImages: [StickerReference: CanvasImage] = [:],
-                     dry: Bool, in context: CGContext, size: CGSize) {
+                     stickerTimeline: StickerArtworkTimeline? = nil, dry: Bool, in context: CGContext, size: CGSize) {
         context.saveGState()
         context.clip(to: CGRect(origin: .zero, size: size))
         for stroke in strokes {
@@ -18,7 +18,7 @@ public enum DoodleRenderer {
             if dry { DryBrushStrokeRenderer.draw(stroke: rendered, in: context) }
             else { RoundStrokeRenderer.draw(stroke: rendered, in: context) }
         }
-        if !elements.isEmpty { CanvasElementRenderer(stickerImages: stickerImages).draw(elements, in: context, canvasSize: size) }
+        if !elements.isEmpty { CanvasElementRenderer(stickerImages: stickerImages, stickerTimeline: stickerTimeline).draw(elements, in: context, canvasSize: size) }
         context.restoreGState()
     }
 }

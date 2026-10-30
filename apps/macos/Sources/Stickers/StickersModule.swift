@@ -10,11 +10,16 @@ public enum StickersModule {
 }
 
 /// Loads the artwork for the stickers on the canvas through the store the iPhone and iPad use,
-/// so the overlay and canvas window draw real stickers. Until artwork arrives, or while offline
-/// without it, a sticker draws Android's placeholder.
+/// so the overlay and canvas window draw real stickers. Artwork already in memory shows at once;
+/// the rest fades in as it decodes, with a soft placeholder only while a download runs long, or
+/// while offline without it.
 @MainActor
 public final class StickerImageLoader: ObservableObject {
     @Published public private(set) var images: [StickerReference: CanvasImage] = [:]
+    /// When each sticker's artwork was asked for and arrived, for the live canvases to draw.
+    @Published public private(set) var timeline = StickerArtworkTimeline()
+    /// Redraws the canvases while artwork fades in or a placeholder pulses.
+    private var ticker: Timer?
 
     public let store: StickerAssetStore
     private let api: StickerBackend
@@ -46,24 +51,52 @@ public final class StickerImageLoader: ObservableObject {
             images = [:]
             loading = []
             unavailable = []
+            timeline.reset()
         }
         guard let user else { return }
         let needed = Set(state.canvasElements.compactMap(\.sticker?.sticker))
             .subtracting(images.keys).subtracting(loading).subtracting(unavailable)
         for sticker in needed {
+            // Downsampled like the iOS editor: enough for a desktop canvas, cheap to keep.
+            if let image = store.cachedImage(sticker, variant: .full, user: user, maxPixelSize: 1024) {
+                images[sticker] = image
+                continue
+            }
             loading.insert(sticker)
+            timeline.request(sticker)
             Task {
-                // Downsampled like the iOS editor: enough for a desktop canvas, cheap to keep.
                 let image = await store.image(sticker, variant: .full, user: user, maxPixelSize: 1024)
                 guard self.user == user else { return }
                 loading.remove(sticker)
                 if let image {
                     images[sticker] = image
+                    timeline.arrive(sticker)
                 } else {
                     unavailable.insert(sticker)
+                    timeline.fail(sticker)
                 }
+                animate()
             }
         }
+        if !loading.isEmpty { animate() }
+    }
+
+    private func animate() {
+        timeline.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        guard ticker == nil else { return }
+        ticker = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.step() }
+        }
+    }
+
+    private func step() {
+        if timeline.isAnimating() {
+            objectWillChange.send()
+            return
+        }
+        timeline.settle()
+        ticker?.invalidate()
+        ticker = nil
     }
 
     /// Lets stickers that failed while offline try again, such as after reconnecting.

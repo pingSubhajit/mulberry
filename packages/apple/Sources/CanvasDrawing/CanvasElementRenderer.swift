@@ -162,13 +162,34 @@ public enum CanvasStickerGeometry {
         return aspect >= 1 ? CGSize(width: long, height: long / aspect) : CGSize(width: long * aspect, height: long)
     }
 
-    public static func draw(_ sticker: CanvasStickerElement, image: CanvasImage?, in context: CGContext, canvasSize: CGSize) {
+    /// Draws the artwork, or without `appearance` (a still render), Android's placeholder where
+    /// it is missing. A live canvas passes how far the artwork has faded in and how strongly its
+    /// loading placeholder shows.
+    public static func draw(_ sticker: CanvasStickerElement, image: CanvasImage?, in context: CGContext, canvasSize: CGSize,
+                            appearance: StickerAppearance? = nil) {
         let size = size(sticker, image: image, canvasWidth: canvasSize.width)
         let rect = CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height)
         context.saveGState()
         context.translateBy(x: sticker.center.x * canvasSize.width, y: sticker.center.y * canvasSize.height)
         context.rotate(by: sticker.rotationRad)
-        if let image {
+        if let appearance {
+            if appearance.placeholder > 0 {
+                // A soft grey that reads on a light canvas and a dark one, never a white block.
+                let path = CanvasGraphics.roundedRect(rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: placeholderCornerRadius)
+                context.setFillColor(CanvasColor(white: 0.5, alpha: 0.16 * appearance.placeholder).cgColor)
+                context.addPath(path)
+                context.fillPath()
+                context.setStrokeColor(CanvasColor(white: 0.5, alpha: 0.3 * appearance.placeholder).cgColor)
+                context.setLineWidth(1)
+                context.addPath(path)
+                context.strokePath()
+            }
+            if let image, appearance.artwork > 0 {
+                context.setAlpha(appearance.artwork)
+                context.interpolationQuality = .high
+                CanvasGraphics.draw(image, in: rect, context: context)
+            }
+        } else if let image {
             context.interpolationQuality = .high
             CanvasGraphics.draw(image, in: rect, context: context)
         } else {
@@ -190,14 +211,113 @@ public enum CanvasStickerGeometry {
     }
 }
 
+/// How a sticker shows on a live canvas this frame: how far its artwork has faded in, and how
+/// strongly its loading placeholder shows, each from 0 to 1.
+public struct StickerAppearance: Equatable, Sendable {
+    public var artwork: CGFloat
+    public var placeholder: CGFloat
+
+    public init(artwork: CGFloat, placeholder: CGFloat) {
+        self.artwork = artwork
+        self.placeholder = placeholder
+    }
+}
+
+/// When each sticker's artwork was asked for and when it arrived, so a live canvas never flashes
+/// a placeholder for artwork that is only being read from disk. Artwork already in memory shows
+/// at once; artwork being decoded leaves its place empty, then fades in; a placeholder shows
+/// only once a download has run past a short grace period, pulsing softly, and fades out as the
+/// artwork fades in over it.
+public struct StickerArtworkTimeline: Equatable, Sendable {
+    public static let fade: TimeInterval = 0.18
+    public static let grace: TimeInterval = 0.4
+    public static let pulse: TimeInterval = 1.2
+
+    /// Holds the placeholder still instead of pulsing.
+    public var reduceMotion = false
+    private var requested: [StickerReference: TimeInterval] = [:]
+    private var arrivals: [StickerReference: Arrival] = [:]
+
+    private struct Arrival: Equatable, Sendable {
+        let time: TimeInterval
+        /// Whether the placeholder was showing, so it fades out under the artwork.
+        let replacesPlaceholder: Bool
+    }
+
+    public init() {}
+
+    /// The clock the timeline runs on.
+    public static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+
+    /// The artwork is being loaded.
+    public mutating func request(_ sticker: StickerReference, at now: TimeInterval = Self.now) {
+        if requested[sticker] == nil { requested[sticker] = now }
+    }
+
+    /// The artwork arrived; it fades in if it was waited for.
+    public mutating func arrive(_ sticker: StickerReference, at now: TimeInterval = Self.now) {
+        guard let start = requested.removeValue(forKey: sticker) else { return }
+        arrivals[sticker] = Arrival(time: now, replacesPlaceholder: now - start >= Self.grace)
+    }
+
+    /// The artwork could not be loaded; its place keeps a still placeholder.
+    public mutating func fail(_ sticker: StickerReference) {
+        requested[sticker] = nil
+    }
+
+    public mutating func reset() {
+        requested = [:]
+        arrivals = [:]
+    }
+
+    public func appearance(_ sticker: StickerReference, hasArtwork: Bool, at now: TimeInterval = Self.now) -> StickerAppearance {
+        if hasArtwork {
+            guard let arrival = arrivals[sticker] else { return StickerAppearance(artwork: 1, placeholder: 0) }
+            let progress = Self.ease(min(1, max(0, (now - arrival.time) / Self.fade)))
+            return StickerAppearance(artwork: progress, placeholder: arrival.replacesPlaceholder ? pulse(now) * (1 - progress) : 0)
+        }
+        guard let start = requested[sticker] else {
+            // Missing and not loading, such as offline: a still placeholder keeps its place.
+            return StickerAppearance(artwork: 0, placeholder: 1)
+        }
+        let waited = now - start - Self.grace
+        guard waited > 0 else { return StickerAppearance(artwork: 0, placeholder: 0) }
+        return StickerAppearance(artwork: 0, placeholder: min(1, waited / Self.fade) * pulse(now))
+    }
+
+    /// Whether anything is fading or pulsing, so the canvas keeps redrawing.
+    public func isAnimating(at now: TimeInterval = Self.now) -> Bool {
+        !requested.isEmpty || arrivals.values.contains { now - $0.time < Self.fade }
+    }
+
+    /// Forgets arrivals that have finished fading in.
+    public mutating func settle(at now: TimeInterval = Self.now) {
+        arrivals = arrivals.filter { now - $0.value.time < Self.fade }
+    }
+
+    private func pulse(_ now: TimeInterval) -> CGFloat {
+        guard !reduceMotion else { return 0.8 }
+        let phase = now.truncatingRemainder(dividingBy: Self.pulse) / Self.pulse
+        return 0.6 + 0.4 * CGFloat(0.5 - 0.5 * cos(2 * .pi * phase))
+    }
+
+    private static func ease(_ x: Double) -> CGFloat { CGFloat(1 - pow(1 - x, 3)) }
+}
+
 /// Draws and hit-tests text and stickers in their shared paint order. Text
 /// layouts are reused while only position, rotation or scale change.
 public final class CanvasElementRenderer {
     private var layouts: [String: CanvasTextLayout] = [:]
     /// Decoded sticker artwork; a missing image draws Android's placeholder.
     public var stickerImages: [StickerReference: CanvasImage] = [:]
+    /// Set on a live canvas: stickers fade in as their artwork arrives, and show a placeholder
+    /// only while a download runs long, instead of Android's placeholder.
+    public var stickerTimeline: StickerArtworkTimeline?
 
-    public init(stickerImages: [StickerReference: CanvasImage] = [:]) { self.stickerImages = stickerImages }
+    public init(stickerImages: [StickerReference: CanvasImage] = [:], stickerTimeline: StickerArtworkTimeline? = nil) {
+        self.stickerImages = stickerImages
+        self.stickerTimeline = stickerTimeline
+    }
 
     public func layout(for element: CanvasTextElement, canvasWidth: CGFloat) -> CanvasTextLayout {
         if let cached = layouts[element.id], cached.matches(element, canvasWidth: canvasWidth) { return cached }
@@ -211,13 +331,16 @@ public final class CanvasElementRenderer {
         layouts = layouts.filter { ids.contains($0.key) }
     }
 
-    public func draw(_ elements: [CanvasElement], in context: CGContext, canvasSize: CGSize) {
+    public func draw(_ elements: [CanvasElement], in context: CGContext, canvasSize: CGSize,
+                     now: TimeInterval = StickerArtworkTimeline.now) {
         for element in elements {
             switch element {
             case .text(let text) where !text.text.isEmpty:
                 layout(for: text, canvasWidth: canvasSize.width).draw(text, in: context, canvasSize: canvasSize)
             case .sticker(let sticker):
-                CanvasStickerGeometry.draw(sticker, image: stickerImages[sticker.sticker], in: context, canvasSize: canvasSize)
+                let image = stickerImages[sticker.sticker]
+                let appearance = stickerTimeline?.appearance(sticker.sticker, hasArtwork: image != nil, at: now)
+                CanvasStickerGeometry.draw(sticker, image: image, in: context, canvasSize: canvasSize, appearance: appearance)
             default: break
             }
         }

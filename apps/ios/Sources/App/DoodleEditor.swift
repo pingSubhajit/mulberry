@@ -476,11 +476,14 @@ final class CanvasElementLayerView: UIView {
     /// A gesture's live position, drawn in place of the saved element.
     private var preview: CanvasElement?
     private var loading: Set<StickerReference> = []
+    /// Runs while stickers fade in or a slow download's placeholder pulses.
+    private var displayLink: CADisplayLink?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isOpaque = false; backgroundColor = .clear; isUserInteractionEnabled = false
         contentMode = .redraw
+        renderer.stickerTimeline = StickerArtworkTimeline()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
@@ -509,22 +512,60 @@ final class CanvasElementLayerView: UIView {
         renderer.draw(visible, in: context, canvasSize: bounds.size)
     }
 
-    /// Full artwork, downsampled for the screen; placeholders draw meanwhile.
+    /// Full artwork, downsampled for the screen. Artwork already in memory draws in the first
+    /// frame; the rest fades in as it decodes, with a placeholder only if a download runs long.
     private func loadArtwork() {
         guard let user else { return }
         let missing = Set(elements.compactMap(\.sticker?.sticker)).subtracting(renderer.stickerImages.keys).subtracting(loading)
+        var found = false
         for sticker in missing {
+            if let image = StickerAssetStore.shared.cachedImage(sticker, variant: .full, user: user, maxPixelSize: StickerAssetStore.canvasPixels) {
+                renderer.stickerImages[sticker] = image
+                found = true
+                continue
+            }
             loading.insert(sticker)
+            renderer.stickerTimeline?.request(sticker)
             Task { [weak self] in
-                let image = await StickerAssetStore.shared.image(sticker, variant: .full, user: user, maxPixelSize: 1024)
+                let image = await StickerAssetStore.shared.image(sticker, variant: .full, user: user, maxPixelSize: StickerAssetStore.canvasPixels)
                 guard let self else { return }
                 self.loading.remove(sticker)
-                guard let image, self.user == user else { return }
+                guard let image, self.user == user else {
+                    self.renderer.stickerTimeline?.fail(sticker)
+                    self.setNeedsDisplay()
+                    return
+                }
                 self.renderer.stickerImages[sticker] = image
+                self.renderer.stickerTimeline?.arrive(sticker)
                 self.onImagesChanged?(self.renderer.stickerImages)
-                self.setNeedsDisplay()
+                self.animate()
             }
         }
+        if found { onImagesChanged?(renderer.stickerImages) }
+        if !loading.isEmpty { animate() }
+    }
+
+    private func animate() {
+        renderer.stickerTimeline?.reduceMotion = UIAccessibility.isReduceMotionEnabled
+        setNeedsDisplay()
+        guard displayLink == nil else { return }
+        let link = CADisplayLink(target: self, selector: #selector(step))
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+
+    @objc private func step() {
+        setNeedsDisplay()
+        guard renderer.stickerTimeline?.isAnimating() != true else { return }
+        renderer.stickerTimeline?.settle()
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    override func removeFromSuperview() {
+        displayLink?.invalidate()
+        displayLink = nil
+        super.removeFromSuperview()
     }
 }
 

@@ -63,6 +63,8 @@ public struct CanvasRenderInput: @unchecked Sendable {
     public var selectedElementID: String?
     /// Decoded sticker artwork; stickers without it draw Android's placeholder.
     public var stickerImages: [StickerReference: CanvasImage]
+    /// Set on a live canvas, so stickers fade in as their artwork arrives instead.
+    public var stickerTimeline: StickerArtworkTimeline?
 
     public init(
         state: DrawingState,
@@ -72,7 +74,8 @@ public struct CanvasRenderInput: @unchecked Sendable {
         surface: CanvasRenderSurface = .passiveOverlay,
         showsEditingBackground: Bool = false,
         selectedElementID: String? = nil,
-        stickerImages: [StickerReference: CanvasImage] = [:]
+        stickerImages: [StickerReference: CanvasImage] = [:],
+        stickerTimeline: StickerArtworkTimeline? = nil
     ) {
         self.state = state
         self.viewport = viewport
@@ -82,6 +85,7 @@ public struct CanvasRenderInput: @unchecked Sendable {
         self.showsEditingBackground = showsEditingBackground
         self.selectedElementID = selectedElementID
         self.stickerImages = stickerImages
+        self.stickerTimeline = stickerTimeline
     }
 }
 
@@ -117,6 +121,7 @@ public final class CanvasRenderer {
             input.state.strokes,
             elements: elements,
             stickerImages: input.stickerImages,
+            stickerTimeline: input.stickerTimeline,
             dry: input.strokeRenderMode == .dryBrush,
             in: context,
             size: size
@@ -161,6 +166,7 @@ public final class CanvasRenderModel: ObservableObject {
     @Published public var strokeRenderMode: CanvasStrokeRenderMode
     @Published public var diagnostics: [CanvasDiagnostic]
     @Published public var stickerImages: [StickerReference: CanvasImage]
+    @Published public var stickerTimeline: StickerArtworkTimeline?
 
     public init(
         state: DrawingState = DrawingState(),
@@ -223,7 +229,8 @@ public final class CanvasRenderView: NSView {
                 strokeRenderMode: model.strokeRenderMode,
                 surface: surface,
                 showsEditingBackground: showsEditingBackground,
-                stickerImages: model.stickerImages
+                stickerImages: model.stickerImages,
+                stickerTimeline: model.stickerTimeline
             ),
             in: context
         )

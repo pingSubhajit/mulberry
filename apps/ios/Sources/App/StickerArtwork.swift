@@ -4,6 +4,8 @@ import UIKit
 /// The iPhone and iPad's sticker store and catalog, on the shared implementation.
 extension StickerAssetStore {
     static let shared = StickerAssetStore(api: { try await MainActor.run { try AppRuntime.api() } })
+    /// The canvas's artwork size: downsampled, enough for any screen.
+    static let canvasPixels = 1024
 }
 
 extension StickerCatalog {

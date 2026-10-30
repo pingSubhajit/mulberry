@@ -79,11 +79,13 @@ public final class OverlayController: NSObject, ObservableObject {
     public func updateCanvasState(
         _ state: DrawingState,
         strokeRenderMode: CanvasStrokeRenderMode,
-        stickerImages: [StickerReference: CanvasImage]
+        stickerImages: [StickerReference: CanvasImage],
+        stickerTimeline: StickerArtworkTimeline?
     ) {
         canvasModel.state = state
         canvasModel.strokeRenderMode = strokeRenderMode
         canvasModel.stickerImages = stickerImages
+        canvasModel.stickerTimeline = stickerTimeline
     }
 
     public func show() {

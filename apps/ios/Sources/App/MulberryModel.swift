@@ -32,6 +32,7 @@ final class MulberryModel: ObservableObject {
     init(wallpaperService: ProductWallpaperService? = nil) { self.wallpaperService = wallpaperService ?? .shared }
     private var sessionEpoch = 0
     private var drawingVersion: UInt64 = 0
+    private var prewarmedElements: [JSONValue] = []
 
     var userId: String? { bootstrap?.userId }
     var api: BackendClient { get throws { try AppRuntime.api() } }
@@ -250,6 +251,20 @@ final class MulberryModel: ObservableObject {
         guard document.userId == userId, document.pairSessionId == bootstrap?.pairSessionId else { throw DrawingError.wrongSession }
         guard document.version >= drawingVersion else { return }
         drawing = try document.visible; pendingEdits = document.pending.count; drawingVersion = document.version
+        prewarmStickers()
+    }
+
+    /// Decodes the drawing's sticker artwork as soon as the drawing loads, so the canvas usually
+    /// opens with every sticker already in memory.
+    private func prewarmStickers() {
+        // Runs for every stroke point; decode the elements only when they change.
+        guard let user = userId, drawing.elements != prewarmedElements else { return }
+        prewarmedElements = drawing.elements
+        let stickers = Set(drawing.canvasElements.compactMap(\.sticker?.sticker)).filter {
+            StickerAssetStore.shared.cachedImage($0, variant: .full, user: user, maxPixelSize: StickerAssetStore.canvasPixels) == nil
+        }
+        guard !stickers.isEmpty else { return }
+        Task { await StickerAssetStore.shared.prewarm(stickers, variant: .full, user: user, maxPixelSize: StickerAssetStore.canvasPixels) }
     }
 
     private func perform(_ operation: () async throws -> Void) async {

@@ -28,7 +28,8 @@ public actor StickerAssetStore {
     private let session: URLSession
     private var inFlight: [URL: Task<URL?, Never>] = [:]
     private var touched: [URL: Date] = [:]
-    private let images = NSCache<NSString, CanvasImage>()
+    /// NSCache is thread-safe, though not marked Sendable, so the canvas can read it synchronously.
+    nonisolated(unsafe) private let images = NSCache<NSString, CanvasImage>()
     private let api: StickerBackend
 
     public init(api: @escaping StickerBackend,
@@ -42,7 +43,7 @@ public actor StickerAssetStore {
     /// A decoded image, downsampled when `maxPixelSize` is set. Returns nil while offline
     /// if the artwork was never downloaded.
     public func image(_ sticker: StickerReference, variant: StickerAssetVariant, user: String, hint: String? = nil, maxPixelSize: Int? = nil) async -> CanvasImage? {
-        let key = "\(user)|\(sticker.packKey)|\(sticker.packVersion)|\(sticker.stickerId)|\(variant.rawValue)|\(maxPixelSize ?? 0)" as NSString
+        let key = Self.key(sticker, variant: variant, user: user, maxPixelSize: maxPixelSize)
         if let cached = images.object(forKey: key) { return cached }
         guard let file = await file(sticker, variant: variant, user: user, hint: hint),
               let source = CGImageSourceCreateWithURL(file as CFURL, nil) else { return nil }
@@ -63,6 +64,23 @@ public actor StickerAssetStore {
         #endif
         images.setObject(image, forKey: key, cost: cgImage.bytesPerRow * cgImage.height)
         return image
+    }
+
+    /// The decoded image if it is already in memory, without waiting, so a canvas can draw it in
+    /// its first frame.
+    public nonisolated func cachedImage(_ sticker: StickerReference, variant: StickerAssetVariant, user: String, maxPixelSize: Int? = nil) -> CanvasImage? {
+        images.object(forKey: Self.key(sticker, variant: variant, user: user, maxPixelSize: maxPixelSize))
+    }
+
+    /// Decodes the drawing's stickers ahead of the canvas, so they are in memory when it opens.
+    public func prewarm(_ stickers: Set<StickerReference>, variant: StickerAssetVariant, user: String, maxPixelSize: Int? = nil) async {
+        for sticker in stickers where cachedImage(sticker, variant: variant, user: user, maxPixelSize: maxPixelSize) == nil {
+            _ = await image(sticker, variant: variant, user: user, maxPixelSize: maxPixelSize)
+        }
+    }
+
+    private nonisolated static func key(_ sticker: StickerReference, variant: StickerAssetVariant, user: String, maxPixelSize: Int?) -> NSString {
+        "\(user)|\(sticker.packKey)|\(sticker.packVersion)|\(sticker.stickerId)|\(variant.rawValue)|\(maxPixelSize ?? 0)" as NSString
     }
 
     public func file(_ sticker: StickerReference, variant: StickerAssetVariant, user: String, hint: String? = nil) async -> URL? {

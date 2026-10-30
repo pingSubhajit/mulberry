@@ -202,7 +202,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             strokeRenderMode: CanvasStrokeRenderMode(
                 rawBackendValue: appStateController.loadState.bootstrap?.canvasStrokeRenderMode
             ),
-            stickerImages: stickerLoader.images
+            stickerImages: stickerLoader.images,
+            stickerTimeline: stickerLoader.timeline
         )
     }
 

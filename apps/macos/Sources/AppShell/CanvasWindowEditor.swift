@@ -1029,6 +1029,7 @@ struct FullAppCanvasEditor: View {
         }
         canvasModel.state = state
         canvasModel.stickerImages = stickerLoader.images
+        canvasModel.stickerTimeline = stickerLoader.timeline
         canvasModel.strokeRenderMode = CanvasStrokeRenderMode(
             rawBackendValue: appStateController.loadState.bootstrap?.canvasStrokeRenderMode
         )
