@@ -53,6 +53,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     private var overlayStateCancellable: AnyCancellable?
     private var authStateCancellable: AnyCancellable?
     private var appStateCancellable: AnyCancellable?
+    private var drawingCancellable: AnyCancellable?
     private var syncStateCancellable: AnyCancellable?
     private var stickerCancellable: AnyCancellable?
     private var syncWasReachable = true
@@ -138,12 +139,22 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 self.bindReactions()
             }
         }
-        syncStateCancellable = syncController.objectWillChange.sink { [weak self] _ in
+        // The drawing changes with every batch of points; the connection far less often.
+        drawingCancellable = syncController.$drawing.sink { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.loadStickerArtwork()
                 self.refreshOverlayCanvas()
-                self.refreshStatusMenu()
+            }
+        }
+        syncStateCancellable = Publishers.Merge3(
+            syncController.$status.map { _ in () },
+            syncController.$connectionState.map { _ in () },
+            syncController.$demand.map { _ in () }
+        ).sink { [weak self] in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.loadStickerArtwork()
                 self.reportCurrentOverlayPresence()
             }
         }
@@ -695,9 +706,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 isOverlayVisible: overlayController.isVisible
             ),
             demand: syncController.demand,
-            connectionState: syncController.connectionState,
-            lastAppliedServerRevision: syncController.status.lastAppliedServerRevision,
-            lastSuccessfulRecoveryAt: syncController.status.lastSuccessfulRecoveryAt
+            connectionState: syncController.connectionState
         )
         guard signature != lastOverlayPresenceReportSignature else { return }
         lastOverlayPresenceReportSignature = signature
@@ -711,6 +720,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     }
 }
 
+/// What the partner's devices show of this Mac's overlay. The revision and recovery time travel
+/// with each report as diagnostics, but do not cause one: they change with every edit.
 private struct OverlayPresenceReportSignature: Equatable {
     let pairSessionID: String?
     let overlayVisible: Bool
@@ -718,8 +729,6 @@ private struct OverlayPresenceReportSignature: Equatable {
     let canSeeLatestDrawings: Bool
     let demand: CanvasSyncDemand
     let connectionState: MacSyncConnectionState
-    let lastAppliedServerRevision: Int64
-    let lastSuccessfulRecoveryAt: Date?
 }
 
 @MainActor

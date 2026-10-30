@@ -161,52 +161,80 @@ public final class CanvasRenderer {
     }
 }
 
+/// What a live canvas shows.
 public final class CanvasRenderModel: ObservableObject {
     @Published public var state: DrawingState
     @Published public var strokeRenderMode: CanvasStrokeRenderMode
-    @Published public var diagnostics: [CanvasDiagnostic]
     @Published public var stickerImages: [StickerReference: CanvasImage]
+    /// Assigned again on each frame of a sticker fade, which draws the stickers again.
     @Published public var stickerTimeline: StickerArtworkTimeline?
+    /// The stroke being drawn on this Mac, shown at every point. Its operations are saved in
+    /// batches of points, so `state` has it only as far as the last batch.
+    @Published public var activeStroke: DrawingStroke?
 
     public init(
         state: DrawingState = DrawingState(),
         strokeRenderMode: CanvasStrokeRenderMode = .dryBrush,
-        diagnostics: [CanvasDiagnostic] = [],
         stickerImages: [StickerReference: CanvasImage] = [:]
     ) {
         self.state = state
         self.strokeRenderMode = strokeRenderMode
-        self.diagnostics = diagnostics
         self.stickerImages = stickerImages
     }
 }
 
+/// Draws a live canvas in three layers, so a frame costs only what changed rather than the whole
+/// drawing. Finished strokes are rasterized away from the main thread and shown as one image;
+/// strokes being drawn, here or by the partner, are drawn above it as they grow; text and stickers
+/// sit on top, drawn again only when they change.
 @MainActor
 public final class CanvasRenderView: NSView {
-    private let model: CanvasRenderModel
-    private let renderer: CanvasRenderer
-    private let surface: CanvasRenderSurface
-    private let showsEditingBackground: Bool
-    private var cancellable: AnyCancellable?
+    private let settledView = SettledStrokesView()
+    private let liveView = LiveStrokesView()
+    private let elementsView = CanvasElementsView()
+    private let rasterizer = StrokeRasterizer()
+    private var cancellables: Set<AnyCancellable> = []
 
-    public init(
-        model: CanvasRenderModel,
-        renderer: CanvasRenderer = CanvasRenderer(),
-        surface: CanvasRenderSurface = .passiveOverlay,
-        showsEditingBackground: Bool = false
-    ) {
-        self.model = model
-        self.renderer = renderer
-        self.surface = surface
-        self.showsEditingBackground = showsEditingBackground
+    private var dry = true
+    /// Finished strokes, in painting order. These change only when a stroke finishes or goes.
+    private var settled: [DrawingStroke] = []
+    /// Strokes still being drawn. These change with every batch of points.
+    private var inProgress: [DrawingStroke] = []
+    private var activeStroke: DrawingStroke?
+    private var elements: [JSONValue] = []
+    private var stickerTimeline: StickerArtworkTimeline?
+    /// What the image on screen shows, and the IDs of its strokes.
+    private var shown: StrokeRasterizer.Request?
+    private var shownIDs: Set<String> = []
+    private var rasterizing = false
+
+    public init(model: CanvasRenderModel) {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
-        cancellable = model.objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.needsDisplay = true
-            }
+        for layerView in [settledView, liveView, elementsView] as [NSView] {
+            layerView.frame = bounds
+            layerView.autoresizingMask = [.width, .height]
+            addSubview(layerView)
         }
+        // Each publisher sends its new value as it is set, and its current one straight away.
+        model.$state
+            .sink { [weak self] state in MainActor.assumeIsolated { self?.show(state) } }
+            .store(in: &cancellables)
+        model.$strokeRenderMode
+            .removeDuplicates()
+            .sink { [weak self] mode in MainActor.assumeIsolated { self?.show(dry: mode == .dryBrush) } }
+            .store(in: &cancellables)
+        model.$activeStroke
+            .sink { [weak self] stroke in MainActor.assumeIsolated { self?.show(activeStroke: stroke) } }
+            .store(in: &cancellables)
+        model.$stickerImages
+            .removeDuplicates()
+            .sink { [weak self] images in MainActor.assumeIsolated { self?.show(stickerImages: images) } }
+            .store(in: &cancellables)
+        model.$stickerTimeline
+            .sink { [weak self] timeline in MainActor.assumeIsolated { self?.show(stickerTimeline: timeline) } }
+            .store(in: &cancellables)
     }
 
     public required init?(coder: NSCoder) {
@@ -218,60 +246,203 @@ public final class CanvasRenderView: NSView {
     /// It only draws; the pointer belongs to the canvas input above it and to the title bar.
     public override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    public override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let result = renderer.render(
-            CanvasRenderInput(
-                state: model.state,
-                viewport: bounds,
-                scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1,
-                strokeRenderMode: model.strokeRenderMode,
-                surface: surface,
-                showsEditingBackground: showsEditingBackground,
-                stickerImages: model.stickerImages,
-                stickerTimeline: model.stickerTimeline
-            ),
-            in: context
-        )
-        if model.diagnostics != result.diagnostics {
-            DispatchQueue.main.async { [weak model] in
-                model?.diagnostics = result.diagnostics
-            }
+    public override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        rasterize()
+    }
+
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        rasterize()
+    }
+
+    public override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        rasterize()
+    }
+
+    private func show(_ state: DrawingState) {
+        let settled = state.finishedStrokes
+        let inProgress = state.strokes.filter { $0.finished != true }
+        let settledChanged = settled != self.settled
+        if settledChanged {
+            self.settled = settled
+            rasterize()
         }
+        if settledChanged || inProgress != self.inProgress {
+            self.inProgress = inProgress
+            redrawLive()
+        }
+        if state.elements != elements {
+            elements = state.elements
+            elementsView.elements = state.canvasElements
+            elementsView.needsDisplay = true
+        }
+    }
+
+    private func show(dry: Bool) {
+        self.dry = dry
+        rasterize()
+        redrawLive()
+    }
+
+    private func show(activeStroke: DrawingStroke?) {
+        guard activeStroke != self.activeStroke else { return }
+        self.activeStroke = activeStroke
+        redrawLive()
+    }
+
+    private func show(stickerImages: [StickerReference: CanvasImage]) {
+        elementsView.stickerImages = stickerImages
+        elementsView.needsDisplay = true
+    }
+
+    /// A fading sticker is drawn again on every frame, while its timeline stays the same.
+    private func show(stickerTimeline: StickerArtworkTimeline?) {
+        guard stickerTimeline != self.stickerTimeline || stickerTimeline?.isAnimating() == true else { return }
+        self.stickerTimeline = stickerTimeline
+        elementsView.stickerTimeline = stickerTimeline
+        elementsView.needsDisplay = true
+    }
+
+    /// Asks for an image of the settled strokes, unless the one on screen or being made has them.
+    /// One image is made at a time; changes meanwhile are caught up with when it is done.
+    private func rasterize() {
+        guard !rasterizing, bounds.width > 0, bounds.height > 0, let scale = window?.backingScaleFactor else { return }
+        let request = StrokeRasterizer.Request(strokes: settled, size: bounds.size, scale: scale, dry: dry)
+        guard request != shown else { return }
+        rasterizing = true
+        Task { [rasterizer] in
+            let raster = await rasterizer.render(request)
+            rasterizing = false
+            guard let raster else { return }
+            show(raster)
+            rasterize()
+        }
+    }
+
+    private func show(_ raster: StrokeRasterizer.Raster) {
+        shown = raster.request
+        shownIDs = Set(raster.request.strokes.map(\.id))
+        settledView.show(raster)
+        redrawLive()
+    }
+
+    /// Settled strokes the image does not have yet, such as one that has just finished, are drawn
+    /// with the strokes in progress until it does. This Mac's own stroke is drawn from its every
+    /// point rather than from its saved batches.
+    private func redrawLive() {
+        let active = activeStroke?.id
+        liveView.strokes = settled.filter { !shownIDs.contains($0.id) && $0.id != active }
+            + inProgress.filter { $0.id != active }
+            + (activeStroke.map { [$0] } ?? [])
+        liveView.dry = dry
+        liveView.needsDisplay = true
     }
 }
 
-public struct CanvasRenderSurfaceView: NSViewRepresentable {
-    @ObservedObject private var model: CanvasRenderModel
-    private let renderer: CanvasRenderer
-    private let surface: CanvasRenderSurface
-    private let showsEditingBackground: Bool
+/// The settled strokes' image. Until the image for a new size arrives, the old one stretches to fit.
+private final class SettledStrokesView: NSView {
+    private var image: CGImage?
+    private var scale: CGFloat = 1
 
-    public init(
-        model: CanvasRenderModel,
-        renderer: CanvasRenderer = CanvasRenderer(),
-        surface: CanvasRenderSurface = .fullApp,
-        showsEditingBackground: Bool = true
-    ) {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func show(_ raster: StrokeRasterizer.Raster) {
+        image = raster.image
+        scale = raster.request.scale
+        needsDisplay = true
+    }
+
+    override func updateLayer() {
+        guard let layer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.contentsGravity = .resize
+        layer.contents = image
+        layer.contentsScale = scale
+        CATransaction.commit()
+    }
+}
+
+/// Strokes being drawn, drawn in full on every change: there are only ever a few.
+private final class LiveStrokesView: NSView {
+    var strokes: [DrawingStroke] = []
+    var dry = true
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .duringViewResize
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !strokes.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
+        DoodleRenderer.draw(strokes, dry: dry, in: context, size: bounds.size)
+    }
+}
+
+/// Text and stickers, above every stroke.
+private final class CanvasElementsView: NSView {
+    var elements: [CanvasElement] = []
+    var stickerImages: [StickerReference: CanvasImage] = [:]
+    var stickerTimeline: StickerArtworkTimeline?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        CanvasFonts.registerBundledFonts()
+        wantsLayer = true
+        layerContentsRedrawPolicy = .duringViewResize
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !elements.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
+        DoodleRenderer.draw([], elements: elements, stickerImages: stickerImages, stickerTimeline: stickerTimeline,
+                            dry: true, in: context, size: bounds.size)
+    }
+}
+
+/// A live canvas in SwiftUI. The view follows its model itself, so SwiftUI never redraws it.
+public struct CanvasRenderSurfaceView: NSViewRepresentable {
+    private let model: CanvasRenderModel
+
+    public init(model: CanvasRenderModel) {
         self.model = model
-        self.renderer = renderer
-        self.surface = surface
-        self.showsEditingBackground = showsEditingBackground
     }
 
     public func makeNSView(context: Context) -> CanvasRenderView {
-        CanvasRenderView(
-            model: model,
-            renderer: renderer,
-            surface: surface,
-            showsEditingBackground: showsEditingBackground
-        )
+        CanvasRenderView(model: model)
     }
 
-    public func updateNSView(_ nsView: CanvasRenderView, context: Context) {
-        nsView.needsDisplay = true
-    }
+    public func updateNSView(_ nsView: CanvasRenderView, context: Context) {}
 }
 
 public enum CanvasRenderFixture {

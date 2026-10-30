@@ -7,7 +7,13 @@ import SwiftUI
 /// own: in Quick Draw the tools live in a panel beside the overlay, not in the canvas's view.
 @MainActor
 final class CanvasEditorModel: ObservableObject {
-    @Published var engine = CanvasStrokeEditingEngine()
+    /// The editing engine. Drawing changes its stroke with every pointer move, which no toolbar
+    /// shows, so only changes to what the controls show are published.
+    var engine = CanvasStrokeEditingEngine() {
+        willSet {
+            if Controls(newValue) != Controls(engine) { objectWillChange.send() }
+        }
+    }
     /// Text is being typed in place: ⌘Z belongs to the text.
     @Published var isTyping = false
     /// The sticker panel beside the Sticker tool's button.
@@ -47,6 +53,23 @@ final class CanvasEditorModel: ObservableObject {
 
     func redo() {
         submit(engine.redo())
+    }
+
+    /// What the toolbars, menus and canvas show of the engine.
+    private struct Controls: Equatable {
+        let toolState: CanvasEditingToolState
+        let viewportTransform: CanvasViewportTransform
+        let canUndo: Bool
+        let canRedo: Bool
+        let clearConfirmationRequested: Bool
+
+        init(_ engine: CanvasStrokeEditingEngine) {
+            toolState = engine.toolState
+            viewportTransform = engine.viewportTransform
+            canUndo = engine.canUndo
+            canRedo = engine.canRedo
+            clearConfirmationRequested = engine.clearConfirmationRequested
+        }
     }
 }
 

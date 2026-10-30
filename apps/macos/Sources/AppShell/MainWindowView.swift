@@ -13,7 +13,9 @@ struct MainWindowView: View {
     @ObservedObject var windowState: MainWindowState
     @ObservedObject var authController: AuthSessionController
     @ObservedObject var appStateController: AppStateController
-    @ObservedObject var syncController: CanvasSyncController
+    /// Not observed: it changes with every batch of points drawn. The window shows only whether
+    /// sync has failed.
+    let syncController: CanvasSyncController
     @ObservedObject var overlayController: OverlayController
     @ObservedObject var stickerLoader: StickerImageLoader
     let editorModel: CanvasEditorModel
@@ -22,6 +24,7 @@ struct MainWindowView: View {
     let openSettings: () -> Void
     @StateObject private var avatar = ProfileAvatar()
     @State private var reactionsOpen = false
+    @State private var syncFailed = false
 
     var body: some View {
         content
@@ -40,6 +43,7 @@ struct MainWindowView: View {
                     ToolbarItem { profileMenu(bootstrap) }
                 }
             }
+            .onReceive(syncController.$status.map { $0.lastError != nil }.removeDuplicates()) { syncFailed = $0 }
             .task(id: appStateController.loadState.bootstrap?.userPhotoUrl) {
                 await avatar.load(appStateController.loadState.bootstrap?.userPhotoUrl)
             }
@@ -126,7 +130,7 @@ struct MainWindowView: View {
             // Sync shows itself only when something is wrong, as a dot on the avatar.
             Image(nsImage: avatar.image(
                 initial: bootstrap.userDisplayName ?? bootstrap.userEmail,
-                syncError: syncController.status.lastError != nil
+                syncError: syncFailed
             ))
         }
         .menuIndicator(.hidden)

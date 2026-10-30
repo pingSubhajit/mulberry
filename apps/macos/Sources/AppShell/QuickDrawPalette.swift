@@ -9,7 +9,9 @@ import SwiftUI
 /// beside its canvas: the actions, then the drawing tools, then Done.
 struct QuickDrawPalette: View {
     @ObservedObject var model: CanvasEditorModel
-    @ObservedObject var syncController: CanvasSyncController
+    /// Not observed: it changes with every batch of points drawn. The palette shows only whether
+    /// the canvas is empty.
+    let syncController: CanvasSyncController
     /// Which side of the overlay the panel is on.
     let side: HorizontalEdge
     /// Drags the overlay from the grip's mouse-down, calling back once it is dropped.
@@ -18,6 +20,7 @@ struct QuickDrawPalette: View {
 
     @State private var moving = false
     @State private var gripHovered = false
+    @State private var canvasIsEmpty = true
 
     /// Popovers open toward the canvas.
     private var towardCanvas: Edge { side == .leading ? .trailing : .leading }
@@ -30,15 +33,12 @@ struct QuickDrawPalette: View {
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: side == .leading ? .trailing : .leading)
         }
+        .onReceive(syncController.$drawing.map { $0.strokes.isEmpty && $0.elements.isEmpty }.removeDuplicates()) { canvasIsEmpty = $0 }
     }
 
     /// Eleven circles and the grip in the iPad's rhythm, as large as the overlay's height allows.
     private func buttonSize(for height: CGFloat) -> CGFloat {
         min(52, max(30, (height - 16) / 14.8))
-    }
-
-    private var canvasIsEmpty: Bool {
-        syncController.drawing.strokes.isEmpty && syncController.drawing.elements.isEmpty
     }
 
     private func toolColumn(_ size: CGFloat) -> some View {

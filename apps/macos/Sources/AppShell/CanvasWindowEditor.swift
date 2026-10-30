@@ -19,7 +19,9 @@ enum CanvasEditorLayout {
 struct FullAppCanvasEditor: View {
     @ObservedObject var authController: AuthSessionController
     @ObservedObject var appStateController: AppStateController
-    @ObservedObject var syncController: CanvasSyncController
+    /// Not observed: the drawing changes with every batch of points, and the editor follows it
+    /// through `showCanvas`, which redraws only what changed.
+    let syncController: CanvasSyncController
     @ObservedObject var stickerLoader: StickerImageLoader
     @ObservedObject var model: CanvasEditorModel
     let reactions: ReactionsModel
@@ -45,7 +47,10 @@ struct FullAppCanvasEditor: View {
         _titleBarHeight = State(initialValue: layout == .window ? 52 : 0)
     }
 
-    @StateObject private var canvasModel = CanvasRenderModel()
+    /// Kept, not observed: the canvas view follows it itself.
+    @State private var canvasModel = CanvasRenderModel()
+    /// What the editor's own controls show of the drawing.
+    @State private var summary = CanvasSummary()
     /// The shared editing engine, read and changed in place.
     private var editor: CanvasStrokeEditingEngine {
         get { model.engine }
@@ -98,6 +103,13 @@ struct FullAppCanvasEditor: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Whether the drawing is empty, and its text and stickers, decoded once per change rather
+    /// than on every hit test. Unlike the strokes, these change rarely while drawing.
+    private struct CanvasSummary: Equatable {
+        var isEmpty = true
+        var elements: [CanvasElement] = []
+    }
+
     /// An element being dragged to a new place; it saves as one update when released.
     private struct ElementDrag {
         let original: CanvasElement
@@ -128,10 +140,11 @@ struct FullAppCanvasEditor: View {
             selectedTextID = nil
         }
         .onChange(of: textEdit != nil) { _, typing in model.isTyping = typing }
-        .onReceive(syncController.objectWillChange) { _ in
-            DispatchQueue.main.async {
-                syncCanvasModel()
-            }
+        .onReceive(syncController.$drawing) { drawing in
+            showCanvas(drawing)
+        }
+        .onChange(of: appStateController.loadState.bootstrap?.canvasStrokeRenderMode) {
+            syncCanvasModel()
         }
         .onReceive(stickerLoader.objectWillChange) { _ in
             DispatchQueue.main.async {
@@ -230,11 +243,7 @@ struct FullAppCanvasEditor: View {
     private var canvasLayers: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                CanvasRenderSurfaceView(
-                    model: canvasModel,
-                    surface: .fullApp,
-                    showsEditingBackground: false
-                )
+                CanvasRenderSurfaceView(model: canvasModel)
                 .scaleEffect(editor.viewportTransform.scale, anchor: .topLeading)
                 .offset(
                     x: editor.viewportTransform.offset.x,
@@ -256,13 +265,13 @@ struct FullAppCanvasEditor: View {
                     topInset: titleBarHeight,
                     cursor: { point in canvasCursor(at: point, canvasSize: proxy.size) },
                     onDrawStart: { point in
-                        submit(editor.startStroke(at: point, surfaceSize: proxy.size))
+                        draw(editor.startStroke(at: point, surfaceSize: proxy.size))
                     },
                     onDrawMove: { point in
-                        submit(editor.appendStrokePoint(at: point, surfaceSize: proxy.size))
+                        draw(editor.appendStrokePoint(at: point, surfaceSize: proxy.size))
                     },
                     onDrawEnd: {
-                        submit(editor.finishStroke())
+                        draw(editor.finishStroke())
                     },
                     onEraseDown: { point in
                         eraseBegan(at: point, canvasSize: proxy.size)
@@ -407,16 +416,14 @@ struct FullAppCanvasEditor: View {
 
     private var tool: CanvasEditingTool { editor.toolState.activeTool }
 
-    private var canvasIsEmpty: Bool {
-        syncController.drawing.strokes.isEmpty && syncController.drawing.elements.isEmpty
-    }
+    private var canvasIsEmpty: Bool { summary.isEmpty }
 
     private var editingIsEnabled: Bool {
         let bootstrap = appStateController.loadState.bootstrap
         return CanvasEditingAvailabilityPolicy().availability(for: CanvasEditingAvailabilityInput(
             isAuthenticated: authController.state.isSignedIn,
             isPaired: bootstrap?.isPaired ?? false,
-            pairSessionID: bootstrap?.pairSessionId ?? syncController.status.pairSessionID,
+            pairSessionID: bootstrap?.pairSessionId,
             hasUsableCanvasState: true,
             hasHardLocalStateError: false
         )).isEnabled
@@ -427,7 +434,7 @@ struct FullAppCanvasEditor: View {
         let availability = CanvasEditingAvailabilityPolicy().availability(for: CanvasEditingAvailabilityInput(
             isAuthenticated: authController.state.isSignedIn,
             isPaired: bootstrap?.isPaired ?? false,
-            pairSessionID: bootstrap?.pairSessionId ?? syncController.status.pairSessionID,
+            pairSessionID: bootstrap?.pairSessionId,
             hasUsableCanvasState: true,
             hasHardLocalStateError: false
         ))
@@ -449,6 +456,12 @@ struct FullAppCanvasEditor: View {
 
     private func submit(_ operations: [DrawingOperation]) {
         syncController.submit(operations)
+    }
+
+    /// A stroke's operations are saved in batches of points; the stroke shows at every point.
+    private func draw(_ operations: [DrawingOperation]) {
+        submit(operations)
+        canvasModel.activeStroke = editor.activeStroke
     }
 
     private func sampleEyedropper(at renderedPoint: CGPoint, surfaceSize: CGSize) {
@@ -513,7 +526,7 @@ struct FullAppCanvasEditor: View {
     ) -> CanvasElement? {
         elementRenderer.stickerImages = stickerLoader.images
         let point = editor.viewportTransform.contentPoint(fromRenderedPoint: renderedPoint)
-        return elementRenderer.hit(syncController.drawing.canvasElements, at: point, canvasSize: canvasSize, where: include)
+        return elementRenderer.hit(summary.elements, at: point, canvasSize: canvasSize, where: include)
     }
 
     /// Text tool: clicking away from the text being typed finishes it; pressing a text selects it
@@ -671,7 +684,7 @@ struct FullAppCanvasEditor: View {
 
     private var selectedText: CanvasTextElement? {
         guard let selectedTextID else { return nil }
-        return syncController.drawing.canvasElements.first { $0.id == selectedTextID }?.text
+        return summary.elements.first { $0.id == selectedTextID }?.text
     }
 
     @ViewBuilder private func textLayers(canvasSize: CGSize) -> some View {
@@ -732,7 +745,7 @@ struct FullAppCanvasEditor: View {
 
     private var selectedSticker: CanvasStickerElement? {
         guard let selectedStickerID else { return nil }
-        return syncController.drawing.canvasElements.first { $0.id == selectedStickerID }?.sticker
+        return summary.elements.first { $0.id == selectedStickerID }?.sticker
     }
 
     /// The selected sticker as it looks right now: mid-drag, mid-resize, or as saved.
@@ -1017,7 +1030,15 @@ struct FullAppCanvasEditor: View {
     }
 
     private func syncCanvasModel() {
-        var state = syncController.drawing
+        showCanvas(syncController.drawing)
+    }
+
+    /// The drawing as the canvas shows it: an element mid-drag or mid-edit in its new state, text
+    /// being typed left to its editor, and the stroke being drawn at its every point.
+    private func showCanvas(_ drawing: DrawingState) {
+        let summary = CanvasSummary(isEmpty: drawing.strokes.isEmpty && drawing.elements.isEmpty, elements: drawing.canvasElements)
+        if summary != self.summary { self.summary = summary }
+        var state = drawing
         if let drag, drag.moved {
             try? state.apply(.update(drag.current))
         }
@@ -1033,6 +1054,7 @@ struct FullAppCanvasEditor: View {
             try? state.apply(.delete(editing))
         }
         canvasModel.state = state
+        canvasModel.activeStroke = editor.activeStroke
         canvasModel.stickerImages = stickerLoader.images
         canvasModel.stickerTimeline = stickerLoader.timeline
         canvasModel.strokeRenderMode = CanvasStrokeRenderMode(

@@ -268,11 +268,7 @@ public final class OverlayController: NSObject, ObservableObject {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
-        panel.contentView = CanvasRenderView(
-            model: canvasModel,
-            surface: .passiveOverlay,
-            showsEditingBackground: false
-        )
+        panel.contentView = CanvasRenderView(model: canvasModel)
         configurePassivePanel(panel)
         return panel
     }
