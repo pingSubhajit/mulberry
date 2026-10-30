@@ -2,6 +2,7 @@ import AppKit
 import CanvasDrawing
 import CoreText
 import IOKit.ps
+import Network
 import ProductCore
 import ProductUI
 import SwiftUI
@@ -40,7 +41,9 @@ final class LockScreenModel: ObservableObject {
     /// The drawing, drawn as a picture at the screen's width so it clips and settles with the rest.
     @Published var drawing: NSImage?
     /// This Mac's battery, for the status bar; nil on a Mac without one.
-    @Published var battery: Int?
+    @Published var battery: MacBattery.Reading?
+    /// How this Mac reaches the internet, for the status bar.
+    @Published var network = MacNetwork.Kind.wifi
     /// Past the lock screen, on the home screen.
     @Published var unlocked = false
     /// How far a swipe in progress has carried the lock screen, in points; up is negative.
@@ -133,7 +136,8 @@ final class LockScreenPanelController {
         previousApp = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
         presence.shown = false
         // It always opens on the lock screen.
-        model.battery = MacBattery.level()
+        model.battery = MacBattery.reading()
+        watchStatus()
         model.unlocked = false
         model.swipe = 0
         model.railOpen = false
@@ -164,6 +168,7 @@ final class LockScreenPanelController {
         closedFromIcon = !fromToggle && pointerIsOnIcon ? Date() : nil
         model.railOpen = false
         removeMonitors()
+        stopWatchingStatus()
         statusButton()?.highlight(false)
         withAnimation(.easeIn(duration: 0.14)) {
             presence.shown = false
@@ -269,6 +274,38 @@ final class LockScreenPanelController {
         return true
     }
 
+    /// The status bar follows the Mac while the lock screen is open: its connection as it changes,
+    /// and its battery every half minute.
+    private var networkMonitor: NWPathMonitor?
+    private var batteryTimer: Timer?
+
+    private func watchStatus() {
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let kind = MacNetwork.kind(of: path)
+            DispatchQueue.main.async {
+                guard let self, self.model.network != kind else { return }
+                self.model.network = kind
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "com.subhajit.mulberry.network"))
+        networkMonitor = monitor
+        batteryTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let reading = MacBattery.reading()
+                if self.model.battery != reading { self.model.battery = reading }
+            }
+        }
+    }
+
+    private func stopWatchingStatus() {
+        networkMonitor?.cancel()
+        networkMonitor = nil
+        batteryTimer?.invalidate()
+        batteryTimer = nil
+    }
+
     private func removeMonitors() {
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
@@ -365,7 +402,7 @@ struct LockScreenView: View {
             VStack(spacing: 0) {
                 // The island and the status bar stay put; on the home screen the island locks again.
                 ZStack(alignment: .top) {
-                    StatusBar(unlocked: model.unlocked, battery: model.battery)
+                    StatusBar(unlocked: model.unlocked, network: model.network, battery: model.battery)
                     DynamicIsland(reactions: reactions, partnerName: model.partnerName)
                         .contentShape(.capsule)
                         .onTapGesture { if model.unlocked { model.setUnlocked(false) } }
@@ -659,11 +696,13 @@ private struct GlyphOutline: Shape {
     }
 }
 
-/// The iPhone's status bar: on the lock screen a carrier's name at the left, on the home screen
-/// the time; at the right the signal, Wi-Fi and this Mac's battery.
+/// The iPhone's status bar, telling the truth about this Mac: on the lock screen a carrier's name
+/// at the left, on the home screen the time; at the right how the Mac is connected, and its
+/// battery, if it has one. No cellular bars: a Mac has none.
 private struct StatusBar: View {
     let unlocked: Bool
-    let battery: Int?
+    let network: MacNetwork.Kind
+    let battery: MacBattery.Reading?
 
     var body: some View {
         HStack(alignment: .top) {
@@ -680,10 +719,10 @@ private struct StatusBar: View {
             .frame(height: 26)
             .padding(.leading, 26)
             Spacer()
-            HStack(spacing: 4) {
-                Image(systemName: "cellularbars").opacity(0.4)
-                Image(systemName: "wifi")
-                BatteryGlyph(level: battery ?? 100)
+            HStack(spacing: 5) {
+                Image(systemName: network.symbol)
+                    .contentTransition(.symbolEffect(.replace))
+                if let battery { BatteryGlyph(reading: battery) }
             }
             .font(.system(size: 11, weight: .semibold))
             .frame(height: 26)
@@ -695,35 +734,75 @@ private struct StatusBar: View {
     }
 }
 
-/// The iPhone's battery: a white pill with the level written inside it.
+/// The iPhone's battery: a pill with the level written inside it, green with a bolt while it
+/// charges, red when it runs low.
 private struct BatteryGlyph: View {
-    let level: Int
+    let reading: MacBattery.Reading
+
+    private var fill: Color {
+        if reading.charging { return Color(red: 0.2, green: 0.78, blue: 0.35) }
+        return reading.level <= 20 ? Color(red: 1, green: 0.27, blue: 0.23) : .white
+    }
 
     var body: some View {
         HStack(spacing: 1) {
-            Text("\(level)")
+            Text("\(reading.level)")
                 .font(.system(size: 9.5, weight: .bold))
                 .monospacedDigit()
-                .foregroundStyle(.black)
+                .foregroundStyle(reading.charging || reading.level <= 20 ? .white : .black)
                 .frame(width: 23, height: 12)
-                .background(.white, in: .rect(cornerRadius: 3.5, style: .continuous))
+                .background(fill, in: .rect(cornerRadius: 3.5, style: .continuous))
             Capsule().fill(.white.opacity(0.5)).frame(width: 1.5, height: 4)
+            if reading.charging {
+                Image(systemName: "bolt.fill").font(.system(size: 8, weight: .bold))
+            }
         }
     }
 }
 
-/// This Mac's battery level, as a percentage, from its power sources.
+/// This Mac's battery, from its power sources.
 enum MacBattery {
-    static func level() -> Int? {
+    struct Reading: Equatable {
+        let level: Int
+        let charging: Bool
+    }
+
+    /// Nil on a Mac without a battery.
+    static func reading() -> Reading? {
         guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
         for source in sources {
             guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
+                  description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
                   let current = description[kIOPSCurrentCapacityKey] as? Int,
                   let maximum = description[kIOPSMaxCapacityKey] as? Int, maximum > 0 else { continue }
-            return min(100, current * 100 / maximum)
+            let charging = description[kIOPSIsChargingKey] as? Bool ?? false
+            return Reading(level: min(100, current * 100 / maximum), charging: charging)
         }
         return nil
+    }
+}
+
+/// How this Mac reaches the internet.
+enum MacNetwork {
+    enum Kind: Equatable, Sendable {
+        case wifi, wired, other, offline
+
+        var symbol: String {
+            switch self {
+            case .wifi: "wifi"
+            case .wired: "cable.connector"
+            case .other: "network"
+            case .offline: "wifi.slash"
+            }
+        }
+    }
+
+    static func kind(of path: NWPath) -> Kind {
+        guard path.status == .satisfied else { return .offline }
+        if path.usesInterfaceType(.wifi) { return .wifi }
+        if path.usesInterfaceType(.wiredEthernet) { return .wired }
+        return .other
     }
 }
 
