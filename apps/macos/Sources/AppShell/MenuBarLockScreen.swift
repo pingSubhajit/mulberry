@@ -487,29 +487,36 @@ struct LockScreenView: View {
         }
     }
 
-    /// The panel's keys, as on a keyboard-driven menu bar extra.
+    /// The panel's keys, as on a keyboard-driven menu bar extra. Onboarding's phone has only the
+    /// way in: the Up arrow, Space or Return open it.
     private var shortcuts: some View {
         ZStack {
-            if model.account == .paired {
-                ForEach(Array(ReactionType.allCases.enumerated()), id: \.element) { index, type in
-                    Button(type.sendLabel) { model.actions?.send(type) }
-                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [])
+            if iPhoneLook {
+                Button("Unlock") { model.setUnlocked(true) }.keyboardShortcut(.upArrow, modifiers: [])
+                Button("Unlock") { model.setUnlocked(true) }.keyboardShortcut(.space, modifiers: [])
+                Button("Unlock") { model.setUnlocked(true) }.keyboardShortcut(.return, modifiers: [])
+            } else {
+                if model.account == .paired {
+                    ForEach(Array(ReactionType.allCases.enumerated()), id: \.element) { index, type in
+                        Button(type.sendLabel) { model.actions?.send(type) }
+                            .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [])
+                    }
+                    Button("Quick Draw") { close(); model.actions?.quickDraw() }
+                        .keyboardShortcut("d", modifiers: [])
+                    Button("Drawings on the desktop") { model.actions?.toggleOverlay() }
+                        .keyboardShortcut(.space, modifiers: [])
                 }
-                Button("Quick Draw") { close(); model.actions?.quickDraw() }
-                    .keyboardShortcut("d", modifiers: [])
-                Button("Drawings on the desktop") { model.actions?.toggleOverlay() }
-                    .keyboardShortcut(.space, modifiers: [])
+                Button("Open Mulberry") { close(); model.actions?.openCanvas() }
+                    .keyboardShortcut("o", modifiers: [])
+                if model.account == .paired || model.unlocked {
+                    Button("Home Screen") { model.setUnlocked(true) }
+                        .keyboardShortcut(.upArrow, modifiers: [])
+                    Button("Lock Screen") { model.setUnlocked(false) }
+                        .keyboardShortcut(.downArrow, modifiers: [])
+                }
+                Button("Settings") { close(); model.actions?.openSettings() }
+                    .keyboardShortcut(",", modifiers: .command)
             }
-            Button("Open Mulberry") { close(); model.actions?.openCanvas() }
-                .keyboardShortcut("o", modifiers: [])
-            if model.account == .paired || model.unlocked {
-                Button("Home Screen") { model.setUnlocked(true) }
-                    .keyboardShortcut(.upArrow, modifiers: [])
-                Button("Lock Screen") { model.setUnlocked(false) }
-                    .keyboardShortcut(.downArrow, modifiers: [])
-            }
-            Button("Settings") { close(); model.actions?.openSettings() }
-                .keyboardShortcut(",", modifiers: .command)
         }
         .opacity(0)
         .frame(width: 0, height: 0)
