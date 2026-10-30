@@ -6,8 +6,9 @@ public struct OverlaySettings: Equatable, Sendable {
     public var selectedDisplayID: String?
     public var relativeFrame: CGRect?
 
+    /// The drawings show on the desktop from the first launch, until they are hidden.
     public static let defaults = OverlaySettings(
-        isVisible: false,
+        isVisible: true,
         selectedDisplayID: nil,
         relativeFrame: nil
     )
@@ -74,7 +75,7 @@ public final class OverlaySettingsStore {
         }
 
         return OverlaySettings(
-            isVisible: defaults.bool(forKey: Key.isVisible),
+            isVisible: defaults.object(forKey: Key.isVisible) == nil ? OverlaySettings.defaults.isVisible : defaults.bool(forKey: Key.isVisible),
             selectedDisplayID: selectedDisplayID,
             relativeFrame: relativeFrame
         )

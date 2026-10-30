@@ -10,9 +10,16 @@ private func checkQuickDrawExitKeepsPassiveOverlayVisible() -> Bool {
     let defaults = UserDefaults(suiteName: suiteName)!
     defaults.removePersistentDomain(forName: suiteName)
 
+    // A fresh install shows the drawings on the desktop.
+    guard OverlayController(settingsStore: OverlaySettingsStore(defaults: defaults)).isVisible else {
+        fputs("Expected overlay to show by default for fresh settings.\n", stderr)
+        return false
+    }
+    // Hidden by the person, Quick Draw still brings it forward and leaves it showing.
+    defaults.set(false, forKey: "mac.overlay.isVisible")
     let controller = OverlayController(settingsStore: OverlaySettingsStore(defaults: defaults))
     guard controller.isVisible == false else {
-        fputs("Expected overlay to start hidden for isolated settings.\n", stderr)
+        fputs("Expected overlay to start hidden once hidden.\n", stderr)
         return false
     }
     guard controller.enterQuickDraw(fullscreenGuard: .allowed) else {
