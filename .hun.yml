@@ -1,0 +1,10 @@
+name: mulberry
+
+services:
+  backend:
+    cmd: docker compose up --build backend
+    port: 8080
+    depends_on: [postgres]
+  postgres:
+    cmd: docker compose up postgres
+    ready: "database system is ready to accept connections"
