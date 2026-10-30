@@ -8,45 +8,6 @@ import SwiftUI
 // and type in place; a frame moves, resizes and rotates the selected text; a floating bar sets
 // its style. What is typed is laid out by TextKit exactly as the shared renderer draws it.
 
-/// What the selection frame can move, resize and rotate: text and stickers alike.
-protocol CanvasTransformable: Equatable {
-    var center: DrawingPoint { get set }
-    var scale: Double { get set }
-    var rotationRad: Double { get set }
-    static var scaleRange: ClosedRange<Double> { get }
-}
-
-extension CanvasTextElement: CanvasTransformable {}
-extension CanvasStickerElement: CanvasTransformable {}
-
-/// Where a text or sticker sits on screen: its centre, its visible body around that centre
-/// before rotation (already scaled to screen points), and its rotation.
-struct ElementFrameGeometry: Equatable {
-    var center: CGPoint
-    var body: CGRect
-    var angle: Double
-
-    /// The body's own centre on screen, after rotation about the element's centre.
-    var bodyCenter: CGPoint {
-        let cosine = cos(angle), sine = sin(angle)
-        return CGPoint(
-            x: center.x + body.midX * cosine - body.midY * sine,
-            y: center.y + body.midX * sine + body.midY * cosine
-        )
-    }
-
-    /// The upright box that holds the rotated body, for placing the format bar.
-    var bounds: CGRect {
-        let cosine = cos(angle), sine = sin(angle)
-        let points = [
-            CGPoint(x: body.minX, y: body.minY), CGPoint(x: body.maxX, y: body.minY),
-            CGPoint(x: body.minX, y: body.maxY), CGPoint(x: body.maxX, y: body.maxY)
-        ].map { CGPoint(x: center.x + $0.x * cosine - $0.y * sine, y: center.y + $0.x * sine + $0.y * cosine) }
-        let xs = points.map(\.x), ys = points.map(\.y)
-        return CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
-    }
-}
-
 // MARK: Typing in place
 
 /// The text being typed, drawn by AppKit's text view at the element's size, wrap width, rotation
@@ -342,7 +303,7 @@ struct ElementSelectionFrame<Element: CanvasTransformable>: View {
                 let from = start ?? original
                 if start == nil {
                     start = original
-                    squared = Self.quarterTurn(near: original.rotationRad, within: 0) != nil
+                    squared = ElementRotation.isSquare(original.rotationRad)
                 }
                 let center = geometry.center
                 let turned = atan2(drag.location.y - center.y, drag.location.x - center.x)
@@ -351,11 +312,11 @@ struct ElementSelectionFrame<Element: CanvasTransformable>: View {
                 if NSEvent.modifierFlags.contains(.shift) {
                     let step = Double.pi / 12
                     angle = (angle / step).rounded() * step
-                } else if let square = Self.quarterTurn(near: angle, within: 3 * .pi / 180) {
+                } else if let square = ElementRotation.quarterTurn(near: angle) {
                     // As the iPhone's rotation slider settles level near zero.
                     angle = square
                 }
-                let onSquare = Self.quarterTurn(near: angle, within: 1e-9) != nil
+                let onSquare = ElementRotation.isSquare(angle)
                 if onSquare != squared {
                     squared = onSquare
                     if onSquare { Haptics.select() }
@@ -365,13 +326,6 @@ struct ElementSelectionFrame<Element: CanvasTransformable>: View {
                 update(rotated)
             }
             .onEnded { _ in finish() }
-    }
-
-    /// The quarter turn nearest `angle`, if it is within `tolerance` of it.
-    private static func quarterTurn(near angle: Double, within tolerance: Double) -> Double? {
-        let quarter = Double.pi / 2
-        let nearest = (angle / quarter).rounded() * quarter
-        return abs(angle - nearest) <= tolerance ? nearest : nil
     }
 
     private func update(_ element: Element) {

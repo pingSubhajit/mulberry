@@ -324,7 +324,7 @@ struct FullAppCanvasEditor: View {
             .coordinateSpace(name: CanvasSpace.name)
             // A sticker dragged from the panel lands where it is dropped.
             .dropDestination(for: String.self) { items, location in
-                guard editingIsEnabled, let sticker = items.lazy.compactMap(StickerDragPayload.sticker).first else { return false }
+                guard editingIsEnabled, let sticker = items.lazy.compactMap(StickerReference.init(dragString:)).first else { return false }
                 placeSticker(sticker, at: normalized(location, canvasSize: proxy.size))
                 return true
             }
@@ -772,15 +772,8 @@ struct FullAppCanvasEditor: View {
 
     /// Where a sticker sits on screen, at its drawn size.
     private func stickerGeometry(_ sticker: CanvasStickerElement, canvasSize: CGSize) -> ElementFrameGeometry {
-        let zoom = editor.viewportTransform.scale
-        let offset = editor.viewportTransform.offset
-        let size = CanvasStickerGeometry.size(sticker, image: stickerLoader.images[sticker.sticker], canvasWidth: canvasSize.width)
-        let width = size.width * zoom, height = size.height * zoom
-        return ElementFrameGeometry(
-            center: CGPoint(x: sticker.center.x * canvasSize.width * zoom + offset.x, y: sticker.center.y * canvasSize.height * zoom + offset.y),
-            body: CGRect(x: -width / 2, y: -height / 2, width: width, height: height),
-            angle: sticker.rotationRad
-        )
+        .sticker(sticker, image: stickerLoader.images[sticker.sticker], canvasSize: canvasSize,
+                 zoom: editor.viewportTransform.scale, offset: editor.viewportTransform.offset)
     }
 
     /// A new sticker: in the middle of the canvas from a click in the panel, or where it was
@@ -871,20 +864,8 @@ struct FullAppCanvasEditor: View {
     /// Where a text sits on screen. Text with nothing typed yet takes the
     /// height of one line at its wrap width.
     private func textGeometry(_ text: CanvasTextElement, canvasSize: CGSize) -> ElementFrameGeometry {
-        let layout = elementRenderer.layout(for: text, canvasWidth: canvasSize.width)
-        let zoom = editor.viewportTransform.scale
-        let offset = editor.viewportTransform.offset
-        let scale = CGFloat(text.scale) * zoom
-        var body = layout.bodyRect(pill: text.backgroundPillEnabled)
-        if layout.tightBounds.isEmpty {
-            let height = CanvasTextStyle.baseSize * 1.3
-            body = CGRect(x: -layout.size.width / 2, y: -height / 2, width: layout.size.width, height: height)
-        }
-        return ElementFrameGeometry(
-            center: CGPoint(x: text.center.x * canvasSize.width * zoom + offset.x, y: text.center.y * canvasSize.height * zoom + offset.y),
-            body: CGRect(x: body.minX * scale, y: body.minY * scale, width: body.width * scale, height: body.height * scale),
-            angle: text.rotationRad
-        )
+        .text(text, layout: elementRenderer.layout(for: text, canvasWidth: canvasSize.width), canvasSize: canvasSize,
+              zoom: editor.viewportTransform.scale, offset: editor.viewportTransform.offset)
     }
 
     /// The settled position. It moves only when the text would otherwise touch it, and then only

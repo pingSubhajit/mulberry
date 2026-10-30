@@ -188,3 +188,18 @@ public struct StickerPackDetail: Codable, Equatable, Identifiable, Sendable {
 public struct StickerPackList: Codable, Sendable { public let items: [StickerPackSummary] }
 public struct StickerAssetURL: Codable, Sendable { public let url: String; public let expiresInSeconds: Int }
 public enum StickerAssetVariant: String, Sendable { case thumbnail, full }
+
+extension StickerReference {
+    private static let dragPrefix = "mulberry-sticker:"
+
+    /// The sticker as a dragged string, carried from a sticker picker to the canvas.
+    public var dragString: String { "\(Self.dragPrefix)\(packKey)|\(packVersion)|\(stickerId)" }
+
+    /// The sticker a dragged string carries, if it is one.
+    public init?(dragString string: String) {
+        guard string.hasPrefix(Self.dragPrefix) else { return nil }
+        let parts = string.dropFirst(Self.dragPrefix.count).split(separator: "|", omittingEmptySubsequences: false)
+        guard parts.count == 3, let version = Int(parts[1]), !parts[0].isEmpty, !parts[2].isEmpty else { return nil }
+        self.init(packKey: String(parts[0]), packVersion: version, stickerId: String(parts[2]))
+    }
+}

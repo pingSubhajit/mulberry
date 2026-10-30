@@ -10,22 +10,6 @@ import SwiftUI
 // where it lands. A selected sticker has the text's frame to move, resize and rotate it, and a
 // bar above it to replace, straighten, duplicate or delete it.
 
-/// A sticker carried by a drag from the panel to the canvas.
-enum StickerDragPayload {
-    private static let prefix = "mulberry-sticker:"
-
-    static func string(_ sticker: StickerReference) -> String {
-        "\(prefix)\(sticker.packKey)|\(sticker.packVersion)|\(sticker.stickerId)"
-    }
-
-    static func sticker(_ string: String) -> StickerReference? {
-        guard string.hasPrefix(prefix) else { return nil }
-        let parts = string.dropFirst(prefix.count).split(separator: "|", omittingEmptySubsequences: false)
-        guard parts.count == 3, let version = Int(parts[1]), !parts[0].isEmpty, !parts[2].isEmpty else { return nil }
-        return StickerReference(packKey: String(parts[0]), packVersion: version, stickerId: String(parts[2]))
-    }
-}
-
 /// The published packs: covers along the top, the chosen pack's stickers in a grid below.
 /// Click a sticker to pick it; drag it out to drop it on the canvas.
 struct StickerPickerPanel: View {
@@ -135,7 +119,7 @@ private struct StickerCell: View {
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
         .animation(.easeOut(duration: 0.12), value: hovered)
-        .draggable(StickerDragPayload.string(reference)) {
+        .draggable(reference.dragString) {
             StickerThumbnail(sticker: reference, user: user, store: store, hint: hint)
                 .frame(width: 72, height: 72)
         }
