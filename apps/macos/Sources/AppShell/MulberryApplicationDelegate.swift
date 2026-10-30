@@ -90,11 +90,10 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        if handOverToRunningCopy() { return NSApp.terminate(nil) }
         NSApp.setActivationPolicy(.accessory)
         installMainMenu()
-        // TODO: When Mulberry is packaged and launched at login, add OS-level
-        // duplicate-launch handling so a second app invocation activates the
-        // existing process instead of allowing parallel app instances.
+        listenForSecondCopies()
         let quickDrawController = QuickDrawController(overlayController: overlayController)
         self.quickDrawController = quickDrawController
         installQuickDraw()
@@ -410,6 +409,29 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             surface = nil
         }
         if reactions.surface != surface { reactions.surface = surface }
+    }
+
+    // MARK: One copy
+
+    /// Asked by a second copy of this build to come forward in its place.
+    private static let showWindowRequest = Notification.Name("com.subhajit.mulberry.showWindow")
+
+    /// Only one copy of a build runs, with one menu bar icon and one overlay: a second, such as
+    /// another copy of the app opened from elsewhere, gives the running one the focus, asks it to
+    /// show its window, and quits.
+    private func handOverToRunningCopy() -> Bool {
+        guard let bundleID = Bundle.main.bundleIdentifier,
+              let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+                .first(where: { $0 != NSRunningApplication.current && !$0.isTerminated }) else { return false }
+        NSApp.yieldActivation(to: running)
+        DistributedNotificationCenter.default().postNotificationName(Self.showWindowRequest, object: bundleID, userInfo: nil, deliverImmediately: true)
+        return true
+    }
+
+    private func listenForSecondCopies() {
+        DistributedNotificationCenter.default().addObserver(forName: Self.showWindowRequest, object: Bundle.main.bundleIdentifier, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.openMulberry() }
+        }
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
