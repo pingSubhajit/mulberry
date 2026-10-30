@@ -3,6 +3,7 @@ import Auth
 import Overlay
 import ProductCore
 import ProductUI
+import StoreKit
 import Stickers
 import Sync
 import SwiftUI
@@ -25,6 +26,8 @@ struct MainWindowView: View {
     @StateObject private var avatar = ProfileAvatar()
     @State private var reactionsOpen = false
     @State private var syncFailed = false
+    @Environment(\.requestReview) private var requestReview
+    @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
         content
@@ -44,6 +47,16 @@ struct MainWindowView: View {
                 }
             }
             .onReceive(syncController.$status.map { $0.lastError != nil }.removeDuplicates()) { syncFailed = $0 }
+            // As on the iPhone: a 3-day streak earns an App Store review ask, a moment after the
+            // canvas settles, then waits longer between each ask.
+            .task(id: "\(appStateController.loadState.bootstrap?.currentStreakDays ?? 0)|\(appearsActive)") {
+                let bootstrap = appStateController.loadState.bootstrap
+                guard appearsActive, bootstrap?.isPaired == true, (bootstrap?.currentStreakDays ?? 0) >= 3 else { return }
+                try? await Task.sleep(for: .seconds(2.5))
+                guard !Task.isCancelled, !windowState.showsStreak,
+                      ReviewPrompt.reserve(streakDays: bootstrap?.currentStreakDays ?? 0) else { return }
+                requestReview()
+            }
             .task(id: appStateController.loadState.bootstrap?.userPhotoUrl) {
                 await avatar.load(appStateController.loadState.bootstrap?.userPhotoUrl)
             }
