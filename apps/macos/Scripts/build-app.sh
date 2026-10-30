@@ -11,7 +11,7 @@ APP_DIR=".build/app/${APP_NAME}.app"
 CONTENTS_DIR="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
-EXECUTABLE_PATH="${MACOS_DIR}/MulberryMac"
+EXECUTABLE_PATH="${MACOS_DIR}/${APP_NAME}"
 INFO_PLIST_TEMPLATE="Configuration/Info.plist"
 INFO_PLIST_PATH="${CONTENTS_DIR}/Info.plist"
 ENTITLEMENTS_PATH="${ENTITLEMENTS_PATH:-Configuration/Debug.entitlements}"
@@ -23,11 +23,11 @@ if [ -z "${MULBERRY_MAC_CODESIGN_IDENTITY:-}" ]; then
 fi
 SIGNING_IDENTITY="${MULBERRY_MAC_CODESIGN_IDENTITY:--}"
 
-swift build -c "${CONFIGURATION}" --product MulberryMac
+swift build -c "${CONFIGURATION}" --product "${APP_NAME}"
 
 rm -rf "${APP_DIR}"
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
-cp "${BUILD_DIR}/MulberryMac" "${EXECUTABLE_PATH}"
+cp "${BUILD_DIR}/${APP_NAME}" "${EXECUTABLE_PATH}"
 cp "${INFO_PLIST_TEMPLATE}" "${INFO_PLIST_PATH}"
 
 if [ -d "Resources" ]; then
@@ -39,7 +39,7 @@ if [ -f ".env" ]; then
 fi
 
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${BUNDLE_ID}" "${INFO_PLIST_PATH}" >/dev/null
-/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable MulberryMac" "${INFO_PLIST_PATH}" >/dev/null
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ${APP_NAME}" "${INFO_PLIST_PATH}" >/dev/null
 
 codesign --force --sign "${SIGNING_IDENTITY}" --entitlements "${ENTITLEMENTS_PATH}" "${APP_DIR}"
 

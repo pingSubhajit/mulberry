@@ -11,7 +11,7 @@ let package = Package(
     ],
     products: [
         .executable(
-            name: "MulberryMac",
+            name: "Mulberry",
             targets: ["MulberryMacApp"]
         ),
         .library(name: "AppShell", targets: ["AppShell"]),
