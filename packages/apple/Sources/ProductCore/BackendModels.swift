@@ -61,6 +61,8 @@ public struct BootstrapState: Codable, Equatable, Sendable {
     public let partnerProfileNextUpdateAt: String?
     public let pairedAt: String?
     public let currentStreakDays: Int
+    /// Whether the account has ever drawn, on any device. Missing from older servers.
+    public let hasDrawn: Bool?
     public let pairingStatus: String
     public let pairSessionId: String?
     public let invite: PairInvite?

@@ -42,8 +42,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         store: DrawingStore(directory: MacLocalStore.drawingsDirectory)
     )
     /// The window's canvas and Quick Draw's each keep their own tools and undo history.
-    private lazy var windowEditorModel = CanvasEditorModel { [weak self] in self?.syncController.submit($0) }
-    private lazy var quickDrawEditorModel = CanvasEditorModel { [weak self] in self?.syncController.submit($0) }
+    private lazy var windowEditorModel = CanvasEditorModel { [weak self] in self?.submit($0) }
+    private lazy var quickDrawEditorModel = CanvasEditorModel { [weak self] in self?.submit($0) }
     /// The window's and Quick Draw's tools, shared and remembered per account and pair.
     private lazy var toolMemory = CanvasToolMemory(models: [windowEditorModel, quickDrawEditorModel])
     private lazy var stickerLoader: StickerImageLoader = {
@@ -74,6 +74,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     private let preferences = MacPreferences()
     private let launchAtLogin = LaunchAtLogin()
     private let streaks = StreakModel()
+    private let firstDrawing = FirstDrawingModel()
     private lazy var reactions = ReactionsModel(api: { [unowned self] in api }, deviceID: store.installationID)
     private var reactionIsland: ReactionIslandController?
     private var reactionPolling: Task<Void, Never>?
@@ -199,7 +200,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 model: quickDrawEditorModel,
                 reactions: reactions,
                 layout: .quickDraw
-            ))
+            )
+            .overlay { QuickDrawCelebration(streaks: streaks, firstDrawing: firstDrawing) })
         }
         overlayController.makeQuickDrawPalette = { [unowned self] side in
             NSHostingView(rootView: QuickDrawPalette(
@@ -214,6 +216,15 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         }
         overlayController.quickDrawEscape = { [unowned self] in quickDrawEditorModel.handleEscape() }
         overlayController.quickDrawWillExit = { [unowned self] in quickDrawEditorModel.finishEditing() }
+    }
+
+    /// The canvases' edits go to sync; the account's first drawing is celebrated as it is saved.
+    private func submit(_ operations: [DrawingOperation]) {
+        syncController.submit(operations)
+        firstDrawing.saved(operations, paired: appStateController.loadState.bootstrap?.isPaired == true, streaks: streaks) { [weak self] in
+            guard let self else { return }
+            await streaks.refresh(api: api)
+        }
     }
 
     /// The overlay draws the shared canvas in the pair's stroke style.
@@ -368,6 +379,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         reactions.bind(userId: user, pairSessionId: paired ? bootstrap?.pairSessionId : nil)
         toolMemory.bind(user: user, pair: paired ? bootstrap?.pairSessionId : nil)
         streaks.bind(userId: user, pairSessionId: paired ? bootstrap?.pairSessionId : nil, baselineDays: bootstrap?.currentStreakDays)
+        firstDrawing.bind(userId: user, hasDrawn: bootstrap?.hasDrawn)
         if paired, reactionPolling == nil {
             #if DEBUG
             Task { await reactions.runDebugArrivals() }
@@ -375,6 +387,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 try? await Task.sleep(for: .seconds(3))
                 streaks.runDebugLevelUp()
             }
+            firstDrawing.runDebugFirstDrawing()
             #endif
             // Reactions every five seconds; the streak every thirty, so its level-up lands soon
             // after the day's first drawing or reaction.
@@ -644,6 +657,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 stickerLoader: stickerLoader,
                 editorModel: windowEditorModel,
                 streaks: streaks,
+                firstDrawing: firstDrawing,
                 reactions: reactions,
                 openSettings: { [weak self] in self?.showSettings(nil) }
             ) { [weak self] in
@@ -750,6 +764,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         stickerLoader: StickerImageLoader,
         editorModel: CanvasEditorModel,
         streaks: StreakModel,
+        firstDrawing: FirstDrawingModel,
         reactions: ReactionsModel,
         openSettings: @escaping () -> Void,
         onWindowClosed: @escaping () -> Void
@@ -764,6 +779,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             stickerLoader: stickerLoader,
             editorModel: editorModel,
             streaks: streaks,
+            firstDrawing: firstDrawing,
             reactions: reactions,
             openSettings: openSettings
         )

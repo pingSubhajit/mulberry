@@ -21,6 +21,7 @@ struct MainWindowView: View {
     @ObservedObject var stickerLoader: StickerImageLoader
     let editorModel: CanvasEditorModel
     @ObservedObject var streaks: StreakModel
+    let firstDrawing: FirstDrawingModel
     let reactions: ReactionsModel
     let openSettings: () -> Void
     @StateObject private var avatar = ProfileAvatar()
@@ -77,7 +78,7 @@ struct MainWindowView: View {
                     )
                     // The level-up banner below the title bar, and its confetti over everything.
                     .overlay(alignment: .top) {
-                        StreakCanvasCelebration(streaks: streaks) { windowState.showsStreak = true }
+                        StreakCanvasCelebration(streaks: streaks, firstDrawing: firstDrawing) { windowState.showsStreak = true }
                             .padding(.top, 44)
                             .ignoresSafeArea()
                     }

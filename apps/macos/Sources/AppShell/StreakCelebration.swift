@@ -7,6 +7,8 @@ import SwiftUI
 /// red banner bobs at the top, and clicking it opens the streak. Confetti bursts once as it lands.
 struct StreakCanvasCelebration: View {
     @ObservedObject var streaks: StreakModel
+    /// The account's first drawing shares the streak's confetti, and never adds to it.
+    @ObservedObject var firstDrawing: FirstDrawingModel
     let onOpen: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.appearsActive) private var appearsActive
@@ -50,9 +52,22 @@ struct StreakCanvasCelebration: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            if let token = streaks.confettiToken {
+            if let token = streaks.confettiToken ?? firstDrawing.confettiToken {
                 CelebrationConfetti().id(token)
             }
+        }
+    }
+}
+
+/// Quick Draw's share of the celebrations: the confetti, over the drawing, without the window's
+/// level-up banner.
+struct QuickDrawCelebration: View {
+    @ObservedObject var streaks: StreakModel
+    @ObservedObject var firstDrawing: FirstDrawingModel
+
+    var body: some View {
+        if let token = streaks.confettiToken ?? firstDrawing.confettiToken {
+            CelebrationConfetti().id(token).allowsHitTesting(false)
         }
     }
 }

@@ -55,7 +55,7 @@ private struct StreakPreviewRoot: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 24).fill(MulberryDesign.canvas)
                     Button("Canvas touch check: \(lastTap)") { lastTap = "passed" }
-                    StreakCanvasCelebration(streaks: model) { streakOpen = true }
+                    StreakCanvasCelebration(streaks: model, firstDrawing: FirstDrawingModel()) { streakOpen = true }
                 }
                 Button("Level up") { Task { await transport.set("level"); await model.refresh(api: api) } }
                     .buttonStyle(.borderedProminent)

@@ -139,7 +139,7 @@ struct DoodleCanvasView: View {
                                      squirrelLeading: (geometry.size.width - min(Self.compactWidth, geometry.size.width - 16)) / 2 + 8 + 56 + 8)
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
             // Between the bars, so the banner stays clear of both.
-            StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
+            StreakCanvasCelebration(streaks: model.streaks, firstDrawing: model.firstDrawing) { model.showStreak = true }
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
             ReactionStage(reactions: model.reactions)
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
@@ -202,7 +202,7 @@ struct DoodleCanvasView: View {
             Group {
                 CanvasBlankStateGuidance(visible: !editor.hasStrokes && editor.elements.isEmpty && editor.typing == nil)
                     .padding(.bottom, 16)
-                StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
+                StreakCanvasCelebration(streaks: model.streaks, firstDrawing: model.firstDrawing) { model.showStreak = true }
                 ReactionStage(reactions: model.reactions)
             }
             .frame(width: size.width, height: max(0, visibleBottom - visibleTop))

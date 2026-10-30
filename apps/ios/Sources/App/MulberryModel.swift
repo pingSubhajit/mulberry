@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 final class MulberryModel: ObservableObject {
     let streaks = StreakModel()
+    let firstDrawing = FirstDrawingModel()
     let reactions = ReactionsModel()
     let canvas = CanvasModel()
     @Published var showStreak = false
@@ -140,6 +141,10 @@ final class MulberryModel: ObservableObject {
         guard let sync, bootstrap?.isPaired == true else { throw DrawingError.wrongSession }
         let document = try await sync.enqueue(operations)
         try acceptDrawing(document)
+        firstDrawing.saved(operations, paired: true, streaks: streaks) { [weak self] in
+            guard let self, let api = try? self.api else { return }
+            await self.streaks.refresh(api: api)
+        }
         if backgrounded { await wallpaperService.scheduleLocalUpdate() }
     }
 
@@ -182,6 +187,7 @@ final class MulberryModel: ObservableObject {
         GoogleAuthentication.signOut()
         HomeQuickActions.shared.pending = nil
         streaks.bind(userId: nil, pairSessionId: nil)
+        firstDrawing.bind(userId: nil, hasDrawn: nil)
         reactions.bind(userId: nil, pairSessionId: nil)
         showStreak = false; showPairingConfirmation = false
         bootstrap = nil; canvas.reset(); draft = ProfileDraft()
@@ -199,6 +205,10 @@ final class MulberryModel: ObservableObject {
         let pairingConfirmed = PairingCelebration.shouldPresent(previous: bootstrap, current: state)
         bootstrap = state
         streaks.bind(userId: state.userId, pairSessionId: state.isPaired ? state.pairSessionId : nil, baselineDays: state.currentStreakDays)
+        firstDrawing.bind(userId: state.userId, hasDrawn: state.hasDrawn)
+        #if DEBUG
+        if previousUser != state.userId { firstDrawing.runDebugFirstDrawing() }
+        #endif
         reactions.bind(userId: state.userId, pairSessionId: state.isPaired ? state.pairSessionId : nil)
         if !state.isPaired { showStreak = false; showPairingConfirmation = false }
         if pairingConfirmed {
@@ -280,6 +290,7 @@ final class MulberryModel: ObservableObject {
         if (try? await api.signedInUserId) == nil && bootstrap != nil {
             await sync?.stop(); syncObserver?.cancel(); sync = nil
             streaks.bind(userId: nil, pairSessionId: nil)
+            firstDrawing.bind(userId: nil, hasDrawn: nil)
             reactions.bind(userId: nil, pairSessionId: nil)
             showStreak = false; showPairingConfirmation = false
             bootstrap = nil; canvas.reset()
