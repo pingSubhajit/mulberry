@@ -22,6 +22,7 @@ struct MainWindowView: View {
     let editorModel: CanvasEditorModel
     @ObservedObject var streaks: StreakModel
     let firstDrawing: FirstDrawingModel
+    let invite: PartnerInvite
     let reactions: ReactionsModel
     let openSettings: () -> Void
     @StateObject private var avatar = ProfileAvatar()
@@ -83,7 +84,7 @@ struct MainWindowView: View {
                             .ignoresSafeArea()
                     }
                 } else {
-                    UnpairedPanel()
+                    UnpairedPanel(invite: invite, partnerName: bootstrap.partnerDisplayName?.nonEmpty ?? "your partner")
                 }
             } else {
                 DelayedProgressView()
@@ -256,17 +257,25 @@ private struct SignInPanel: View {
     }
 }
 
-/// Pairing on the Mac is designed later; until then a person pairs on their phone.
+/// Waiting for the partner: the code to give them.
 private struct UnpairedPanel: View {
+    @ObservedObject var invite: PartnerInvite
+    let partnerName: String
+
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "person.2")
-                .font(.system(size: 34, weight: .light))
+        VStack(spacing: 14) {
+            Image(systemName: "heart")
+                .font(.system(size: 30, weight: .light))
                 .foregroundStyle(.secondary)
-            Text("Pair on your iPhone to start drawing together.")
-                .font(.title3)
+            Text("Waiting for \(partnerName)")
+                .font(.title3.weight(.semibold))
+            Text("Share this code. \(partnerName) enters it after signing up for Mulberry.")
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+                .fixedSize(horizontal: false, vertical: true)
+            InviteCodeCard(invite: invite)
+                .padding(.top, 8)
         }
+        .padding(.horizontal, 36)
     }
 }

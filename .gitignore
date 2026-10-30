@@ -49,3 +49,7 @@ xcuserdata/
 # Local scratch and secrets
 temp/
 secrets/
+
+# Licensed onboarding music: in-app use only, never redistributed
+apps/macos/Resources/Onboarding/*.m4a
+apps/macos/Resources/Onboarding/*.wav

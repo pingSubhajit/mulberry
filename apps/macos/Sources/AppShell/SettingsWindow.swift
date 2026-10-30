@@ -96,6 +96,7 @@ struct SettingsEnvironment {
     let launchAtLogin: LaunchAtLogin
     let account: AccountSettings
     let streaks: StreakModel
+    let invite: PartnerInvite
     /// Recording a new Quick Draw shortcut pauses the current one.
     let recordingShortcut: (Bool) -> Void
 }
@@ -295,7 +296,7 @@ private struct SettingsView: View {
         case .desktop:
             DesktopPane(overlayController: environment.overlayController)
         case .partner:
-            PartnerPane(appStateController: appStateController, account: environment.account, streaks: environment.streaks)
+            PartnerPane(appStateController: appStateController, account: environment.account, streaks: environment.streaks, invite: environment.invite)
         case .advanced:
             AdvancedPane(syncController: environment.syncController)
         case .about:

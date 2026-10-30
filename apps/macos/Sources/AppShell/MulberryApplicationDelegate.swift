@@ -85,6 +85,13 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     }
     private var preferencesCancellable: AnyCancellable?
     private var lastOverlayPresenceReportSignature: OverlayPresenceReportSignature?
+    /// The first run's film, or the two photos meeting when a partner joins later.
+    private var onboarding: OnboardingController?
+    /// Whether this launch has settled if onboarding is due, once the saved session is known.
+    private var onboardingConsidered = false
+    private let partnerArrival = PartnerArrival()
+    private lazy var invite = PartnerInvite(api: { [unowned self] in api })
+    private var inviteCancellable: AnyCancellable?
 
     public override init() {
         super.init()
@@ -129,6 +136,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                     )
                 }
                 self?.refreshStatusMenu()
+                self?.considerOnboarding()
             }
         }
         appStateCancellable = appStateController.objectWillChange.sink { [weak self] _ in
@@ -139,6 +147,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 self.refreshOverlayCanvas()
                 self.refreshStatusMenu()
                 self.bindReactions()
+                self.updatePartnerWaiting()
             }
         }
         // The drawing changes with every batch of points; the connection far less often.
@@ -166,6 +175,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             }
         }
         installStatusItem()
+        installPartnerArrival()
         installReactions()
         preferencesCancellable = preferences.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.applyPreferences() }
@@ -425,6 +435,114 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         if reactions.surface != surface { reactions.surface = surface }
     }
 
+    // MARK: Onboarding
+
+    private enum OnboardingProgress {
+        static let startedKey = "onboarding.started"
+        static let completedKey = "onboarding.completed"
+    }
+
+    /// Once the saved session is known: a Mac that has never finished onboarding plays it, from
+    /// the start when signed out, or from the phone when it was quit part way. An account signed
+    /// in from before onboarding existed carries on as it was.
+    private func considerOnboarding() {
+        guard !onboardingConsidered else { return }
+        let defaults = UserDefaults.standard
+        let signedIn: Bool
+        switch authController.state {
+        case .signedOut: signedIn = false
+        case .signedIn, .failed: signedIn = true
+        case .signingIn, .refreshing: return
+        }
+        onboardingConsidered = true
+        #if DEBUG
+        // `-onboarding intro` or `-onboarding phone` plays it again; `-onboarding joined` shows the
+        // two photos as when a partner joins later.
+        switch defaults.string(forKey: "onboarding") {
+        case "intro": return startOnboarding(.intro)
+        case "phone", "hearts": return startOnboarding(.phone)
+        case "joined": return startOnboarding(.partnerJoined(.quickDraw))
+        default: break
+        }
+        #endif
+        guard !defaults.bool(forKey: OnboardingProgress.completedKey) else { return }
+        if !signedIn {
+            startOnboarding(.intro)
+        } else if defaults.bool(forKey: OnboardingProgress.startedKey) {
+            startOnboarding(.phone)
+        } else {
+            defaults.set(true, forKey: OnboardingProgress.completedKey)
+        }
+    }
+
+    private func startOnboarding(_ start: OnboardingFlow.Start) {
+        guard onboarding == nil else { return }
+        lockScreen.close()
+        mainWindowController?.close()
+        if case .partnerJoined = start {} else { UserDefaults.standard.set(true, forKey: OnboardingProgress.startedKey) }
+        let flow = OnboardingFlow(start: start, authController: authController, appStateController: appStateController,
+                                  syncController: syncController, launchAtLogin: launchAtLogin, deviceID: store.installationID)
+        let controller = OnboardingController(flow: flow, statusButton: { [unowned self] in statusItem?.button })
+        onboarding = controller
+        #if DEBUG
+        flow.replay = { [unowned self, unowned flow, unowned controller] in
+            flow.abandon()
+            controller.close()
+            onboarding = nil
+            startOnboarding(.intro)
+        }
+        #endif
+        controller.show(authController: authController) { [unowned self] ending in
+            onboarding = nil
+            if case .partnerJoined = start {} else { UserDefaults.standard.set(true, forKey: OnboardingProgress.completedKey) }
+            if appStateController.loadState.bootstrap?.isPaired == true { partnerArrival.welcomed() }
+            updatePartnerWaiting()
+            updateActivationPolicy()
+            switch ending {
+            case .quickDraw:
+                NSApp.activate(ignoringOtherApps: true)
+                if !overlayController.isQuickDrawActive { quickDraw() }
+            case .openApp:
+                showMainWindow()
+            case .quiet:
+                break
+            }
+        }
+    }
+
+    /// The partner joined since onboarding: the two photos, then Quick Draw or the window.
+    private func showPartnerWelcome(then ending: OnboardingFlow.Ending) {
+        partnerArrival.welcomed()
+        startOnboarding(.partnerJoined(ending))
+    }
+
+    private func installPartnerArrival() {
+        partnerArrival.attach(to: statusItem?.button)
+        partnerArrival.open = { [unowned self] in
+            if partnerArrival.isPending(appStateController.loadState.bootstrap) {
+                showPartnerWelcome(then: .quickDraw)
+            } else {
+                openMulberry()
+            }
+        }
+        partnerArrival.refresh = { [weak self] in
+            guard let self else { return }
+            await appStateController.refreshBootstrapAndReportOverlay(overlayController: overlayController, syncController: syncController)
+        }
+        inviteCancellable = invite.$invite.sink { [weak self] invite in
+            DispatchQueue.main.async { self?.lockScreenModel.inviteCode = invite?.code }
+        }
+    }
+
+    /// Waiting for the partner: the code for them, and an eye out for their arrival.
+    private func updatePartnerWaiting() {
+        let bootstrap = appStateController.loadState.bootstrap
+        let signedIn = authController.state.isSignedIn
+        invite.bind(user: signedIn ? bootstrap?.userId : nil,
+                    unpaired: bootstrap?.isPaired == false && bootstrap?.onboardingCompleted == true && bootstrap?.pairingStatus == "UNPAIRED")
+        partnerArrival.update(bootstrap, signedIn: signedIn, onboarding: onboarding?.isShowing == true)
+    }
+
     // MARK: One copy
 
     /// Asked by a second copy of this build to come forward in its place.
@@ -454,6 +572,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
 
     /// Opening Mulberry again from Finder, Spotlight or the Dock shows its window.
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if onboarding?.isShowing == true { return true }
         if !flag { openMulberry() }
         return true
     }
@@ -505,7 +624,16 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
 
     @objc private func statusItemClicked() {
         let event = NSApp.currentEvent
-        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+        let menuClick = event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true
+        if !menuClick, onboarding?.isShowing == true {
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        // The dot: the partner has joined.
+        if !menuClick, partnerArrival.isPending(appStateController.loadState.bootstrap) {
+            return showPartnerWelcome(then: .quickDraw)
+        }
+        if menuClick {
             lockScreen.close()
             statusItem?.menu = statusMenu
             statusItem?.button?.performClick(nil)
@@ -629,6 +757,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 launchAtLogin: launchAtLogin,
                 account: accountSettings,
                 streaks: streaks,
+                invite: invite,
                 recordingShortcut: { [weak self] recording in
                     recording ? self?.quickDrawController?.suspendShortcut() : self?.quickDrawController?.resumeShortcut()
                 }
@@ -647,6 +776,14 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     }
 
     private func showMainWindow(showingStreak: Bool = false) {
+        if onboarding?.isShowing == true {
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        // The partner joined while Mulberry was away: the two of them meet first.
+        if partnerArrival.isPending(appStateController.loadState.bootstrap) {
+            return showPartnerWelcome(then: .openApp)
+        }
         if mainWindowController == nil {
             mainWindowController = MainWindowController(
                 windowState: windowState,
@@ -658,6 +795,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 editorModel: windowEditorModel,
                 streaks: streaks,
                 firstDrawing: firstDrawing,
+                invite: invite,
                 reactions: reactions,
                 openSettings: { [weak self] in self?.showSettings(nil) }
             ) { [weak self] in
@@ -765,6 +903,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         editorModel: CanvasEditorModel,
         streaks: StreakModel,
         firstDrawing: FirstDrawingModel,
+        invite: PartnerInvite,
         reactions: ReactionsModel,
         openSettings: @escaping () -> Void,
         onWindowClosed: @escaping () -> Void
@@ -780,6 +919,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             editorModel: editorModel,
             streaks: streaks,
             firstDrawing: firstDrawing,
+            invite: invite,
             reactions: reactions,
             openSettings: openSettings
         )

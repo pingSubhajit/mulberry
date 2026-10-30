@@ -408,6 +408,7 @@ struct PartnerPane: View {
     @ObservedObject var appStateController: AppStateController
     @ObservedObject var account: AccountSettings
     @ObservedObject var streaks: StreakModel
+    let invite: PartnerInvite
     @State private var name = ""
     @State private var anniversary = ""
     @State private var jpeg: Data?
@@ -440,11 +441,14 @@ struct PartnerPane: View {
                 Text("Your profile stays, but shared drawing stops until you pair again.")
             }
         } else {
+            let partner = bootstrap?.partnerDisplayName?.nonEmpty ?? "your partner"
             SettingsEmptyState(
                 symbol: "heart",
                 title: "Not Paired",
-                message: "Pair with your partner from Mulberry on your iPhone or iPad."
-            )
+                message: "Share this code with \(partner). They enter it after signing up for Mulberry."
+            ) {
+                InviteCodeCard(invite: invite)
+            }
         }
     }
 
@@ -630,7 +634,7 @@ private struct CoupleHero: View {
 }
 
 /// The iPhone's tilted hearts and arrow between the two photos.
-private struct HeroDecorations: View {
+struct HeroDecorations: View {
     private let hearts: [(size: CGFloat, angle: Double, x: CGFloat, y: CGFloat)] = [
         (19, 12.85, 4, 0), (19, -13.72, 26, 21), (17, 26.27, 34, 66),
         (19, -19.25, 4, 84), (31, 9.04, 22, 78),

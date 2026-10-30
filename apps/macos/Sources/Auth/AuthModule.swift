@@ -31,9 +31,12 @@ public struct AuthSession: Sendable {
 
 public struct AuthFailure: Sendable {
     public let message: String
+    /// The person closed Google's sign-in themselves: nothing went wrong.
+    public let cancelled: Bool
 
-    public init(message: String) {
+    public init(message: String, cancelled: Bool = false) {
         self.message = message
+        self.cancelled = cancelled
     }
 }
 
@@ -127,7 +130,8 @@ public final class AuthSessionController: ObservableObject {
             accept(try await api.signIn(googleIDToken: idToken))
         } catch {
             AuthDiagnostics.log("Google sign-in failed: \(diagnosticMessage(for: error))")
-            state = .failed(AuthFailure(message: userFacingMessage(for: error)))
+            let cancelled = if case GoogleOAuthError.cancelled = error { true } else { false }
+            state = .failed(AuthFailure(message: userFacingMessage(for: error), cancelled: cancelled))
         }
     }
 

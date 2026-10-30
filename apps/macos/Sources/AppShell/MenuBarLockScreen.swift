@@ -32,6 +32,8 @@ final class LockScreenModel: ObservableObject {
     @Published var account = Account.signedOut
     @Published var partnerName = ""
     @Published var partnerPhotoURL: String?
+    /// The code for the partner to join with, while this account waits for them.
+    @Published var inviteCode: String?
     /// When the canvas last gained a stroke, text or sticker, from either partner.
     @Published var updatedAt: Date?
     @Published var streak: StreakResponse?
@@ -338,6 +340,15 @@ struct LockScreenView: View {
     @ObservedObject var model: LockScreenModel
     @ObservedObject var reactions: ReactionsModel
     @ObservedObject var presence: LockScreenPresence
+    /// What a swipe up opens in place of the home screen: onboarding opens Mulberry itself.
+    var unlockedContent: AnyView?
+    /// How much of the lock screen's own furniture shows over the wallpaper and drawing: the clock,
+    /// the foot and the status bar. Onboarding brings the phone in bare, then lights it up.
+    var chrome: Double = 1
+    /// Onboarding's phone is an iPhone's own lock screen: the flashlight and camera in its corners
+    /// and the home bar, over the bare wallpaper, without the menu bar's controls or the
+    /// status bar's name.
+    var iPhoneLook = false
     let close: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -375,7 +386,13 @@ struct LockScreenView: View {
             drawing
             // The home screen settles in as the wallpaper dims a touch behind its icons.
             Color.black.opacity(0.1 * progress).allowsHitTesting(false)
-            HomeScreenView(model: model, ink: Self.ink, swipe: swipeGesture, close: close)
+            Group {
+                if let unlockedContent {
+                    unlockedContent
+                } else {
+                    HomeScreenView(model: model, ink: Self.ink, swipe: swipeGesture, close: close)
+                }
+            }
                 .scaleEffect(reduceMotion ? 1 : 0.92 + 0.08 * progress)
                 .blur(radius: reduceMotion ? 0 : (1 - progress) * 10)
                 .opacity(reduceMotion ? progress : min(1, progress * 1.6))
@@ -397,12 +414,12 @@ struct LockScreenView: View {
                 .opacity(reduceMotion ? 1 : max(0, 1 - progress * 1.2))
             }
             .offset(y: reduceMotion ? 0 : -lift)
-            .opacity(reduceMotion ? 1 - progress : 1)
+            .opacity((reduceMotion ? 1 - progress : 1) * chrome)
             .allowsHitTesting(!model.unlocked)
             VStack(spacing: 0) {
                 // The island and the status bar stay put; on the home screen the island locks again.
                 ZStack(alignment: .top) {
-                    StatusBar(unlocked: model.unlocked, network: model.network, battery: model.battery)
+                    StatusBar(unlocked: model.unlocked, named: !iPhoneLook, network: model.network, battery: model.battery)
                     DynamicIsland(reactions: reactions, partnerName: model.partnerName)
                         .contentShape(.capsule)
                         .onTapGesture { if model.unlocked { model.setUnlocked(false) } }
@@ -410,6 +427,7 @@ struct LockScreenView: View {
                 .padding(.top, 10)
                 Spacer(minLength: 0)
             }
+            .opacity(chrome)
             ReactionStage(reactions: reactions, surface: .menuBar)
         }
         .frame(width: Self.screen.width, height: Self.screen.height)
@@ -430,7 +448,11 @@ struct LockScreenView: View {
         .environment(\.colorScheme, .dark)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Mulberry")
-        .background { shortcuts }
+        .background {
+            // Content opened in place of the home screen may take typing, which the single-key
+            // shortcuts would swallow.
+            if unlockedContent == nil || !model.unlocked { shortcuts }
+        }
     }
 
     // MARK: Screen
@@ -520,13 +542,35 @@ struct LockScreenView: View {
 
     /// A dark blur rising from the bottom edge, holding the three glass buttons, and Mulberry and
     /// Settings small in the corners either side of the home indicator.
-    private var foot: some View {
+    @ViewBuilder private var foot: some View {
+        if iPhoneLook { lockScreenButtons } else { dashboardFoot }
+    }
+
+    /// As iOS draws them: two dark glass circles, then the home bar to swipe up from. Like an
+    /// iPhone's before it is unlocked, they only hint at the swipe.
+    private var lockScreenButtons: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            HStack {
+                LockScreenButton(symbol: "flashlight.off.fill", label: "Flashlight") { model.hintSwipe() }
+                Spacer()
+                LockScreenButton(symbol: "camera.fill", label: "Camera") { model.hintSwipe() }
+            }
+            .padding(.horizontal, 34)
+            HomeBar(swipe: swipeGesture, enabled: true)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+        }
+    }
+
+    private var dashboardFoot: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             VStack(spacing: 0) {
                 switch model.account {
                 case .paired: controls
-                case .unpaired: invitation("Invite Your Partner")
+                case .unpaired:
+                    if let code = model.inviteCode { inviteCode(code) } else { invitation("Invite Your Partner") }
                 case .signedOut: invitation("Sign In")
                 }
                 HStack(alignment: .center) {
@@ -605,6 +649,31 @@ struct LockScreenView: View {
             }
         }
         .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(duration: 0.35, bounce: 0.3), value: model.railOpen)
+    }
+
+    /// Waiting for the partner: the code to give them, opening the window to share it.
+    private func inviteCode(_ code: String) -> some View {
+        Button {
+            close()
+            model.actions?.openCanvas()
+        } label: {
+            VStack(spacing: 4) {
+                Text("Your invite code")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+                Text(code)
+                    .font(.system(size: 26, weight: .semibold, design: .monospaced))
+                    .tracking(5)
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 12)
+            .contentShape(.rect(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20, style: .continuous))
+        .help("Share the code from Mulberry’s window")
+        .accessibilityLabel("Invite code \(code.map(String.init).joined(separator: " "))")
     }
 
     /// Signed out or unpaired: one way forward, in the canvas window.
@@ -701,6 +770,8 @@ private struct GlyphOutline: Shape {
 /// battery, if it has one. No cellular bars: a Mac has none.
 private struct StatusBar: View {
     let unlocked: Bool
+    /// Whether the lock screen shows "Mulberry" where a carrier's name would be.
+    let named: Bool
     let network: MacNetwork.Kind
     let battery: MacBattery.Reading?
 
@@ -711,7 +782,7 @@ private struct StatusBar: View {
                     TimelineView(.everyMinute) { context in
                         Text(context.date, format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
                     }
-                } else {
+                } else if named {
                     Text("Mulberry")
                 }
             }
@@ -1289,6 +1360,26 @@ private struct FootIcon: View {
         .animation(.easeOut(duration: 0.12), value: hovered)
         .help(help)
         .accessibilityLabel(help)
+    }
+}
+
+/// One of the lock screen's corner buttons, in the iPhone's dark glass.
+private struct LockScreenButton: View {
+    let symbol: String
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.tint(.black.opacity(0.18)).interactive(), in: .circle)
+        .accessibilityLabel(label)
     }
 }
 
