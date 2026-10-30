@@ -79,10 +79,10 @@ actor OfflineTransport: BackendTransport {
         }
         let model = MulberryModel(wallpaperService: service)
         await model.restore()
-        check(model.drawing.strokes == [stroke], "Cold offline launch restores saved strokes")
+        check(model.canvas.state.strokes == [stroke], "Cold offline launch restores saved strokes")
         do {
             try await model.enqueue([.init(type: "CLEAR_CANVAS")])
-            check(model.drawing.strokes.isEmpty, "Offline editing works after cold launch")
+            check(model.canvas.state.strokes.isEmpty, "Offline editing works after cold launch")
             try await model.enqueue(DrawingOperation.restore(stroke))
         } catch { check(false, "Offline editing works after cold launch: \(error)") }
         // Complete a first run. Completion is local and must not make a request.
@@ -105,14 +105,14 @@ actor OfflineTransport: BackendTransport {
         editor.end()
         // Background immediately, while the editor may still be saving its last batch.
         await model.setActive(false, updateWallpaper: true)
-        for _ in 0..<100 where editor.saving { try await Task.sleep(for: .milliseconds(10)) }
-        check(model.drawing.strokes.count == 2 && model.pendingEdits > 0, "Real editor saves new offline strokes")
+        for _ in 0..<100 where model.canvas.state.finishedStrokes.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        check(model.canvas.state.strokes.count == 2 && model.canvas.pendingEdits > 0, "Real editor saves new offline strokes")
         await model.setActive(false, updateWallpaper: true)
         check(notifications.pending.count == 1, "Going Home schedules local edits without a server revision")
         notifications.deliver()
         let updated = try await service.prepare()
         let background = WallpaperLibrary(); background.load(user: user)
-        let expected = DoodleRenderer.wallpaper(background: background.image, strokes: model.drawing.strokes, dry: false,
+        let expected = DoodleRenderer.wallpaper(background: background.image, strokes: model.canvas.state.strokes, dry: false,
                                                 pixelSize: CGSize(width: 1206, height: 2622), displayScale: 3, canvasSize: CGSize(width: 400, height: 800))
         check(UIImage(contentsOfFile: updated.path)!.pngData() == UIImage(data: expected.pngData()!)!.pngData(), "Export contains the actual saved offline strokes")
         try await service.record(filename: updated.lastPathComponent)
@@ -175,7 +175,7 @@ actor OfflineTransport: BackendTransport {
 
         let reopened = MulberryModel(wallpaperService: service)
         await reopened.restore()
-        check(reopened.drawing.strokes.isEmpty && reopened.pendingEdits > 0, "Cold relaunch keeps offline clears and pending uploads")
+        check(reopened.canvas.state.strokes.isEmpty && reopened.canvas.pendingEdits > 0, "Cold relaunch keeps offline clears and pending uploads")
         await reopened.setActive(false)
 
         await transport.setMode(.online)

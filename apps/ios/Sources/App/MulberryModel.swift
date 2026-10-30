@@ -4,6 +4,7 @@ import SwiftUI
 final class MulberryModel: ObservableObject {
     let streaks = StreakModel()
     let reactions = ReactionsModel()
+    let canvas = CanvasModel()
     @Published var showStreak = false
     @Published var showPairingConfirmation = false
     @Published private(set) var bootstrap: BootstrapState?
@@ -17,9 +18,7 @@ final class MulberryModel: ObservableObject {
     @Published var createdInvite: CreatedInvite?
     @Published var showWallpaperOnboarding = false
     @Published var showSettings = false
-    @Published var drawing = DrawingState()
     @Published var drawingConnection: DrawingConnection = .connecting
-    @Published var pendingEdits = 0
     @Published var appendHz = 30
     @Published private(set) var canvasClearVersion = 0
     private var sync: DrawingSync?
@@ -31,7 +30,6 @@ final class MulberryModel: ObservableObject {
     private let wallpaperService: ProductWallpaperService
     init(wallpaperService: ProductWallpaperService? = nil) { self.wallpaperService = wallpaperService ?? .shared }
     private var sessionEpoch = 0
-    private var drawingVersion: UInt64 = 0
     private var prewarmedElements: [JSONValue] = []
 
     var userId: String? { bootstrap?.userId }
@@ -186,7 +184,7 @@ final class MulberryModel: ObservableObject {
         streaks.bind(userId: nil, pairSessionId: nil)
         reactions.bind(userId: nil, pairSessionId: nil)
         showStreak = false; showPairingConfirmation = false
-        bootstrap = nil; drawing = DrawingState(); draft = ProfileDraft()
+        bootstrap = nil; canvas.reset(); draft = ProfileDraft()
         createdInvite = nil; showSettings = false; showInviteEntry = false
         showWallpaperOnboarding = false; errorMessage = nil; busy = false
         canvasSaveError = nil; retryCanvasSave = nil
@@ -214,7 +212,7 @@ final class MulberryModel: ObservableObject {
         if let user = state.userId, let data = try? JSONEncoder().encode(state) { UserDefaults.standard.set(data, forKey: "bootstrap.\(user)") }
         if previousUser != state.userId || previousPair != state.pairSessionId || (sync == nil && state.isPaired) {
             await sync?.stop(); syncObserver?.cancel()
-            sync = nil; drawing = DrawingState(); pendingEdits = 0; drawingVersion = 0
+            sync = nil; canvas.reset()
             if let user = state.userId, let pair = state.pairSessionId, state.isPaired, let api = try? api {
                 do { try await AppRuntime.drawings.finishInterruptedStrokes(userId: user, pairSessionId: pair) }
                 catch { errorMessage = "Your interrupted drawing could not be recovered. \(error.localizedDescription)" }
@@ -249,8 +247,7 @@ final class MulberryModel: ObservableObject {
 
     private func acceptDrawing(_ document: DrawingDocument) throws {
         guard document.userId == userId, document.pairSessionId == bootstrap?.pairSessionId else { throw DrawingError.wrongSession }
-        guard document.version >= drawingVersion else { return }
-        drawing = try document.visible; pendingEdits = document.pending.count; drawingVersion = document.version
+        guard canvas.accept(document) else { return }
         prewarmStickers()
     }
 
@@ -258,6 +255,7 @@ final class MulberryModel: ObservableObject {
     /// opens with every sticker already in memory.
     private func prewarmStickers() {
         // Runs for every stroke point; decode the elements only when they change.
+        let drawing = canvas.state
         guard let user = userId, drawing.elements != prewarmedElements else { return }
         prewarmedElements = drawing.elements
         let stickers = Set(drawing.canvasElements.compactMap(\.sticker?.sticker)).filter {
@@ -284,7 +282,7 @@ final class MulberryModel: ObservableObject {
             streaks.bind(userId: nil, pairSessionId: nil)
             reactions.bind(userId: nil, pairSessionId: nil)
             showStreak = false; showPairingConfirmation = false
-            bootstrap = nil; drawing = DrawingState()
+            bootstrap = nil; canvas.reset()
         }
         let message = error.localizedDescription
         switch message {

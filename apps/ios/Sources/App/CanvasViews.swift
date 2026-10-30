@@ -94,7 +94,6 @@ struct DoodleCanvasView: View {
         .background(MulberryDesign.background)
         // Under the keyboard too, on iPad, where the canvas no longer makes room for it.
         .background { if editor.editsInPlace { MulberryDesign.background.ignoresSafeArea() } }
-            .onChange(of: model.drawing) { _, _ in editor.receive() }
             .onChange(of: model.canvasClearVersion) { _, _ in editor.resetHistory() }
             .onChange(of: scenePhase) { _, value in
                 if value != .active { editor.end(); radialAt = nil; editor.reactionRequest = nil }
@@ -136,7 +135,7 @@ struct DoodleCanvasView: View {
                 .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: lift)
             // The visible part of the canvas, between the bars.
             // Beside the undo and redo column rather than under its glass.
-            CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty && editor.typing == nil,
+            CanvasBlankStateGuidance(visible: !editor.hasStrokes && editor.elements.isEmpty && editor.typing == nil,
                                      squirrelLeading: (geometry.size.width - min(Self.compactWidth, geometry.size.width - 16)) / 2 + 8 + 56 + 8)
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
             // Between the bars, so the banner stays clear of both.
@@ -201,7 +200,7 @@ struct DoodleCanvasView: View {
                 .offset(y: -lift)
                 .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: lift)
             Group {
-                CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty && editor.typing == nil)
+                CanvasBlankStateGuidance(visible: !editor.hasStrokes && editor.elements.isEmpty && editor.typing == nil)
                     .padding(.bottom, 16)
                 StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
                 ReactionStage(reactions: model.reactions)
@@ -481,7 +480,7 @@ struct DoodleCanvasView: View {
     }
 
     private var clearButton: some View {
-        toolButton("Clear canvas", image: "CanvasClear", enabled: !(editor.strokes.isEmpty && editor.elements.isEmpty)) { clearConfirmation = true }
+        toolButton("Clear canvas", image: "CanvasClear", enabled: !(!editor.hasStrokes && editor.elements.isEmpty)) { clearConfirmation = true }
             .confirmationDialog("Clear canvas?", isPresented: $clearConfirmation, titleVisibility: .visible) {
                 Button("Clear", role: .destructive) { editor.clear() }
                 Button("Cancel", role: .cancel) {}

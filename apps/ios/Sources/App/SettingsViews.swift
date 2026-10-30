@@ -717,6 +717,15 @@ private struct ExternalRow: View {
     }
 }
 
+/// Where the canvas is in its sync, following the drawing as it changes.
+private struct CanvasDiagnostics: View {
+    @ObservedObject var canvas: CanvasModel
+    var body: some View {
+        LabeledContent("Canvas revision", value: String(canvas.state.revision))
+        LabeledContent("Pending edits", value: String(canvas.pendingEdits))
+    }
+}
+
 private struct DeveloperSettingsView: View {
     @ObservedObject var model: MulberryModel
     @AppStorage("developerOptions") private var enabled = false
@@ -729,8 +738,7 @@ private struct DeveloperSettingsView: View {
                 LabeledContent("API", value: Bundle.main.object(forInfoDictionaryKey: "MulberryAPIBaseURL") as? String ?? "Unavailable")
                 LabeledContent("User ID", value: model.userId ?? "Unavailable")
                 LabeledContent("Pair session", value: model.bootstrap?.pairSessionId ?? "Unpaired")
-                LabeledContent("Canvas revision", value: String(model.drawing.revision))
-                LabeledContent("Pending edits", value: String(model.pendingEdits))
+                CanvasDiagnostics(canvas: model.canvas)
             }.font(.caption).textSelection(.enabled)
             if enabled {
                 Section("Sync and wallpaper") {

@@ -42,11 +42,11 @@ private struct PreviewCanvas: UIViewRepresentable {
     let hidden: String?
     func makeUIView(context: Context) -> DoodleTouchView { DoodleTouchView() }
     func updateUIView(_ view: DoodleTouchView, context: Context) {
-        view.strokes = strokes; view.dry = true
+        view.strokeCanvas.dry = true
+        view.strokeCanvas.show(StrokeScene(settled: strokes))
         view.elementLayer.user = previewUser
         view.elementLayer.update(elements: elements, hidden: hidden)
         view.backgroundColor = UIColor(MulberryDesign.canvas)
-        view.setNeedsDisplay()
     }
 }
 

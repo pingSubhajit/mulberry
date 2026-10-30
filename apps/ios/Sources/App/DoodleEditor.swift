@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 enum DoodleTool: String, Codable { case brush, eyedropper, eraser, text, sticker }
@@ -89,14 +90,21 @@ final class DoodleEditor: ObservableObject {
     @Published private(set) var canvasTouches = 0
     func canvasTouched() { canvasTouches += 1 }
     /// The stroke being drawn, which the canvas extends with predicted Pencil points.
-    var activeStroke: DrawingStroke? { ended ? nil : active }
+    private(set) var activeStroke: DrawingStroke?
     @Published var color: UInt32 { didSet { saveTools() } }
     // Android widths are physical canvas pixels. A reference width of 1080
     // preserves the same relative brush weight on Retina and Android screens.
     @Published var width: Double { didSet { saveTools() } }
     @Published var textColor: UInt32 { didSet { saveTools() } }
-    @Published private(set) var strokes: [DrawingStroke] = []
+    /// Whether the canvas has any strokes, for the blank canvas's prompt and the Clear button.
+    @Published private(set) var hasStrokes = false
     @Published private(set) var elements: [CanvasElement] = []
+    /// The strokes to draw. They reach the canvas through its display rather than SwiftUI, so a
+    /// stroke's points do not re-render the screen.
+    private(set) var scene = StrokeScene()
+    weak var display: StrokeSceneDisplay? {
+        didSet { display?.show(scene) }
+    }
     @Published var textSession: CanvasTextSession?
     @Published var stickerSession: CanvasStickerSession?
 
@@ -124,37 +132,47 @@ final class DoodleEditor: ObservableObject {
     /// Artwork the canvas has loaded, so the eyedropper samples stickers too.
     var stickerImages: [StickerReference: UIImage] = [:]
     @Published private(set) var history = DrawingHistory()
-    @Published private(set) var saving = false
     @Published var errorMessage: String? {
         didSet { if validSession { model.canvasSaveError = errorMessage } }
     }
     private let model: MulberryModel
     private let pair: String?
     let user: String?
-    private var active: DrawingStroke?
-    private var ended = false
     private var emittedPoints = 0
     private var lastAppend = Date.distantPast
+    /// Edits not yet handed to the model to save, in the order they were made.
     private var pending: [DrawingOperation] = []
-    private var overlay: [DrawingOperation] = []
     private var draining = false
+    /// The drawing as saved, which this device's unsaved edits are laid over.
+    private var saved = DrawingState()
+    private var savedFeed: AnyCancellable?
+    /// Edits other than drawing (erasing, undo and redo, clearing, text and stickers), shown until
+    /// saved. Replaying one is idempotent, so it is safe whether or not the save already shows it.
+    private var overlay: [DrawingOperation] = []
+    /// Strokes finished here whose last operations are not saved yet, shown until they are. A new
+    /// stroke starts at once rather than waiting for these to save.
+    private var unsavedStrokes: [DrawingStroke] = []
+    /// The scene without the stroke being drawn, which changes with each point.
+    private var composed = StrokeScene()
     private var decodedElements: [JSONValue] = []
 
     init(model: MulberryModel) {
         self.model = model; pair = model.bootstrap?.pairSessionId; user = model.userId
         let tools = CanvasToolStore.load(user: user, pair: pair)
         tool = tools.tool; color = tools.color; width = tools.width; textColor = tools.textColor
-        strokes = model.drawing.strokes
-        elements = model.drawing.canvasElements; decodedElements = model.drawing.elements
         stickers = StickerCatalog(user: user)
         model.retryCanvasSave = { [weak self] in self?.retry() }
+        // The model publishes on the main actor, as it changes.
+        savedFeed = model.canvas.$state.sink { [weak self] state in
+            MainActor.assumeIsolated { self?.receive(state) }
+        }
     }
 
     /// Only the history decides these, so the buttons hold still while strokes are drawn and saved.
     /// A tap mid-stroke is ignored rather than shown as disabled.
     var canUndo: Bool { history.canUndo }
     var canRedo: Bool { history.canRedo }
-    private var drawing: Bool { active != nil && !ended }
+    private var drawing: Bool { activeStroke != nil }
 
     /// Android keeps one colour for text and one for every other tool.
     var selectedColor: UInt32 {
@@ -162,34 +180,20 @@ final class DoodleEditor: ObservableObject {
         set { if tool == .text { textColor = newValue } else { color = newValue } }
     }
 
-    func receive() {
-        var state = model.drawing
-        // Overlay contains only non-append edits; their replay is idempotent.
-        for operation in overlay { try? state.apply(operation) }
-        if let active {
-            state.strokes.removeAll { $0.id == active.id }
-            state.strokes.append(active)
-        }
-        strokes = state.strokes
-        // Receive runs for every stroke point; decode elements only when they change.
-        if state.elements != decodedElements {
-            decodedElements = state.elements
-            elements = state.canvasElements
-        }
+    private func receive(_ drawing: DrawingState) {
+        saved = drawing
+        composeScene()
     }
 
     func begin(at point: CGPoint, size: CGSize) {
-        guard active == nil, !saving, errorMessage == nil, validSession else { return }
+        guard activeStroke == nil, errorMessage == nil, validSession else { return }
         updateViewport(size)
         switch tool {
         case .brush:
             let stroke = DrawingStroke(colorArgb: color, width: width / 1080, points: [normalized(point, size)])
-            active = stroke; ended = false; emittedPoints = 1; lastAppend = .now
-            do {
-                queue([.init(type: "ADD_STROKE", strokeId: stroke.id,
-                             payload: try .encoded(StrokeStart(id: stroke.id, colorArgb: stroke.colorArgb, width: stroke.width, createdAt: stroke.createdAt, firstPoint: stroke.points[0])))])
-            } catch { errorMessage = error.localizedDescription }
-            receive()
+            activeStroke = stroke; emittedPoints = 1; lastAppend = .now
+            do { queue([try .startStroke(stroke)]) } catch { errorMessage = error.localizedDescription }
+            publishScene()
         case .eraser: erase(at: point, size: size)
         case .eyedropper: eyedropperPreview = sample(at: point, size: size)
         case .text, .sticker: break
@@ -206,12 +210,12 @@ final class DoodleEditor: ObservableObject {
             for point in points { erase(at: point, size: size) }
             return
         }
-        guard active != nil, !ended else { return }
+        guard activeStroke != nil else { return }
         for point in points {
             let next = normalized(point, size)
-            if next != active?.points.last { active?.points.append(next) }
+            if next != activeStroke?.points.last { activeStroke?.points.append(next) }
         }
-        receive()
+        publishScene()
         if Date().timeIntervalSince(lastAppend) >= 1 / Double(max(1, model.appendHz)) { appendPoints() }
     }
 
@@ -221,18 +225,20 @@ final class DoodleEditor: ObservableObject {
             color = picked; textColor = picked; tool = .brush
             return
         }
-        guard var stroke = active, !ended else { return }
         appendPoints()
-        stroke.finished = true; active = stroke; ended = true
+        guard var stroke = activeStroke else { return }
+        stroke.finished = true
+        activeStroke = nil
+        unsavedStrokes.append(stroke)
         history.recordDraw(stroke)
         queue([.init(type: "FINISH_STROKE", strokeId: stroke.id)])
-        receive()
+        composeScene()
     }
 
     /// A held finger opens the reactions instead of drawing, so the dot it left goes, without an undo step.
     func discardStroke() {
-        guard let stroke = active, !ended else { return }
-        active = nil; ended = false
+        guard let stroke = activeStroke else { return }
+        activeStroke = nil
         queue([.init(type: "FINISH_STROKE", strokeId: stroke.id), .init(type: "DELETE_STROKE", strokeId: stroke.id)], preview: true)
     }
 
@@ -573,12 +579,11 @@ final class DoodleEditor: ObservableObject {
     private var validSession: Bool { model.userId == user && model.bootstrap?.pairSessionId == pair && model.bootstrap?.isPaired == true }
 
     private func appendPoints() {
-        guard let active else { return }
+        guard let stroke = activeStroke else { return }
         do {
-            while emittedPoints < active.points.count {
-                let end = min(emittedPoints + 64, active.points.count)
-                let points = Array(active.points[emittedPoints..<end])
-                queue([.init(type: "APPEND_POINTS", strokeId: active.id, payload: try .encoded(StrokePoints(points: points)))])
+            while emittedPoints < stroke.points.count {
+                let end = min(emittedPoints + 64, stroke.points.count)
+                queue([try .appendPoints(Array(stroke.points[emittedPoints..<end]), to: stroke.id)])
                 emittedPoints = end
             }
             lastAppend = .now
@@ -586,32 +591,36 @@ final class DoodleEditor: ObservableObject {
     }
 
     private func erase(at point: CGPoint, size: CGSize) {
-        guard let stroke = strokes.reversed().first(where: { $0.finished == true && Self.hits($0, at: point, size: size) }) else { return }
+        guard let stroke = scene.settled.reversed().first(where: { Self.hits($0, at: point, size: size) }) else { return }
         history.recordErase(stroke)
         queue([.init(type: "DELETE_STROKE", strokeId: stroke.id)], preview: true)
     }
 
+    /// Edits are saved in the order they were made, one batch at a time, while drawing carries on.
     private func queue(_ operations: [DrawingOperation], preview: Bool = false) {
         pending += operations
-        if preview { overlay += operations; receive() }
-        saving = true
+        // A stroke deleted or cleared away here must not be laid back over the drawing.
+        let unsaved = unsavedStrokes.count
+        for operation in operations {
+            if operation.type == "DELETE_STROKE" { unsavedStrokes.removeAll { $0.id == operation.strokeId } }
+            if operation.type == "CLEAR_CANVAS" { unsavedStrokes.removeAll() }
+        }
+        if preview { overlay += operations }
+        if preview || unsavedStrokes.count != unsaved { composeScene() }
         Task { await drain() }
     }
 
     private func drain() async {
         guard !draining, errorMessage == nil, validSession else { return }
         draining = true
-        defer { draining = false; saving = !pending.isEmpty }
+        defer { draining = false }
         while !pending.isEmpty {
             guard validSession else { return }
             let batch = pending
             do {
                 try await model.enqueue(batch)
                 pending.removeFirst(batch.count)
-                let savedIDs = Set(batch.map(\.id))
-                overlay.removeAll { savedIDs.contains($0.id) }
-                if pending.isEmpty && ended { active = nil; ended = false }
-                receive()
+                settle(batch)
             } catch {
                 errorMessage = "Your last edit could not be saved. \(error.localizedDescription)"
                 return
@@ -619,12 +628,47 @@ final class DoodleEditor: ObservableObject {
         }
     }
 
+    /// The saved drawing now holds these edits, so they no longer need laying over it. A stroke is
+    /// saved with its last operation, FINISH_STROKE, as edits are saved in order.
+    private func settle(_ batch: [DrawingOperation]) {
+        let savedIDs = Set(batch.map(\.id))
+        overlay.removeAll { savedIDs.contains($0.id) }
+        let finished = Set(batch.filter { $0.type == "FINISH_STROKE" }.compactMap(\.strokeId))
+        unsavedStrokes.removeAll { finished.contains($0.id) }
+        composeScene()
+    }
+
+    /// Lays this device's unsaved edits over the saved drawing. This runs when either changes; a
+    /// point added to the stroke being drawn only publishes the scene again.
+    private func composeScene() {
+        var state = saved
+        for operation in overlay { try? state.apply(operation) }
+        // This device's own copy of each of its unsaved strokes replaces any partial one saved so far.
+        // A finished stroke goes on top, as finishing it does in the saved drawing.
+        let local = Set(unsavedStrokes.map(\.id) + [activeStroke?.id].compactMap { $0 })
+        let strokes = state.strokes.filter { !local.contains($0.id) } + unsavedStrokes
+        composed = StrokeScene(settled: strokes.filter { $0.finished == true }, inProgress: strokes.filter { $0.finished != true })
+        // Composing runs for every saved batch of points; decode elements only when they change.
+        if state.elements != decodedElements {
+            decodedElements = state.elements
+            elements = state.canvasElements
+        }
+        publishScene()
+    }
+
+    private func publishScene() {
+        scene = StrokeScene(settled: composed.settled, inProgress: composed.inProgress + (activeStroke.map { [$0] } ?? []))
+        let any = !scene.settled.isEmpty || !scene.inProgress.isEmpty
+        if hasStrokes != any { hasStrokes = any }
+        display?.show(scene)
+    }
+
     /// Lets go of the eyedropper without choosing, as when a second finger lands.
     func cancelEyedropper() { eyedropperPreview = nil }
 
     /// The colour at a point. The canvas is transparent, so an empty spot gives the screen behind it.
     private func sample(at point: CGPoint, size: CGSize) -> UInt32? {
-        DoodleRenderer.color(at: point, strokes: strokes, elements: elements, stickerImages: stickerImages,
+        DoodleRenderer.color(at: point, strokes: scene.settled + scene.inProgress, elements: elements, stickerImages: stickerImages,
                              dry: model.bootstrap?.canvasStrokeRenderMode == "dry", size: size, background: UIColor(MulberryDesign.background))
     }
 
@@ -657,14 +701,13 @@ struct DoodleSurface: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: DoodleTouchView, context: Context) {
-        view.editor = editor; view.strokes = editor.strokes; view.dry = dry
+        view.editor = editor; view.strokeCanvas.dry = dry
         view.elementTool = editor.tool == .text || editor.tool == .sticker ? editor.tool : nil
         // The element being edited is shown only in its editor until Done.
         view.elementLayer.user = editor.user
         view.elementLayer.update(elements: editor.elements, hidden: editor.hiddenElementID)
         view.accessibilityValue = editor.elements.compactMap(\.text?.text).joined(separator: ", ")
         view.updateSelection()
-        view.setNeedsDisplay()
     }
 }
 
@@ -776,12 +819,13 @@ final class CanvasElementLayerView: UIView {
 final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilInteractionDelegate, UIPointerInteractionDelegate {
     weak var editor: DoodleEditor? {
         didSet {
+            guard editor !== oldValue else { return }
             editor?.updateViewport(bounds.size)
+            editor?.display = strokeCanvas
             elementLayer.onImagesChanged = { [weak editor] images in editor?.stickerImages = images }
         }
     }
-    var strokes: [DrawingStroke] = []
-    var dry = true
+    let strokeCanvas = StrokeCanvasView()
     let elementLayer = CanvasElementLayerView()
     /// Text or sticker: tapping places or edits that kind; dragging, pinching
     /// and twisting move it. Other tools draw.
@@ -816,8 +860,6 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
     /// Whether the rotation sits on a quarter turn, so the fingers feel it settle there.
     private var squared = false
     private let settleFeedback = UISelectionFeedbackGenerator()
-    /// Where iOS expects the Pencil to be next, drawn ahead of the stroke and never saved.
-    private var predicted: [CGPoint] = []
     /// The brush or eraser outline under a hovering Pencil.
     private let hoverLayer = CAShapeLayer()
     /// The eyedropper's colour, held above the finger so the finger does not hide it.
@@ -826,6 +868,9 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
     override init(frame: CGRect) {
         super.init(frame: frame)
         isOpaque = false; backgroundColor = .clear
+        strokeCanvas.frame = bounds
+        strokeCanvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(strokeCanvas)
         elementLayer.frame = bounds
         elementLayer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(elementLayer)
@@ -879,17 +924,8 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
     override func layoutSubviews() {
         super.layoutSubviews()
         editor?.updateViewport(bounds.size)
-        setNeedsDisplay(); elementLayer.setNeedsDisplay()
+        elementLayer.setNeedsDisplay()
         updateSelection()
-    }
-    override func draw(_ rect: CGRect) {
-        guard let context = UIGraphicsGetCurrentContext() else { return }
-        DoodleRenderer.draw(strokes, dry: dry, in: context, size: bounds.size)
-        if !predicted.isEmpty, let stroke = editor?.activeStroke, let last = stroke.points.last {
-            let ahead = DrawingStroke(id: stroke.id, colorArgb: stroke.colorArgb, width: stroke.width,
-                                      createdAt: stroke.createdAt, points: [last] + predicted.map(normalized))
-            DoodleRenderer.draw([ahead], dry: dry, in: context, size: bounds.size)
-        }
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         editor?.canvasTouched()
@@ -935,8 +971,14 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         }
         editor?.move(points: (event?.coalescedTouches(for: touch) ?? [touch]).map { $0.location(in: self) }, size: bounds.size)
         showLoupe(at: point)
-        predicted = editor?.tool == .brush ? (event?.predictedTouches(for: touch) ?? []).map { $0.location(in: self) } : []
-        setNeedsDisplay()
+        strokeCanvas.prediction = prediction(event?.predictedTouches(for: touch) ?? [])
+    }
+
+    /// The stroke being drawn carried on to where iOS expects the Pencil to be next.
+    private func prediction(_ touches: [UITouch]) -> DrawingStroke? {
+        guard editor?.tool == .brush, !touches.isEmpty, let stroke = editor?.activeStroke, let last = stroke.points.last else { return nil }
+        return DrawingStroke(id: stroke.id, colorArgb: stroke.colorArgb, width: stroke.width, createdAt: stroke.createdAt,
+                             points: [last] + touches.map { normalized($0.location(in: self)) })
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         if let held = heldTouch, touches.contains(held) { heldTouch = nil; editor?.reactionPointer.lift() }
@@ -950,7 +992,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             editor?.move(points: [touch.location(in: self)], size: bounds.size)
             editor?.end()
         }
-        elementToErase = nil; trackedTouch = nil; predicted = []
+        elementToErase = nil; trackedTouch = nil; strokeCanvas.prediction = nil
         showLoupe(at: nil)
     }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -958,8 +1000,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         cancelHold()
         editor?.cancelEyedropper(); showLoupe(at: nil)
         if elementToErase == nil { editor?.end() }
-        elementToErase = nil; deferredStart = nil; trackedTouch = nil; predicted = []
-        setNeedsDisplay()
+        elementToErase = nil; deferredStart = nil; trackedTouch = nil; strokeCanvas.prediction = nil
     }
 
     private func holdForReactions(at point: CGPoint) {
@@ -969,9 +1010,8 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             self.heldTouch = touch
             // The rest of this touch neither draws nor erases.
             self.editor?.discardStroke()
-            self.trackedTouch = nil; self.predicted = []
+            self.trackedTouch = nil; self.strokeCanvas.prediction = nil
             self.deferredStart = nil; self.elementToErase = nil
-            self.setNeedsDisplay()
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             self.editor?.reactionRequest = ReactionRequest(location: point)
         }

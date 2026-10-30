@@ -95,7 +95,7 @@ final class WallpaperSetupModel: ObservableObject {
         let configured = receipt != nil
         let enabled = allowed && configured && showDrawings
         let renderedDrawings = UserDefaults.standard.bool(forKey: "wallpaperDrawingsVisible.\(user).\(pair)")
-        let canSee = enabled && renderedDrawings && model.drawingConnection == .connected && revision.map { $0 >= model.drawing.revision } == true
+        let canSee = enabled && renderedDrawings && model.drawingConnection == .connected && revision.map { $0 >= model.canvas.state.revision } == true
         let signature = "\(user):\(pair):\(configured):\(enabled):\(canSee):\(revision ?? -1):\(health.state)"
         guard signature != lastPresenceSignature else { return }
         do {
