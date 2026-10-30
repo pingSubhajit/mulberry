@@ -86,7 +86,11 @@ final class OnboardingFlow: ObservableObject {
     @Published var openAtLogin = true
     @Published private(set) var busy = false
     @Published private(set) var error: String?
-    @Published private(set) var invite: CreatedInvite?
+    @Published private(set) var invite: CreatedInvite? {
+        didSet { if invite?.code != oldValue?.code { inviteShared = false } }
+    }
+    /// The code has gone out through the share menu, so Continue leads.
+    @Published var inviteShared = false
     /// Whether the details form, the one place that asks about Open at Login, has been shown.
     private var askedOpenAtLogin = false
 
@@ -149,7 +153,10 @@ final class OnboardingFlow: ObservableObject {
     var userDisplayName: String { bootstrap?.userDisplayName?.nonEmpty ?? name.nonEmpty ?? "" }
     var userPhotoURL: String? { bootstrap?.userPhotoUrl }
     var partnerPhotoURL: String? { bootstrap?.partnerPhotoUrl }
-    var inviterName: String { bootstrap?.invite?.inviterDisplayName ?? "Your partner" }
+    /// Who sent the invite, by name: the invite's, else the partner's name on the account.
+    var inviterName: String {
+        bootstrap?.invite?.inviterDisplayName.nonEmpty ?? bootstrap?.partnerDisplayName?.nonEmpty ?? "Your partner"
+    }
 
     // MARK: The film
 
@@ -351,6 +358,8 @@ final class OnboardingFlow: ObservableObject {
         if let screen = Self.debugScreen {
             if screen == .invite, invite == nil, let json = #"{"inviteId":"debug","code":"482913","expiresAt":"\#(ServerDate.string(Date().addingTimeInterval(86_400)))"}"#.data(using: .utf8) {
                 invite = try? JSONDecoder().decode(CreatedInvite.self, from: json)
+                // `-onboardingInviteShared YES`: as if the code had already been shared.
+                inviteShared = UserDefaults.standard.bool(forKey: "onboardingInviteShared")
             }
             return show(screen)
         }
@@ -398,8 +407,9 @@ final class OnboardingFlow: ObservableObject {
         if screen == .profile { askedOpenAtLogin = true }
         withAnimation(.smooth(duration: 0.4)) { appScreen = screen }
         watchingPartner?.cancel()
-        // While the code is on screen, the partner joining takes the person straight to them.
-        if screen == .invite {
+        // While the code is on screen, the partner joining takes the person straight to them. A
+        // screen forced for testing asks the server nothing.
+        if screen == .invite, !debugging {
             watchingPartner = Task { [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(4))

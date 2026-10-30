@@ -466,17 +466,3 @@ private struct WelcomePhoto: View {
         }
     }
 }
-
-/// The consent Mulberry needs to open itself at login, on by default and always in sight.
-struct OpenAtLoginToggle: View {
-    @ObservedObject var flow: OnboardingFlow
-
-    var body: some View {
-        Toggle(isOn: $flow.openAtLogin) {
-            Text("Open Mulberry at login").font(.system(size: 13))
-        }
-        .toggleStyle(.switch)
-        .tint(mulberryRed)
-        .controlSize(.small)
-    }
-}

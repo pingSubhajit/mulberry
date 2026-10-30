@@ -24,10 +24,23 @@ struct OnboardingPhoneApp: View {
                 }
             }
             .padding(.horizontal, 22)
-            .padding(.top, 50)
+            .padding(.top, 74)
             .padding(.bottom, 24)
             .transition(.opacity.combined(with: .offset(y: 10)))
             if home { dock }
+            // The code screen's number pad, rising from the foot as iOS's keyboard does.
+            if flow.appScreen == .code {
+                VStack {
+                    Spacer()
+                    PhoneNumberPad { digit in
+                        if flow.code.count < 6 { flow.code.append(String(digit)) }
+                    } delete: {
+                        if !flow.code.isEmpty { flow.code.removeLast() }
+                    }
+                }
+                .transition(.move(edge: .bottom))
+                .disabled(flow.busy)
+            }
             // Mulberry's launch screen, growing out of its icon as the app opens.
             AppLaunch(progress: flow.launch, iconPressed: flow.iconPressed)
                 .opacity(home || flow.appScreen == .splash ? 1 : 0)
@@ -128,36 +141,137 @@ private struct AppLaunch: View, Animatable {
 private struct ProfileScreen: View {
     @ObservedObject var flow: OnboardingFlow
     @FocusState private var focus: Field?
-    private enum Field { case name, partner }
+    @State private var choosingDate = false
+    /// The wheel's drum the arrow keys turn.
+    @State private var dateColumn = 0
+    private enum Field { case name, partner, date }
+
+    /// Room for "Partner", so both fields start at one edge.
+    private let labelWidth: CGFloat = 46
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PhoneHeading(kicker: "Welcome to", title: "Mulberry")
-            VStack(alignment: .leading, spacing: 13) {
-                PhoneField(label: "What is your name?") {
-                    TextField("The name your partner calls you", text: $flow.name)
-                        .focused($focus, equals: .name)
-                        .onSubmit { focus = .partner }
+            VStack(spacing: 12) {
+                PhoneFormSection {
+                    PhoneFormRow(label: "You", labelWidth: labelWidth) {
+                        TextField("You", text: $flow.name, prompt: Text("What they call you"))
+                            .focused($focus, equals: .name)
+                            .onSubmit { focus = .partner }
+                    }
+                    PhoneFormSeparator()
+                    PhoneFormRow(label: "Partner", labelWidth: labelWidth) {
+                        TextField("Partner", text: $flow.partnerName, prompt: Text("What you call them"))
+                            .focused($focus, equals: .partner)
+                            .onSubmit {
+                                focus = .date
+                                setDateOpen(true)
+                            }
+                    }
                 }
-                PhoneField(label: "What is your partner’s name?") {
-                    TextField("The name you call them", text: $flow.partnerName)
-                        .focused($focus, equals: .partner)
-                }
-                PhoneField(label: "When is your anniversary?") {
-                    AnniversaryButton(date: $flow.anniversary)
-                }
+                .textFieldStyle(.plain)
+                anniversary
             }
-            .padding(.top, 22)
+            .padding(.top, 30)
             Spacer(minLength: 12)
-            OpenAtLoginToggle(flow: flow)
+            // The Mac's own switch, in Mulberry red.
+            Toggle(isOn: $flow.openAtLogin) {
+                Text("Open at Login").font(PhoneForm.font).foregroundStyle(.white.opacity(0.85))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .tint(mulberryRed)
+            .padding(.horizontal, 2)
+            .padding(.bottom, 12)
             PhonePrimaryButton(title: "Let’s get going", busy: flow.busy, enabled: flow.profileComplete) {
                 Task { await flow.saveProfile() }
             }
-            .padding(.top, 12)
             PhoneError(message: flow.error)
             CodeLink(flow: flow)
         }
-        .onAppear { if flow.name.isEmpty { focus = .name } }
+        .onAppear {
+            #if DEBUG
+            // `-onboardingDateOpen YES` opens with the wheel unfolded, for looking at it.
+            if UserDefaults.standard.bool(forKey: "onboardingDateOpen") {
+                setDateOpen(true)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { focus = .date }
+                return
+            }
+            #endif
+            if flow.name.isEmpty { focus = .name }
+        }
+        // Typing again folds the wheel away.
+        .onChange(of: focus) { _, field in if field == .name || field == .partner { setDateOpen(false) } }
+    }
+
+    /// The anniversary's row, and the wheel that unfolds under it. From the keyboard: Return or
+    /// Space opens it, the left and right arrows pick a drum, the up and down arrows turn it, and
+    /// Return closes it again.
+    private var anniversary: some View {
+        PhoneFormSection {
+            Button { setDateOpen(!choosingDate) } label: {
+                PhoneFormRow(label: "Anniversary") {
+                    Spacer(minLength: 0)
+                    Text(flow.anniversary?.formatted(date: .abbreviated, time: .omitted) ?? "Not set")
+                        .foregroundStyle(choosingDate || focus == .date ? PhoneForm.activeTint : PhoneForm.secondary)
+                        .contentTransition(.numericText())
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Anniversary")
+            .accessibilityValue(flow.anniversary?.formatted(date: .long, time: .omitted) ?? "Not set")
+            .accessibilityHint(choosingDate ? "Hides the date picker" : "Shows the date picker")
+            if choosingDate {
+                PhoneFormSeparator()
+                WheelDatePicker(date: Binding { flow.anniversary ?? .now } set: { flow.anniversary = $0 },
+                                keyboardColumn: focus == .date ? dateColumn : nil)
+                    .transition(.opacity)
+            }
+        }
+        .clipShape(.rect(cornerRadius: PhoneForm.radius, style: .continuous))
+        // With the keyboard here, the date and the drum it turns are tinted instead of ringed.
+        // Reached by Tab like a text field, whatever the Mac's keyboard navigation setting.
+        .focusable(interactions: .edit)
+        .focused($focus, equals: .date)
+        .focusEffectDisabled()
+        .onKeyPress(.space) {
+            setDateOpen(!choosingDate)
+            return .handled
+        }
+        .onKeyPress(.return) {
+            if choosingDate {
+                setDateOpen(false)
+                return .handled
+            }
+            return submit()
+        }
+        .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow]) { press in
+            guard choosingDate, let date = flow.anniversary else { return .ignored }
+            switch press.key {
+            case .leftArrow: dateColumn = max(0, dateColumn - 1)
+            case .rightArrow: dateColumn = min(WheelDatePicker.columnCount - 1, dateColumn + 1)
+            case .upArrow: flow.anniversary = WheelDatePicker.step(date, column: dateColumn, by: -1)
+            default: flow.anniversary = WheelDatePicker.step(date, column: dateColumn, by: 1)
+            }
+            return .handled
+        }
+    }
+
+    /// Return sends the form once it is complete.
+    private func submit() -> KeyPress.Result {
+        guard flow.profileComplete, !flow.busy else { return .ignored }
+        Task { await flow.saveProfile() }
+        return .handled
+    }
+
+    /// The wheel unfolds under the anniversary, as iOS's inline date pickers do; opening it
+    /// chooses the date it shows.
+    private func setDateOpen(_ open: Bool) {
+        guard open != choosingDate else { return }
+        if open, flow.anniversary == nil { flow.anniversary = Calendar.current.startOfDay(for: .now) }
+        withAnimation(.snappy(duration: 0.32)) { choosingDate = open }
     }
 }
 
@@ -167,39 +281,42 @@ private struct CodeScreen: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button(action: flow.back) {
-                Label("Back", systemImage: "chevron.left").font(.system(size: 13, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white.opacity(0.75))
-            .disabled(flow.busy)
-            PhoneHeading(kicker: "Have a code?", title: "Join your partner")
-                .padding(.top, 18)
-            Text("Enter the six-digit code your partner shared with you.")
-                .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.6))
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 10)
-            TextField("000000", text: $flow.code)
-                .textFieldStyle(.plain)
-                .font(.system(size: 30, weight: .semibold, design: .monospaced))
-                .tracking(6)
-                .multilineTextAlignment(.center)
-                .focused($focused)
-                .padding(.vertical, 16)
-                .background(.white.opacity(0.1), in: .rect(cornerRadius: 14, style: .continuous))
-                .padding(.top, 22)
-                .accessibilityLabel("Six-digit invite code")
+            PhoneHeading(kicker: nil, title: "Join your partner")
+            PhoneNote("Enter the six-digit code your partner shared with you.")
+            // Six boxes, one digit each. The field behind them takes the Mac's keyboard and pasting.
+            CodeSegments(code: flow.code, editing: true)
+                .background {
+                    TextField("", text: $flow.code)
+                        .textFieldStyle(.plain)
+                        .focused($focused)
+                        .opacity(0.02)
+                        .accessibilityLabel("Six-digit invite code")
+                }
+                .contentShape(.rect)
+                .onTapGesture { focused = true }
+                .padding(.top, 30)
                 .onChange(of: flow.code) { _, value in
                     let digits = String(value.filter { $0.isASCII && $0.isNumber }.prefix(6))
                     if digits != value { flow.code = digits }
                 }
                 .onSubmit { Task { await flow.redeem() } }
             Spacer(minLength: 12)
+            PhoneError(message: flow.error)
             PhonePrimaryButton(title: "Join", busy: flow.busy, enabled: flow.code.count == 6) {
                 Task { await flow.redeem() }
             }
-            PhoneError(message: flow.error)
+            // Clear of the number pad below.
+            .padding(.bottom, PhoneNumberPad.height - 24 + 14)
+        }
+        // Back sits where a navigation bar's would, above the heading, without moving it.
+        .overlay(alignment: .topLeading) {
+            Button(action: flow.back) {
+                Label("Back", systemImage: "chevron.left").font(PhoneForm.font)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(PhoneForm.activeTint)
+            .disabled(flow.busy)
+            .offset(x: -4, y: -30)
         }
         .onAppear {
             // A code just copied from a message is waiting on the clipboard.
@@ -217,27 +334,28 @@ private struct AcceptanceScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: -12) {
-                PersonAvatar(url: flow.userPhotoURL, name: flow.userDisplayName, size: 78)
-                PersonAvatar(url: flow.partnerPhotoURL, name: flow.inviterName, size: 78)
+            HStack(spacing: -10) {
+                PersonAvatar(url: flow.userPhotoURL, name: flow.userDisplayName, size: 60)
+                PersonAvatar(url: flow.partnerPhotoURL, name: flow.inviterName, size: 60)
             }
-            .padding(.top, 40)
+            .padding(.top, 24)
             Text("\(flow.inviterName) invited you to Mulberry")
-                .font(.custom("Poppins-Bold", size: 22))
+                .font(.custom("Poppins-SemiBold", size: 17))
+                .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 26)
+                .padding(.top, 22)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 12)
             PhonePrimaryButton(title: "Awesome, let’s go", busy: flow.busy, enabled: true) {
                 Task { await flow.acceptInvite() }
             }
-            .padding(.top, 12)
             Button("Wrong partner? Disconnect") { Task { await flow.declineInvite() } }
                 .buttonStyle(.plain)
-                .font(.system(size: 12.5))
-                .foregroundStyle(.white.opacity(0.6))
-                .frame(minHeight: 32)
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.55))
+                .frame(minHeight: 26)
+                .padding(.top, 8)
                 .disabled(flow.busy)
             PhoneError(message: flow.error)
         }
@@ -250,70 +368,76 @@ private struct InviteScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PhoneHeading(kicker: nil, title: "Invite \(flow.partnerDisplayName)")
-            Text("Share this code. \(flow.partnerDisplayName) enters it after signing up for Mulberry on their phone.")
-                .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.6))
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 10)
+            PhoneNote("Share this code. \(flow.partnerDisplayName) enters it after signing up for Mulberry on their phone.")
             Group {
                 if let invite = flow.invite {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         let expiry = ServerDate.parse(invite.expiresAt) ?? .distantPast
                         VStack(spacing: 8) {
-                            Text(invite.code)
-                                .font(.system(size: 34, weight: .semibold, design: .monospaced))
-                                .tracking(6)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 18)
-                                .background(.white.opacity(0.1), in: .rect(cornerRadius: 14, style: .continuous))
+                            CodeSegments(code: invite.code, editing: false)
+                                .accessibilityElement(children: .ignore)
                                 .accessibilityLabel("Invite code \(invite.code.map(String.init).joined(separator: " "))")
                             if expiry > context.date {
                                 Text("Expires in \(Text(expiry, style: .relative))")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.white.opacity(0.5))
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(PhoneForm.secondary)
                             } else {
                                 Button("This code has expired. Get a new one") { Task { await flow.createInvite() } }
                                     .buttonStyle(.plain)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.75))
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(PhoneForm.activeTint)
                             }
                         }
                     }
                 } else if flow.busy {
-                    ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 80)
+                    ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 50)
                 } else {
                     Button("Try again") { Task { await flow.createInvite() } }
-                        .frame(maxWidth: .infinity, minHeight: 80)
+                        .buttonStyle(.plain)
+                        .font(PhoneForm.font)
+                        .foregroundStyle(PhoneForm.activeTint)
+                        .frame(maxWidth: .infinity, minHeight: 50)
                 }
             }
-            .padding(.top, 22)
+            .padding(.top, 30)
             Spacer(minLength: 12)
+            // Share leads until the code has gone out; then Continue does.
             if let invite = flow.invite {
-                ShareLink(item: "Join me on Mulberry: https://mulberry.my/invite?code=\(invite.code)\n\nMy invite code is \(invite.code).") {
-                    Label("Share invite code", systemImage: "square.and.arrow.up")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, minHeight: 40)
-                        .background(mulberryRed, in: .rect(cornerRadius: 12, style: .continuous))
-                        .contentShape(.rect(cornerRadius: 12, style: .continuous))
+                InviteShareButton(text: "Join me on Mulberry: https://mulberry.my/invite?code=\(invite.code)\n\nMy invite code is \(invite.code).",
+                                  primary: !flow.inviteShared) {
+                    withAnimation(.easeOut(duration: 0.25)) { flow.inviteShared = true }
                 }
-                .buttonStyle(.plain)
             }
             Button {
                 Task { await flow.continueWithoutPartner() }
             } label: {
                 Text("Continue")
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(maxWidth: .infinity, minHeight: 40)
-                    .background(.white.opacity(0.1), in: .rect(cornerRadius: 12, style: .continuous))
-                    .contentShape(.rect(cornerRadius: 12, style: .continuous))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 30)
+                    .background(flow.inviteShared ? mulberryRed : .white.opacity(0.1), in: .rect(cornerRadius: 9, style: .continuous))
+                    .contentShape(.rect(cornerRadius: 9, style: .continuous))
             }
             .buttonStyle(.plain)
             .padding(.top, 8)
             PhoneError(message: flow.error)
             CodeLink(flow: flow)
         }
+    }
+}
+
+/// A line under a heading, saying what the screen asks for.
+private struct PhoneNote: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(PhoneForm.font)
+            .foregroundStyle(PhoneForm.secondary)
+            .lineSpacing(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 8)
     }
 }
 
@@ -324,67 +448,16 @@ private struct PhoneHeading: View {
     let title: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let mark = SettingsArtwork.image("BrandMark.svg") {
-                Image(nsImage: mark).resizable().frame(width: 22, height: 36).padding(.bottom, 14)
-            }
+        VStack(alignment: .leading, spacing: 1) {
             if let kicker {
-                Text(kicker).font(.system(size: 15)).foregroundStyle(.white.opacity(0.75))
+                Text(kicker).font(.system(size: 12)).foregroundStyle(.white.opacity(0.65))
             }
             Text(title)
-                .font(.custom("Poppins-Bold", size: 28))
+                .font(.custom("Poppins-SemiBold", size: 20))
                 .foregroundStyle(.white)
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
                 .accessibilityAddTraits(.isHeader)
-        }
-    }
-}
-
-private struct PhoneField<Content: View>: View {
-    let label: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(.white.opacity(0.9))
-            content
-                .textFieldStyle(.plain)
-                .font(.system(size: 13.5))
-                .padding(.horizontal, 12)
-                .frame(height: 34)
-                .background(.white.opacity(0.1), in: .rect(cornerRadius: 10, style: .continuous))
-        }
-    }
-}
-
-/// The anniversary as a button that opens the calendar.
-private struct AnniversaryButton: View {
-    @Binding var date: Date?
-    @State private var choosing = false
-
-    var body: some View {
-        Button {
-            choosing = true
-        } label: {
-            HStack {
-                Text(date?.formatted(date: .long, time: .omitted) ?? "Select date")
-                    .foregroundStyle(date == nil ? .white.opacity(0.35) : .white)
-                Spacer()
-                Image(systemName: "calendar").foregroundStyle(.white.opacity(0.5))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Anniversary")
-        .accessibilityValue(date?.formatted(date: .long, time: .omitted) ?? "Not selected")
-        .popover(isPresented: $choosing, arrowEdge: .trailing) {
-            DatePicker("Anniversary", selection: Binding { date ?? Date() } set: { date = $0 },
-                       in: ...Date(), displayedComponents: .date)
-                .datePickerStyle(.graphical)
-                .labelsHidden()
-                .padding(12)
         }
     }
 }
@@ -401,11 +474,11 @@ private struct PhonePrimaryButton: View {
                 Text(title).opacity(busy ? 0 : 1)
                 if busy { ProgressView().controlSize(.small).tint(.white) }
             }
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 40)
-            .background(mulberryRed.opacity(enabled ? 1 : 0.45), in: .rect(cornerRadius: 12, style: .continuous))
-            .contentShape(.rect(cornerRadius: 12, style: .continuous))
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.white.opacity(enabled ? 1 : 0.55))
+            .frame(maxWidth: .infinity, minHeight: 30)
+            .background(mulberryRed.opacity(enabled ? 1 : 0.4), in: .rect(cornerRadius: 9, style: .continuous))
+            .contentShape(.rect(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!enabled || busy)
@@ -419,7 +492,7 @@ private struct PhoneError: View {
     var body: some View {
         if let message {
             Text(message)
-                .font(.system(size: 12))
+                .font(.system(size: 11))
                 .foregroundStyle(Color(red: 1, green: 0.55, blue: 0.55))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
@@ -435,12 +508,110 @@ private struct CodeLink: View {
     var body: some View {
         Button(action: flow.enterCode) {
             Text("Have a code? \(Text("Enter code").foregroundStyle(.white))")
-                .font(.system(size: 12.5))
+                .font(.system(size: 11))
                 .foregroundStyle(.white.opacity(0.55))
-                .frame(maxWidth: .infinity, minHeight: 30)
+                .frame(maxWidth: .infinity, minHeight: 26)
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .disabled(flow.busy)
+        .padding(.top, 8)
+    }
+}
+
+/// Share, through the Mac's share menu: it tells when a way to share was chosen, so the screen
+/// knows the code has gone out. Closing the menu without choosing changes nothing.
+private struct InviteShareButton: View {
+    let text: String
+    let primary: Bool
+    let shared: () -> Void
+    @State private var anchor = ShareAnchor()
+
+    var body: some View {
+        Button {
+            anchor.share(text, chosen: shared)
+        } label: {
+            Label("Share invite code", systemImage: "square.and.arrow.up")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 30)
+                .background(primary ? mulberryRed : .white.opacity(0.1), in: .rect(cornerRadius: 9, style: .continuous))
+                .contentShape(.rect(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .background(ShareAnchorView(anchor: anchor))
+    }
+}
+
+/// Where the share menu opens from, and what it reports back.
+@MainActor
+private final class ShareAnchor: NSObject, NSSharingServicePickerDelegate {
+    weak var view: NSView?
+    private var chosen: (() -> Void)?
+
+    func share(_ text: String, chosen: @escaping () -> Void) {
+        guard let view else { return }
+        self.chosen = chosen
+        let picker = NSSharingServicePicker(items: [text])
+        picker.delegate = self
+        picker.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+    }
+
+    /// AppKit reports the choice on the main thread.
+    nonisolated func sharingServicePicker(_ picker: NSSharingServicePicker, didChoose service: NSSharingService?) {
+        guard service != nil else { return }
+        MainActor.assumeIsolated { chosen?() }
+    }
+}
+
+private struct ShareAnchorView: NSViewRepresentable {
+    let anchor: ShareAnchor
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        anchor.view = view
+    }
+}
+
+/// A six-digit code in six boxes, one digit to a box. Being typed, the next box to fill is ringed
+/// in Mulberry red with a blinking caret, as iOS's one-time code boxes show.
+private struct CodeSegments: View {
+    let code: String
+    let editing: Bool
+    private let count = 6
+
+    var body: some View {
+        let digits = Array(code)
+        HStack(spacing: 6) {
+            ForEach(0..<count, id: \.self) { index in
+                let active = editing && index == min(digits.count, count - 1) && digits.count < count
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(PhoneForm.cell)
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(PhoneForm.activeTint, lineWidth: 1.5)
+                        .opacity(active ? 1 : 0)
+                    if index < digits.count {
+                        Text(String(digits[index]))
+                            .font(.system(size: 19).monospacedDigit())
+                            .foregroundStyle(.white)
+                            .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    } else if active {
+                        Capsule()
+                            .fill(PhoneForm.activeTint)
+                            .frame(width: 1.5, height: 18)
+                            .phaseAnimator([1.0, 0.0]) { caret, shown in caret.opacity(shown) } animation: { _ in .easeInOut(duration: 0.5) }
+                    }
+                }
+                .frame(height: 44)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .animation(.snappy(duration: 0.18), value: code)
     }
 }
