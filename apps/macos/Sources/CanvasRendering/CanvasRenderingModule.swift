@@ -382,6 +382,23 @@ public enum CanvasOffscreenRenderer {
         return (data, result.diagnostics)
     }
 
+    /// The canvas drawn once as a picture of `size` points, at `scale` pixels per point, for
+    /// showing where a live canvas view is not wanted.
+    public static func renderImage(
+        input: CanvasRenderInput,
+        size: CGSize,
+        scale: CGFloat,
+        renderer: CanvasRenderer = CanvasRenderer()
+    ) -> NSImage? {
+        var scaled = input
+        scaled.viewport = CGRect(origin: .zero, size: CGSize(width: size.width * scale, height: size.height * scale))
+        guard let bitmap = renderBitmap(input: scaled, renderer: renderer)?.bitmap else { return nil }
+        bitmap.size = size
+        let image = NSImage(size: size)
+        image.addRepresentation(bitmap)
+        return image
+    }
+
     public static func sampleColor(
         input: CanvasRenderInput,
         at point: CGPoint,
