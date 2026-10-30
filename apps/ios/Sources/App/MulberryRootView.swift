@@ -24,7 +24,8 @@ struct MulberryRootView: View {
     var body: some View {
         Group {
             if model.restoring {
-                ProgressView("Opening Mulberry…").frame(maxWidth: .infinity, maxHeight: .infinity).background(MulberryDesign.background)
+                // The launch screen's background carries on while the saved session restores.
+                DelayedProgressView().background(MulberryDesign.background)
             } else if model.bootstrap == nil {
                 AuthenticationView(isSigningIn: model.busy, errorMessage: model.errorMessage) { Task { await model.signIn() } }
             } else if model.bootstrap?.pairingStatus == "INVITE_PENDING_ACCEPTANCE" {

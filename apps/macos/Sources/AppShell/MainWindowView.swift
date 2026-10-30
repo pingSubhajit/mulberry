@@ -68,10 +68,10 @@ struct MainWindowView: View {
                     UnpairedPanel()
                 }
             } else {
-                ProgressView()
+                DelayedProgressView()
             }
         case .refreshing:
-            ProgressView()
+            DelayedProgressView()
         case .signedOut, .signingIn, .failed:
             SignInPanel(authController: authController)
         }
@@ -252,4 +252,3 @@ private struct UnpairedPanel: View {
         }
     }
 }
-
