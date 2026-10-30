@@ -427,7 +427,7 @@ private final class OAuthCallbackCoordinator: @unchecked Sendable {
 
 private final class LoopbackOAuthCallbackServer: @unchecked Sendable {
     private let callbackPath: String
-    private let queue = DispatchQueue(label: "com.mulberry.mac.oauth.loopback")
+    private let queue = DispatchQueue(label: "com.subhajit.mulberry.oauth.loopback")
     private let lock = NSLock()
     private var listener: NWListener?
     private var port: UInt16?

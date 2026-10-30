@@ -91,7 +91,6 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        installApplicationIcon()
         installMainMenu()
         // TODO: When Mulberry is packaged and launched at login, add OS-level
         // duplicate-launch handling so a second app invocation activates the
@@ -239,25 +238,6 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         syncWasReachable = reachable
         let user = authController.state.isSignedIn ? appStateController.loadState.bootstrap?.userId : nil
         stickerLoader.load(for: syncController.drawing, user: user)
-    }
-
-    private func installApplicationIcon() {
-        guard let image = loadApplicationIconImage() else {
-            return
-        }
-        NSApp.applicationIconImage = image
-    }
-
-    private func loadApplicationIconImage() -> NSImage? {
-        if let image = NSImage(named: "AppIcon") {
-            return image
-        }
-        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns") {
-            return NSImage(contentsOf: url)
-        }
-        let developmentURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent("Resources/AppIcon.icns")
-        return NSImage(contentsOf: developmentURL)
     }
 
     private func installMainMenu() {

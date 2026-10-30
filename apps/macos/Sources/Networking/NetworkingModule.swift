@@ -121,7 +121,8 @@ enum DotenvLoader {
 /// The Mac's one backend client. Sharing a single instance means concurrent requests share one
 /// token refresh, as on iPhone and iPad.
 public enum MacBackend {
-    public static let keychainService = "com.mulberry.mac.backend-session"
+    /// Per build, as the iPhone's development and release builds each keep their own session.
+    public static let keychainService = "\(Bundle.main.bundleIdentifier ?? "com.subhajit.mulberry").backend-session"
 
     /// A saved session that can no longer be read is dropped, so the person signs in again.
     public static func makeClient(configuration: MacAppConfiguration) throws -> BackendClient {
