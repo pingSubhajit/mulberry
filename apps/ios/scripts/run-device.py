@@ -70,14 +70,14 @@ def main():
                         '--team-id', args.team_id, '--bundle-id', 'com.subhajit.mulberry.dev'], env=env, check=True)
         subprocess.run([sys.executable, str(root / 'scripts/generate-project.py')], env=env, check=True)
         output = root / '.build/device'
-        command = ['xcodebuild', '-project', str(root / 'MulberryDelivery.xcodeproj'),
-                   '-scheme', 'MulberryDelivery', '-configuration', 'Debug',
+        command = ['xcodebuild', '-project', str(root / 'Mulberry.xcodeproj'),
+                   '-scheme', 'Mulberry', '-configuration', 'Debug',
                    '-destination', f'platform=iOS,id={udid}', '-derivedDataPath', str(output),
                    '-allowProvisioningUpdates', f'DEVELOPMENT_TEAM={args.team_id}']
-        entitlements = 'MulberryDelivery.entitlements' if args.push else 'LocalDelivery.entitlements'
+        entitlements = 'Mulberry.entitlements' if args.push else 'LocalDelivery.entitlements'
         command.append(f'CODE_SIGN_ENTITLEMENTS=Configuration/{entitlements}')
         subprocess.run(command + ['build'], env=env, check=True)
-        app = output / 'Build/Products/Debug-iphoneos/MulberryDelivery.app'
+        app = output / 'Build/Products/Debug-iphoneos/Mulberry.app'
         subprocess.run(['xcrun', 'devicectl', 'device', 'install', 'app', '--device', identifier,
                         str(app)], env=env, check=True)
         subprocess.run(['xcrun', 'devicectl', 'device', 'process', 'launch', '--device', identifier,

@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct MulberryDeliveryApp: App {
+struct MulberryApp: App {
     @UIApplicationDelegateAdaptor(NotificationBridge.self) var notifications
     @StateObject private var model = MulberryModel()
     @StateObject private var wallpapers = WallpaperLibrary()

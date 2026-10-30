@@ -28,8 +28,8 @@ SIGNING_ARGS=(CODE_SIGN_IDENTITY=-)
 if [ -n "${MULBERRY_TEAM_ID:-}" ]; then
   SIGNING_ARGS+=("DEVELOPMENT_TEAM=$MULBERRY_TEAM_ID")
 fi
-xcodebuild -project "$IOS_ROOT/MulberryDelivery.xcodeproj" -scheme MulberryDelivery \
+xcodebuild -project "$IOS_ROOT/Mulberry.xcodeproj" -scheme Mulberry \
   -configuration Debug -destination "platform=iOS Simulator,id=$SIM_DEVICE" \
   -derivedDataPath "$IOS_ROOT/.build/xcode" "${SIGNING_ARGS[@]}" build
-xcrun simctl install "$SIM_DEVICE" "$IOS_ROOT/.build/xcode/Build/Products/Debug-iphonesimulator/MulberryDelivery.app"
+xcrun simctl install "$SIM_DEVICE" "$IOS_ROOT/.build/xcode/Build/Products/Debug-iphonesimulator/Mulberry.app"
 xcrun simctl launch "$SIM_DEVICE" com.subhajit.mulberry.dev

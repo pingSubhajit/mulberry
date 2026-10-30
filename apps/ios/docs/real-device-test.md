@@ -10,7 +10,7 @@ Keep the Mac and iPhone on the same Wi-Fi for the local mock. The Mac must stay 
 
 ## Prepared on the Mac
 
-The project is `apps/ios/MulberryDelivery.xcodeproj`, with an iOS 27 minimum. Xcode 27.1 is installed. `scripts/run-device.py` checks for a physical iPhone and will not silently use a simulator. It takes `--team-id`, optionally `--device`, and optionally `--push`. By default it uses the empty LocalDelivery.entitlements file and tests local notifications. It rebuilds the bundled Shortcut with the chosen team ID before building/installing the app. The account must already be available in Xcode; the script allows Xcode to obtain the required provisioning assets.
+The project is `apps/ios/Mulberry.xcodeproj`, with an iOS 27 minimum. Xcode 27.1 is installed. `scripts/run-device.py` checks for a physical iPhone and will not silently use a simulator. It takes `--team-id`, optionally `--device`, and optionally `--push`. By default it uses the empty LocalDelivery.entitlements file and tests local notifications. It rebuilds the bundled Shortcut with the chosen team ID before building/installing the app. The account must already be available in Xcode; the script allows Xcode to obtain the required provisioning assets.
 
 An unsigned build for the physical iPhoneOS SDK passed on 26 October 2026. A Personal Team build was signed, installed, and launched on iPhone 17 with iOS 27.0.1 on 26 October 2026. The owner trusted the development profile. Revision 1 fetched successfully from the Mac LAN mock; manual wallpaper rendering, background local-notification automation, and locked-screen local-notification automation passed. The five Swift core tests and two mock HTTP tests passed in the simulator preparation work.
 

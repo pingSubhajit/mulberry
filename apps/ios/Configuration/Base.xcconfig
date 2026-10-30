@@ -4,5 +4,5 @@ GOOGLE_IOS_CLIENT_ID =
 GOOGLE_REVERSED_CLIENT_ID =
 GOOGLE_SERVER_CLIENT_ID =
 
-MULBERRY_ENTITLEMENTS_FILE = Configuration/MulberryDelivery.entitlements
+MULBERRY_ENTITLEMENTS_FILE = Configuration/Mulberry.entitlements
 APS_ENVIRONMENT = production

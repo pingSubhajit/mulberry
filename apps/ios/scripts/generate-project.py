@@ -81,7 +81,7 @@ crashlytics_phase = add('crashlytics-symbols-phase', isa='PBXShellScriptBuildPha
     outputPaths=[], runOnlyForDeploymentPostprocessing='0', shellPath='/bin/sh',
     shellScript='"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run"', alwaysOutOfDate='1', name='Upload Crashlytics symbols')
 firebase_phase = add('firebase-config-phase', isa='PBXShellScriptBuildPhase', buildActionMask='2147483647', files=[], inputPaths=[], outputPaths=[], runOnlyForDeploymentPostprocessing='0', shellPath='/bin/sh', shellScript='python3 "$SRCROOT/scripts/copy-client-config.py"', alwaysOutOfDate='1', name='Copy public Firebase client configuration')
-product = add('product', isa='PBXFileReference', explicitFileType='wrapper.application', path='MulberryDelivery.app', sourceTree='BUILT_PRODUCTS_DIR')
+product = add('product', isa='PBXFileReference', explicitFileType='wrapper.application', path='Mulberry.app', sourceTree='BUILT_PRODUCTS_DIR')
 widget_product = add('widget-product', isa='PBXFileReference', explicitFileType='wrapper.app-extension', path='MulberryWidgets.appex', sourceTree='BUILT_PRODUCTS_DIR')
 widget_assets_ref = add('widget-assets', isa='PBXFileReference', lastKnownFileType='folder.assetcatalog', path='Resources/WidgetAssets.xcassets', sourceTree='<group>')
 widget_assets_build = add('widget-assets-build', isa='PBXBuildFile', fileRef=widget_assets_ref)
@@ -100,7 +100,7 @@ for mode in ['Debug', 'Release']:
         'SWIFT_ACTIVE_COMPILATION_CONDITIONS': 'DEBUG' if mode == 'Debug' else '',
     }))
     target_configs.append(add('target-' + mode, isa='XCBuildConfiguration', name=mode, baseConfigurationReference=debug_config_ref if mode == 'Debug' else config_ref, buildSettings={
-        'PRODUCT_NAME': 'MulberryDelivery', 'PRODUCT_BUNDLE_IDENTIFIER': 'com.subhajit.mulberry.dev' if mode == 'Debug' else 'com.subhajit.mulberry',
+        'PRODUCT_NAME': 'Mulberry', 'PRODUCT_BUNDLE_IDENTIFIER': 'com.subhajit.mulberry.dev' if mode == 'Debug' else 'com.subhajit.mulberry',
         'MULBERRY_DISPLAY_NAME': 'Mulberry',
         'ASSETCATALOG_COMPILER_APPICON_NAME': 'AppIconDev' if mode == 'Debug' else 'AppIcon',
         'INFOPLIST_FILE': 'Configuration/Info.plist', 'CODE_SIGN_ENTITLEMENTS': '$(MULBERRY_ENTITLEMENTS_FILE)',
@@ -131,15 +131,15 @@ widget_embed_build = add('widget-embed-build', isa='PBXBuildFile', fileRef=widge
 widget_embed = add('widget-embed-phase', isa='PBXCopyFilesBuildPhase', buildActionMask='2147483647', dstPath='', dstSubfolderSpec='13', files=[widget_embed_build], name='Embed Foundation Extensions', runOnlyForDeploymentPostprocessing='0')
 project_list = add('project-configs', isa='XCConfigurationList', buildConfigurations=project_configs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
 target_list = add('target-configs', isa='XCConfigurationList', buildConfigurations=target_configs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
-target = add('app-target', isa='PBXNativeTarget', name='MulberryDelivery', productName='MulberryDelivery', productType='com.apple.product-type.application', productReference=product, buildConfigurationList=target_list, buildPhases=[sources_phase, frameworks_phase, resources_phase, firebase_phase, widget_embed, crashlytics_phase], dependencies=[widget_dependency], buildRules=[], packageProductDependencies=[google_product, firebase_product, crashlytics_product])
+target = add('app-target', isa='PBXNativeTarget', name='Mulberry', productName='Mulberry', productType='com.apple.product-type.application', productReference=product, buildConfigurationList=target_list, buildPhases=[sources_phase, frameworks_phase, resources_phase, firebase_phase, widget_embed, crashlytics_phase], dependencies=[widget_dependency], buildRules=[], packageProductDependencies=[google_product, firebase_product, crashlytics_product])
 project = add('project', isa='PBXProject', attributes={'LastUpgradeCheck': '2710'}, buildConfigurationList=project_list, compatibilityVersion='Xcode 14.0', developmentRegion='en', knownRegions=['en', 'Base'], mainGroup=main, productRefGroup=products, projectDirPath='', projectRoot='', targets=[target, widget_target], packageReferences=[google_package, firebase_package])
-folder = root / 'MulberryDelivery.xcodeproj'
+folder = root / 'Mulberry.xcodeproj'
 folder.mkdir(exist_ok=True)
 (folder / 'project.pbxproj').write_text('// !$*UTF8*$!\n' + quote({'archiveVersion': '1', 'classes': {}, 'objectVersion': '56', 'objects': objects, 'rootObject': project}) + '\n')
 schemes = folder / 'xcshareddata/xcschemes'
 schemes.mkdir(parents=True, exist_ok=True)
-ref = f'<BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{target}" BuildableName="MulberryDelivery.app" BlueprintName="MulberryDelivery" ReferencedContainer="container:MulberryDelivery.xcodeproj"/>'
-(schemes / 'MulberryDelivery.xcscheme').write_text(f'''<?xml version="1.0" encoding="UTF-8"?>
+ref = f'<BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{target}" BuildableName="Mulberry.app" BlueprintName="Mulberry" ReferencedContainer="container:Mulberry.xcodeproj"/>'
+(schemes / 'Mulberry.xcscheme').write_text(f'''<?xml version="1.0" encoding="UTF-8"?>
 <Scheme LastUpgradeVersion="2620" version="1.3">
   <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES"><BuildActionEntries><BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">{ref}</BuildActionEntry></BuildActionEntries></BuildAction>
   <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" debugServiceExtension="internal" allowLocationSimulation="YES"><BuildableProductRunnable runnableDebuggingMode="0">{ref}</BuildableProductRunnable></LaunchAction>
