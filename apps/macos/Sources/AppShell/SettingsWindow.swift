@@ -54,7 +54,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable {
         case .desktop: ["desktop", "overlay", "display", "screen", "visibility", "opacity", "position", "reset"]
         case .partner: ["partner", "anniversary", "unpair", "pairing", "wallpaper", "streak", "together"]
         case .advanced: ["sync", "revision", "recover", "offline", "connection"]
-        case .about: ["about", "version", "build", "privacy", "terms", "website", "source"]
+        case .about: ["about", "version", "build", "feedback", "privacy", "terms", "website", "source"]
         }
     }
 
@@ -64,10 +64,25 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+/// A page pushed over a pane, as System Settings pushes a detail page with a back button.
+enum SettingsSubpage: Hashable {
+    case feedback
+
+    var title: String {
+        switch self {
+        case .feedback: "Send Feedback"
+        }
+    }
+}
+
 /// Which pane Settings shows, kept by the window so the menu bar and toolbar can open a pane.
 @MainActor
 final class SettingsNavigation: ObservableObject {
-    @Published var pane: SettingsPane = .general
+    /// Choosing a pane, even the one showing, returns to its first page.
+    @Published var pane: SettingsPane = .general {
+        didSet { subpage = nil }
+    }
+    @Published var subpage: SettingsSubpage?
 }
 
 /// What the panes read and change. One object, so the window's view takes a single dependency.
@@ -129,8 +144,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func show(_ pane: SettingsPane?) {
+    func show(_ pane: SettingsPane?, subpage: SettingsSubpage? = nil) {
         if let pane { navigation.pane = pane }
+        if let subpage { navigation.subpage = subpage }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         // No field takes the keyboard until it is clicked, as in System Settings.
@@ -161,12 +177,21 @@ private struct SettingsView: View {
                 .fill(.primary.opacity(0.08))
                 .frame(width: 1)
                 .ignoresSafeArea()
-            detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .id(navigation.pane)
-                .transition(.opacity)
+            ZStack {
+                if let subpage = navigation.subpage {
+                    subpageView(subpage)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                } else {
+                    detail
+                        .id(navigation.pane)
+                        .transition(.opacity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
         }
         .animation(.easeOut(duration: 0.15), value: navigation.pane)
+        .animation(.smooth(duration: 0.28), value: navigation.subpage)
         .background { SettingsGlass() }
         .ignoresSafeArea()
         .tint(mulberryRed)
@@ -274,7 +299,7 @@ private struct SettingsView: View {
         case .advanced:
             AdvancedPane(syncController: environment.syncController)
         case .about:
-            AboutPane()
+            AboutPane { navigation.subpage = .feedback }
         }
     }
 }
@@ -288,6 +313,49 @@ private struct SettingsGlass: View {
             .fill(colorScheme == .dark ? Color.black.opacity(0.5) : Color(nsColor: .windowBackgroundColor).opacity(0.6))
             .glassEffect(.regular, in: Rectangle())
             .ignoresSafeArea()
+    }
+}
+
+extension SettingsView {
+    /// A pushed page: back and its title in the title bar's row, the page filling the rest.
+    fileprivate func subpageView(_ subpage: SettingsSubpage) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Button { navigation.subpage = nil } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 28, height: 28)
+                        .contentShape(.rect(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(SettingsBackButtonStyle())
+                .keyboardShortcut("[", modifiers: .command)
+                .help("Back to \(navigation.pane.title)")
+                .accessibilityLabel("Back to \(navigation.pane.title)")
+                Text(subpage.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 52)
+            switch subpage {
+            case .feedback:
+                FeedbackPage(api: { authController.api })
+            }
+        }
+    }
+}
+
+/// The back chevron: quiet until the pointer is over it, as in System Settings.
+private struct SettingsBackButtonStyle: ButtonStyle {
+    @State private var hovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.secondary)
+            .background(.primary.opacity(configuration.isPressed ? 0.12 : hovered ? 0.07 : 0), in: .rect(cornerRadius: 7, style: .continuous))
+            .onHover { hovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovered)
     }
 }
 

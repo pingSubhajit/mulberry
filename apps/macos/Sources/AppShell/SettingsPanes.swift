@@ -741,6 +741,7 @@ struct AdvancedPane: View {
 // MARK: About
 
 struct AboutPane: View {
+    let openFeedback: () -> Void
     @State private var document: LegalDocument?
 
     var body: some View {
@@ -768,6 +769,9 @@ struct AboutPane: View {
             .padding(.top, 8)
             .padding(.bottom, 28)
 
+            SettingsSection {
+                LinkRow(title: "Send Feedback", symbol: "bubble.left.fill", tint: .purple, action: openFeedback)
+            }
             SettingsSection {
                 LinkRow(title: "Privacy Policy", symbol: "hand.raised.fill", tint: .blue) { document = .privacy }
                 LinkRow(title: "Terms of Use", symbol: "doc.text.fill", tint: .gray) { document = .terms }

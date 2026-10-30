@@ -20,6 +20,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         let canExportDrawing: () -> Bool
         let canSendReactions: () -> Bool
         let setDryBrush: (Bool) -> Void
+        let sendFeedback: () -> Void
+        let canSendFeedback: () -> Bool
     }
 
     private let preferences: MacPreferences
@@ -205,6 +207,8 @@ final class MainMenuController: NSObject, NSMenuDelegate {
 
     private func helpMenu() -> NSMenu {
         let menu = NSMenu(title: "Help")
+        menu.addItem(item("Send Feedback…", enabled: actions.canSendFeedback, action: actions.sendFeedback))
+        menu.addItem(.separator())
         menu.addItem(item("Mulberry Website") { NSWorkspace.shared.open(URL(string: "https://mulberry.my")!) })
         menu.addItem(item("Privacy Policy") { [actions] in actions.openSettings(.about) })
         return menu

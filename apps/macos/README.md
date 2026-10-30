@@ -43,8 +43,8 @@ The iPhone and iPad app and this app share four targets in [`packages/apple`](..
 - **Canvas window.** A fixed 9:20 portrait panel of frosted glass, with the iPad's tools: brush, text, stickers, eraser, eyedropper and clear, plus undo and redo, colour and width. The toolbar holds reactions, the streak and the profile menu.
 - **Quick Draw.** Control-Command-M by default, from any app: the overlay comes forward over a glass panel with the tools in a column beside it. Its grip drags the drawing between displays. Esc or Done closes it.
 - **Keyboard.** B, T, S, E and I pick the brush, text, stickers, eraser and eyedropper; Command-Z and Shift-Command-Z undo and redo this Mac's own edits; Command-Delete clears the canvas after asking; Delete removes a selected text.
-- **Menus.** Mulberry, File (Quick Draw, Send Reaction, Export Drawing), Edit (undo, redo, the clipboard, Clear Canvas), Settings (the overlay, dry brush, login and menu bar options), Window and Help.
-- **Settings.** Its own window: your account and photo; open at login, menu bar and Dock, Quick Draw's shortcut and dry brush strokes; the desktop overlay; your partner's profile, pairing and whether their wallpaper shows your drawings; sync diagnostics; and About.
+- **Menus.** Mulberry, File (Quick Draw, Send Reaction, Export Drawing), Edit (undo, redo, the clipboard, Clear Canvas), Settings (the overlay, dry brush, login and menu bar options), Window and Help (Send Feedback).
+- **Settings.** Its own window: your account and photo; open at login, menu bar and Dock, Quick Draw's shortcut and dry brush strokes; the desktop overlay; your partner's profile, pairing and whether their wallpaper shows your drawings; sync diagnostics; and About, with Send Feedback, which opens the feedback board in its own window.
 
 ## Structure
 

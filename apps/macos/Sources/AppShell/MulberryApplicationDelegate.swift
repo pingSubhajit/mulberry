@@ -250,7 +250,9 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 exportDrawing: { [unowned self] in exportDrawing() },
                 canExportDrawing: { [unowned self] in !canvasIsEmpty },
                 canSendReactions: { [unowned self] in reactions.canSend },
-                setDryBrush: { [unowned self] enabled in Task { _ = await accountSettings.setDryBrush(enabled) } }
+                setDryBrush: { [unowned self] enabled in Task { _ = await accountSettings.setDryBrush(enabled) } },
+                sendFeedback: { [unowned self] in showSettings(.about, subpage: .feedback) },
+                canSendFeedback: { [unowned self] in authController.state.isSignedIn }
             )
         )
         controller.install()
@@ -546,7 +548,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         showSettings(nil)
     }
 
-    private func showSettings(_ pane: SettingsPane?) {
+    private func showSettings(_ pane: SettingsPane?, subpage: SettingsSubpage? = nil) {
         if settingsWindowController == nil {
             settingsWindowController = SettingsWindowController(environment: SettingsEnvironment(
                 authController: authController,
@@ -567,7 +569,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         }
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        settingsWindowController?.show(pane)
+        settingsWindowController?.show(pane, subpage: subpage)
     }
 
     @objc private func quitMulberry() {
