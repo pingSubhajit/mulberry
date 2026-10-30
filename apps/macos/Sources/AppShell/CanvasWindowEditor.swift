@@ -893,9 +893,8 @@ struct FullAppCanvasEditor: View {
         guard let anchor = formatBarAnchor else { return natural }
         let bounds = geometry.bounds
         let half = formatBarSize.height / 2
-        // Clear of the rotate knob above a selected text; closer while typing.
-        // Pushed only on real contact: the rotate knob above a selected text, the text itself
-        // while typing. The natural place leaves headroom for styling to grow into.
+        // Pushed only on real contact: the rotation zones beyond a selected text's corners, the
+        // text itself while typing. The natural place leaves headroom for styling to grow into.
         let gap: CGFloat = textEdit == nil ? 30 : 6
         if anchor.y < bounds.minY {
             let highest = bounds.minY - gap - half
@@ -906,7 +905,8 @@ struct FullAppCanvasEditor: View {
         return CGPoint(x: anchor.x, y: max(anchor.y, bounds.maxY + gap + half))
     }
 
-    /// Above the text, clear of the frame's rotate knob, or below it near the top of the window.
+    /// Above the text, clear of the rotation zones beyond its corners, or below it near the top of
+    /// the window.
     private func formatBarPosition(_ geometry: ElementFrameGeometry, canvasSize: CGSize) -> CGPoint {
         let bounds = geometry.bounds
         let half = formatBarSize.width / 2, height = formatBarSize.height

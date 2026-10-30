@@ -237,8 +237,8 @@ final class InlineTextContainer: NSView {
 // MARK: Selection frame
 
 /// The selected text's or sticker's frame, as in Figma: drag inside to move, a corner to resize,
-/// the knob above to rotate (Shift snaps to 15°), double-click to edit the words or swap the
-/// sticker.
+/// just outside a corner to rotate, the pointer turning to show it (it settles level, or on a
+/// quarter turn, within 3°; Shift snaps to 15°), double-click to edit the words or swap the sticker.
 struct ElementSelectionFrame<Element: CanvasTransformable>: View {
     let geometry: ElementFrameGeometry
     let original: Element
@@ -252,13 +252,29 @@ struct ElementSelectionFrame<Element: CanvasTransformable>: View {
 
     @State private var start: Element?
     @State private var latest: Element?
+    /// Whether the rotation sits on a quarter turn, so the trackpad ticks as it settles there.
+    @State private var squared = false
 
     private let handle: CGFloat = 8
-    private let rotateReach: CGFloat = 22
+    /// The rotation zone beyond each corner, outside its resize handle.
+    private let rotateZone: CGFloat = 22
 
     var body: some View {
         let size = geometry.body.size
         ZStack {
+            // Under the frame and the handles, so only the area beyond a corner rotates.
+            ForEach(Corner.allCases, id: \.self) { corner in
+                Color.clear
+                    .frame(width: rotateZone, height: rotateZone)
+                    .contentShape(Rectangle())
+                    .position(
+                        x: corner.x * size.width + corner.outward.dx * (rotateZone / 2 - 2),
+                        y: corner.y * size.height + corner.outward.dy * (rotateZone / 2 - 2)
+                    )
+                    .gesture(rotateGesture)
+                    .pointerStyle(RotateCursor.style(degrees: corner.degrees + geometry.angle * 180 / .pi))
+                    .help("Rotate")
+            }
             Rectangle()
                 .strokeBorder(mulberryRed, lineWidth: 1.25)
                 .contentShape(Rectangle())
@@ -271,18 +287,6 @@ struct ElementSelectionFrame<Element: CanvasTransformable>: View {
                     .gesture(scaleGesture)
                     .pointerStyle(corner.resizeStyle)
             }
-            Rectangle().fill(mulberryRed).frame(width: 1.25, height: rotateReach - handle / 2)
-                .position(x: size.width / 2, y: -(rotateReach - handle / 2) / 2)
-                .allowsHitTesting(false)
-            Circle()
-                .fill(.white)
-                .overlay(Circle().strokeBorder(mulberryRed, lineWidth: 1.25))
-                .frame(width: handle + 2, height: handle + 2)
-                .frame(width: 22, height: 22)
-                .contentShape(Circle())
-                .position(x: size.width / 2, y: -rotateReach)
-                .gesture(rotateGesture)
-                .help("Rotate")
         }
         .frame(width: size.width, height: size.height)
         .rotationEffect(.radians(geometry.angle))
@@ -336,7 +340,10 @@ struct ElementSelectionFrame<Element: CanvasTransformable>: View {
         DragGesture(minimumDistance: 1, coordinateSpace: .named(CanvasSpace.name))
             .onChanged { drag in
                 let from = start ?? original
-                if start == nil { start = original }
+                if start == nil {
+                    start = original
+                    squared = Self.quarterTurn(near: original.rotationRad, within: 0) != nil
+                }
                 let center = geometry.center
                 let turned = atan2(drag.location.y - center.y, drag.location.x - center.x)
                     - atan2(drag.startLocation.y - center.y, drag.startLocation.x - center.x)
@@ -344,12 +351,27 @@ struct ElementSelectionFrame<Element: CanvasTransformable>: View {
                 if NSEvent.modifierFlags.contains(.shift) {
                     let step = Double.pi / 12
                     angle = (angle / step).rounded() * step
+                } else if let square = Self.quarterTurn(near: angle, within: 3 * .pi / 180) {
+                    // As the iPhone's rotation slider settles level near zero.
+                    angle = square
+                }
+                let onSquare = Self.quarterTurn(near: angle, within: 1e-9) != nil
+                if onSquare != squared {
+                    squared = onSquare
+                    if onSquare { Haptics.select() }
                 }
                 var rotated = from
                 rotated.rotationRad = angle
                 update(rotated)
             }
             .onEnded { _ in finish() }
+    }
+
+    /// The quarter turn nearest `angle`, if it is within `tolerance` of it.
+    private static func quarterTurn(near angle: Double, within tolerance: Double) -> Double? {
+        let quarter = Double.pi / 2
+        let nearest = (angle / quarter).rounded() * quarter
+        return abs(angle - nearest) <= tolerance ? nearest : nil
     }
 
     private func update(_ element: Element) {
@@ -369,6 +391,17 @@ struct ElementSelectionFrame<Element: CanvasTransformable>: View {
 
         var x: CGFloat { self == .topLeft || self == .bottomLeft ? 0 : 1 }
         var y: CGFloat { self == .topLeft || self == .topRight ? 0 : 1 }
+        /// Away from the frame, diagonally.
+        var outward: CGVector { CGVector(dx: x * 2 - 1, dy: y * 2 - 1) }
+        /// The rotate pointer's turn for this corner, clockwise from the top right's.
+        var degrees: Double {
+            switch self {
+            case .topRight: 0
+            case .bottomRight: 90
+            case .bottomLeft: 180
+            case .topLeft: 270
+            }
+        }
 
         var resizeStyle: PointerStyle {
             switch self {
@@ -576,5 +609,55 @@ struct FormatSurface<Content: View>: View {
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+/// Figma's rotate pointer: a quarter arc with an arrowhead at each end, bowed toward the corner
+/// it turns from and following the selection's own rotation. Drawn once per 5° and kept.
+@MainActor
+enum RotateCursor {
+    private static var cache: [Int: PointerStyle] = [:]
+
+    static func style(degrees: Double) -> PointerStyle {
+        let step = ((Int((degrees / 5).rounded()) * 5) % 360 + 360) % 360
+        if let cached = cache[step] { return cached }
+        let style = PointerStyle.image(Image(nsImage: image(degrees: Double(step))), hotSpot: .center)
+        cache[step] = style
+        return style
+    }
+
+    static func image(degrees: Double) -> NSImage {
+        let side: CGFloat = 28
+        return NSImage(size: NSSize(width: side, height: side), flipped: true) { _ in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.translateBy(x: side / 2, y: side / 2)
+            context.rotate(by: degrees * .pi / 180)
+            context.translateBy(x: -side / 2, y: -side / 2)
+            // The arc's middle sits on the hot spot; it bows up and to the right.
+            let radius: CGFloat = 10
+            let center = CGPoint(x: side / 2 - radius * 0.7071, y: side / 2 + radius * 0.7071)
+            let arc = CGMutablePath()
+            arc.addArc(center: center, radius: radius, startAngle: -.pi / 2, endAngle: 0, clockwise: false)
+            let top = CGPoint(x: center.x, y: center.y - radius)
+            let right = CGPoint(x: center.x + radius, y: center.y)
+            let heads = CGMutablePath()
+            // Pointing back along the arc at each end: left at the top, down at the right.
+            heads.addLines(between: [CGPoint(x: top.x - 4.5, y: top.y), CGPoint(x: top.x + 1, y: top.y - 4.5), CGPoint(x: top.x + 1, y: top.y + 4.5)])
+            heads.closeSubpath()
+            heads.addLines(between: [CGPoint(x: right.x, y: right.y + 4.5), CGPoint(x: right.x - 4.5, y: right.y - 1), CGPoint(x: right.x + 4.5, y: right.y - 1)])
+            heads.closeSubpath()
+            for (colour, width) in [(NSColor.white, 4.0), (NSColor.black, 1.6)] {
+                context.setStrokeColor(colour.cgColor)
+                context.setFillColor(colour.cgColor)
+                context.setLineWidth(width)
+                context.setLineJoin(.round)
+                context.setLineCap(.round)
+                context.addPath(arc)
+                context.strokePath()
+                context.addPath(heads)
+                if colour == .white { context.drawPath(using: .fillStroke) } else { context.fillPath() }
+            }
+            return true
+        }
     }
 }
