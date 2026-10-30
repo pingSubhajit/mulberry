@@ -25,7 +25,7 @@ xcrun --sdk iphonesimulator swiftc -sdk "$SDK_PATH" -target "$(uname -m)-apple-i
   "$IOS_ROOT/Sources/App/CanvasEditorChrome.swift" "$IOS_ROOT/Sources/App/CanvasStickerEditorView.swift" \
   "$IOS_ROOT/Sources/App/StickerArtwork.swift" "$IOS_ROOT"/../../packages/apple/Sources/StickerAssets/*.swift \
   "$IOS_ROOT/Sources/App/CustomColourSheet.swift" "$IOS_ROOT/Sources/App/ColourNames.swift" \
-  "$IOS_ROOT/Sources/App/ReactionsModel.swift" "$IOS_ROOT/Sources/App/ReactionActivities.swift" "$IOS_ROOT"/Sources/Shared/*.swift "$IOS_ROOT/Sources/App/DoodleEditor.swift" "$IOS_ROOT/Sources/App/StrokeCanvasView.swift" \
+  "$IOS_ROOT/Sources/App/ReactionsModel.swift" "$IOS_ROOT/Sources/App/ReactionActivities.swift" "$IOS_ROOT"/Sources/Shared/*.swift "$IOS_ROOT/Sources/App/DoodleEditor.swift" "$IOS_ROOT/Sources/App/PalmRejection.swift" "$IOS_ROOT/Sources/App/PencilInput.swift" "$IOS_ROOT/Sources/App/StrokeCanvasView.swift" \
   "$IOS_ROOT/Sources/App/MulberryModel.swift" "$IOS_ROOT/Sources/App/CanvasModel.swift" \
   "$IOS_ROOT/Sources/App/WallpaperLibrary.swift" "$IOS_ROOT/Sources/App/ProductWallpaperService.swift" \
   "$IOS_ROOT/Sources/App/WallpaperNotifications.swift" "$IOS_ROOT"/Sources/DeliveryCore/*.swift \

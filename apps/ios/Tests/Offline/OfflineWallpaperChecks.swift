@@ -77,6 +77,105 @@ actor OfflineTransport: BackendTransport {
             print("\(passed ? "PASS" : "FAIL"): \(message)")
             if !passed { failures += 1 }
         }
+        // Palm rejection.
+        var palms = PalmRejection()
+        let fingertip = PalmRejection.Finger(landed: 100, radius: PalmRejection.radius(majorRadius: 20.9, tolerance: 5.2))
+        let flatFinger = PalmRejection.Finger(landed: 100, radius: PalmRejection.radius(majorRadius: 26.1, tolerance: 5.2))
+        func verdict(_ finger: PalmRejection.Finger, others: Int = 0, pencilOnly: Bool = false, at time: TimeInterval) -> PalmRejection.Verdict {
+            palms.classify(finger, others: others, pencilOnly: pencilOnly, at: time)
+        }
+        check(verdict(fingertip, at: 100) == .pending && verdict(flatFinger, at: 100.05) == .pending, "A finger's stroke waits to be proved")
+        check(verdict(fingertip, at: 100 + PalmRejection.confirmation) == .finger, "A finger alone and finger-sized is proved")
+        var spreading = fingertip
+        spreading.measure(majorRadius: 36.5, tolerance: 5.2)
+        spreading.measure(majorRadius: 20.9, tolerance: 5.2)
+        check(verdict(spreading, at: 100.05) == .palm, "A contact that spreads to a palm's size stays a palm")
+        check(verdict(fingertip, others: 1, at: 100.05) == .palm, "A finger landing beside another contact is the hand")
+        check(verdict(fingertip, pencilOnly: true, at: 100.5) == .palm, "Only Draw with Apple Pencil keeps fingers from drawing")
+        var proved = fingertip
+        proved.confirmed = true
+        check(verdict(proved, others: 1, at: 101) == .finger, "A proved finger keeps drawing when another finger lands")
+        proved.measure(majorRadius: 41.7, tolerance: 5.2)
+        check(verdict(proved, at: 101) == .palm, "A proved finger that spreads to a palm's size is let go")
+        palms.notePencil(at: 200)
+        let nearPencil = PalmRejection.Finger(landed: 201, radius: fingertip.radius)
+        check(verdict(nearPencil, at: 201.5) == .palm, "Fingers do not draw while the Pencil is in use")
+        let later = PalmRejection.Finger(landed: 200 + PalmRejection.pencilGrace, radius: fingertip.radius)
+        check(verdict(later, at: later.landed + PalmRejection.confirmation) == .finger, "Fingers draw again once the Pencil is put down")
+
+        // Apple Pencil input.
+        final class Touch {}
+        func drawn(_ steps: (inout PencilInput, ObjectIdentifier) -> Void) -> [PencilInput.Command] {
+            var input = PencilInput()
+            let touch = Touch()
+            steps(&input, ObjectIdentifier(touch))
+            return input.commands()
+        }
+        func sample(_ index: Int, _ time: TimeInterval, _ x: CGFloat, _ y: CGFloat, force: CGFloat = 1.0 / 3, measured: Bool = false) -> PencilInput.Sample {
+            .init(index: index, time: time, point: CGPoint(x: x, y: y), force: force, forceMeasured: measured)
+        }
+        let hovering = drawn { input, touch in
+            input.begin(touch, with: [sample(1, 0, 400, 300)])
+            input.add([sample(2, 0.004, 180, 301)], to: touch)
+            input.lift(touch)
+            check(input.commands().isEmpty, "A Pencil touch is not drawn on its estimated force")
+            input.measure(1, force: 0, final: true)
+            input.measure(2, force: 0.01, final: true)
+        }
+        check(hovering.isEmpty, "A hovering Pencil iPadOS reports as touching draws nothing")
+        let tap = drawn { input, touch in
+            input.begin(touch, with: [sample(1, 0, 200, 200, force: 0.4, measured: true)])
+            input.lift(touch)
+        }
+        check(tap == [.begin(CGPoint(x: 200, y: 200)), .end], "A Pencil tap draws a dot")
+        let pulled = drawn { input, touch in
+            input.begin(touch, with: [0, 1, 2, 3, 4, 5, 6].map { sample($0, Double($0) * 0.004, 240, 220 + CGFloat($0), force: 0.45, measured: true) })
+            input.add([sample(7, 0.028, 236, 474, force: 0.45, measured: true), sample(8, 0.032, 234, 278, force: 0.44, measured: true),
+                       sample(9, 0.036, 241, 229, force: 0.43, measured: true)], to: touch)
+            input.lift(touch)
+        }
+        let pulledPoints = pulled.flatMap { command -> [CGPoint] in
+            switch command { case let .begin(point): [point]; case let .move(points): points; case .end: [] }
+        }
+        check(!pulledPoints.contains { $0.y > 260 } && pulledPoints.last == CGPoint(x: 241, y: 229), "A sample pulled across to the palm is not drawn")
+        // A glitch iPadOS echoed, as recorded: 434 is the pull to the palm, 313 its echo.
+        let echoed = drawn { input, touch in
+            let xs: [CGFloat] = [286, 287, 288, 289, 290, 291, 292, 434, 313, 281, 288, 289, 290]
+            input.begin(touch, with: xs.enumerated().map { sample($0.offset, Double($0.offset) * 0.004, $0.element, 200, force: 0.45, measured: true) })
+            input.lift(touch)
+        }
+        let echoedPoints = echoed.flatMap { command -> [CGPoint] in
+            switch command { case let .begin(point): [point]; case let .move(points): points; case .end: [] }
+        }
+        check(!echoedPoints.contains { $0.x > 295 } && echoedPoints.last == CGPoint(x: 290, y: 200), "A glitch's echo in the samples after it is not drawn")
+        let flick = drawn { input, touch in
+            input.begin(touch, with: (0..<20).map { sample($0, Double($0) * 0.004, 100 + CGFloat($0) * 20, 300, force: 0.5, measured: true) })
+            input.lift(touch)
+        }
+        let flickPoints = flick.flatMap { command -> [CGPoint] in
+            switch command { case let .begin(point): [point]; case let .move(points): points; case .end: [] }
+        }
+        check(flickPoints == (0..<20).map { CGPoint(x: 100 + CGFloat($0) * 20, y: 300) }, "A flick faster than handwriting is drawn whole")
+        var ordered = PencilInput()
+        let first = Touch(), second = Touch()
+        ordered.begin(ObjectIdentifier(first), with: [sample(1, 0, 100, 100), sample(2, 0.004, 101, 100)])
+        ordered.lift(ObjectIdentifier(first))
+        ordered.begin(ObjectIdentifier(second), with: [sample(3, 0.05, 300, 300, force: 0.5, measured: true), sample(4, 0.054, 301, 300, force: 0.5, measured: true)])
+        check(ordered.commands().isEmpty, "A stroke waits for the one before it to be measured")
+        ordered.measure(1, force: 0.4, final: true)
+        ordered.measure(2, force: 0.4, final: true)
+        check(ordered.commands() == [.begin(CGPoint(x: 100, y: 100)), .move([CGPoint(x: 101, y: 100)]), .end,
+                                     .begin(CGPoint(x: 300, y: 300)), .move([CGPoint(x: 301, y: 300)])],
+              "Strokes reach the editor whole, in the order they were drawn")
+        if let trace = Bundle.main.url(forResource: "pencil-palm-trace", withExtension: "json"), let data = try? Data(contentsOf: trace) {
+            let strokes = replayPencilTrace(data)
+            let longest = strokes.flatMap { stroke in zip(stroke, stroke.dropFirst()).map { hypot($1.x - $0.x, $1.y - $0.y) } }.max() ?? 0
+            check(strokes.count == 21, "A recorded palm-resting session keeps its 21 strokes and none of its 14 phantom touches")
+            check(longest < 25, "A recorded palm-resting session has no line pulled to the palm, nor its echo")
+        } else {
+            check(false, "The recorded palm-resting session is bundled")
+        }
+
         let model = MulberryModel(wallpaperService: service)
         await model.restore()
         check(model.canvas.state.strokes == [stroke], "Cold offline launch restores saved strokes")
@@ -193,4 +292,49 @@ actor OfflineTransport: BackendTransport {
         check(await AppRuntime.backend.signedInUserId == nil, "Rejected refresh clears the local session")
         exit(failures == 0 ? 0 : 1)
     }
+}
+
+/// Replays a recorded Pencil session, as written by `InputTrace` and compacted, through
+/// `PencilInput`, giving the strokes it hands on.
+@MainActor func replayPencilTrace(_ data: Data) -> [[CGPoint]] {
+    guard let events = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+    final class Touch {}
+    var touches: [Int: Touch] = [:]
+    var input = PencilInput()
+    var strokes: [[CGPoint]] = []
+    func samples(_ value: Any?) -> [PencilInput.Sample] {
+        (value as? [[Any]] ?? []).compactMap { values in
+            guard values.count == 6, let time = values[1] as? NSNumber, let x = values[2] as? NSNumber, let y = values[3] as? NSNumber,
+                  let force = values[4] as? NSNumber, let measured = values[5] as? NSNumber else { return nil }
+            return PencilInput.Sample(index: (values[0] as? NSNumber)?.intValue, time: time.doubleValue,
+                                      point: CGPoint(x: x.doubleValue, y: y.doubleValue), force: force.doubleValue,
+                                      forceMeasured: measured.intValue == 1)
+        }
+    }
+    func hand() {
+        for command in input.commands() {
+            switch command {
+            case let .begin(point): strokes.append([point])
+            case let .move(points): strokes[strokes.count - 1] += points
+            case .end: break
+            }
+        }
+    }
+    for event in events {
+        if let number = event["begin"] as? Int {
+            let touch = Touch()
+            touches[number] = touch
+            input.begin(ObjectIdentifier(touch), with: samples(event["samples"]))
+        } else if let number = event["add"] as? Int, let touch = touches[number] {
+            input.add(samples(event["samples"]), to: ObjectIdentifier(touch))
+        } else if let number = event["lift"] as? Int, let touch = touches[number] {
+            input.lift(ObjectIdentifier(touch))
+        } else if let measure = event["measure"] as? [NSNumber], measure.count == 3 {
+            input.measure(measure[0].intValue, force: measure[1].doubleValue, final: measure[2].intValue == 1)
+        }
+        hand()
+    }
+    input.expire(at: .infinity)
+    hand()
+    return strokes
 }

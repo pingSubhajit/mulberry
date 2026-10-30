@@ -140,6 +140,8 @@ final class DoodleEditor: ObservableObject {
     let user: String?
     private var emittedPoints = 0
     private var lastAppend = Date.distantPast
+    /// The stroke being drawn shows here but is not saved yet: a finger not yet told from a palm.
+    private var provisional = false
     /// Edits not yet handed to the model to save, in the order they were made.
     private var pending: [DrawingOperation] = []
     private var draining = false
@@ -185,14 +187,19 @@ final class DoodleEditor: ObservableObject {
         composeScene()
     }
 
-    func begin(at point: CGPoint, size: CGSize) {
+    /// Starts a stroke, an erase or a colour pick. A provisional stroke shows at once but is saved only
+    /// once `confirmStroke` says it was meant; until then `discardStroke` leaves no trace of it.
+    func begin(at point: CGPoint, size: CGSize, provisional: Bool = false) {
         guard activeStroke == nil, errorMessage == nil, validSession else { return }
         updateViewport(size)
         switch tool {
         case .brush:
             let stroke = DrawingStroke(colorArgb: color, width: width / 1080, points: [normalized(point, size)])
             activeStroke = stroke; emittedPoints = 1; lastAppend = .now
-            do { queue([try .startStroke(stroke)]) } catch { errorMessage = error.localizedDescription }
+            self.provisional = provisional
+            if !provisional {
+                do { queue([try .startStroke(stroke)]) } catch { errorMessage = error.localizedDescription }
+            }
             publishScene()
         case .eraser: erase(at: point, size: size)
         case .eyedropper: eyedropperPreview = sample(at: point, size: size)
@@ -219,12 +226,22 @@ final class DoodleEditor: ObservableObject {
         if Date().timeIntervalSince(lastAppend) >= 1 / Double(max(1, model.appendHz)) { appendPoints() }
     }
 
+    /// Saves a provisional stroke, and from now on its points as they come.
+    func confirmStroke() {
+        guard provisional, let stroke = activeStroke else { return }
+        provisional = false
+        do { queue([try .startStroke(stroke)]) } catch { errorMessage = error.localizedDescription }
+        appendPoints()
+    }
+
+    /// Finishing a stroke confirms it.
     func end() {
         if tool == .eyedropper, let picked = eyedropperPreview {
             eyedropperPreview = nil
             color = picked; textColor = picked; tool = .brush
             return
         }
+        confirmStroke()
         appendPoints()
         guard var stroke = activeStroke else { return }
         stroke.finished = true
@@ -235,10 +252,17 @@ final class DoodleEditor: ObservableObject {
         composeScene()
     }
 
-    /// A held finger opens the reactions instead of drawing, so the dot it left goes, without an undo step.
+    /// A stroke not meant to be drawn, by a palm or a finger held to open the reactions, goes without
+    /// an undo step.
     func discardStroke() {
         guard let stroke = activeStroke else { return }
         activeStroke = nil
+        // Never saved, so nothing to take back.
+        if provisional {
+            provisional = false
+            publishScene()
+            return
+        }
         queue([.init(type: "FINISH_STROKE", strokeId: stroke.id), .init(type: "DELETE_STROKE", strokeId: stroke.id)], preview: true)
     }
 
@@ -579,7 +603,7 @@ final class DoodleEditor: ObservableObject {
     private var validSession: Bool { model.userId == user && model.bootstrap?.pairSessionId == pair && model.bootstrap?.isPaired == true }
 
     private func appendPoints() {
-        guard let stroke = activeStroke else { return }
+        guard let stroke = activeStroke, !provisional else { return }
         do {
             while emittedPoints < stroke.points.count {
                 let end = min(emittedPoints + 64, stroke.points.count)
@@ -837,7 +861,14 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             endTransform(commit: false)
         }
     }
+    /// The one touch that draws, erases or picks: the Pencil whenever it is down.
     private weak var trackedTouch: UITouch?
+    /// What palm rejection knows of the finger being followed. Nil for the Pencil, and for tools
+    /// that do not mark the canvas.
+    private var finger: PalmRejection.Finger?
+    private var palms = PalmRejection()
+    /// The Pencil's touches, turned into what it really drew before the editor hears of them.
+    private var pencil = PencilInput()
     /// On iPhone, a finger held still on the canvas opens the reactions, as on Android.
     private var reactionHold: (start: CGPoint, timer: DispatchWorkItem)?
     /// The finger that opened the reactions, while it stays down.
@@ -868,6 +899,9 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
     override init(frame: CGRect) {
         super.init(frame: frame)
         isOpaque = false; backgroundColor = .clear
+        // Every contact, not only the first: the Pencil must reach the canvas past a resting palm,
+        // and palm rejection counts the hand's other contacts.
+        isMultipleTouchEnabled = true
         strokeCanvas.frame = bounds
         strokeCanvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(strokeCanvas)
@@ -928,18 +962,43 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         updateSelection()
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        #if DEBUG
+        InputTrace.shared.record("began", touches, event, in: self)
+        #endif
         editor?.canvasTouched()
-        guard elementTool == nil, trackedTouch == nil, let touch = touches.first else { return }
-        // With "Only Draw with Apple Pencil" on, a finger or palm never marks the canvas.
-        if UIPencilInteraction.prefersPencilOnlyDrawing, touch.type != .pencil,
-           editor?.tool == .brush || editor?.tool == .eraser { return }
+        notePencil(in: touches)
+        guard elementTool == nil, heldTouch == nil,
+              let touch = touches.first(where: { $0.type == .pencil }) ?? touches.first else { return }
+        if let tracked = trackedTouch {
+            guard touch.type == .pencil, tracked.type != .pencil else {
+                // Another contact beside a finger not yet proved shows a resting hand.
+                if tracked.type != .pencil { _ = review(tracked, in: event) }
+                return
+            }
+            // The Pencil takes over from the hand that landed first; what the hand drew goes.
+            abandonTrackedTouch()
+        }
+        if touch.type == .pencil {
+            trackedTouch = touch
+            hoverLayer.isHidden = true
+            pencil.begin(ObjectIdentifier(touch), with: samples(of: touch, in: event))
+            followPencil(predicted: [])
+            return
+        }
+        if editor?.tool == .brush || editor?.tool == .eraser {
+            let landing = PalmRejection.Finger(
+                landed: touch.timestamp,
+                radius: PalmRejection.radius(majorRadius: touch.majorRadius, tolerance: touch.majorRadiusTolerance)
+            )
+            guard verdict(on: landing, touch: touch, in: event) != .palm else { return }
+            finger = landing
+        }
         trackedTouch = touch
         hoverLayer.isHidden = true
         let point = touch.location(in: self)
         // On iPhone, a finger held still opens the reactions, whatever the tool.
         let holdable = UIDevice.current.userInterfaceIdiom == .phone && touch.type == .direct
-        if editor?.tool == .eraser, let hit = elementLayer.renderer.hit(elementLayer.visible, at: point, canvasSize: bounds.size) {
-            elementToErase = (hit.id, point)
+        if beginErasingElement(at: point) {
             if holdable { holdForReactions(at: point) }
             return
         }
@@ -950,13 +1009,24 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             holdForReactions(at: point)
             return
         }
-        editor?.begin(at: point, size: bounds.size)
+        // A finger's stroke is saved only once it has proved not to be a palm.
+        editor?.begin(at: point, size: bounds.size, provisional: finger != nil)
         showLoupe(at: point)
         if holdable, editor?.tool == .brush { holdForReactions(at: point) }
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        #if DEBUG
+        InputTrace.shared.record("moved", touches, event, in: self)
+        #endif
         if let held = heldTouch, touches.contains(held) { editor?.reactionPointer.location = held.location(in: self) }
+        notePencil(in: touches)
         guard let touch = trackedTouch, touches.contains(touch) else { return }
+        if touch.type == .pencil {
+            pencil.add(samples(of: touch, in: event), to: ObjectIdentifier(touch))
+            followPencil(predicted: event?.predictedTouches(for: touch) ?? [])
+            return
+        }
+        guard review(touch, in: event) else { return }
         let point = touch.location(in: self)
         if let hold = reactionHold, hypot(point.x - hold.start.x, point.y - hold.start.y) > 10 { cancelHold() }
         if let start = deferredStart {
@@ -964,43 +1034,177 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             deferredStart = nil
             editor?.begin(at: start, size: bounds.size)
         }
+        continueMarking((event?.coalescedTouches(for: touch) ?? [touch]).map { $0.location(in: self) })
+        strokeCanvas.prediction = prediction(continuing: (event?.predictedTouches(for: touch) ?? []).map { $0.location(in: self) })
+    }
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        #if DEBUG
+        InputTrace.shared.record("ended", touches, event, in: self)
+        #endif
+        if let held = heldTouch, touches.contains(held) { heldTouch = nil; editor?.reactionPointer.lift() }
+        notePencil(in: touches)
+        guard let touch = trackedTouch, touches.contains(touch) else { return }
+        if touch.type == .pencil { return liftPencil(touch, in: event) }
+        guard review(touch, in: event) else { return }
+        cancelHold()
+        // A tap: the erase or colour pick that waited happens now.
+        if let start = deferredStart { deferredStart = nil; editor?.begin(at: start, size: bounds.size) }
+        if elementToErase == nil { editor?.move(points: [touch.location(in: self)], size: bounds.size) }
+        // A finger lifted before it was proved, and never shown to be a palm, was a tap.
+        endMarking()
+        trackedTouch = nil; finger = nil; strokeCanvas.prediction = nil
+    }
+    /// A cancelled Pencil stroke is kept, as the Pencil meant it. A cancelled finger was taken by the
+    /// system, such as an edge swipe, or rejected as a palm, so what it drew goes.
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        #if DEBUG
+        InputTrace.shared.record("cancelled", touches, event, in: self)
+        #endif
+        if let held = heldTouch, touches.contains(held) { heldTouch = nil; editor?.reactionPointer.location = nil }
+        notePencil(in: touches)
+        // Only the touch that draws ends the stroke: a palm kept from drawing is cancelled too,
+        // while the Pencil carries on.
+        guard let touch = trackedTouch, touches.contains(touch) else { return }
+        if touch.type == .pencil { return liftPencil(touch, in: event) }
+        abandonTrackedTouch()
+    }
+    /// The Pencil's estimated forces, measured.
+    override func touchesEstimatedPropertiesUpdated(_ touches: Set<UITouch>) {
+        #if DEBUG
+        InputTrace.shared.record("estimatedPropertiesUpdated", touches, nil, in: self)
+        #endif
+        for touch in touches where touch.type == .pencil {
+            guard let index = touch.estimationUpdateIndex?.intValue else { continue }
+            pencil.measure(index, force: touch.force, final: !touch.estimatedPropertiesExpectingUpdates.contains(.force))
+        }
+        followPencil(predicted: [])
+    }
+
+    // MARK: Apple Pencil input
+
+    /// The samples a touch brought with this event, oldest first.
+    private func samples(of touch: UITouch, in event: UIEvent?) -> [PencilInput.Sample] {
+        (event?.coalescedTouches(for: touch) ?? [touch]).map { sample in
+            PencilInput.Sample(
+                index: sample.estimationUpdateIndex?.intValue,
+                time: sample.timestamp,
+                point: sample.location(in: self),
+                force: sample.force,
+                forceMeasured: !sample.estimatedPropertiesExpectingUpdates.contains(.force)
+            )
+        }
+    }
+
+    private func liftPencil(_ touch: UITouch, in event: UIEvent?) {
+        pencil.add(samples(of: touch, in: event), to: ObjectIdentifier(touch))
+        pencil.lift(ObjectIdentifier(touch))
+        trackedTouch = nil
+        followPencil(predicted: [])
+        // Should a measurement never come, the samples still waiting are judged on their estimates.
+        DispatchQueue.main.asyncAfter(deadline: .now() + PencilInput.patience) { [weak self] in
+            self?.followPencil(predicted: [])
+        }
+    }
+
+    /// Carries out what the Pencil has been judged to draw, and shows the samples still being
+    /// measured, then where iOS expects the Pencil next, ahead of the stroke.
+    private func followPencil(predicted: [UITouch]) {
+        pencil.expire(at: ProcessInfo.processInfo.systemUptime)
+        for command in pencil.commands() {
+            switch command {
+            case let .begin(point):
+                if !beginErasingElement(at: point) {
+                    editor?.begin(at: point, size: bounds.size)
+                    showLoupe(at: point)
+                }
+            case let .move(points):
+                continueMarking(points)
+            case .end:
+                endMarking()
+            }
+        }
+        strokeCanvas.prediction = pencil.preview.flatMap { prediction(continuing: $0 + predicted.map { $0.location(in: self) }) }
+    }
+
+    // MARK: Marking
+
+    /// With the eraser, a press on text or a sticker deletes it on release, unless it moves off.
+    private func beginErasingElement(at point: CGPoint) -> Bool {
+        guard editor?.tool == .eraser, let hit = elementLayer.renderer.hit(elementLayer.visible, at: point, canvasSize: bounds.size) else {
+            return false
+        }
+        elementToErase = (hit.id, point)
+        return true
+    }
+
+    private func continueMarking(_ points: [CGPoint]) {
+        guard let point = points.last else { return }
         if let pending = elementToErase {
             guard hypot(point.x - pending.start.x, point.y - pending.start.y) > 10 else { return }
             elementToErase = nil
             editor?.begin(at: point, size: bounds.size)
         }
-        editor?.move(points: (event?.coalescedTouches(for: touch) ?? [touch]).map { $0.location(in: self) }, size: bounds.size)
+        editor?.move(points: points, size: bounds.size)
         showLoupe(at: point)
-        strokeCanvas.prediction = prediction(event?.predictedTouches(for: touch) ?? [])
     }
 
-    /// The stroke being drawn carried on to where iOS expects the Pencil to be next.
-    private func prediction(_ touches: [UITouch]) -> DrawingStroke? {
-        guard editor?.tool == .brush, !touches.isEmpty, let stroke = editor?.activeStroke, let last = stroke.points.last else { return nil }
-        return DrawingStroke(id: stroke.id, colorArgb: stroke.colorArgb, width: stroke.width, createdAt: stroke.createdAt,
-                             points: [last] + touches.map { normalized($0.location(in: self)) })
-    }
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if let held = heldTouch, touches.contains(held) { heldTouch = nil; editor?.reactionPointer.lift() }
-        guard let touch = trackedTouch, touches.contains(touch) else { return }
-        cancelHold()
-        // A tap: the erase or colour pick that waited happens now.
-        if let start = deferredStart { deferredStart = nil; editor?.begin(at: start, size: bounds.size) }
-        if let pending = elementToErase {
-            editor?.deleteElement(pending.id)
-        } else {
-            editor?.move(points: [touch.location(in: self)], size: bounds.size)
-            editor?.end()
-        }
-        elementToErase = nil; trackedTouch = nil; strokeCanvas.prediction = nil
+    private func endMarking() {
+        if let pending = elementToErase { editor?.deleteElement(pending.id) } else { editor?.end() }
+        elementToErase = nil
         showLoupe(at: nil)
     }
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if let held = heldTouch, touches.contains(held) { heldTouch = nil; editor?.reactionPointer.location = nil }
+
+    /// The stroke being drawn carried on through `points`: drawn ahead of it, never saved.
+    private func prediction(continuing points: [CGPoint]) -> DrawingStroke? {
+        guard editor?.tool == .brush, !points.isEmpty, let stroke = editor?.activeStroke, let last = stroke.points.last else { return nil }
+        return DrawingStroke(id: stroke.id, colorArgb: stroke.colorArgb, width: stroke.width, createdAt: stroke.createdAt,
+                             points: [last] + points.map { normalized($0) })
+    }
+
+    // MARK: Palm rejection
+
+    private func notePencil(in touches: Set<UITouch>) {
+        for touch in touches where touch.type == .pencil { palms.notePencil(at: touch.timestamp) }
+    }
+
+    /// Fingers and palms on the canvas besides `touch`.
+    private func otherContacts(than touch: UITouch, in event: UIEvent?) -> Int {
+        (event?.allTouches ?? []).count { other in
+            other !== touch && other.view === self && other.type == .direct && other.phase != .ended && other.phase != .cancelled
+        }
+    }
+
+    private func verdict(on finger: PalmRejection.Finger, touch: UITouch, in event: UIEvent?) -> PalmRejection.Verdict {
+        palms.classify(finger, others: otherContacts(than: touch, in: event),
+                       pencilOnly: UIPencilInteraction.prefersPencilOnlyDrawing, at: touch.timestamp)
+    }
+
+    /// Reads the followed finger again: once proved, its stroke is saved; shown to be a palm, it is
+    /// let go and what it drew goes. False once it has been let go.
+    private func review(_ touch: UITouch, in event: UIEvent?) -> Bool {
+        guard var finger else { return true }
+        finger.measure(majorRadius: touch.majorRadius, tolerance: touch.majorRadiusTolerance)
+        switch verdict(on: finger, touch: touch, in: event) {
+        case .palm:
+            abandonTrackedTouch()
+            return false
+        case .finger where !finger.confirmed:
+            finger.confirmed = true
+            editor?.confirmStroke()
+        case .finger, .pending:
+            break
+        }
+        self.finger = finger
+        return true
+    }
+
+    /// Lets go of the touch being followed without finishing what it started: its stroke goes,
+    /// without an undo step.
+    private func abandonTrackedTouch() {
         cancelHold()
         editor?.cancelEyedropper(); showLoupe(at: nil)
-        if elementToErase == nil { editor?.end() }
-        elementToErase = nil; deferredStart = nil; trackedTouch = nil; strokeCanvas.prediction = nil
+        editor?.discardStroke()
+        elementToErase = nil; deferredStart = nil; trackedTouch = nil; finger = nil; strokeCanvas.prediction = nil
     }
 
     private func holdForReactions(at point: CGPoint) {
@@ -1010,7 +1214,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             self.heldTouch = touch
             // The rest of this touch neither draws nor erases.
             self.editor?.discardStroke()
-            self.trackedTouch = nil; self.strokeCanvas.prediction = nil
+            self.trackedTouch = nil; self.finger = nil; self.strokeCanvas.prediction = nil
             self.deferredStart = nil; self.elementToErase = nil
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             self.editor?.reactionRequest = ReactionRequest(location: point)
@@ -1050,6 +1254,10 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
 
     /// A hovering Pencil shows the brush's size and colour, or the eraser's reach, at its tip.
     @objc private func hover(_ gesture: UIHoverGestureRecognizer) {
+        // A hovering Pencil is in use.
+        if gesture.zOffset > 0, gesture.state == .began || gesture.state == .changed {
+            palms.notePencil(at: ProcessInfo.processInfo.systemUptime)
+        }
         let drawing = elementTool == nil && trackedTouch == nil && (editor?.tool == .brush || editor?.tool == .eraser)
         // A trackpad pointer hovers at zero height and has its own cursor.
         guard drawing, gesture.zOffset > 0, gesture.state == .began || gesture.state == .changed, let editor else {
