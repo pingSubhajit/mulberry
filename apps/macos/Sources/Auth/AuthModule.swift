@@ -55,31 +55,6 @@ public enum AuthSessionState: Sendable {
         default: false
         }
     }
-
-    public var statusTitle: String {
-        switch self {
-        case .signedOut: "Signed out"
-        case .signingIn: "Signing in..."
-        case .refreshing: "Refreshing session..."
-        case let .signedIn(session): session.userDisplayName ?? session.userEmail ?? "Signed in"
-        case .failed: "Sign-in failed"
-        }
-    }
-
-    public var statusDetail: String {
-        switch self {
-        case .signedOut:
-            "Open Mulberry to sign in"
-        case .signingIn:
-            "Waiting for Google"
-        case .refreshing:
-            "Checking saved session"
-        case let .signedIn(session):
-            session.userEmail ?? "Mulberry account active"
-        case let .failed(failure):
-            failure.message
-        }
-    }
 }
 
 /// Signs in with Google, then hands the session to ProductCore's `BackendClient`, which keeps the

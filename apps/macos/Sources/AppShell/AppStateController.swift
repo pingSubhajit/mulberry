@@ -5,16 +5,6 @@ import Persistence
 import ProductCore
 import Sync
 
-extension BootstrapState {
-    var partnerTitle: String {
-        isPaired ? (partnerDisplayName ?? "Partner") : "Not paired"
-    }
-
-    var streakTitle: String {
-        currentStreakDays == 1 ? "Streak: 1 day" : "Streak: \(currentStreakDays) days"
-    }
-}
-
 public enum AppStateLoadState: Sendable, Equatable {
     case idle
     case loading
