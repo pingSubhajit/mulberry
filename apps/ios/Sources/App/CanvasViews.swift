@@ -68,6 +68,8 @@ struct DoodleCanvasView: View {
             .overlay { reactionArc(in: geometry.size) }
             .animation(reduceMotion ? nil : .spring(duration: 0.22, bounce: 0.15), value: radialAt)
         }
+        // Text typed on iPad's canvas brings up the keyboard; the canvas keeps its size and lifts instead.
+        .ignoresSafeArea(.keyboard, edges: editor.editsInPlace ? .all : [])
         .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { wideWindow = $0 }
         .onChange(of: editor.pencilRequest) { _, request in
             guard let request else { return }
@@ -90,6 +92,8 @@ struct DoodleCanvasView: View {
             Task { try? await Task.sleep(for: .milliseconds(reduceMotion ? 0 : 100)); closeRadial() }
         }
         .background(MulberryDesign.background)
+        // Under the keyboard too, on iPad, where the canvas no longer makes room for it.
+        .background { if editor.editsInPlace { MulberryDesign.background.ignoresSafeArea() } }
             .onChange(of: model.drawing) { _, _ in editor.receive() }
             .onChange(of: model.canvasClearVersion) { _, _ in editor.resetHistory() }
             .onChange(of: scenePhase) { _, value in
@@ -99,6 +103,9 @@ struct DoodleCanvasView: View {
             }
             // The partner's reactions play while the canvas is on screen.
             .onAppear { model.reactions.watching = scenePhase == .active }
+            #if DEBUG
+            .task { await editor.runPreviewArgument() }
+            #endif
             .onDisappear { editor.end(); model.reactions.watching = false }
             .fullScreenCover(item: $editor.textSession) { session in
                 CanvasTextEditorView(session: session, palette: DoodleEditor.palette,
@@ -114,16 +121,22 @@ struct DoodleCanvasView: View {
         let tools = toolbarFrame == .zero ? CGRect(x: 0, y: height - 72, width: geometry.size.width, height: 72) : toolbarFrame
         let size = Self.canvasSize(in: CGSize(width: geometry.size.width, height: tools.minY))
         let navigationMiddle = -Self.navigationBarHeight(contentTop: geometry.frame(in: .global).minY) / 2
+        let canvasMiddle = (navigationMiddle + tools.midY) / 2
+        let canvasTop = canvasMiddle - size.height / 2
+        let lift = keyboardLift(canvasTop: geometry.frame(in: .global).minY + canvasTop, size: size)
         return ZStack(alignment: .bottom) {
             DoodleSurface(editor: editor, dry: model.bootstrap?.canvasStrokeRenderMode == "dry")
                 .frame(width: size.width, height: size.height)
                 .modifier(PencilPalettePopover(request: $pencilPalette) { pencilPaletteContent })
+                .modifier(EditsInPlace(editor: editor, size: size, visibleTop: -canvasTop, visibleBottom: tools.minY - canvasTop))
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.pencilSpace)) } action: { surfaceFrame = $0 }
                 // Centred between the middles of the navigation bar and the tools, so it runs under both.
-                .position(x: geometry.size.width / 2, y: (navigationMiddle + tools.midY) / 2)
+                .position(x: geometry.size.width / 2, y: canvasMiddle)
+                .offset(y: -lift)
+                .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: lift)
             // The visible part of the canvas, between the bars.
             // Beside the undo and redo column rather than under its glass.
-            CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty,
+            CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty && editor.typing == nil,
                                      squirrelLeading: (geometry.size.width - min(Self.compactWidth, geometry.size.width - 16)) / 2 + 8 + 56 + 8)
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
             // Between the bars, so the banner stays clear of both.
@@ -175,15 +188,20 @@ struct DoodleCanvasView: View {
         // and the streak banner belong.
         let visibleTop = max(0, center.y - height / 2)
         let visibleBottom = min(wide ? geometry.size.height : toolsBottom - toolDepth, center.y + height / 2)
+        let canvasTop = center.y - height / 2
+        let lift = keyboardLift(canvasTop: geometry.frame(in: .global).minY + canvasTop, size: size)
         return ZStack(alignment: .topLeading) {
             // Transparent and unframed, like the phone's: drawings sit straight on the screen.
             DoodleSurface(editor: editor, dry: model.bootstrap?.canvasStrokeRenderMode == "dry")
                 .frame(width: size.width, height: size.height)
                 .modifier(PencilPalettePopover(request: $pencilPalette) { pencilPaletteContent })
+                .modifier(EditsInPlace(editor: editor, size: size, visibleTop: visibleTop - canvasTop, visibleBottom: visibleBottom - canvasTop))
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.pencilSpace)) } action: { surfaceFrame = $0 }
                 .position(center)
+                .offset(y: -lift)
+                .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: lift)
             Group {
-                CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty)
+                CanvasBlankStateGuidance(visible: editor.strokes.isEmpty && editor.elements.isEmpty && editor.typing == nil)
                     .padding(.bottom, 16)
                 StreakCanvasCelebration(streaks: model.streaks) { model.showStreak = true }
                 ReactionStage(reactions: model.reactions)
@@ -210,6 +228,14 @@ struct DoodleCanvasView: View {
             }
         }
         .frame(width: geometry.size.width, height: geometry.size.height)
+    }
+
+    /// While typing on iPad, how far the canvas lifts so the text clears the on-screen keyboard.
+    /// `canvasTop` is the canvas's top in the window as laid out, before any lift.
+    private func keyboardLift(canvasTop: CGFloat, size: CGSize) -> CGFloat {
+        guard let typing = editor.typing, let keyboard = editor.keyboardTop else { return 0 }
+        let bottom = editor.frameGeometry(of: .text(typing.element), canvasSize: size).bounds.maxY
+        return max(0, canvasTop + bottom + 24 - keyboard)
     }
 
     /// Every colour at once beside the tools, in place of the palette button. Scrolls when the
@@ -317,14 +343,14 @@ struct DoodleCanvasView: View {
                 HStack(spacing: 0) {
                     brushButton; Spacer(minLength: 4)
                     textButton; Spacer(minLength: 4)
-                    stickerButton; Spacer(minLength: 4)
+                    stickerButton(edge: .bottom); Spacer(minLength: 4)
                     eraserButton; Spacer(minLength: 4)
                     eyedropperButton; Spacer(minLength: 4)
                     clearButton
                 }
                 .padding(8)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) { brushButton; textButton; stickerButton; eraserButton; eyedropperButton; clearButton }
+                    HStack(spacing: 10) { brushButton; textButton; stickerButton(edge: .bottom); eraserButton; eyedropperButton; clearButton }
                         .padding(8)
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -359,7 +385,7 @@ struct DoodleCanvasView: View {
             group {
                 brushButton
                 textButton
-                stickerButton
+                stickerButton(edge: edge)
                 eraserButton
                 eyedropperButton
                 clearButton
@@ -444,8 +470,14 @@ struct DoodleCanvasView: View {
         toolButton("Text", image: "CanvasText", selected: editor.tool == .text, enabled: editor.canEditElements) { editor.toggleText() }
     }
 
-    private var stickerButton: some View {
+    /// On iPad the sticker picker opens beside the tool, as a popover.
+    private func stickerButton(edge: Edge) -> some View {
         toolButton("Stickers", image: "CanvasSticker", selected: editor.tool == .sticker, enabled: editor.canEditElements) { editor.toggleSticker() }
+            .popover(isPresented: Binding(get: { editor.editsInPlace && editor.stickerPanelOpen }, set: { editor.stickerPanelOpen = $0 }),
+                     attachmentAnchor: .rect(.bounds), arrowEdge: edge) {
+                StickerPickerPanel(catalog: editor.stickers) { editor.placeSticker($0) }
+                    .presentationCompactAdaptation(.popover)
+            }
     }
 
     private var clearButton: some View {
@@ -647,6 +679,30 @@ struct UnpairedCanvasView: View {
         }
         }.frame(maxWidth: .infinity, maxHeight: .infinity).background(MulberryDesign.background)
             .sheet(isPresented: $inviteOpen) { InviteShareView(model: model) }
+    }
+}
+
+/// On iPad, the in-place editing layer over the canvas, and sticker drops from the picker.
+private struct EditsInPlace: ViewModifier {
+    @ObservedObject var editor: DoodleEditor
+    let size: CGSize
+    let visibleTop: CGFloat
+    let visibleBottom: CGFloat
+
+    func body(content: Content) -> some View {
+        if editor.editsInPlace {
+            content
+                .overlay { InPlaceEditingLayer(editor: editor, canvasSize: size, visibleTop: visibleTop, visibleBottom: visibleBottom) }
+                .dropDestination(for: String.self) { items, location in
+                    guard editor.canEditElements, let sticker = items.lazy.compactMap(StickerReference.init(dragString:)).first,
+                          size.width > 0, size.height > 0 else { return false }
+                    editor.placeSticker(sticker, at: DrawingPoint(x: min(1, max(0, location.x / size.width)),
+                                                                  y: min(1, max(0, location.y / size.height))))
+                    return true
+                }
+        } else {
+            content
+        }
     }
 }
 

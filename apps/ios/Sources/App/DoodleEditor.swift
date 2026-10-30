@@ -68,6 +68,7 @@ final class DoodleEditor: ObservableObject {
     @Published var tool: DoodleTool {
         didSet {
             if tool != oldValue, Self.drawingTools.contains(oldValue) { previousTool = oldValue }
+            if tool != oldValue, editsInPlace { leaveElementTool() }
             saveTools()
         }
     }
@@ -98,6 +99,27 @@ final class DoodleEditor: ObservableObject {
     @Published private(set) var elements: [CanvasElement] = []
     @Published var textSession: CanvasTextSession?
     @Published var stickerSession: CanvasStickerSession?
+
+    /// On iPad, text and stickers are edited in place, as on the Mac: a tap selects one in a frame
+    /// with handles, a bar floating above it styles it, and text is typed on the canvas. The
+    /// iPhone keeps its full-screen editors.
+    let editsInPlace = UIDevice.current.userInterfaceIdiom == .pad
+    /// The text or sticker selected in its frame.
+    @Published private(set) var selectedElementID: String?
+    /// A gesture's live position for the selection, so its frame and bar follow the fingers.
+    @Published var elementPreview: CanvasElement?
+    /// Text being typed on the canvas.
+    @Published var typing: CanvasTextSession?
+    /// The sticker picker, open beside the Sticker tool.
+    @Published var stickerPanelOpen = false
+    /// The selected sticker's Replace picker.
+    @Published var replacingSticker = false
+    /// Where a tap on empty canvas asked for a new sticker: the picker opens there.
+    @Published var stickerPlacement: DrawingPoint?
+    /// Where the on-screen keyboard starts, in the canvas's coordinates as laid out unlifted.
+    @Published var keyboardTop: CGFloat?
+    /// Lays out text for the selection frame, as the canvas draws it.
+    let layouts = CanvasElementRenderer()
     let stickers: StickerCatalog
     /// Artwork the canvas has loaded, so the eyedropper samples stickers too.
     var stickerImages: [StickerReference: UIImage] = [:]
@@ -262,7 +284,8 @@ final class DoodleEditor: ObservableObject {
         if tool == .text { tool = .brush; return }
         end()
         tool = .text
-        startText(at: .init(x: 0.5, y: 0.5))
+        // On iPad, as on the Mac, the tool waits for a tap where the text should go.
+        if !editsInPlace { startText(at: .init(x: 0.5, y: 0.5)) }
     }
 
     func startText(at center: DrawingPoint) {
@@ -291,8 +314,21 @@ final class DoodleEditor: ObservableObject {
         if !session.isNew { deleteElement(session.id) }
     }
 
-    /// Like text, the sticker tool opens a new centered sticker straight away.
+    /// Like text, the sticker tool opens a new centered sticker straight away. On iPad it opens
+    /// the sticker picker beside the tool instead; choosing the tool again closes the picker, and
+    /// then returns to the brush.
     func toggleSticker() {
+        if editsInPlace {
+            if tool == .sticker {
+                if stickerPanelOpen { stickerPanelOpen = false; tool = .brush } else { stickers.load(); stickerPanelOpen = true }
+                return
+            }
+            end()
+            tool = .sticker
+            stickers.load()
+            stickerPanelOpen = true
+            return
+        }
         if tool == .sticker { tool = .brush; return }
         end()
         tool = .sticker
@@ -330,6 +366,173 @@ final class DoodleEditor: ObservableObject {
         case .sticker(let sticker):
             stickers.load()
             present { $0.stickerSession = .init(element: sticker, isNew: false) }
+        }
+    }
+
+    // MARK: Editing in place (iPad)
+
+    /// The element shown only in its editor, or typed on the canvas, until it is done.
+    var hiddenElementID: String? { textSession?.id ?? stickerSession?.id ?? typing?.id }
+
+    var selectedElement: CanvasElement? {
+        guard let selectedElementID else { return nil }
+        return elements.first { $0.id == selectedElementID }
+    }
+
+    /// The selection as it looks right now: mid-gesture, or as saved.
+    var shownSelection: CanvasElement? {
+        guard let selected = selectedElement else { return nil }
+        return elementPreview?.id == selected.id ? elementPreview : selected
+    }
+
+    func select(_ id: String?) {
+        guard selectedElementID != id else { return }
+        selectedElementID = id
+        replacingSticker = false
+    }
+
+    /// A text or sticker tool only works on its own kind, so leaving it lets go of its selection.
+    private func leaveElementTool() {
+        finishTyping(keepSelection: false)
+        stickerPanelOpen = false
+        stickerPlacement = nil
+        if let selected = selectedElement {
+            let kept = (tool == .text && selected.text != nil) || (tool == .sticker && selected.sticker != nil)
+            if !kept { select(nil) }
+        }
+    }
+
+    /// Starts typing a new text at a point, with the caret in place.
+    func beginNewText(at center: DrawingPoint) {
+        guard canEditElements, typing == nil else { return }
+        select(nil)
+        typing = CanvasTextSession(element: CanvasTextElement(center: center, colorArgb: textColor), isNew: true)
+    }
+
+    /// Types into a text already on the canvas.
+    func beginTyping(_ text: CanvasTextElement) {
+        guard canEditElements else { return }
+        if tool != .text { tool = .text }
+        select(text.id)
+        typing = CanvasTextSession(element: text, isNew: false)
+    }
+
+    /// Esc or hiding the keyboard keeps the text selected; tapping away lets go of it. Blank text
+    /// is never saved: a new one is discarded and an edited one deleted.
+    func finishTyping(keepSelection: Bool) {
+        guard let session = typing else { return }
+        typing = nil
+        let element = session.element
+        let blank = element.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        textColor = element.colorArgb
+        if session.isNew {
+            if !blank { addElement(.text(element)) }
+        } else if blank {
+            deleteElement(element.id)
+        } else {
+            updateElement(.text(element))
+        }
+        select(keepSelection && !blank ? element.id : nil)
+    }
+
+    /// While typing, style changes wait for the text to finish; on a selected text each is saved.
+    func applyTextFormat(_ updated: CanvasTextElement) {
+        if typing?.id == updated.id { typing?.element = updated } else { updateElement(.text(updated)) }
+    }
+
+    /// The bar's delete: the text being typed, or the selection.
+    func deleteSelection() {
+        if let session = typing {
+            typing = nil
+            if !session.isNew { deleteElement(session.id) }
+        } else if let id = selectedElementID {
+            deleteElement(id)
+        }
+        select(nil)
+    }
+
+    /// A new sticker: in the middle of the canvas from a tap in the picker, or where it was
+    /// dropped. It arrives selected, with the Sticker tool chosen.
+    func placeSticker(_ reference: StickerReference, at center: DrawingPoint? = nil) {
+        guard canEditElements else { return }
+        finishTyping(keepSelection: false)
+        let sticker = CanvasStickerElement(center: center ?? DrawingPoint(x: 0.5, y: 0.5), sticker: reference)
+        addElement(.sticker(sticker))
+        stickers.use(reference)
+        if tool != .sticker { tool = .sticker }
+        stickerPanelOpen = false
+        stickerPlacement = nil
+        select(sticker.id)
+    }
+
+    /// New artwork in the same place, at the same size and angle.
+    func replaceSticker(with reference: StickerReference) {
+        guard case .sticker(var sticker) = selectedElement else { return }
+        sticker.sticker = reference
+        updateElement(.sticker(sticker))
+        stickers.use(reference)
+        replacingSticker = false
+    }
+
+    func straightenSelection() {
+        guard var element = selectedElement else { return }
+        element.rotationRad = 0
+        updateElement(element)
+    }
+
+    /// A copy a little down and to the right, selected, as the Mac's duplicate.
+    func duplicateSelection() {
+        guard case .sticker(let sticker) = selectedElement else { return }
+        let copy = CanvasStickerElement(
+            center: DrawingPoint(x: min(1, sticker.center.x + 0.04), y: min(1, sticker.center.y + 0.025)),
+            rotationRad: sticker.rotationRad, scale: sticker.scale, sticker: sticker.sticker
+        )
+        addElement(.sticker(copy))
+        select(copy.id)
+    }
+
+    /// The arrow keys move the selection by a point, or ten with Shift.
+    func nudgeSelection(dx: CGFloat, dy: CGFloat, canvasSize: CGSize) {
+        guard var element = selectedElement, canvasSize.width > 0, canvasSize.height > 0 else { return }
+        element.center = DrawingPoint(x: min(1, max(0, element.center.x + dx / canvasSize.width)),
+                                      y: min(1, max(0, element.center.y + dy / canvasSize.height)))
+        updateElement(element)
+    }
+
+    #if DEBUG
+    /// For layout checks on iPad without a partner, as the reactions' launch arguments: launch with
+    /// "inPlace=text" or "inPlace=sticker" to add one and select it, "inPlace=typing" to start
+    /// typing, or "inPlace=picker" to open the sticker picker.
+    func runPreviewArgument() async {
+        guard editsInPlace, let value = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("inPlace=") })?.dropFirst(8) else { return }
+        try? await Task.sleep(for: .milliseconds(800))
+        switch value {
+        case "text":
+            tool = .text
+            let text = CanvasTextElement(text: "Good morning, love", center: .init(x: 0.5, y: 0.42), rotationRad: -0.12, scale: 1.1,
+                                         colorArgb: 0xFFB31329, font: .permanentMarker)
+            addElement(.text(text))
+            select(text.id)
+        case "sticker":
+            placeSticker(StickerReference(packKey: "spring-kittens", packVersion: 1, stickerId: "3"), at: .init(x: 0.5, y: 0.5))
+        case "typing":
+            tool = .text
+            beginNewText(at: .init(x: 0.5, y: 0.4))
+            typing?.element.text = "See you at 7"
+        case "picker":
+            toggleSticker()
+        default: break
+        }
+    }
+    #endif
+
+    /// Where the selection, or the text being typed, sits on the canvas.
+    func frameGeometry(of element: CanvasElement, canvasSize: CGSize) -> ElementFrameGeometry {
+        switch element {
+        case .text(let text):
+            .text(text, layout: layouts.layout(for: text, canvasWidth: canvasSize.width), canvasSize: canvasSize)
+        case .sticker(let sticker):
+            .sticker(sticker, image: stickerImages[sticker.sticker], canvasSize: canvasSize)
         }
     }
 
@@ -458,8 +661,9 @@ struct DoodleSurface: UIViewRepresentable {
         view.elementTool = editor.tool == .text || editor.tool == .sticker ? editor.tool : nil
         // The element being edited is shown only in its editor until Done.
         view.elementLayer.user = editor.user
-        view.elementLayer.update(elements: editor.elements, hidden: editor.textSession?.id ?? editor.stickerSession?.id)
+        view.elementLayer.update(elements: editor.elements, hidden: editor.hiddenElementID)
         view.accessibilityValue = editor.elements.compactMap(\.text?.text).joined(separator: ", ")
+        view.updateSelection()
         view.setNeedsDisplay()
     }
 }
@@ -569,7 +773,7 @@ final class CanvasElementLayerView: UIView {
     }
 }
 
-final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilInteractionDelegate {
+final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilInteractionDelegate, UIPointerInteractionDelegate {
     weak var editor: DoodleEditor? {
         didSet {
             editor?.updateViewport(bounds.size)
@@ -602,7 +806,16 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
     private var elementToErase: (id: String, start: CGPoint)?
     private var elementGestures: [UIGestureRecognizer] = []
     private var transforming: Set<ObjectIdentifier> = []
-    private var elementTransform: (base: CanvasElement, current: CanvasElement)?
+    /// The element under the fingers, and how far two fingers have twisted it, before settling.
+    private var elementTransform: (base: CanvasElement, current: CanvasElement, twist: Double)?
+    /// On iPad, a drag that began on the selection's corner handle or just beyond it.
+    private var frameDrag: (control: FrameControl, base: CanvasElement, start: CGPoint)?
+    /// The selection's frame and its corner handles, as on the Mac.
+    private let selectionLayer = CAShapeLayer()
+    private let handleLayer = CAShapeLayer()
+    /// Whether the rotation sits on a quarter turn, so the fingers feel it settle there.
+    private var squared = false
+    private let settleFeedback = UISelectionFeedbackGenerator()
     /// Where iOS expects the Pencil to be next, drawn ahead of the stroke and never saved.
     private var predicted: [CGPoint] = []
     /// The brush or eraser outline under a hovering Pencil.
@@ -627,6 +840,21 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         loupeLayer.shadowRadius = 6
         loupeLayer.shadowOffset = CGSize(width: 0, height: 3)
         layer.addSublayer(loupeLayer)
+        for shape in [selectionLayer, handleLayer] {
+            shape.isHidden = true
+            shape.strokeColor = UIColor(MulberryDesign.accent).cgColor
+            shape.lineWidth = 1.25
+            layer.addSublayer(shape)
+        }
+        selectionLayer.fillColor = UIColor.clear.cgColor
+        handleLayer.fillColor = UIColor.white.cgColor
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            addInteraction(UIPointerInteraction(delegate: self))
+            NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)),
+                                                   name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)),
+                                                   name: UIResponder.keyboardWillHideNotification, object: nil)
+        }
         addInteraction(UIPencilInteraction(delegate: self))
         addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(hover(_:))))
         let tap = UITapGestureRecognizer(target: self, action: #selector(elementTap(_:)))
@@ -652,6 +880,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         super.layoutSubviews()
         editor?.updateViewport(bounds.size)
         setNeedsDisplay(); elementLayer.setNeedsDisplay()
+        updateSelection()
     }
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
@@ -814,7 +1043,11 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         guard elementTool != nil, editor?.textSession == nil, editor?.stickerSession == nil else { return false }
         // Moving needs a target; a tap on empty canvas still places a new element.
         guard !(gestureRecognizer is UITapGestureRecognizer) else { return true }
-        return elementTransform != nil || hitElement(at: gestureRecognizer.location(in: self)) != nil
+        // While typing, a tap away finishes the text; nothing moves.
+        guard editor?.typing == nil else { return false }
+        let location = gestureRecognizer.location(in: self)
+        if gestureRecognizer is UIPanGestureRecognizer, frameControl(at: location, pointer: false) != nil { return true }
+        return elementTransform != nil || hitElement(at: location) != nil
     }
 
     @objc private func elementHold(_ gesture: UILongPressGestureRecognizer) {
@@ -832,12 +1065,19 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
     @objc private func elementTap(_ gesture: UITapGestureRecognizer) {
         guard gesture.state == .ended, let editor else { return }
         let point = gesture.location(in: self)
+        if editor.editsInPlace { return tapInPlace(at: point, editor: editor) }
         if let hit = hitElement(at: point) { editor.edit(hit) }
         else if elementTool == .text { editor.startText(at: normalized(point)) }
         else if elementTool == .sticker { editor.startSticker(at: normalized(point)) }
     }
 
     @objc private func elementPan(_ gesture: UIPanGestureRecognizer) {
+        if gesture.state == .began, frameDrag == nil, let control = frameControl(at: gesture.location(in: self), pointer: false),
+           let selected = editor?.selectedElement {
+            frameDrag = (control, selected, gesture.location(in: self))
+            squared = ElementRotation.isSquare(selected.rotationRad)
+        }
+        if frameDrag != nil { return dragFrame(gesture) }
         updateTransform(gesture) { element in
             let translation = gesture.translation(in: self)
             gesture.setTranslation(.zero, in: self)
@@ -847,26 +1087,36 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
     }
 
     @objc private func elementPinch(_ gesture: UIPinchGestureRecognizer) {
-        updateTransform(gesture) { element in
-            element.scale(by: gesture.scale)
-            gesture.scale = 1
-        }
+        let factor = gesture.scale
+        gesture.scale = 1
+        updateTransform(gesture) { element in element.scale(by: factor) }
     }
 
     @objc private func elementRotation(_ gesture: UIRotationGestureRecognizer) {
+        let turn = gesture.rotation
+        gesture.rotation = 0
         updateTransform(gesture) { element in
-            element.rotationRad += gesture.rotation
-            gesture.rotation = 0
+            guard editor?.editsInPlace == true, let transform = elementTransform else { element.rotationRad += turn; return }
+            // On iPad the twist settles level, or on a quarter turn, as the Mac's rotation does.
+            let twist = transform.twist + turn
+            elementTransform?.twist = twist
+            element.rotationRad = settle(transform.base.rotationRad + twist)
         }
     }
 
     /// Pan, pinch and rotation share one target and save once, when the last ends.
     private func updateTransform(_ gesture: UIGestureRecognizer, _ change: (inout CanvasElement) -> Void) {
+        // A corner drag owns the selection until it ends; a second finger does not join it.
+        guard frameDrag == nil else { return }
         switch gesture.state {
         case .began:
             if elementTransform == nil {
-                guard let hit = hitElement(at: gesture.location(in: self)) else { return }
-                elementTransform = (hit, hit)
+                guard frameDrag == nil, let hit = hitElement(at: gesture.location(in: self)) else { return }
+                elementTransform = (hit, hit, 0)
+                if editor?.editsInPlace == true {
+                    editor?.select(hit.id)
+                    squared = ElementRotation.isSquare(hit.rotationRad)
+                }
             }
             transforming.insert(ObjectIdentifier(gesture))
             fallthrough
@@ -875,6 +1125,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             change(&current)
             elementTransform?.current = current
             elementLayer.show(preview: current)
+            if editor?.editsInPlace == true { editor?.elementPreview = current; updateSelection() }
         default:
             transforming.remove(ObjectIdentifier(gesture))
             if transforming.isEmpty { endTransform(commit: true) }
@@ -888,9 +1139,204 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         if commit, elementTransform.current != elementTransform.base, let editor {
             editor.updateElement(elementTransform.current)
             // Swap in the saved position now so the old one never flashes.
-            elementLayer.update(elements: editor.elements, hidden: editor.textSession?.id ?? editor.stickerSession?.id)
+            elementLayer.update(elements: editor.elements, hidden: editor.hiddenElementID)
         }
         elementLayer.show(preview: nil)
+        if editor?.elementPreview != nil { editor?.elementPreview = nil }
+        updateSelection()
+    }
+
+    // MARK: Editing in place (iPad)
+
+    /// A tap with the Text or Sticker tool, as on the Mac. While typing, it finishes the text. On a
+    /// text or sticker it selects it, and on the selected text it starts typing into it. On empty
+    /// canvas the Text tool starts a new text there; the Sticker tool lets go of the selection, or
+    /// with nothing selected, opens the sticker picker there to place a new one.
+    private func tapInPlace(at point: CGPoint, editor: DoodleEditor) {
+        if editor.typing != nil { return editor.finishTyping(keepSelection: false) }
+        if let hit = hitElement(at: point) {
+            if hit.id == editor.selectedElementID, case .text(let text) = hit { editor.beginTyping(text) } else { editor.select(hit.id) }
+            return
+        }
+        if elementTool == .text { return editor.beginNewText(at: normalized(point)) }
+        if editor.selectedElementID != nil || editor.stickerPanelOpen || editor.stickerPlacement != nil {
+            editor.select(nil)
+            editor.stickerPanelOpen = false
+            editor.stickerPlacement = nil
+        } else {
+            editor.stickers.load()
+            editor.stickerPlacement = normalized(point)
+        }
+    }
+
+    /// A control of the selection's frame: a corner handle resizes; the handle above the frame
+    /// rotates, as does the area just beyond a corner under a trackpad pointer, as on the Mac.
+    enum FrameControl: Equatable {
+        case resize(corner: Int)
+        case rotate(corner: Int)
+        case knob
+    }
+
+    /// How far above the frame's top edge the rotate handle sits.
+    private static let knobReach: CGFloat = 30
+
+    /// The selection's geometry while its frame shows: not while typing, and only with its tool.
+    private var selectionGeometry: ElementFrameGeometry? {
+        guard let editor, editor.editsInPlace, editor.typing == nil, elementTool != nil,
+              let shown = editor.shownSelection else { return nil }
+        return editor.frameGeometry(of: shown, canvasSize: bounds.size)
+    }
+
+    /// Which control of the selection's frame is under a point. Fingers get handles and rotation
+    /// areas large enough to land on; a trackpad pointer gets the Mac's tighter ones.
+    private func frameControl(at point: CGPoint, pointer: Bool) -> FrameControl? {
+        guard let geometry = selectionGeometry else { return nil }
+        let local = geometry.local(point)
+        let body = geometry.body
+        if hypot(local.x - body.midX, local.y - (body.minY - Self.knobReach)) <= (pointer ? 10 : 22) { return .knob }
+        // Handles stay smaller than a quarter of a small element, so its middle still moves it.
+        let handle: CGFloat = pointer ? 9 : min(22, max(10, min(body.width, body.height) / 4))
+        let reach: CGFloat = pointer ? 26 : 46
+        let corners = [CGPoint(x: body.minX, y: body.minY), CGPoint(x: body.maxX, y: body.minY),
+                       CGPoint(x: body.maxX, y: body.maxY), CGPoint(x: body.minX, y: body.maxY)]
+        for (index, corner) in corners.enumerated() {
+            let distance = hypot(local.x - corner.x, local.y - corner.y)
+            if distance <= handle { return .resize(corner: index) }
+            // Beyond the corner, away from the body, on both axes.
+            let outX = (local.x - corner.x) * (corner.x < body.midX ? -1 : 1)
+            let outY = (local.y - corner.y) * (corner.y < body.midY ? -1 : 1)
+            // Fingers rotate from the handle above; the corners' rotation areas are for a pointer.
+            if pointer, distance <= reach, outX > -4, outY > -4, !body.contains(local) { return .rotate(corner: index) }
+        }
+        return nil
+    }
+
+    /// Resizes from a corner handle, or rotates from just beyond one, about the element's centre.
+    private func dragFrame(_ gesture: UIPanGestureRecognizer) {
+        guard let drag = frameDrag else { return }
+        switch gesture.state {
+        case .began, .changed:
+            let geometry = editor?.frameGeometry(of: drag.base, canvasSize: bounds.size)
+            let center = geometry?.center ?? .zero
+            let location = gesture.location(in: self)
+            var element = drag.base
+            switch drag.control {
+            case .resize:
+                let before = hypot(drag.start.x - center.x, drag.start.y - center.y)
+                guard before > 1 else { return }
+                element.scale(by: hypot(location.x - center.x, location.y - center.y) / before)
+            case .rotate, .knob:
+                let turned = atan2(location.y - center.y, location.x - center.x) - atan2(drag.start.y - center.y, drag.start.x - center.x)
+                var angle = drag.base.rotationRad + turned
+                // Shift on a hardware keyboard snaps to 15°, as on the Mac.
+                if gesture.modifierFlags.contains(.shift) {
+                    angle = (angle / (Double.pi / 12)).rounded() * (Double.pi / 12)
+                    noteSquare(angle)
+                } else {
+                    angle = settle(angle)
+                }
+                element.rotationRad = angle
+            }
+            elementTransform = (drag.base, element, 0)
+            elementLayer.show(preview: element)
+            editor?.elementPreview = element
+            updateSelection()
+        default:
+            frameDrag = nil
+            endTransform(commit: gesture.state == .ended)
+        }
+    }
+
+    /// Settles an angle level, or on a quarter turn, within 3°, with a tick as it lands.
+    private func settle(_ angle: Double) -> Double {
+        let settled = ElementRotation.quarterTurn(near: angle) ?? angle
+        noteSquare(settled)
+        return settled
+    }
+
+    private func noteSquare(_ angle: Double) {
+        let onSquare = ElementRotation.isSquare(angle)
+        guard onSquare != squared else { return }
+        squared = onSquare
+        if onSquare { settleFeedback.selectionChanged() }
+    }
+
+    /// Draws the selection's frame and corner handles over the element, or hides them.
+    func updateSelection() {
+        guard let geometry = selectionGeometry else {
+            selectionLayer.isHidden = true
+            handleLayer.isHidden = true
+            return
+        }
+        let corners = geometry.corners
+        let frame = UIBezierPath()
+        frame.move(to: corners[0])
+        for corner in corners.dropFirst() { frame.addLine(to: corner) }
+        frame.close()
+        // The rotate handle: a stem up from the top edge's middle to a round knob.
+        let edge = geometry.screenPoint(CGPoint(x: geometry.body.midX, y: geometry.body.minY))
+        let knob = geometry.screenPoint(CGPoint(x: geometry.body.midX, y: geometry.body.minY - Self.knobReach))
+        let stemEnd = geometry.screenPoint(CGPoint(x: geometry.body.midX, y: geometry.body.minY - Self.knobReach + 6))
+        frame.move(to: edge)
+        frame.addLine(to: stemEnd)
+        let handles = UIBezierPath(ovalIn: CGRect(x: knob.x - 6, y: knob.y - 6, width: 12, height: 12))
+        let side: CGFloat = 9
+        for corner in corners {
+            let square = UIBezierPath(rect: CGRect(x: -side / 2, y: -side / 2, width: side, height: side))
+            square.apply(CGAffineTransform(rotationAngle: geometry.angle))
+            square.apply(CGAffineTransform(translationX: corner.x, y: corner.y))
+            handles.append(square)
+        }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        selectionLayer.path = frame.cgPath
+        handleLayer.path = handles.cgPath
+        selectionLayer.isHidden = false
+        handleLayer.isHidden = false
+        CATransaction.commit()
+    }
+
+    // MARK: Pointer
+
+    /// A trackpad pointer turns into a resize arrow over a corner handle, and into the rotate
+    /// arrow just beyond one, as on the Mac. Elsewhere it keeps its own shape.
+    func pointerInteraction(_ interaction: UIPointerInteraction, regionFor request: UIPointerRegionRequest,
+                            defaultRegion: UIPointerRegion) -> UIPointerRegion? {
+        guard let control = frameControl(at: request.location, pointer: true), let geometry = selectionGeometry else { return nil }
+        let degrees = Int((geometry.angle * 180 / .pi).rounded())
+        let identifier: String
+        switch control {
+        case .resize(let corner): identifier = "resize|\(corner)|\(degrees)"
+        case .rotate(let corner): identifier = "rotate|\(corner)|\(degrees)"
+        // Bowed upward, between the top corners' turns.
+        case .knob: identifier = "rotate|0.5|\(degrees)"
+        }
+        return UIPointerRegion(rect: CGRect(x: request.location.x - 1, y: request.location.y - 1, width: 2, height: 2), identifier: identifier)
+    }
+
+    func pointerInteraction(_ interaction: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {
+        guard let identifier = region.identifier as? String else { return nil }
+        let parts = identifier.split(separator: "|")
+        guard parts.count == 3, let corner = Double(parts[1]), let degrees = Double(parts[2]) else { return nil }
+        // Clockwise from the top right, as the corners run clockwise from the top left.
+        let turn = (corner - 1) * 90 + degrees
+        let path = parts[0] == "rotate" ? PointerShapes.rotate(degrees: turn) : PointerShapes.resize(degrees: turn)
+        return UIPointerStyle(shape: .path(path), constrainedAxes: [])
+    }
+
+    // MARK: Keyboard
+
+    /// Where the on-screen keyboard starts, in the window, so the canvas can lift text clear of it.
+    @objc private func keyboardChanged(_ notification: Notification) {
+        guard let window, let editor else { return }
+        let hiding = notification.name == UIResponder.keyboardWillHideNotification
+        guard !hiding, let end = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
+            if editor.keyboardTop != nil { editor.keyboardTop = nil }
+            return
+        }
+        let frame = window.convert(end, from: window.screen.coordinateSpace)
+        // A hardware keyboard leaves only its shortcut bar, or nothing, on screen.
+        let top: CGFloat? = frame.height < 80 || frame.minY >= window.bounds.maxY ? nil : frame.minY
+        if editor.keyboardTop != top { editor.keyboardTop = top }
     }
 
     /// Like Android, each tool picks up only its own kind of element.
@@ -906,6 +1352,49 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
 
     private func normalized(_ point: CGPoint) -> DrawingPoint {
         .init(x: min(1, max(0, point.x / max(1, bounds.width))), y: min(1, max(0, point.y / max(1, bounds.height))))
+    }
+}
+
+/// The trackpad pointer's shapes over a selection's corners: a diagonal double arrow to resize,
+/// and the Mac's curved double arrow to rotate. Both are drawn pointing toward the top right and
+/// turned to the corner and the element's own angle.
+enum PointerShapes {
+    static func resize(degrees: Double) -> UIBezierPath {
+        let shaft = UIBezierPath()
+        shaft.move(to: CGPoint(x: -6, y: 6))
+        shaft.addLine(to: CGPoint(x: 6, y: -6))
+        let path = UIBezierPath(cgPath: shaft.cgPath.copy(strokingWithWidth: 2.2, lineCap: .round, lineJoin: .round, miterLimit: 1))
+        path.append(triangle(tip: CGPoint(x: 9, y: -9), base: CGPoint(x: 3.5, y: -3.5)))
+        path.append(triangle(tip: CGPoint(x: -9, y: 9), base: CGPoint(x: -3.5, y: 3.5)))
+        path.apply(CGAffineTransform(rotationAngle: degrees * .pi / 180))
+        return path
+    }
+
+    static func rotate(degrees: Double) -> UIBezierPath {
+        let radius: CGFloat = 9
+        // The arc's middle sits on the pointer's centre; it bows up and to the right.
+        let center = CGPoint(x: -radius * 0.7071, y: radius * 0.7071)
+        let arc = UIBezierPath(arcCenter: center, radius: radius, startAngle: -.pi / 2, endAngle: 0, clockwise: true)
+        let path = UIBezierPath(cgPath: arc.cgPath.copy(strokingWithWidth: 2.2, lineCap: .round, lineJoin: .round, miterLimit: 1))
+        let top = CGPoint(x: center.x, y: center.y - radius), right = CGPoint(x: center.x + radius, y: center.y)
+        path.append(triangle(tip: CGPoint(x: top.x - 4.5, y: top.y), base: CGPoint(x: top.x + 1, y: top.y)))
+        path.append(triangle(tip: CGPoint(x: right.x, y: right.y + 4.5), base: CGPoint(x: right.x, y: right.y - 1)))
+        path.apply(CGAffineTransform(rotationAngle: degrees * .pi / 180))
+        return path
+    }
+
+    /// An arrowhead from the middle of its base to its tip.
+    private static func triangle(tip: CGPoint, base: CGPoint) -> UIBezierPath {
+        let dx = tip.x - base.x, dy = tip.y - base.y
+        let length = max(hypot(dx, dy), 0.001)
+        let half: CGFloat = 4.2
+        let nx = -dy / length * half, ny = dx / length * half
+        let path = UIBezierPath()
+        path.move(to: tip)
+        path.addLine(to: CGPoint(x: base.x + nx, y: base.y + ny))
+        path.addLine(to: CGPoint(x: base.x - nx, y: base.y - ny))
+        path.close()
+        return path
     }
 }
 
