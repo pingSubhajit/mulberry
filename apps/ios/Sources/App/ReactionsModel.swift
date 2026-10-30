@@ -11,17 +11,8 @@ extension Notification.Name {
 /// and confirms it once the playback has been seen.
 @MainActor
 final class ReactionsModel: ObservableObject {
-    struct Arrival: Identifiable, Equatable {
-        let id = UUID()
-        let batch: PendingReactionBatch
-        /// Played from the Live Activity rather than claimed from the server, so nothing to confirm.
-        var local = false
-    }
-
-    struct Sent: Identifiable, Equatable {
-        let id = UUID()
-        let type: ReactionType
-    }
+    typealias Arrival = ReactionArrival
+    typealias Sent = SentReaction
 
     /// A batch this device has claimed, for the canvas to play.
     @Published private(set) var arrival: Arrival?

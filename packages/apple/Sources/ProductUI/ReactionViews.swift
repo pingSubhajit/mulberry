@@ -1,20 +1,24 @@
 import ImageIO
-import ProductCore
 import SwiftUI
-
-// The iPhone and iPad's reaction artwork and picker, from apps/ios/Sources/App/ReactionViews.swift,
-// with the same GIFs, shipped in Resources/Reactions.
+#if canImport(UIKit)
+import UIKit
+#else
+import AppKit
+#endif
+#if canImport(ProductCore)
+import ProductCore
+#endif
 
 /// A reaction's animated artwork, decoded once per size and kept while memory allows.
-final class ReactionFrames: @unchecked Sendable {
-    let images: [CGImage]
+public final class ReactionFrames: @unchecked Sendable {
+    public let images: [CGImage]
     /// When each frame ends, in seconds from the start of the loop.
     private let ends: [Double]
-    var duration: Double { ends.last ?? 1 }
+    public var duration: Double { ends.last ?? 1 }
 
     private init(images: [CGImage], ends: [Double]) { self.images = images; self.ends = ends }
 
-    func frame(at time: TimeInterval) -> CGImage {
+    public func frame(at time: TimeInterval) -> CGImage {
         let t = time.truncatingRemainder(dividingBy: max(duration, 0.01))
         return images[min(images.count - 1, ends.firstIndex { $0 > t } ?? 0)]
     }
@@ -27,20 +31,29 @@ final class ReactionFrames: @unchecked Sendable {
     }()
 
     /// Pixel sizes the artwork is decoded at; the 512 px originals are larger than any use needs.
-    static func pixels(for points: CGFloat, scale: CGFloat) -> Int {
+    public static func pixels(for points: CGFloat, scale: CGFloat) -> Int {
         let needed = points * scale
         return needed <= 150 ? 144 : needed <= 300 ? 288 : 400
     }
 
-    static func load(_ type: ReactionType, pixels: Int) async -> ReactionFrames? {
+    public static func load(_ type: ReactionType, pixels: Int) async -> ReactionFrames? {
         let key = "\(type.rawValue)-\(pixels)" as NSString
         if let cached = cache.object(forKey: key) { return cached }
-        guard let url = AppResources.url("Reactions/\(type.artworkName).gif") else { return nil }
         let frames = await Task.detached(priority: .userInitiated) {
-            (try? Data(contentsOf: url)).flatMap { decode($0, pixels: pixels) }
+            data(type).flatMap { decode($0, pixels: pixels) }
         }.value
         if let frames { cache.setObject(frames, forKey: key, cost: frames.images.count * pixels * pixels * 4) }
         return frames
+    }
+
+    /// The GIF: from the asset catalog on iPhone and iPad, and from the app's Reactions folder on a Mac.
+    private static func data(_ type: ReactionType) -> Data? {
+        #if canImport(UIKit)
+        NSDataAsset(name: type.artworkName)?.data
+        #else
+        Bundle.main.url(forResource: type.artworkName, withExtension: "gif", subdirectory: "Reactions")
+            .flatMap { try? Data(contentsOf: $0) }
+        #endif
     }
 
     private static func decode(_ data: Data, pixels: Int) -> ReactionFrames? {
@@ -61,13 +74,13 @@ final class ReactionFrames: @unchecked Sendable {
 }
 
 extension ReactionType {
-    /// The artwork's file name, as the iOS asset catalog names it.
-    var artworkName: String { "Reaction" + rawValue.prefix(1) + rawValue.dropFirst().lowercased() }
+    /// The artwork's name, in the iPhone's asset catalog and the Mac app's Reactions folder.
+    public var artworkName: String { "Reaction" + rawValue.prefix(1) + rawValue.dropFirst().lowercased() }
 }
 
 /// A reaction's artwork at a size. It loops from when it appears, or shows the frame for a
 /// given time when a parent drives the animation. Reduce Motion holds a single frame.
-struct ReactionArtwork: View {
+public struct ReactionArtwork: View {
     let type: ReactionType
     let size: CGFloat
     /// Seconds into the loop; nil loops on its own.
@@ -77,7 +90,13 @@ struct ReactionArtwork: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
+    public init(type: ReactionType, size: CGFloat, time: TimeInterval? = nil) {
+        self.type = type
+        self.size = size
+        self.time = time
+    }
+
+    public var body: some View {
         Group {
             if let frames {
                 if reduceMotion { still(frames.frame(at: frames.duration * 0.5)) }
@@ -102,12 +121,14 @@ struct ReactionArtwork: View {
 }
 
 /// The six reactions in a row. Each pops up in turn, as Android's rail does.
-struct ReactionPicker: View {
+public struct ReactionPicker: View {
     let send: (ReactionType) -> Void
     @State private var shown = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
+    public init(send: @escaping (ReactionType) -> Void) { self.send = send }
+
+    public var body: some View {
         HStack(spacing: 6) {
             ForEach(Array(ReactionType.allCases.enumerated()), id: \.element) { index, type in
                 Button { send(type) } label: {
@@ -129,18 +150,20 @@ struct ReactionPicker: View {
     }
 }
 
-private struct ReactionButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
+/// A reaction that shrinks a little while pressed.
+public struct ReactionButtonStyle: ButtonStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.86 : 1)
             .animation(.snappy(duration: 0.12), value: configuration.isPressed)
     }
 }
 
-
 /// The reaction just sent rises, wiggles and drops away, after Android's sent overlay.
-struct ReactionSentBurst: View {
-    let sent: ReactionsModel.Sent
+public struct ReactionSentBurst: View {
+    let sent: SentReaction
     let done: () -> Void
     @State private var start = Date()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -148,7 +171,12 @@ struct ReactionSentBurst: View {
     private static let slide = 0.17, hold = 0.38, fall = 0.26
     private static let duration = slide + hold + fall + 0.05
 
-    var body: some View {
+    public init(sent: SentReaction, done: @escaping () -> Void) {
+        self.sent = sent
+        self.done = done
+    }
+
+    public var body: some View {
         TimelineView(.animation) { context in
             let t = context.date.timeIntervalSince(start)
             let pose = reduceMotion ? Self.stillPose(t) : Self.pose(t)
@@ -160,6 +188,7 @@ struct ReactionSentBurst: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+        .sensoryFeedback(.impact(weight: .light), trigger: sent)
         .task(id: sent) {
             start = .now
             try? await Task.sleep(for: .seconds(Self.duration))
@@ -190,16 +219,27 @@ struct ReactionSentBurst: View {
 
 /// The partner's reactions arriving, as Android plays them on the wallpaper: they rise into
 /// place, bob together for a moment, then drift down like leaves and fade.
-struct ReactionArrivalView: View {
-    let arrival: ReactionsModel.Arrival
+public struct ReactionArrivalView: View {
+    let arrival: ReactionArrival
+    /// The caption's colour.
+    let ink: Color
+    /// Room kept clear at either side of the caption.
+    let captionInset: CGFloat
     let done: () -> Void
     @State private var start = Date()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let slide = 0.26, wiggle = 1.2, fall = 0.85, fadeIn = 0.16, fadeOut = 0.65
-    static let duration = slide + wiggle + fall
+    public static let duration = slide + wiggle + fall
 
-    var body: some View {
+    public init(arrival: ReactionArrival, ink: Color = .primary, captionInset: CGFloat = 48, done: @escaping () -> Void) {
+        self.arrival = arrival
+        self.ink = ink
+        self.captionInset = captionInset
+        self.done = done
+    }
+
+    public var body: some View {
         let arrangement = ReactionArrangement(arrival.batch)
         GeometryReader { geometry in
             let size = geometry.size
@@ -217,9 +257,9 @@ struct ReactionArrivalView: View {
                         // The caption holds still while the reactions move.
                         Text(caption)
                             .font(.custom("Virgil3YOFF", size: max(18, min(size.width, size.height) * 0.045), relativeTo: .title3))
-                            .foregroundStyle(.primary.opacity(0.92))
+                            .foregroundStyle(ink.opacity(0.92))
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 48)
+                            .padding(.horizontal, captionInset)
                             .position(x: size.width / 2, y: size.height * 0.76)
                     }
                 }
@@ -229,9 +269,12 @@ struct ReactionArrivalView: View {
         .allowsHitTesting(false)
         .accessibilityElement()
         .accessibilityLabel(Self.announcement(arrival.batch))
+        .sensoryFeedback(.impact(weight: .medium), trigger: arrival)
         .task(id: arrival) {
             start = .now
-            Haptics.tap()
+            #if os(macOS)
+            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+            #endif
             AccessibilityNotification.Announcement(Self.announcement(arrival.batch)).post()
             try? await Task.sleep(for: .seconds(Self.duration))
             if !Task.isCancelled { done() }
@@ -266,28 +309,13 @@ struct ReactionArrivalView: View {
         return 1 + c3 * pow(x - 1, 3) + c1 * pow(x - 1, 2)
     }
 
-    static func announcement(_ batch: PendingReactionBatch) -> String {
-        let parts = ReactionType.allCases.filter { batch.count($0) > 0 }.map { "\(batch.count($0)) \($0.emoji)" }
-        return "Your partner sent " + parts.joined(separator: ", ")
+    /// What VoiceOver reads: each kind with its count.
+    public static func announcement(_ batch: PendingReactionBatch) -> String {
+        "Your partner sent " + summary(batch)
     }
-}
 
-/// The partner's reactions arriving, and the one just sent leaving, over a canvas.
-struct ReactionStage: View {
-    @ObservedObject var reactions: ReactionsModel
-    let surface: ReactionsModel.Surface
-
-    var body: some View {
-        ZStack {
-            if reactions.surface == surface, let arrival = reactions.arrival {
-                ReactionArrivalView(arrival: arrival) { Task { await reactions.played(arrival) } }
-                    .id(arrival.id)
-            }
-            if reactions.surface == surface, let sent = reactions.sent {
-                ReactionSentBurst(sent: sent) { reactions.finishedSending(sent) }
-                    .id(sent.id)
-            }
-        }
-        .allowsHitTesting(false)
+    /// Each kind that arrived with its count, as "2 ❤️, 1 💋".
+    public static func summary(_ batch: PendingReactionBatch) -> String {
+        ReactionType.allCases.filter { batch.count($0) > 0 }.map { "\(batch.count($0)) \($0.emoji)" }.joined(separator: ", ")
     }
 }

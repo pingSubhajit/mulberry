@@ -106,3 +106,25 @@ public struct ReactionArrangement: Equatable, Sendable {
         }
     }
 }
+
+/// A batch of the partner's reactions this device is playing over its canvas.
+public struct ReactionArrival: Identifiable, Equatable, Sendable {
+    public let id = UUID()
+    public let batch: PendingReactionBatch
+    /// Played from what this device already showed (the Dynamic Island, the Mac's notch) rather
+    /// than claimed from the server, so there is nothing to confirm.
+    public var local: Bool
+
+    public init(batch: PendingReactionBatch, local: Bool = false) {
+        self.batch = batch
+        self.local = local
+    }
+}
+
+/// A reaction this device just sent, for its canvas to show leaving.
+public struct SentReaction: Identifiable, Equatable, Sendable {
+    public let id = UUID()
+    public let type: ReactionType
+
+    public init(type: ReactionType) { self.type = type }
+}

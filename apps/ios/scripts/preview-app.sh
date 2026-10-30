@@ -29,13 +29,13 @@ xcrun actool "$IOS_ROOT/Resources/Assets.xcassets" --compile "$APP" --platform i
 APP_FILES=()
 for file in "$IOS_ROOT"/Sources/App/*.swift; do
   case "$(basename "$file")" in
-    MulberryDeliveryApp.swift|AppRuntime.swift|GoogleAuthentication.swift|PushRegistration.swift|NotificationBridge.swift|CrashReporting.swift) ;;
+    MulberryApp.swift|AppRuntime.swift|GoogleAuthentication.swift|PushRegistration.swift|NotificationBridge.swift|CrashReporting.swift) ;;
     *) APP_FILES+=("$file") ;;
   esac
 done
 SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 xcrun --sdk iphonesimulator swiftc -sdk "$SDK_PATH" -target "$(uname -m)-apple-ios27.0-simulator" -parse-as-library \
-  "$IOS_ROOT"/../../packages/apple/Sources/ProductCore/*.swift "$IOS_ROOT"/../../packages/apple/Sources/CanvasDrawing/*.swift "$IOS_ROOT"/../../packages/apple/Sources/StickerAssets/*.swift "$IOS_ROOT"/Sources/DeliveryCore/*.swift "$IOS_ROOT"/Sources/Shared/*.swift "${APP_FILES[@]}" \
+  "$IOS_ROOT"/../../packages/apple/Sources/ProductCore/*.swift "$IOS_ROOT"/../../packages/apple/Sources/CanvasDrawing/*.swift "$IOS_ROOT"/../../packages/apple/Sources/StickerAssets/*.swift "$IOS_ROOT"/../../packages/apple/Sources/ProductUI/*.swift "$IOS_ROOT"/Sources/DeliveryCore/*.swift "$IOS_ROOT"/Sources/Shared/*.swift "${APP_FILES[@]}" \
   "$IOS_ROOT/Tests/AppPreview/AppPreview.swift" -o "$APP/AppPreview" 2>&1 | grep -E "error|warning: .*AppPreview" || true
 test -x "$APP/AppPreview"
 xcrun simctl install "$DEVICE" "$APP"

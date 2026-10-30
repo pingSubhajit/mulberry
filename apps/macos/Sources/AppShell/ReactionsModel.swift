@@ -13,17 +13,8 @@ final class ReactionsModel: ObservableObject {
     /// Where a canvas is on screen to play reactions over.
     enum Surface { case window, quickDraw }
 
-    struct Arrival: Identifiable, Equatable {
-        let id = UUID()
-        let batch: PendingReactionBatch
-        /// Played from what the notch showed rather than claimed from the server, so nothing to confirm.
-        var local = false
-    }
-
-    struct Sent: Identifiable, Equatable {
-        let id = UUID()
-        let type: ReactionType
-    }
+    typealias Arrival = ReactionArrival
+    typealias Sent = SentReaction
 
     /// The partner's reactions not seen on a canvas yet: what the notch or the menu bar shows.
     struct Waiting: Equatable {

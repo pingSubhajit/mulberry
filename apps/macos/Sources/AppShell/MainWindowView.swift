@@ -2,6 +2,7 @@ import AppKit
 import Auth
 import Overlay
 import ProductCore
+import ProductUI
 import Stickers
 import Sync
 import SwiftUI

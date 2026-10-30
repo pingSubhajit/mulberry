@@ -675,7 +675,8 @@ private struct ReactionStage: View {
     var body: some View {
         ZStack {
             if let arrival = reactions.arrival {
-                ReactionArrivalView(arrival: arrival) { Task { await reactions.played(arrival) } }
+                // The caption clears the phone's action buttons at either side.
+                ReactionArrivalView(arrival: arrival, ink: MulberryDesign.ink, captionInset: 72) { Task { await reactions.played(arrival) } }
                     .id(arrival.id)
             }
             if let sent = reactions.sent {

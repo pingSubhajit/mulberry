@@ -58,7 +58,8 @@ let package = Package(
                 "Stickers",
                 .product(name: "ProductCore", package: "apple"),
                 .product(name: "CanvasDrawing", package: "apple"),
-                .product(name: "StickerAssets", package: "apple")
+                .product(name: "StickerAssets", package: "apple"),
+                .product(name: "ProductUI", package: "apple")
             ]
         ),
         .target(name: "Auth", dependencies: ["Networking", "Persistence", .product(name: "ProductCore", package: "apple")]),

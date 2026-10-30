@@ -1,25 +1,31 @@
-import SwiftUI
+import Combine
+import Foundation
 
+/// The pair's streak, saved per account and pair so it opens on the last one loaded. The first
+/// count seen is the baseline; only a later increase the server confirms celebrates, with the
+/// level-up banner and confetti. Repeated refreshes do not.
 @MainActor
-final class StreakModel: ObservableObject {
-    @Published private(set) var streak: StreakResponse?
-    @Published private(set) var progress = StreakProgress()
-    @Published private(set) var loading = false
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var confettiToken: UUID?
+public final class StreakModel: ObservableObject {
+    @Published public private(set) var streak: StreakResponse?
+    @Published public private(set) var progress = StreakProgress()
+    @Published public private(set) var loading = false
+    @Published public private(set) var errorMessage: String?
+    @Published public private(set) var confettiToken: UUID?
     private let defaults: UserDefaults
     private var key: String?
     private var generation = 0
     private var confettiTask: Task<Void, Never>?
 
-    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
-    func bind(userId: String?, pairSessionId: String?, baselineDays: Int? = nil) {
+    public func bind(userId: String?, pairSessionId: String?, baselineDays: Int? = nil) {
         let next = userId.flatMap { user in pairSessionId.map { "streak.\(user).\($0)" } }
         guard key != next else { return }
         generation += 1
         key = next
-        loading = false; errorMessage = nil; confettiToken = nil
+        loading = false
+        errorMessage = nil
+        confettiToken = nil
         confettiTask?.cancel()
         let saved = next.flatMap { defaults.data(forKey: $0) }.flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
         streak = saved?.streak
@@ -27,7 +33,7 @@ final class StreakModel: ObservableObject {
         if saved == nil, next != nil, let baselineDays { progress.observe(days: baselineDays) }
     }
 
-    func refresh(api: BackendClient) async {
+    public func refresh(api: BackendClient) async {
         guard let key, !loading else { return }
         let epoch = generation
         let day = ServerDate.localDay()
@@ -57,7 +63,21 @@ final class StreakModel: ObservableObject {
         }
     }
 
-    func dismissBanner() {
+    #if DEBUG
+    /// For trying the level-up banner and confetti: launch with `MULBERRY_STREAK_LEVEL_UP=1`.
+    public func runDebugLevelUp() {
+        guard ProcessInfo.processInfo.environment["MULBERRY_STREAK_LEVEL_UP"] != nil, key != nil else { return }
+        // Ends on today's count, so the next real refresh sees no rise to celebrate again.
+        let days = max(1, streak?.currentStreakDays ?? progress.lastObservedDays ?? 1)
+        var celebrated = StreakProgress()
+        celebrated.observe(days: days - 1)
+        celebrated.observe(days: days)
+        progress = celebrated
+        confettiToken = UUID()
+    }
+    #endif
+
+    public func dismissBanner() {
         progress.dismissBanner()
         if let key { save(key: key) }
     }

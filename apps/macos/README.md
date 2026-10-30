@@ -34,7 +34,7 @@ Sign-in reads `MULBERRY_MAC_GOOGLE_CLIENT_ID` and `MULBERRY_MAC_GOOGLE_CLIENT_SE
 
 ## Shared Code
 
-The iPhone and iPad app and this app share three targets in [`packages/apple`](../../packages/apple): `ProductCore` (backend client, Keychain session, canvas model, offline outbox and WebSocket sync), `CanvasDrawing` (the canvas renderer: strokes, text and stickers) and `StickerAssets` (sticker catalog, download and disk cache). This app adds what is particular to the Mac: the menu bar, the desktop overlay and when it syncs, Quick Draw, Google sign-in through the browser, and its pointer-driven editing tools and editors.
+The iPhone and iPad app and this app share four targets in [`packages/apple`](../../packages/apple): `ProductCore` (backend client, Keychain session, canvas model, offline outbox, WebSocket sync and the streak), `CanvasDrawing` (the canvas renderer: strokes, text and stickers), `StickerAssets` (sticker catalog, download and disk cache) and `ProductUI` (the reactions' artwork, picker and playback, and the celebration confetti). This app adds what is particular to the Mac: the menu bar, the desktop overlay and when it syncs, Quick Draw, Google sign-in through the browser, and its pointer-driven editing tools and editors.
 
 ## What the App Does
 

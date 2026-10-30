@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ProductCore
+import ProductUI
 import SwiftUI
 
 /// Where the partner's reactions show while no canvas is open, as the iPhone shows them in the
@@ -359,7 +360,7 @@ private struct NotchIsland: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environment(\.colorScheme, .dark)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(state.waiting.map { "\(state.partnerName) sent \(ReactionArrivalView.announcement($0.batch).replacingOccurrences(of: "Your partner sent ", with: ""))" } ?? "")
+        .accessibilityLabel(state.waiting.map { "\(state.partnerName) sent \(ReactionArrivalView.summary($0.batch))" } ?? "")
     }
 
     private func open(_ waiting: ReactionsModel.Waiting) -> some View {
