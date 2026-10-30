@@ -222,3 +222,32 @@ func editsShowAtOnceAndNeverFlashBackWhileTheyAreSaved() async throws {
     }
     controller.stop()
 }
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func aStrokeSubmittedPointByPointIsSavedAndSentInOrder() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let server = CanvasServer()
+    let controller = try makeController(server: server, directory: directory)
+    controller.updateSession(userID: user, pairSessionID: pair, shouldSync: true)
+    controller.updateDemand(.foregroundWebSocket)
+    try await waitUntil { controller.connectionState == .connected }
+
+    // As the brush submits a stroke: its start, a batch of points per few pointer moves, its end,
+    // each without waiting for the one before to be saved.
+    let points = (0..<120).map { DrawingPoint(x: 0.1 + Double($0) / 200, y: 0.5) }
+    let drawn = DrawingStroke(colorArgb: 0xFFB31329, width: 0.02, points: points, finished: true)
+    var operations = [try DrawingOperation.startStroke(drawn)]
+    for offset in stride(from: 1, to: points.count, by: 4) {
+        operations.append(try DrawingOperation.appendPoints(Array(points[offset..<min(offset + 4, points.count)]), to: drawn.id))
+    }
+    operations.append(DrawingOperation(type: "FINISH_STROKE", strokeId: drawn.id))
+    for operation in operations { controller.submit([operation]) }
+
+    try await waitUntil { controller.status.pendingCount == 0 && controller.status.lastAppliedServerRevision == Int64(operations.count) }
+    #expect(await server.log.map(\.id) == operations.map(\.id))
+    #expect(controller.drawing.finishedStrokes.map(\.points) == [points])
+    #expect(controller.status.lastError == nil)
+    controller.stop()
+}

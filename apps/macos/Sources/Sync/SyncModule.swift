@@ -77,6 +77,9 @@ public final class CanvasSyncController: ObservableObject {
     /// once; saving them takes a disk write, and the canvas would otherwise show the old state,
     /// such as a moved sticker back in its old place, until the write finished.
     private var unsaved: [DrawingOperation] = []
+    /// The latest save. Each waits for the one before it, so edits are saved, and sent, in the
+    /// order they were made: a stroke's points never arrive before the stroke.
+    private var saving: Task<Void, Never>?
 
     public static let defaultOverlayRecoveryInterval: Duration = .seconds(3)
     public static let defaultOverlayFreshnessWindow: TimeInterval = 6
@@ -163,7 +166,9 @@ public final class CanvasSyncController: ObservableObject {
         unsaved.append(contentsOf: operations)
         publishDrawing()
         let ids = Set(operations.map(\.id))
-        Task {
+        let previous = saving
+        saving = Task {
+            await previous?.value
             do {
                 let document: DrawingDocument
                 if let live {
