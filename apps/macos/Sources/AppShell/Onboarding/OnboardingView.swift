@@ -367,29 +367,14 @@ private struct GoogleButton: View {
     }
 }
 
-/// Google's four-colour G, drawn from its arcs.
+/// Google's own G, the same file the iPhone app's sign-in uses.
 private struct GoogleMark: View {
+    private static let image = AppResources.url("Onboarding/GoogleMark.svg").flatMap(NSImage.init(contentsOf:))
+
     var body: some View {
-        Canvas { context, size in
-            let s = min(size.width, size.height)
-            let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let radius = s * 0.38
-            let line = s * 0.2
-            func arc(_ from: Double, _ to: Double, _ color: Color) {
-                var path = Path()
-                path.addArc(center: center, radius: radius, startAngle: .degrees(from), endAngle: .degrees(to), clockwise: false)
-                context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: line))
-            }
-            arc(-40, 0, Color(red: 0.26, green: 0.52, blue: 0.96))
-            arc(0, 90 + 40, Color(red: 0.20, green: 0.66, blue: 0.33))
-            arc(130, 225, Color(red: 0.98, green: 0.74, blue: 0.02))
-            arc(225, 320, Color(red: 0.92, green: 0.26, blue: 0.21))
-            var bar = Path()
-            bar.move(to: CGPoint(x: center.x, y: center.y))
-            bar.addLine(to: CGPoint(x: center.x + radius + line / 2, y: center.y))
-            context.stroke(bar, with: .color(Color(red: 0.26, green: 0.52, blue: 0.96)), style: StrokeStyle(lineWidth: line))
+        if let image = Self.image {
+            Image(nsImage: image).resizable().scaledToFit().accessibilityHidden(true)
         }
-        .accessibilityHidden(true)
     }
 }
 
