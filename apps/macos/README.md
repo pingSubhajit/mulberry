@@ -63,4 +63,10 @@ The iPhone and iPad app and this app share four targets in [`packages/apple`](..
 | `QuickDraw` | Quick Draw's global shortcut |
 | `Stickers` | Sticker artwork loading for the canvas |
 
-Push notifications and a notarised, Developer ID-signed DMG wait for the paid Apple Developer account.
+## App Store
+
+The Mac app shares the iPhone and iPad app's App Store record, as Universal Purchase: one listing, with Mac added as a platform rather than a separate app. So it takes the same bundle IDs, `com.subhajit.mulberry` for release builds (`CONFIGURATION=release`) and `com.subhajit.mulberry.dev` for development ones, and the same icons, compiled by `Scripts/build-app.sh` from the iPhone app's Icon Composer files: `apps/ios/Resources/AppIcon.icon`, and the purple `AppIconDev.icon` for development builds. Each build keeps its own saved session.
+
+It runs in the App Sandbox, with only what it needs: outgoing network for the backend, sync, sticker artwork and sign-in; incoming network for Google sign-in's return to its loopback server; and files the person chooses, for Export Drawing and a profile photo. Its privacy manifest, `Resources/PrivacyInfo.xcprivacy`, matches the iPhone app's, without the crash reports the Mac does not send.
+
+Signing for the Mac App Store (a Mac App Distribution certificate and provisioning profile), adding the Mac to the App Store Connect record, push notifications and a notarised Developer ID DMG wait for the paid Apple Developer account.
