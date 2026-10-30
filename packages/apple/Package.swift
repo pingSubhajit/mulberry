@@ -20,6 +20,7 @@ let package = Package(
         .target(name: "CanvasDrawing", dependencies: ["ProductCore"], path: "Sources/CanvasDrawing"),
         .target(name: "StickerAssets", dependencies: ["ProductCore", "CanvasDrawing"], path: "Sources/StickerAssets"),
         .target(name: "ProductUI", dependencies: ["ProductCore"], path: "Sources/ProductUI"),
-        .testTarget(name: "ProductCoreTests", dependencies: ["ProductCore"], path: "Tests/ProductCoreTests", resources: [.copy("Fixtures")])
+        .testTarget(name: "ProductCoreTests", dependencies: ["ProductCore"], path: "Tests/ProductCoreTests", resources: [.copy("Fixtures")]),
+        .testTarget(name: "CanvasDrawingTests", dependencies: ["CanvasDrawing", "ProductCore"], path: "Tests/CanvasDrawingTests")
     ]
 )
