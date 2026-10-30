@@ -35,7 +35,9 @@ let package = Package(
     ],
     dependencies: [
         // The backend client, canvas model and sync shared with the iPhone and iPad app.
-        .package(path: "../../packages/apple")
+        .package(path: "../../packages/apple"),
+        // Crash reports, beside the iPhone's and Android's, at the iPhone app's version.
+        .package(url: "https://github.com/firebase/firebase-ios-sdk", exact: "12.19.3")
     ],
     targets: [
         .executableTarget(
@@ -59,7 +61,8 @@ let package = Package(
                 .product(name: "ProductCore", package: "apple"),
                 .product(name: "CanvasDrawing", package: "apple"),
                 .product(name: "StickerAssets", package: "apple"),
-                .product(name: "ProductUI", package: "apple")
+                .product(name: "ProductUI", package: "apple"),
+                .product(name: "FirebaseCrashlytics", package: "firebase-ios-sdk")
             ]
         ),
         .target(name: "Auth", dependencies: ["Networking", "Persistence", .product(name: "ProductCore", package: "apple")]),

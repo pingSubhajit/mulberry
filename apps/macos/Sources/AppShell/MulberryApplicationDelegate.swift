@@ -91,6 +91,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         if handOverToRunningCopy() { return NSApp.terminate(nil) }
+        CrashReporting.start()
         NSApp.setActivationPolicy(.accessory)
         installMainMenu()
         listenForSecondCopies()

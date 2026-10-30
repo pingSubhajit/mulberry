@@ -46,9 +46,35 @@ if [ -d "Resources" ]; then
   rsync -a --exclude ".DS_Store" Resources/ "${RESOURCES_DIR}/"
 fi
 
+# The packages' resource bundles, which hold their own privacy manifests, where Bundle.module
+# finds them.
+for bundle in "${BUILD_DIR}"/*.bundle; do
+  [ -d "${bundle}" ] && rsync -a "${bundle}" "${RESOURCES_DIR}/"
+done
+
 if [ -f ".env" ]; then
   cp ".env" "${RESOURCES_DIR}/.env"
 fi
+
+# The iPhone app's public Firebase client configuration, for crash reports: the Mac shares its
+# bundle IDs, so it shares its Firebase app. Checked as the iPhone's build checks it.
+if [ "${CONFIGURATION}" = "release" ]; then FIREBASE_VARIANT="prod"; else FIREBASE_VARIANT="dev"; fi
+python3 - "../ios/Configuration/GoogleService-Info.${FIREBASE_VARIANT}.plist" "${RESOURCES_DIR}/GoogleService-Info.plist" "${BUNDLE_ID}" "${FIREBASE_VARIANT}" <<'PY'
+import plistlib, sys
+from pathlib import Path
+source, destination, bundle_id, variant = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4]
+if not source.exists():
+    if variant == "prod":
+        raise SystemExit("error: Add the production public Firebase client plist before a release build.")
+    print("warning: Firebase client config absent. Crash reports are off in this build.")
+    raise SystemExit(0)
+config = plistlib.loads(source.read_bytes())
+if config.get("BUNDLE_ID") != bundle_id:
+    raise SystemExit("error: Firebase client configuration has the wrong bundle ID.")
+if any(key in config for key in ["private_key", "private_key_id", "client_secret"]):
+    raise SystemExit("error: Server credentials must never be bundled.")
+destination.write_bytes(source.read_bytes())
+PY
 
 # The icon, compiled for macOS: a Liquid Glass icon in Assets.car, and an .icns for older places.
 ICON_PLIST="$(mktemp -t mulberry-icon).plist"
@@ -61,5 +87,12 @@ rm -f "${ICON_PLIST}"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ${APP_NAME}" "${INFO_PLIST_PATH}" >/dev/null
 
 codesign --force --sign "${SIGNING_IDENTITY}" --entitlements "${ENTITLEMENTS_PATH}" "${APP_DIR}"
+
+# Release builds send their symbols to Crashlytics, so crash reports read as source.
+UPLOAD_SYMBOLS=".build/checkouts/firebase-ios-sdk/Crashlytics/upload-symbols"
+if [ "${CONFIGURATION}" = "release" ] && [ -x "${UPLOAD_SYMBOLS}" ] && [ -f "${RESOURCES_DIR}/GoogleService-Info.plist" ]; then
+  dsymutil "${EXECUTABLE_PATH}" -o ".build/app/${APP_NAME}.app.dSYM"
+  "${UPLOAD_SYMBOLS}" -gsp "${RESOURCES_DIR}/GoogleService-Info.plist" -p mac ".build/app/${APP_NAME}.app.dSYM"
+fi
 
 echo "Built ${APP_DIR}"

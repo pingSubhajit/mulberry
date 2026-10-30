@@ -725,6 +725,18 @@ struct AdvancedPane: View {
                         .buttonStyle(.settings)
                 }
             }
+            #if DEBUG
+            // Development builds only: checks that reports reach Crashlytics, as the iPhone's
+            // Developer options do.
+            SettingsSection("Crash Reporting", footer: "A crash is reported when Mulberry next opens.") {
+                SettingsRow("Test Error") {
+                    Button("Send", action: CrashReporting.testError).buttonStyle(.settings)
+                }
+                SettingsRow("Test Crash") {
+                    Button("Crash Now") { CrashReporting.testCrash() }.buttonStyle(.settings)
+                }
+            }
+            #endif
         }
     }
 
