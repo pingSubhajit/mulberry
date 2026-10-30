@@ -86,6 +86,10 @@ struct FullAppCanvasEditor: View {
     @State private var stickerPreview: CanvasStickerElement?
     /// The sticker bar's Replace panel.
     @State private var replacingSticker = false
+    /// Where a click on empty canvas asked for a new sticker: the panel opens there.
+    @State private var stickerPlacement: CGPoint?
+    /// The panel's anchor, kept while it closes.
+    @State private var placementAnchor = CGPoint.zero
     @State private var drag: ElementDrag?
     /// A text or sticker pressed with the eraser: lifting without moving deletes it.
     @State private var elementToErase: (id: String, start: CGPoint)?
@@ -302,6 +306,19 @@ struct FullAppCanvasEditor: View {
                 textLayers(canvasSize: proxy.size)
                 stickerLayers(canvasSize: proxy.size)
 
+                // The sticker panel, opened where empty canvas was clicked; the sticker lands there.
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .position(placementAnchor)
+                    .popover(isPresented: Binding(get: { stickerPlacement != nil }, set: { if !$0 { stickerPlacement = nil } }), arrowEdge: .top) {
+                        stickerPanel(current: nil) { reference in
+                            let center = normalized(placementAnchor, canvasSize: proxy.size)
+                            stickerPlacement = nil
+                            placeSticker(reference, at: center)
+                        }
+                    }
+                    .allowsHitTesting(false)
+
                 if let loupe = eyedropperLoupe, let colour = model.eyedropperPreview {
                     EyedropperLoupe(colour: colour)
                         .position(loupePosition(loupe, in: proxy.size))
@@ -501,7 +518,8 @@ struct FullAppCanvasEditor: View {
 
     /// Text tool: clicking away from the text being typed finishes it; pressing a text selects it
     /// and starts moving it; pressing empty canvas starts typing there. Sticker tool: pressing a
-    /// sticker selects it and starts moving it; pressing empty canvas deselects.
+    /// sticker selects it and starts moving it; pressing empty canvas deselects, or with nothing
+    /// selected, opens the sticker panel there to place a new one.
     private func elementDown(at point: CGPoint, canvasSize: CGSize) {
         if editor.toolState.activeTool == .text {
             if textEdit != nil {
@@ -521,12 +539,18 @@ struct FullAppCanvasEditor: View {
             return
         }
         guard editor.toolState.activeTool == .sticker else { return }
+        let panelWasOpen = model.stickerPanelOpen || stickerPlacement != nil
         model.stickerPanelOpen = false
         replacingSticker = false
+        stickerPlacement = nil
         if let hit = element(at: point, canvasSize: canvasSize, where: { $0.sticker != nil }) {
             selectedStickerID = hit.id
             drag = ElementDrag(original: hit, start: point, current: hit)
             return
+        }
+        if selectedStickerID == nil && !panelWasOpen {
+            placementAnchor = point
+            stickerPlacement = point
         }
         selectedStickerID = nil
     }
