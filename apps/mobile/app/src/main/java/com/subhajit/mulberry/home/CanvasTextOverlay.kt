@@ -40,6 +40,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.draw.clip
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -58,6 +64,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.scale
@@ -65,6 +73,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
@@ -108,6 +117,18 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import kotlin.math.PI
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+
+/** Sticker artwork, whatever the sticker's place on the canvas. */
+private data class StickerArtwork(val packKey: String, val packVersion: Int, val stickerId: String) {
+    val key: String get() = "$packKey:$packVersion:$stickerId:full"
+}
+
+private fun CanvasStickerElement.artwork() = StickerArtwork(packKey, packVersion, stickerId)
+
+// Artwork that only needs decoding fades in, with no placeholder first. A placeholder waits this
+// long, so it only appears while a download keeps the canvas waiting.
+private const val STICKER_PLACEHOLDER_DELAY_MS = 400L
+private const val STICKER_REVEAL_MS = 180
 
 private data class CachedTextLayout(
     val text: String,
@@ -159,6 +180,49 @@ fun CanvasTextOverlay(
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var liveTransformPreview by remember { mutableStateOf<CanvasElement?>(null) }
     val stickerBitmaps = remember { mutableStateMapOf<String, android.graphics.Bitmap>() }
+    // Artwork decoded while the canvas is open fades in; artwork already in memory draws at once.
+    val stickerReveals = remember { mutableStateMapOf<String, Animatable<Float, AnimationVector1D>>() }
+    // Artwork still downloading after a moment shows a placeholder: true while it pulses, false
+    // once the download has failed and it rests.
+    val stickerPlaceholders = remember { mutableStateMapOf<String, Boolean>() }
+
+    fun stickerBitmapFor(element: CanvasStickerElement): android.graphics.Bitmap? =
+        stickerBitmaps[element.artwork().key] ?: stickerAssetStore.cachedStickerBitmap(
+            packKey = element.packKey,
+            packVersion = element.packVersion,
+            stickerId = element.stickerId,
+            variant = StickerAssetVariant.FULL
+        )
+
+    // The placeholder's ink stands out from the canvas: dark on a light canvas, light on a dark one.
+    val canvasSurface = MaterialTheme.mulberryAppColors.softSurface
+    val placeholderInkArgb = remember(canvasSurface) {
+        (if (canvasSurface.luminance() > 0.5f) Color.Black else Color.White).toArgb()
+    }
+    val context = LocalContext.current
+    val animationsEnabled = remember(context) {
+        runCatching {
+            android.provider.Settings.Global.getFloat(
+                context.contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) != 0f
+        }.getOrDefault(true)
+    }
+    // Pulses only while a placeholder is waiting on a download, so the canvas isn't redrawn otherwise.
+    val placeholderPulse = if (animationsEnabled && stickerPlaceholders.values.any { it }) {
+        rememberInfiniteTransition(label = "stickerPlaceholder").animateFloat(
+            initialValue = 0.08f,
+            targetValue = 0.18f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1_200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "stickerPlaceholderPulse"
+        )
+    } else {
+        null
+    }
     val textLayoutCache = remember { mutableMapOf<String, CachedTextLayout>() }
     LaunchedEffect(fontResolver) {
         textLayoutCache.clear()
@@ -200,12 +264,7 @@ fun CanvasTextOverlay(
     var isTransformInProgress by remember { mutableStateOf(false) }
     val pillBackgroundPaint = remember { android.graphics.Paint().apply { isAntiAlias = true } }
     val stickerBitmapPaint = remember { android.graphics.Paint().apply { isAntiAlias = true; isFilterBitmap = true } }
-    val stickerPlaceholderPaint = remember {
-        android.graphics.Paint().apply {
-            isAntiAlias = true
-            color = android.graphics.Color.argb(64, 255, 255, 255)
-        }
-    }
+    val stickerPlaceholderPaint = remember { android.graphics.Paint().apply { isAntiAlias = true } }
     val textBoundsPaint = remember {
         android.graphics.Paint().apply {
             isAntiAlias = true
@@ -314,8 +373,7 @@ fun CanvasTextOverlay(
                     }
                 }
                 is CanvasStickerElement -> {
-                    val key = "${element.packKey}:${element.packVersion}:${element.stickerId}:full"
-                    val bitmap = stickerBitmaps[key]
+                    val bitmap = stickerBitmapFor(element)
                     val maxSizePx = (element.scale.coerceIn(0.08f, 1.6f) * canvasSize.width.toFloat()).coerceAtLeast(1f)
                     val renderSize = if (bitmap != null) {
                         resolveStickerRenderSizePx(
@@ -341,18 +399,61 @@ fun CanvasTextOverlay(
     }
 
     val stickerElements = remember(elements) { elements.filterIsInstance<CanvasStickerElement>() }
-    LaunchedEffect(stickerElements) {
-        stickerElements.forEach { element ->
-            val key = "${element.packKey}:${element.packVersion}:${element.stickerId}:full"
-            if (stickerBitmaps.containsKey(key)) return@forEach
-            val file = stickerAssetStore.getOrDownloadStickerAsset(
-                packKey = element.packKey,
-                packVersion = element.packVersion,
-                stickerId = element.stickerId,
+    // Keyed on the artwork rather than the elements, so moving a sticker doesn't restart its load.
+    val stickerArtwork = remember(stickerElements) { stickerElements.map { it.artwork() }.distinct() }
+    LaunchedEffect(stickerArtwork) {
+        stickerArtwork.forEach { artwork ->
+            val key = artwork.key
+            if (stickerBitmaps.containsKey(key) || stickerReveals.containsKey(key)) return@forEach
+            stickerAssetStore.cachedStickerBitmap(
+                packKey = artwork.packKey,
+                packVersion = artwork.packVersion,
+                stickerId = artwork.stickerId,
                 variant = StickerAssetVariant.FULL
-            ) ?: return@forEach
-            val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return@forEach
-            stickerBitmaps[key] = bitmap
+            )?.let { cached ->
+                stickerBitmaps[key] = cached
+                return@forEach
+            }
+            launch {
+                val onDevice = stickerAssetStore.hasStickerAsset(
+                    packKey = artwork.packKey,
+                    packVersion = artwork.packVersion,
+                    stickerId = artwork.stickerId,
+                    variant = StickerAssetVariant.FULL
+                )
+                val placeholder = if (onDevice) {
+                    null
+                } else {
+                    launch {
+                        delay(STICKER_PLACEHOLDER_DELAY_MS)
+                        stickerPlaceholders[key] = true
+                    }
+                }
+                val bitmap = runCatching {
+                    stickerAssetStore.loadStickerBitmap(
+                        packKey = artwork.packKey,
+                        packVersion = artwork.packVersion,
+                        stickerId = artwork.stickerId,
+                        variant = StickerAssetVariant.FULL
+                    )
+                }.getOrNull()
+                placeholder?.cancel()
+                if (bitmap == null) {
+                    // Offline, or the artwork is gone: the placeholder rests in the sticker's place.
+                    stickerPlaceholders[key] = false
+                    return@launch
+                }
+                // The artwork fades in as any placeholder fades out.
+                val reveal = Animatable(0f)
+                stickerReveals[key] = reveal
+                stickerBitmaps[key] = bitmap
+                try {
+                    reveal.animateTo(1f, tween(durationMillis = STICKER_REVEAL_MS, easing = FastOutSlowInEasing))
+                } finally {
+                    stickerReveals.remove(key)
+                    stickerPlaceholders.remove(key)
+                }
+            }
         }
     }
 
@@ -953,6 +1054,7 @@ fun CanvasTextOverlay(
 	                    val native = canvas.nativeCanvas
 	                    val pillPaddingPx = with(density) { 12.dp.toPx() }
 	                    val pillCornerPx = with(density) { 18.dp.toPx() }
+	                    val placeholderCornerPx = with(density) { 18.dp.toPx() }
                         val debugStrokeWidthPx = with(density) { 1.5.dp.toPx() }
                         textBoundsPaint.strokeWidth = debugStrokeWidthPx
                         textPillBoundsPaint.strokeWidth = debugStrokeWidthPx
@@ -1005,8 +1107,8 @@ fun CanvasTextOverlay(
 	                        }
 	                        is CanvasStickerElement -> {
                             val center = element.center.denormalize(canvasSize)
-                            val key = "${element.packKey}:${element.packVersion}:${element.stickerId}:full"
-                            val bitmap = stickerBitmaps[key]
+                            val key = element.artwork().key
+                            val bitmap = stickerBitmapFor(element)
 
                             val maxSizePx = (element.scale.coerceIn(0.08f, 1.6f) * canvasSize.width.toFloat())
                                 .coerceAtLeast(1f)
@@ -1030,11 +1132,26 @@ fun CanvasTextOverlay(
                             native.translate(center.x, center.y)
                             native.rotate((element.rotationRad * 180f / Math.PI).toFloat())
 
+                            val reveal = stickerReveals[key]?.value ?: 1f
+                            val placeholderPulsing = stickerPlaceholders[key]
+                            if (placeholderPulsing != null) {
+                                val base = if (placeholderPulsing) placeholderPulse?.value ?: 0.13f else 0.13f
+                                val alpha = base * (if (bitmap != null) 1f - reveal else 1f)
+                                if (alpha > 0f) {
+                                    // Square, at the sticker's size, whatever shape the artwork turns out to be.
+                                    val half = maxSizePx / 2f
+                                    val square = RectF(-half, -half, half, half)
+                                    val corner = min(placeholderCornerPx, maxSizePx * 0.2f)
+                                    stickerPlaceholderPaint.color = placeholderInkArgb
+                                    stickerPlaceholderPaint.alpha = (alpha * 255f).toInt()
+                                    native.drawRoundRect(square, corner, corner, stickerPlaceholderPaint)
+                                }
+                            }
                             if (bitmap != null) {
                                 val src = android.graphics.Rect(0, 0, bitmap.width, bitmap.height)
+                                stickerBitmapPaint.alpha = (reveal * 255f).toInt()
                                 native.drawBitmap(bitmap, src, rect, stickerBitmapPaint)
-                            } else {
-                                native.drawRoundRect(rect, 18f, 18f, stickerPlaceholderPaint)
+                                stickerBitmapPaint.alpha = 255
                             }
                             if (showElementBounds) {
                                 native.drawRect(rect, stickerBoundsPaint)

@@ -244,13 +244,12 @@ fun EyedropperOverlay(
         stickerElements.forEach { element ->
             val key = "${element.packKey}:${element.packVersion}:${element.stickerId}:full"
             if (stickerBitmaps.containsKey(key)) return@forEach
-            val file = stickerAssetStore.getOrDownloadStickerAsset(
+            val bitmap = stickerAssetStore.loadStickerBitmap(
                 packKey = element.packKey,
                 packVersion = element.packVersion,
                 stickerId = element.stickerId,
                 variant = StickerAssetVariant.FULL
             ) ?: return@forEach
-            val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return@forEach
             stickerBitmaps[key] = bitmap
         }
     }

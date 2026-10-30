@@ -1,6 +1,5 @@
 package com.subhajit.mulberry.home
 
-import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -126,16 +125,25 @@ fun StickerEditorOverlay(
 
     BackHandler(onBack = { commitAndExit() })
 
-    var previewBitmap by remember(draft.packKey, draft.packVersion, draft.stickerId) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    // Artwork already in memory shows at once; otherwise it loads, sharing the canvas's cache.
+    var previewBitmap by remember(draft.packKey, draft.packVersion, draft.stickerId) {
+        mutableStateOf(
+            stickerAssetStore.cachedStickerBitmap(
+                packKey = draft.packKey,
+                packVersion = draft.packVersion,
+                stickerId = draft.stickerId,
+                variant = StickerAssetVariant.FULL
+            )
+        )
+    }
     LaunchedEffect(draft.packKey, draft.packVersion, draft.stickerId) {
-        previewBitmap = null
-        val file = stickerAssetStore.getOrDownloadStickerAsset(
+        if (previewBitmap != null) return@LaunchedEffect
+        previewBitmap = stickerAssetStore.loadStickerBitmap(
             packKey = draft.packKey,
             packVersion = draft.packVersion,
             stickerId = draft.stickerId,
             variant = StickerAssetVariant.FULL
-        ) ?: return@LaunchedEffect
-        previewBitmap = BitmapFactory.decodeFile(file.absolutePath)
+        )
     }
 
     Box(

@@ -6,6 +6,7 @@ import androidx.work.Configuration
 import com.subhajit.mulberry.app.shortcut.ReactionShortcutPublisher
 import com.subhajit.mulberry.notifications.MulberryNotificationChannels
 import com.subhajit.mulberry.reactions.ReactionLocalStore
+import com.subhajit.mulberry.stickers.StickerArtworkPrewarmer
 import com.subhajit.mulberry.sync.PartnerWallpaperStatusReportCoordinator
 import com.subhajit.mulberry.sync.WallpaperSyncPausedReminderCoordinator
 import com.subhajit.mulberry.widget.relationship.RelationshipWidgetAnniversaryObserver
@@ -23,6 +24,7 @@ class MulberryApplication : Application(), Configuration.Provider {
     @Inject lateinit var partnerWallpaperStatusReportCoordinator: PartnerWallpaperStatusReportCoordinator
     @Inject lateinit var reactionLocalStore: ReactionLocalStore
     @Inject lateinit var relationshipWidgetAnniversaryObserver: RelationshipWidgetAnniversaryObserver
+    @Inject lateinit var stickerArtworkPrewarmer: StickerArtworkPrewarmer
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -30,6 +32,7 @@ class MulberryApplication : Application(), Configuration.Provider {
         super.onCreate()
         MulberryNotificationChannels.registerAll(this)
         relationshipWidgetAnniversaryObserver.start(applicationScope)
+        stickerArtworkPrewarmer.start(applicationScope)
         applicationScope.launch {
             ReactionShortcutPublisher.publish(
                 context = this@MulberryApplication,

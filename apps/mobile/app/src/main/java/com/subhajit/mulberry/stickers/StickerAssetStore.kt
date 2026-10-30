@@ -1,12 +1,19 @@
 package com.subhajit.mulberry.stickers
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.LruCache
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -24,6 +31,71 @@ class StickerAssetStore @Inject constructor(
 ) {
     private val downloadMutexes = ConcurrentHashMap<String, Mutex>()
     private val maxStickerAssetBytes: Long = 250L * 1024L * 1024L
+
+    // Decoded artwork, kept in memory so a canvas that opens again draws its stickers on the
+    // first frame instead of decoding them anew.
+    private val bitmapCache = object : LruCache<String, Bitmap>(bitmapCacheBytes()) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
+    }
+    private val bitmapLoads = ConcurrentHashMap<String, Deferred<Bitmap?>>()
+    // Loads outlive the screen that asked for them, so a canvas that recomposes or closes mid-load
+    // still leaves the artwork decoded for next time.
+    private val loadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** The decoded artwork, if it is already in memory. Safe to call while drawing. */
+    fun cachedStickerBitmap(
+        packKey: String,
+        packVersion: Int,
+        stickerId: String,
+        variant: StickerAssetVariant
+    ): Bitmap? = bitmapCache.get(bitmapKey(packKey, packVersion, stickerId, variant))
+
+    /** Whether the artwork is already on this device, so showing it needs only a decode. */
+    suspend fun hasStickerAsset(
+        packKey: String,
+        packVersion: Int,
+        stickerId: String,
+        variant: StickerAssetVariant,
+        userId: String? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        val resolvedUserId = userId ?: sessionBootstrapRepository.state.first().userId
+        if (resolvedUserId.isNullOrBlank() || packVersion <= 0) return@withContext false
+        val file = destinationFile(resolvedUserId, packKey, packVersion, stickerId, variant)
+        file.exists() && file.length() > 0
+    }
+
+    /**
+     * The decoded artwork: from memory, else from this device, else downloaded first. Callers
+     * asking for the same sticker at once share one load.
+     */
+    suspend fun loadStickerBitmap(
+        packKey: String,
+        packVersion: Int,
+        stickerId: String,
+        variant: StickerAssetVariant,
+        urlHint: String? = null,
+        userId: String? = null
+    ): Bitmap? {
+        val key = bitmapKey(packKey, packVersion, stickerId, variant)
+        bitmapCache.get(key)?.let { return it }
+        // A finished load that nobody collected (its caller went away) is retried, not reused.
+        val load = bitmapLoads.compute(key) { _, running ->
+            running?.takeUnless { it.isCompleted } ?: loadScope.async {
+                val file = getOrDownloadStickerAsset(packKey, packVersion, stickerId, variant, urlHint, userId)
+                    ?: return@async null
+                BitmapFactory.decodeFile(file.absolutePath)?.also { bitmap ->
+                    // Uploads the pixels ahead of the first draw.
+                    bitmap.prepareToDraw()
+                    bitmapCache.put(key, bitmap)
+                }
+            }
+        }!!
+        return try {
+            load.await()
+        } finally {
+            if (load.isCompleted) bitmapLoads.remove(key, load)
+        }
+    }
 
     suspend fun getOrDownloadStickerAsset(
         packKey: String,
@@ -150,6 +222,7 @@ class StickerAssetStore @Inject constructor(
         val resolvedUserId = userId ?: sessionBootstrapRepository.state.first().userId
         if (resolvedUserId.isNullOrBlank()) return@withContext
         File(context.filesDir, "stickers/${resolvedUserId.trim()}").deleteRecursively()
+        bitmapCache.evictAll()
     }
 
     suspend fun enforceBudgetNow(userId: String? = null) = withContext(Dispatchers.IO) {
@@ -189,6 +262,13 @@ class StickerAssetStore @Inject constructor(
         }
     }
 
+    private fun bitmapKey(
+        packKey: String,
+        packVersion: Int,
+        stickerId: String,
+        variant: StickerAssetVariant
+    ): String = "${packKey.trim().lowercase()}:$packVersion:${stickerId.trim()}:${variant.name.lowercase()}"
+
     private fun File.safeSizeBytes(): Long {
         if (!exists()) return 0L
         if (isFile) return length().coerceAtLeast(0L)
@@ -203,5 +283,9 @@ class StickerAssetStore @Inject constructor(
 
     companion object {
         const val COVER_STICKER_ID = "__cover"
+
+        // An eighth of the app's heap, at most 64 MB.
+        private fun bitmapCacheBytes(): Int =
+            (Runtime.getRuntime().maxMemory() / 8).coerceAtMost(64L * 1024L * 1024L).toInt()
     }
 }
