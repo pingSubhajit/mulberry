@@ -82,7 +82,7 @@ func swiftClientPairsDrawsAndUnpairsThroughRealBackendRoutes() async throws {
     let offlineStroke = DrawingStroke(colorArgb: 0xFF2457D6, width: 0.03, points: [.init(x: 0.3, y: 0.3), .init(x: 0.8, y: 0.9)], finished: true)
     let offlineOps = try DrawingOperation.restore(offlineStroke)
     let offlineState = try await offlineSync.enqueue(offlineOps)
-    #expect(try offlineState.visible.finishedStrokes.contains(offlineStroke))
+    #expect(offlineState.visible.finishedStrokes.contains(offlineStroke))
     #expect(try await second.canvasSnapshot().snapshotRevision == 6)
     await offlineSync.stop()
     let reopenedStore = DrawingStore(directory: directory)

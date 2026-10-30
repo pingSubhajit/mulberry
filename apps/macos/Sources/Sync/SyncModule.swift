@@ -316,17 +316,13 @@ public final class CanvasSyncController: ObservableObject {
     private func accept(_ document: DrawingDocument) {
         guard let session, document.userId == session.userID, document.pairSessionId == session.pairSessionID else { return }
         if let documentVersion, document.version < documentVersion { return }
-        do {
-            savedDrawing = try document.visible
-            // Edits this document already holds are no longer only this Mac's.
-            let saved = Set(document.pending.map(\.id))
-            unsaved.removeAll { saved.contains($0.id) }
-            publishDrawing()
-            documentVersion = document.version
-            refreshStatus(pending: document.pending.count)
-        } catch {
-            recordError("The canvas needs to sync again. \(error.localizedDescription)")
-        }
+        savedDrawing = document.visible
+        // Edits this document already holds are no longer only this Mac's.
+        let saved = Set(document.pending.map(\.id))
+        unsaved.removeAll { saved.contains($0.id) }
+        publishDrawing()
+        documentVersion = document.version
+        refreshStatus(pending: document.pending.count)
     }
 
     /// The saved canvas with this Mac's edits that are still being saved laid over it.

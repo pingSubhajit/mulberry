@@ -142,7 +142,7 @@ func offlineEditsSurviveRestartAndOnlyUploadToOriginalPair(pairChanged: Bool) as
     let stroke = DrawingStroke(colorArgb: 0xFF112233, width: 0.02, points: [.init(x: 0.1, y: 0.2), .init(x: 0.7, y: 0.8)], finished: true)
     let operations = try DrawingOperation.restore(stroke)
     let document = try await sync.enqueue(operations)
-    #expect(try document.visible.finishedStrokes == [stroke])
+    #expect(document.visible.finishedStrokes == [stroke])
     #expect(document.confirmed.revision == 0)
     #expect(await server.accepted.isEmpty)
     let localSignature = try WallpaperContent.signature(canvas: document.visible, backgroundID: "default", showDrawings: true, renderMode: "dry")

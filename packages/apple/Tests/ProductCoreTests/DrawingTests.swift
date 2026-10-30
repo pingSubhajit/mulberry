@@ -14,7 +14,7 @@ private func accepted(_ operation: DrawingOperation, revision: Int64, pairID: St
     let outgoing = try DrawingOperation.restore(stroke)
     var document = DrawingDocument(userId: user, pairSessionId: pair)
     try document.enqueue(outgoing)
-    #expect(try document.visible.finishedStrokes == [stroke])
+    #expect(document.visible.finishedStrokes == [stroke])
     let incoming = outgoing.enumerated().map { accepted($0.element, revision: Int64($0.offset + 1)) }
     try document.receive(Array(incoming.reversed()))
     try document.receive(incoming)
@@ -119,8 +119,8 @@ private func accepted(_ operation: DrawingOperation, revision: Int64, pairID: St
     let recovered = try await reopened.load(userId: user, pairSessionId: pair)
     #expect(recovered.pending.map(\.type) == ["FINISH_STROKE"])
     #expect(recovered.pending.first?.strokeId == local.id)
-    #expect(try recovered.visible.finishedStrokes.first?.points == local.points)
-    #expect(try recovered.visible.strokes.first { $0.id == "peer-active" }?.finished == false)
+    #expect(recovered.visible.finishedStrokes.first?.points == local.points)
+    #expect(recovered.visible.strokes.first { $0.id == "peer-active" }?.finished == false)
     try await reopened.finishInterruptedStrokes(userId: user, pairSessionId: pair)
     #expect(try await reopened.load(userId: user, pairSessionId: pair).pending.count == 1)
 }

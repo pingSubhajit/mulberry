@@ -175,16 +175,16 @@ public actor DrawingSync {
     }
 
     private func receive(_ operations: [DrawingOperation]) async throws {
+        let current: DrawingDocument
         do {
-            _ = try await store.receive(userId: userId, pairSessionId: pairSessionId, operations: operations)
+            current = try await store.receive(userId: userId, pairSessionId: pairSessionId, operations: operations)
         } catch DrawingError.revisionGap {
-            let current = try await store.load(userId: userId, pairSessionId: pairSessionId)
-            let missing = try await api.canvasOperations(after: current.confirmed.revision)
+            let behind = try await store.load(userId: userId, pairSessionId: pairSessionId)
+            let missing = try await api.canvasOperations(after: behind.confirmed.revision)
             _ = try await store.receive(userId: userId, pairSessionId: pairSessionId, operations: missing)
             // Retry the event too; the HTTP response may have raced a newer socket event.
-            _ = try await store.receive(userId: userId, pairSessionId: pairSessionId, operations: operations)
+            current = try await store.receive(userId: userId, pairSessionId: pairSessionId, operations: operations)
         }
-        let current = try await store.load(userId: userId, pairSessionId: pairSessionId)
         inFlight.formIntersection(Set(current.pending.map(\.id)))
         if inFlight.isEmpty { acknowledgementDeadline = nil }
         publish(current)

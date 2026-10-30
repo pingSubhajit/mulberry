@@ -208,23 +208,32 @@ public struct DrawingDocument: Codable, Equatable, Sendable {
     public let pairSessionId: String
     public private(set) var confirmed = DrawingState()
     public private(set) var pending: [DrawingOperation] = []
+    /// Advances with every change, so a newer document can be told from an older one.
     public private(set) var version: UInt64 = 0
+    /// The confirmed drawing with the pending edits applied: what this device shows. It is kept
+    /// current as the document changes, rather than replayed on every read, and is never saved.
+    public private(set) var visible = DrawingState()
     // Retained after server acknowledgement until this phone finishes the stroke.
     // Optional keeps documents written by earlier builds readable.
     private var unfinishedLocalStrokes: Set<String>?
 
+    private enum CodingKeys: String, CodingKey { case userId, pairSessionId, confirmed, pending, version, unfinishedLocalStrokes }
+
     public init(userId: String, pairSessionId: String) { self.userId = userId; self.pairSessionId = pairSessionId }
 
-    public var visible: DrawingState {
-        get throws {
-            var state = confirmed
-            for operation in pending { try state.apply(operation) }
-            return state
-        }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        userId = try c.decode(String.self, forKey: .userId)
+        pairSessionId = try c.decode(String.self, forKey: .pairSessionId)
+        confirmed = try c.decode(DrawingState.self, forKey: .confirmed)
+        pending = try c.decode([DrawingOperation].self, forKey: .pending)
+        version = try c.decode(UInt64.self, forKey: .version)
+        unfinishedLocalStrokes = try c.decodeIfPresent(Set<String>.self, forKey: .unfinishedLocalStrokes)
+        visible = Self.replay(pending, onto: confirmed)
     }
 
     public mutating func enqueue(_ operations: [DrawingOperation]) throws {
-        var preview = try visible
+        var preview = visible
         var additions: [DrawingOperation] = []
         var ids = Set(pending.map(\.id))
         for operation in operations where ids.insert(operation.id).inserted {
@@ -232,7 +241,9 @@ public struct DrawingDocument: Codable, Equatable, Sendable {
             try preview.apply(operation)
             additions.append(operation)
         }
+        guard !additions.isEmpty else { return }
         pending.append(contentsOf: additions)
+        visible = preview
         var unfinished = unfinishedLocalStrokes ?? []
         for operation in additions {
             if operation.type == "ADD_STROKE", let id = operation.strokeId { unfinished.insert(id) }
@@ -240,16 +251,28 @@ public struct DrawingDocument: Codable, Equatable, Sendable {
             if operation.type == "CLEAR_CANVAS" { unfinished.removeAll() }
         }
         unfinishedLocalStrokes = unfinished
-        if !additions.isEmpty { version += 1 }
+        version += 1
     }
 
     /// Called when reopening this pair's editor, never on a socket reconnect.
     /// Recover only strokes started on this installation, not a partner's stroke.
     public mutating func finishInterruptedStrokes() throws {
-        let state = try visible
-        let ids = (unfinishedLocalStrokes ?? []).filter { id in state.strokes.contains { $0.id == id && $0.finished != true } }
-        try enqueue(ids.sorted().map { .init(type: "FINISH_STROKE", strokeId: $0) })
+        try finishInterruptedStrokes(with: interruptedStrokeFinishes)
+    }
+
+    /// A FINISH_STROKE for each stroke this installation began and never finished.
+    var interruptedStrokeFinishes: [DrawingOperation] {
+        let ids = (unfinishedLocalStrokes ?? []).filter { id in visible.strokes.contains { $0.id == id && $0.finished != true } }
+        return ids.sorted().map { .init(type: "FINISH_STROKE", strokeId: $0) }
+    }
+
+    /// Takes the finishing operations as made, so replaying this change gives the same document.
+    mutating func finishInterruptedStrokes(with finishes: [DrawingOperation]) throws {
+        let before = version
+        try enqueue(finishes)
+        guard unfinishedLocalStrokes != [] else { return }
         unfinishedLocalStrokes = []
+        if version == before { version += 1 }
     }
 
     /// All-or-nothing. A partial batch must not leave the persisted cursor beyond a gap.
@@ -265,6 +288,7 @@ public struct DrawingDocument: Codable, Equatable, Sendable {
         }
         confirmed = next
         pending.removeAll { acknowledged.contains($0.id) }
+        visible = Self.replay(pending, onto: confirmed)
         version += 1
     }
 
@@ -275,5 +299,33 @@ public struct DrawingDocument: Codable, Equatable, Sendable {
         try rebuilt.receive(operations)
         rebuilt.version = version + 1
         self = rebuilt
+    }
+
+    /// Pending edits were each checked as they were made. One the confirmed drawing no longer
+    /// takes only goes unshown here; it is still sent, and the server decides.
+    private static func replay(_ pending: [DrawingOperation], onto confirmed: DrawingState) -> DrawingState {
+        var state = confirmed
+        for operation in pending { try? state.apply(operation) }
+        return state
+    }
+}
+
+extension DrawingDocument {
+    /// One change to a document, as `DrawingStore` journals it. Applying the same changes in the
+    /// same order always gives the same document, so the journal can be replayed after a restart.
+    enum Change: Codable, Sendable {
+        case enqueue([DrawingOperation])
+        case receive([DrawingOperation])
+        case rebuild([DrawingOperation])
+        case finishInterruptedStrokes([DrawingOperation])
+    }
+
+    mutating func apply(_ change: Change) throws {
+        switch change {
+        case .enqueue(let operations): try enqueue(operations)
+        case .receive(let operations): try receive(operations)
+        case .rebuild(let operations): try rebuild(from: operations)
+        case .finishInterruptedStrokes(let finishes): try finishInterruptedStrokes(with: finishes)
+        }
     }
 }
