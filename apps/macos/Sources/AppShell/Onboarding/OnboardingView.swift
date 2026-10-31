@@ -222,7 +222,7 @@ private struct IntroScene: View {
             .accessibilityAddTraits(.isHeader)
 
             VStack(spacing: 14) {
-                GoogleButton(busy: authController.state.isBusy) {
+                GoogleCapsule(busy: authController.state.isBusy, size: .large) {
                     Task { await flow.signIn() }
                 }
                 if let error = flow.signInError {
@@ -237,7 +237,7 @@ private struct IntroScene: View {
             .scaleEffect(flow.signInShown ? 1 : 0.9)
             .opacity(flow.signInShown ? 1 : 0)
             .allowsHitTesting(flow.signInShown)
-            .position(x: center.x, y: center.y + 132 + lift + (flow.signInError == nil ? 0 : 18))
+            .position(x: center.x, y: center.y + 144 + lift + (flow.signInError == nil ? 0 : 18))
         }
         .opacity(flow.introShown ? 1 : 0)
     }
@@ -333,37 +333,6 @@ private struct FlyingMark: View, Animatable {
         .offset(y: MarkFlight.middle(rise, screenHeight: screenHeight) - MarkFlight.restY)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-    }
-}
-
-/// Google's own white button: its G and "Continue with Google".
-private struct GoogleButton: View {
-    let busy: Bool
-    let action: () -> Void
-    @State private var hovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                if busy {
-                    ProgressView().controlSize(.small).tint(.black)
-                } else {
-                    GoogleMark().frame(width: 18, height: 18)
-                }
-                Text(busy ? "Waiting for Google…" : "Continue with Google")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Color(white: 0.12))
-            }
-            .frame(width: 360, height: 48)
-            .background(.white.opacity(hovered ? 1 : 0.96), in: .capsule)
-            .shadow(color: .black.opacity(0.25), radius: 14, y: 6)
-            .contentShape(.capsule)
-        }
-        .buttonStyle(.plain)
-        .disabled(busy)
-        .onHover { hovered = $0 }
-        .keyboardShortcut(.defaultAction)
-        .animation(.easeOut(duration: 0.15), value: hovered)
     }
 }
 
