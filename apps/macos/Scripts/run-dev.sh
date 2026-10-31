@@ -4,4 +4,4 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ./Scripts/build-app.sh
-open .build/app/Mulberry.app
+open .build/xcode/Build/Products/Debug/Mulberry.app

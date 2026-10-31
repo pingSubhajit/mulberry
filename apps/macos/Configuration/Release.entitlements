@@ -2,17 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- The Mac App Store's sandbox. -->
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
-	<!-- The backend, sync, sticker artwork and Google sign-in. -->
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<!-- Google sign-in returns to a server Mulberry opens on the loopback address. -->
 	<key>com.apple.security.network.server</key>
 	<true/>
-	<!-- Export Drawing saves where the person chooses; Settings reads a chosen profile photo. -->
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
+	<key>com.apple.developer.aps-environment</key>
+	<string>$(MULBERRY_APNS_ENVIRONMENT)</string>
 </dict>
 </plist>

@@ -9,11 +9,11 @@
 	<key>CFBundleExecutable</key>
 	<string>Mulberry</string>
 	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
+	<string>$(ASSETCATALOG_COMPILER_APPICON_NAME)</string>
 	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
+	<string>$(ASSETCATALOG_COMPILER_APPICON_NAME)</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.subhajit.mulberry</string>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -36,5 +36,15 @@
 	<string>Copyright © 2026 Mulberry</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>MulberryAppEnvironment</key>
+	<string>$(MULBERRY_APP_ENVIRONMENT)</string>
+	<key>MulberryAPNSEnvironment</key>
+	<string>$(MULBERRY_APNS_ENVIRONMENT)</string>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
+	<key>FirebaseMessagingAutoInitEnabled</key>
+	<false/>
+	<key>MulberryRemotePushEnabled</key>
+	<string>$(MULBERRY_REMOTE_PUSH_ENABLED)</string>
 </dict>
 </plist>

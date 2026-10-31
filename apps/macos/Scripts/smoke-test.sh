@@ -10,8 +10,9 @@ fi
 swift test
 swift build --product Mulberry
 swift run OverlayRegressionCheck
-./Scripts/build-app.sh
-test -x .build/app/Mulberry.app/Contents/MacOS/Mulberry
-plutil -lint .build/app/Mulberry.app/Contents/Info.plist >/dev/null
+# CI checks the bundle without Apple credentials or private client configuration.
+MULBERRY_MAC_UNSIGNED_BUILD=YES CONFIGURATION=debug ENVIRONMENT=dev ./Scripts/build-app.sh
+test -x .build/xcode/Build/Products/Debug/Mulberry.app/Contents/MacOS/Mulberry
+plutil -lint .build/xcode/Build/Products/Debug/Mulberry.app/Contents/Info.plist >/dev/null
 
 echo "macOS smoke test passed"

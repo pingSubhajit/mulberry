@@ -1,121 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 cd "$(dirname "$0")/.."
-
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+HOST_ARCH="$(uname -m)"
 CONFIGURATION="${CONFIGURATION:-debug}"
-APP_NAME="Mulberry"
-# One App Store record with the iPhone and iPad app, as Universal Purchase: the same bundle IDs,
-# and the same icons from Icon Composer, the development build's purple.
-if [ "${CONFIGURATION}" = "release" ]; then
-  BUNDLE_ID="com.subhajit.mulberry"
-  APP_ICON="AppIcon"
-  DEFAULT_ENTITLEMENTS="Configuration/Release.entitlements"
+if [ "$CONFIGURATION" = release ]; then DEFAULT_ENV=prod; else DEFAULT_ENV=dev; fi
+ENVIRONMENT="${ENVIRONMENT:-$DEFAULT_ENV}"
+UNSIGNED_BUILD="${MULBERRY_MAC_UNSIGNED_BUILD:-NO}"
+if [ "$UNSIGNED_BUILD" = YES ] && [ "$ENVIRONMENT" != dev ]; then
+  echo 'Unsigned packaging is available only for development builds.' >&2
+  exit 1
+fi
+case "$ENVIRONMENT:$CONFIGURATION" in
+  dev:debug) XCODE_CONFIGURATION=Debug ;;
+  dev:release) XCODE_CONFIGURATION=DevRelease ;;
+  prod:debug) XCODE_CONFIGURATION=ProdDebug ;;
+  prod:release) XCODE_CONFIGURATION=Release ;;
+  *) echo 'Use ENVIRONMENT=dev|prod and CONFIGURATION=debug|release' >&2; exit 1 ;;
+esac
+if [ "$ENVIRONMENT" = prod ]; then DEFAULT_TEAM=HMJX9736KN; else DEFAULT_TEAM=YGJRT89MH9; fi
+python3 Scripts/generate-project.py
+args=(-project MulberryMac.xcodeproj -scheme 'Mulberry Production' -configuration "$XCODE_CONFIGURATION"
+  -destination "platform=macOS,arch=$HOST_ARCH" -derivedDataPath .build/xcode
+  ONLY_ACTIVE_ARCH=YES "ARCHS=$HOST_ARCH"
+  -clonedSourcePackagesDirPath ../ios/.build/device/SourcePackages
+  MULBERRY_APNS_ENVIRONMENT=development)
+if [ "$UNSIGNED_BUILD" = YES ]; then
+  args+=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=
+    MULBERRY_MAC_UNSIGNED_BUILD=YES)
 else
-  BUNDLE_ID="com.subhajit.mulberry.dev"
-  APP_ICON="AppIconDev"
-  DEFAULT_ENTITLEMENTS="Configuration/Debug.entitlements"
+  args+=(-allowProvisioningUpdates -allowProvisioningDeviceRegistration
+    CODE_SIGN_IDENTITY='Apple Development' "DEVELOPMENT_TEAM=${MULBERRY_MAC_DEVELOPMENT_TEAM:-$DEFAULT_TEAM}")
 fi
-# actool takes absolute paths only.
-ICON_SOURCE="$(pwd)/../ios/Resources/${APP_ICON}.icon"
-BUILD_DIR=".build/${CONFIGURATION}"
-APP_DIR=".build/app/${APP_NAME}.app"
-CONTENTS_DIR="${APP_DIR}/Contents"
-MACOS_DIR="${CONTENTS_DIR}/MacOS"
-RESOURCES_DIR="${CONTENTS_DIR}/Resources"
-EXECUTABLE_PATH="${MACOS_DIR}/${APP_NAME}"
-INFO_PLIST_TEMPLATE="Configuration/Info.plist"
-INFO_PLIST_PATH="${CONTENTS_DIR}/Info.plist"
-ENTITLEMENTS_PATH="${ENTITLEMENTS_PATH:-${DEFAULT_ENTITLEMENTS}}"
-# Signing with a stable identity lets the Keychain keep trusting rebuilds; ad hoc signatures change
-# every build, so macOS asks for the login password again. Use an Apple Development certificate when
-# this Mac has one, unless MULBERRY_MAC_CODESIGN_IDENTITY names another ("-" signs ad hoc).
-if [ -z "${MULBERRY_MAC_CODESIGN_IDENTITY:-}" ]; then
-  MULBERRY_MAC_CODESIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Apple Development: [^"]*\)".*/\1/p' | head -n 1)"
-fi
-SIGNING_IDENTITY="${MULBERRY_MAC_CODESIGN_IDENTITY:--}"
-
-swift build -c "${CONFIGURATION}" --product "${APP_NAME}"
-
-rm -rf "${APP_DIR}"
-mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
-cp "${BUILD_DIR}/${APP_NAME}" "${EXECUTABLE_PATH}"
-cp "${INFO_PLIST_TEMPLATE}" "${INFO_PLIST_PATH}"
-
-if [ -d "Resources" ]; then
-  rsync -a --exclude ".DS_Store" Resources/ "${RESOURCES_DIR}/"
-fi
-
-# The packages' resource bundles, which hold their own privacy manifests, where Bundle.module
-# finds them.
-for bundle in "${BUILD_DIR}"/*.bundle; do
-  [ -d "${bundle}" ] && rsync -a "${bundle}" "${RESOURCES_DIR}/"
-done
-
-# Release builds read .env.release, so the App Store build never carries the development server.
-if [ "${CONFIGURATION}" = "release" ]; then ENV_FILE=".env.release"; else ENV_FILE=".env"; fi
-if [ -f "${ENV_FILE}" ]; then
-  cp "${ENV_FILE}" "${RESOURCES_DIR}/.env"
-fi
-if [ "${CONFIGURATION}" = "release" ]; then
-  python3 - "${ENV_FILE}" <<'PY'
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-if not path.exists():
-    raise SystemExit(f"error: Add {path} with the production Google client before a release build.")
-values = {}
-for line in path.read_text().splitlines():
-    line = line.strip().removeprefix("export ")
-    if line and not line.startswith("#") and "=" in line:
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip("'\"")
-if not values.get("MULBERRY_MAC_GOOGLE_CLIENT_ID"):
-    raise SystemExit(f"error: {path} needs MULBERRY_MAC_GOOGLE_CLIENT_ID for a release build.")
-api = values.get("MULBERRY_MAC_API_BASE_URL", "")
-if api and not api.startswith("https://"):
-    raise SystemExit(f"error: {path} must point MULBERRY_MAC_API_BASE_URL at the production API over HTTPS.")
-PY
-fi
-
-# The iPhone app's public Firebase client configuration, for crash reports: the Mac shares its
-# bundle IDs, so it shares its Firebase app. Checked as the iPhone's build checks it.
-if [ "${CONFIGURATION}" = "release" ]; then FIREBASE_VARIANT="prod"; else FIREBASE_VARIANT="dev"; fi
-python3 - "../ios/Configuration/GoogleService-Info.${FIREBASE_VARIANT}.plist" "${RESOURCES_DIR}/GoogleService-Info.plist" "${BUNDLE_ID}" "${FIREBASE_VARIANT}" <<'PY'
-import plistlib, sys
-from pathlib import Path
-source, destination, bundle_id, variant = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4]
-if not source.exists():
-    if variant == "prod":
-        raise SystemExit("error: Add the production public Firebase client plist before a release build.")
-    print("warning: Firebase client config absent. Crash reports are off in this build.")
-    raise SystemExit(0)
-config = plistlib.loads(source.read_bytes())
-if config.get("BUNDLE_ID") != bundle_id:
-    raise SystemExit("error: Firebase client configuration has the wrong bundle ID.")
-if any(key in config for key in ["private_key", "private_key_id", "client_secret"]):
-    raise SystemExit("error: Server credentials must never be bundled.")
-destination.write_bytes(source.read_bytes())
-PY
-
-# The icon, compiled for macOS: a Liquid Glass icon in Assets.car, and an .icns for older places.
-ICON_PLIST="$(mktemp -t mulberry-icon).plist"
-xcrun actool --compile "$(pwd)/${RESOURCES_DIR}" --platform macosx --minimum-deployment-target 26.0 \
-  --app-icon "${APP_ICON}" --output-partial-info-plist "${ICON_PLIST}" "${ICON_SOURCE}" >/dev/null
-/usr/libexec/PlistBuddy -c "Set :CFBundleIconFile ${APP_ICON}" -c "Set :CFBundleIconName ${APP_ICON}" "${INFO_PLIST_PATH}" >/dev/null
-rm -f "${ICON_PLIST}"
-
-/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${BUNDLE_ID}" "${INFO_PLIST_PATH}" >/dev/null
-/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ${APP_NAME}" "${INFO_PLIST_PATH}" >/dev/null
-
-codesign --force --sign "${SIGNING_IDENTITY}" --entitlements "${ENTITLEMENTS_PATH}" "${APP_DIR}"
-
-# Release builds send their symbols to Crashlytics, so crash reports read as source.
-UPLOAD_SYMBOLS=".build/checkouts/firebase-ios-sdk/Crashlytics/upload-symbols"
-if [ "${CONFIGURATION}" = "release" ] && [ -x "${UPLOAD_SYMBOLS}" ] && [ -f "${RESOURCES_DIR}/GoogleService-Info.plist" ]; then
-  dsymutil "${EXECUTABLE_PATH}" -o ".build/app/${APP_NAME}.app.dSYM"
-  "${UPLOAD_SYMBOLS}" -gsp "${RESOURCES_DIR}/GoogleService-Info.plist" -p mac ".build/app/${APP_NAME}.app.dSYM"
-fi
-
-echo "Built ${APP_DIR}"
+if [ -n "${MULBERRY_ALLOW_LOCAL_SERVER:-}" ]; then args+=("MULBERRY_ALLOW_LOCAL_SERVER=$MULBERRY_ALLOW_LOCAL_SERVER"); fi
+if [ -n "${MULBERRY_MAC_API_BASE_URL:-}" ]; then args+=("MULBERRY_MAC_API_BASE_URL=$MULBERRY_MAC_API_BASE_URL"); fi
+xcodebuild "${args[@]}" build
+# Separate from the old .build/app bundle, which may still be running.
+echo "Built $(pwd)/.build/xcode/Build/Products/$XCODE_CONFIGURATION/Mulberry.app"

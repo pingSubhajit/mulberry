@@ -79,11 +79,14 @@ enum DotenvLoader {
         bundle: Bundle,
         currentDirectoryPath: String
     ) -> [URL] {
-        var urls = [
-            URL(fileURLWithPath: currentDirectoryPath).appendingPathComponent(".env")
-        ]
+        // An installed app always uses its own selected client configuration.
+        // Never accidentally read a backend .env from its launch directory.
+        var urls: [URL] = []
         if let resourceURL = bundle.resourceURL {
             urls.append(resourceURL.appendingPathComponent(".env"))
+        }
+        if bundle.bundleURL.pathExtension != "app" {
+            urls.append(URL(fileURLWithPath: currentDirectoryPath).appendingPathComponent(".env"))
         }
         return urls
     }
