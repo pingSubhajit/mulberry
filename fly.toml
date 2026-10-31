@@ -4,7 +4,7 @@
 #
 
 app = 'mulberry'
-primary_region = 'bom'
+primary_region = 'sin'
 
 [build]
   dockerfile = 'Dockerfile'

@@ -125,7 +125,7 @@ The checked-in production deployment config lives at:
 - [fly.toml](../../fly.toml)
 - [fly.secrets.example](fly.secrets.example)
 
-The production target is a single always-on Fly machine in `bom` (Mumbai) behind the stable public domain `https://api.mulberry.my/`. Supabase remains the database and wallpaper-storage backend.
+The production target is a single always-on Fly machine in `sin` (Singapore) behind the stable public domain `https://api.mulberry.my/`. Supabase remains the existing database and wallpaper-storage backend; changing the Fly region does not provision or move a database.
 
 ## End-to-End Flow
 
