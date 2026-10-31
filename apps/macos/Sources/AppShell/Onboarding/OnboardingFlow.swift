@@ -499,12 +499,12 @@ final class OnboardingFlow: ObservableObject {
 
     func saveProfile() async {
         guard profileComplete, let anniversary else { return }
-        await perform {
+        guard await perform({
             let draft = ProfileDraft(displayName: self.name.trimmed, partnerDisplayName: self.partnerName.trimmed,
                                      anniversaryDate: ServerDate.localDay(anniversary))
             self.apply(try await self.api.saveProfile(draft))
-            await self.route()
-        }
+        }) else { return }
+        await route()
     }
 
     func enterCode() { show(.code) }
@@ -513,26 +513,26 @@ final class OnboardingFlow: ObservableObject {
 
     func redeem() async {
         guard code.count == 6 else { return }
-        await perform {
+        guard await perform({
             self.apply(try await self.api.redeemInvite(code: self.code).bootstrapState)
-            await self.route()
-        }
+        }) else { return }
+        await route()
     }
 
     func acceptInvite() async {
         guard let id = bootstrap?.invite?.inviteId else { return }
-        await perform {
+        guard await perform({
             self.apply(try await self.api.acceptInvite(id: id).bootstrapState)
-            await self.route()
-        }
+        }) else { return }
+        await route()
     }
 
     func declineInvite() async {
         guard let id = bootstrap?.invite?.inviteId else { return }
-        await perform {
+        guard await perform({
             self.apply(try await self.api.declineInvite(id: id))
-            await self.route()
-        }
+        }) else { return }
+        await route()
     }
 
     func createInvite() async {
@@ -544,15 +544,19 @@ final class OnboardingFlow: ObservableObject {
         await leave(to: .waiting)
     }
 
-    private func perform(_ work: @escaping () async throws -> Void) async {
-        guard !busy, !debugging else { return }
+    /// Finish the busy operation before routing, which may start an invite request of its own.
+    @discardableResult
+    private func perform(_ work: @escaping () async throws -> Void) async -> Bool {
+        guard !busy, !debugging else { return false }
         busy = true
         error = nil
         defer { busy = false }
         do {
             try await work()
+            return true
         } catch {
             withAnimation(.easeOut(duration: 0.2)) { self.error = Self.message(for: error) }
+            return false
         }
     }
 
