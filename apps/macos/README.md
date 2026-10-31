@@ -1,6 +1,6 @@
 # Mulberry for macOS
 
-The native Mac app: a menu bar app that keeps the shared canvas on the desktop, opens a portrait canvas window, and lets you draw over the desktop with Quick Draw. It is a Swift package; the build scripts assemble a signed `.app` bundle.
+The native Mac app: a menu bar app that keeps the shared canvas on the desktop, opens a portrait canvas window, and lets you draw over the desktop with Quick Draw. Its modules are a Swift package. The generated `MulberryMac.xcodeproj` builds the signed app host and embeds its Mac provisioning profile.
 
 ## Requirements
 
@@ -19,10 +19,10 @@ Build and assemble a local app bundle, signed with your Apple Development certif
 
 ```bash
 pnpm --dir apps/macos run build
-open .build/app/Mulberry.app
+open apps/macos/.build/xcode/Build/Products/Debug/Mulberry.app
 ```
 
-Run the smoke checks (unit tests, overlay regression, canvas render fixtures and the app bundle):
+Run the smoke checks (unit tests, overlay regression, canvas render fixtures and an unsigned development app bundle):
 
 ```bash
 pnpm --dir apps/macos run smoke
@@ -30,7 +30,7 @@ pnpm --dir apps/macos run smoke
 
 From the repository root, the same commands are `pnpm dev:macos`, `pnpm build:macos` and `pnpm smoke:macos`.
 
-Sign-in reads `MULBERRY_MAC_GOOGLE_CLIENT_ID` and `MULBERRY_MAC_GOOGLE_CLIENT_SECRET` from `apps/macos/.env` (see `.env.example`). The backend must list that client ID in `GOOGLE_ALLOWED_CLIENT_IDS`. Release builds (`CONFIGURATION=release`) read `apps/macos/.env.release` instead, and refuse an API address that isn't HTTPS; without one they use `https://api.mulberry.my/`.
+Sign-in reads `MULBERRY_MAC_GOOGLE_CLIENT_ID` and `MULBERRY_MAC_GOOGLE_CLIENT_SECRET` from `apps/macos/.env` (see `.env.example`). The backend must list that client ID in `GOOGLE_ALLOWED_CLIENT_IDS`. Production builds read `apps/macos/.env.release`; development builds read `.env`. Only the three named native-client settings are copied. An installed app uses its bundled configuration, rather than a `.env` in its launch directory. Production defaults to `https://api.mulberry.my/`. Local HTTP in a production build requires an explicit override and a loopback host.
 
 ## Shared Code
 
@@ -63,12 +63,29 @@ The iPhone and iPad app and this app share four targets in [`packages/apple`](..
 | `QuickDraw` | Quick Draw's global shortcut |
 | `Stickers` | Sticker artwork loading for the canvas |
 
-## App Store
+## Environments and signing
 
-The Mac app shares the iPhone and iPad app's App Store record, as Universal Purchase: one listing, with Mac added as a platform rather than a separate app. So it takes the same bundle IDs, `com.subhajit.mulberry` for release builds (`CONFIGURATION=release`) and `com.subhajit.mulberry.dev` for development ones, and the same icons, compiled by `Scripts/build-app.sh` from the iPhone app's Icon Composer files: `apps/ios/Resources/AppIcon.icon`, and the purple `AppIconDev.icon` for development builds. Each build keeps its own saved session.
+There are two environments, `dev` and `prod`, independent of debug or release compilation. Development uses `com.subhajit.mulberry.dev` and the purple icon. Production temporarily uses `com.subhajit.mulberry.beta` and the normal icon, matching the iPhone and iPad beta. `.beta` is a bundle identity, not a third environment.
 
-It runs in the App Sandbox, with only what it needs: outgoing network for the backend, sync, sticker artwork and sign-in; incoming network for Google sign-in's return to its loopback server; and files the person chooses, for Export Drawing and a profile photo. Its privacy manifest, `Resources/PrivacyInfo.xcprivacy`, matches the iPhone app's.
+The generated Xcode configurations are Debug (dev), DevRelease (optimized dev), ProdDebug (prod) and Release (optimized prod). The shared schemes are Mulberry and Mulberry Production. Run `python3 apps/macos/Scripts/generate-project.py` after changing the generator or top-level resource folders.
 
-Crash reports go to Firebase Crashlytics, as the iPhone app's do: sharing its bundle IDs, the Mac shares its Firebase app and its public client configuration, `apps/ios/Configuration/GoogleService-Info.{dev,prod}.plist`, which the build copies in after checking its bundle ID. A release build needs the production one, and uploads its symbols. Development builds have test buttons in Settings → Advanced. Only one copy of a build runs: a second hands over to the first and quits.
+`Scripts/build-app.sh` creates a local Apple Development signed app. Production uses Techaboard `HMJX9736KN`; development keeps the existing personal team `YGJRT89MH9`, without restricted push entitlements, matching iOS. The paid beta has remote push enabled. `MULBERRY_MAC_DEVELOPMENT_TEAM` can select another team. Xcode manages the Mac-specific profile. The local build script explicitly uses sandbox APNs even with release compilation. A distribution archive uses Release's production APNs setting and needs matching distribution signing and Firebase credentials.
 
-Signing for the Mac App Store (a Mac App Distribution certificate and provisioning profile), adding the Mac to the App Store Connect record, push notifications and a notarised Developer ID DMG wait for the paid Apple Developer account.
+To rebuild the optimized production identity against the local container:
+
+```bash
+CONFIGURATION=release ENVIRONMENT=prod \
+MULBERRY_ALLOW_LOCAL_SERVER=YES \
+MULBERRY_MAC_API_BASE_URL=http://127.0.0.1:8080/ \
+apps/macos/Scripts/build-app.sh
+```
+
+The result is `apps/macos/.build/xcode/Build/Products/Release/Mulberry.app`. Local builds do not upload Crashlytics symbols or publish anything.
+
+For CI without an Apple account or private client files, set `MULBERRY_MAC_UNSIGNED_BUILD=YES` with `ENVIRONMENT=dev`. This disables signing and provisioning and permits missing development client configuration. Sign-in and remote updates require real client configuration. Unsigned production builds are rejected; the smoke script always packages unsigned development.
+
+The app uses the existing Desktop Google OAuth client, the existing backend audience allowlist, and the user's Firebase project `mulberry-494003`. Firebase's public configuration is reused from `apps/ios/Configuration/GoogleService-Info.{dev,prod}.plist` after checking its bundle ID. The Mac beta uses the existing topic-specific beta sandbox APNs key; no additional server secret or Google Web client is needed.
+
+The App Sandbox permits outgoing network access, Google OAuth's loopback server, and files selected by the user. AppKit explicitly passes the APNs token to Firebase Messaging. The backend records this app's push token as `MACOS` / `prod`. A push fetches authoritative state for the signed-in account and current pair; canvas, pairing, presence and reaction messages reuse the existing app controllers. Sign-out revokes this installation's push registration before clearing the backend session. Settings → Advanced shows the push connection and the last received/applied drawing revisions. Polling remains a fallback while the overlay is visible. Closing the app is not a promise of continuous background execution.
+
+See [local beta validation](docs/local-beta-validation.md) for the tested flows and limits. Private device screenshots and raw receipts are excluded from Git. App Store Connect setup, TestFlight upload, distribution signing and notarization remain outside this local pass.

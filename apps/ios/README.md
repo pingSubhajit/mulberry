@@ -8,9 +8,31 @@ Shared with the Mac app in [`packages/apple`](../../packages/apple), and compile
 
 Use the repository's existing local backend and PostgreSQL database on port 8080. Do not load `.env.prod` into the app or use the prototype mock server for product testing. Real Google authentication is required.
 
-The Xcode project uses the official Google Sign-In package. Regenerate it with `python3 apps/ios/scripts/generate-project.py`. Android's existing fonts and artwork are copied by `python3 apps/ios/scripts/prepare-assets.py`. Icons are editable Icon Composer projects under `Resources`; Debug uses purple `AppIconDev`, Release uses `AppIcon`.
+The Xcode project uses the official Google Sign-In package. Regenerate it with `python3 apps/ios/scripts/generate-project.py`. Android's existing fonts and artwork are copied by `python3 apps/ios/scripts/prepare-assets.py`. Icons are editable Icon Composer projects under `Resources`. As on Android, the environment is independent of debug/release compilation:
 
-Development settings live in ignored `Configuration/Local.xcconfig`. `scripts/configure-google.mjs` retrieves public Firebase client configuration from `--ios-client-id` and `--api-url`. Its server credential is used only to call Firebase Management and never enters the app. Only Debug includes local settings. Release needs its own Google iOS client configuration before sign-in can work.
+| Environment | Debug configuration | Optimised configuration | Bundle ID | Icon |
+| --- | --- | --- | --- | --- |
+| Local development | `Debug` | `DevRelease` | `com.subhajit.mulberry.dev` | Purple `AppIconDev` |
+| Production | `ProdDebug` | `Release` | `com.subhajit.mulberry.beta` | Normal `AppIcon` |
+
+The `.beta` suffix is a temporary production identity for the Techaboard team, not another environment. Its extension is `com.subhajit.mulberry.beta.widgets`. The final `com.subhajit.mulberry` identity is reserved for the owner's team. The `Mulberry` scheme runs development; `Mulberry Production` runs the production identity with debug compilation. Both environments use the existing Firebase project, backend Google server client audience and Firebase server credentials. Client registrations are specific to each bundle ID. Developer tools are limited to the development environment.
+
+Development client/signing settings live in ignored `Configuration/Local.xcconfig`; production client/signing settings live in ignored `Configuration/Production.local.xcconfig`. Firebase files are `GoogleService-Info.dev.plist` and `GoogleService-Info.prod.plist` in the same directory, also ignored. `scripts/configure-google.mjs --environment dev|prod --ios-client-id CLIENT_ID` retrieves only the matching public Firebase client configuration. The server credential is used only on this Mac and never enters the app. For development, `--api-url` can save the LAN server address; production URLs are not persisted by that helper.
+
+Production normally uses `https://api.mulberry.my/`. To test the production identity and normal icon against the existing local Docker backend, use an explicit override for that device build:
+
+```sh
+python3 apps/ios/scripts/run-device.py --environment prod --device DEVICE_UDID \
+  --team-id HMJX9736KN --push --api-url http://MAC_LAN_IP:8080/
+```
+
+This command only builds, installs and opens the app; it never uploads or creates an App Store record. It defaults to debug compilation; `--release` selects optimised compilation while retaining the selected environment. Physical devices need the Mac's reachable LAN address, not Android's emulator-only `10.0.2.2`. Local HTTP access requires the explicit local-server flag for a production identity; ordinary release builds retain App Transport Security. APNs uses development provisioning for local device builds regardless of app environment. `--push` requires a push-capable team; without it the build uses local notifications only. Imported Shortcuts are generated in the build directory with the effective bundle ID and signing team, without rewriting the checked-in prototype templates. Reimport the matching Shortcut when changing app identity/team.
+
+Shortcut return links use the exact bundle ID as their URL scheme. Development and production must not register shared return schemes: iOS can otherwise open the other installed app after a manual wallpaper run, leaving the test on the wrong app's setup screen.
+
+The beta Firebase registration uses project `mulberry-494003` and Techaboard team `HMJX9736KN`. Its development APNs slot holds the sandbox-only, topic-specific `Mulberry Local Push` key (`H8HL44RC8J`) for `com.subhajit.mulberry.beta`. The private `.p8` stays in ignored `secrets/apple/` with owner-only access and must never enter the app or Git. A production APNs key is still needed before distribution. Provisioning alone does not prove delivery; see the [physical beta validation](docs/local-beta-validation.md) for the tested token, push and wallpaper paths. Private device screenshots and raw receipts are excluded from Git.
+
+Run `python3 apps/ios/Tests/Configuration/test_configuration.py` for configuration checks, including HTTPS defaults, explicit local HTTP, Firebase bundle matching, server-credential rejection, and Shortcut identity.
 
 Run `python3 apps/ios/scripts/test-product.py` from the repository root to check Swift against an isolated real backend with an in-memory database. It does not use the local development database or production credentials. The backend dependencies must already be installed. Delivery-state tests remain available through `python3 apps/ios/scripts/test.py`.
 

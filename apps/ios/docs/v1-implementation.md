@@ -1,5 +1,7 @@
 # iOS v1 delivery ledger
 
+The dated checkpoints below preserve earlier results. The 31 October 2026 local beta build, callback-routing fix, physical wallpaper checks and real sandbox push evidence are recorded in [physical beta validation](local-beta-validation.md).
+
 ## Scope and authority
 
 Android is the reference for behavior, copy, assets, and visual identity. The macOS UI is not a reference. Target iOS 27, using the physical iPhone 17 for wallpaper tests and iPhone 17 Pro simulators for layout checks.
@@ -58,7 +60,7 @@ Pairing runtime revealed the missing partner-details step after an earlier unpai
 
 ## Important invariants
 
-Store backend tokens in Keychain. No service account, OAuth client secret, or production environment file may enter the app bundle. Use the real local backend and database; do not reset Android sessions or existing data. Use the personal Apple team only.
+Store backend tokens in Keychain. No service account, OAuth client secret, or production environment file may enter the app bundle. Use the real local backend and database; do not reset Android sessions or existing data. Development retains its personal Apple team. The user-authorized temporary production identity `com.subhajit.mulberry.beta` uses Techaboard team `HMJX9736KN`.
 
 Persist drawing work under both user and pair-session identities. Never replay old pending operations into a new pair. Deduplicate acknowledged operations and recover gaps before advancing the durable revision. Use the backend's cooldown response, not an independent client-only timer.
 
