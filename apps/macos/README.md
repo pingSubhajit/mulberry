@@ -69,6 +69,8 @@ There are two environments, `dev` and `prod`, independent of debug or release co
 
 The generated Xcode configurations are Debug (dev), DevRelease (optimized dev), ProdDebug (prod) and Release (optimized prod). The shared schemes are Mulberry and Mulberry Production. Run `python3 apps/macos/Scripts/generate-project.py` after changing the generator or top-level resource folders.
 
+For future uploads, use the same three-part `CFBundleShortVersionString` (`MAJOR.MINOR.PATCH`, for example `0.1.0`) across iOS/iPadOS and macOS for each shared release. Increment `CFBundleVersion` for each new upload of a platform's version. The iOS widget must match its app's version and build number. Check these values in the exported apps before uploading; do not repeat the initial iOS `0.1` versus macOS `0.1.0` mismatch.
+
 `Scripts/build-app.sh` creates a local Apple Development signed app. Production uses Techaboard `HMJX9736KN`; development keeps the existing personal team `YGJRT89MH9`, without restricted push entitlements, matching iOS. The paid beta has remote push enabled. `MULBERRY_MAC_DEVELOPMENT_TEAM` can select another team. Xcode manages the Mac-specific profile. The local build script explicitly uses sandbox APNs even with release compilation. A distribution archive uses Release's production APNs setting and needs matching distribution signing and Firebase credentials.
 
 To rebuild the optimized production identity against the local container:
