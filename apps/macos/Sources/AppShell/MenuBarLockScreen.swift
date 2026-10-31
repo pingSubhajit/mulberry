@@ -248,19 +248,23 @@ final class LockScreenPanelController {
     private var swiping = false
     private var swipeVelocity: CGFloat = 0
 
-    /// Two fingers up the trackpad swipe to the home screen, and down swipe back, following the
-    /// fingers as a drag of the home bar does. Only a swipe that begins here counts, never a
-    /// scroll's momentum or one carried in from elsewhere; a mouse wheel's notch swipes outright.
+    /// Two fingers up the trackpad swipe to the home screen, following the fingers as a drag of the
+    /// home bar does. On the home screen, two fingers down over the status bar pull the lock
+    /// screen back, as a drag of it does. Only a swipe that begins there counts, never a scroll's
+    /// momentum or one carried in from elsewhere; a mouse wheel's notch swipes outright.
     private func scrolled(_ event: NSEvent) -> Bool {
-        guard event.window === panel, model.account == .paired || model.unlocked else { return false }
+        guard let panel, event.window === panel, model.account == .paired || model.unlocked else { return false }
         // Up on the fingers, whichever way the system scrolls.
         let delta = event.scrollingDeltaY * (event.isDirectionInvertedFromDevice ? 1 : -1)
+        let fromTop = !model.unlocked || Self.overStatusBar(event.locationInWindow, in: panel)
         guard event.hasPreciseScrollingDeltas else {
+            guard fromTop else { return false }
             if abs(delta) > 0.5 { model.setUnlocked(delta < 0) }
             return true
         }
         guard event.momentumPhase.isEmpty else { return swiping }
         if event.phase.contains(.began) {
+            guard fromTop else { return false }
             swiping = true
             swipeVelocity = 0
         }
@@ -274,6 +278,16 @@ final class LockScreenPanelController {
             model.swipeEnded(predicted: model.swipe + swipeVelocity * 12)
         }
         return true
+    }
+
+    /// Whether a point in the panel is over the phone's status bar and island, where a pull back
+    /// to the lock screen begins.
+    private static func overStatusBar(_ point: NSPoint, in panel: NSPanel) -> Bool {
+        let screenTop = panel.frame.height - LockScreenView.topInset - LockScreenView.bezel
+        let screenLeft = (panel.frame.width - LockScreenView.screen.width) / 2
+        let fromTop = screenTop - point.y
+        let fromLeft = point.x - screenLeft
+        return (0...LockScreenView.pullDownStrip).contains(fromTop) && (0...LockScreenView.screen.width).contains(fromLeft)
     }
 
     /// The status bar follows the Mac while the lock screen is open: its connection as it changes,
@@ -378,6 +392,14 @@ struct LockScreenView: View {
 
     private var progress: CGFloat { min(1, max(0, lift / Self.screen.height)) }
 
+    /// How far down the screen a pull back to the lock screen may begin: the status bar and the
+    /// island.
+    static let pullDownStrip: CGFloat = 44
+
+    /// On the home screen, the top of the screen pulls the lock screen back. Not on onboarding's
+    /// phone, where Mulberry, once open, stays open.
+    private var pullsDown: Bool { model.unlocked && unlockedContent == nil }
+
     var body: some View {
         ZStack {
             // One wallpaper and drawing for both screens, held still, as iOS holds the wallpaper
@@ -390,7 +412,7 @@ struct LockScreenView: View {
                 if let unlockedContent {
                     unlockedContent
                 } else {
-                    HomeScreenView(model: model, ink: Self.ink, swipe: swipeGesture, close: close)
+                    HomeScreenView(model: model, ink: Self.ink, close: close)
                 }
             }
                 .scaleEffect(reduceMotion ? 1 : 0.92 + 0.08 * progress)
@@ -417,14 +439,22 @@ struct LockScreenView: View {
             .opacity((reduceMotion ? 1 - progress : 1) * chrome)
             .allowsHitTesting(!model.unlocked)
             VStack(spacing: 0) {
-                // The island and the status bar stay put; on the home screen the island locks again.
+                // The island and the status bar stay put. On the home screen they pull the lock
+                // screen back down, as the top of an iPhone's screen does, and the island locks
+                // again with a click.
                 ZStack(alignment: .top) {
                     StatusBar(unlocked: model.unlocked, named: !iPhoneLook, network: model.network, battery: model.battery)
+                        .padding(.top, 10)
                     DynamicIsland(reactions: reactions, partnerName: model.partnerName)
                         .contentShape(.capsule)
-                        .onTapGesture { if model.unlocked { model.setUnlocked(false) } }
+                        .onTapGesture { model.setUnlocked(false) }
+                        .padding(.top, 10)
                 }
-                .padding(.top, 10)
+                .frame(width: Self.screen.width, height: Self.pullDownStrip, alignment: .top)
+                .contentShape(.rect)
+                .pointerStyle(pullsDown ? .grabIdle : nil)
+                .gesture(swipeGesture, isEnabled: pullsDown)
+                .allowsHitTesting(pullsDown)
                 Spacer(minLength: 0)
             }
             .opacity(chrome)
@@ -538,7 +568,8 @@ struct LockScreenView: View {
         }
     }
 
-    /// Dragging the home bar carries the lock screen with the pointer, as a finger does.
+    /// Dragging the lock screen's home bar up, or the home screen's status bar down, carries the
+    /// lock screen with the pointer, as a finger does.
     private var swipeGesture: AnyGesture<DragGesture.Value> {
         AnyGesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { value in model.swipe = value.translation.height }
@@ -891,7 +922,6 @@ enum MacNetwork {
 private struct HomeScreenView: View {
     @ObservedObject var model: LockScreenModel
     let ink: Color
-    let swipe: AnyGesture<DragGesture.Value>
     let close: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -943,9 +973,10 @@ private struct HomeScreenView: View {
                     .transition(.scale(scale: 0.7, anchor: .bottom).combined(with: .opacity))
                     .padding(.bottom, 12)
                 }
-                HomeBar(swipe: swipe, enabled: true)
-                    .padding(.bottom, 8)
             }
+            // Where the lock screen's home bar sits. An iPhone's home screen has none to swipe:
+            // the lock screen comes back down from the top.
+            .padding(.bottom, 34)
             .padding(.horizontal, 20)
             .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(duration: 0.35, bounce: 0.3), value: model.railOpen)
         }
@@ -1148,7 +1179,7 @@ private struct GlyphIcon: View {
     }
 }
 
-/// The home bar: drag it up to leave the lock screen, or down to come back.
+/// The lock screen's home bar: drag it up to leave for the home screen.
 /// Under the pointer it widens and brightens, and the pointer becomes an open hand, the Mac's
 /// sign that something can be dragged.
 private struct HomeBar: View {
