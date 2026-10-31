@@ -1,16 +1,16 @@
 Mulberry Terms of Use
 
 Effective date: April 23, 2026
-Last updated: October 29, 2026
+Last updated: October 31, 2026
 Operator: Subhajit Kundu
 Address: ITI Crossing, Kalyani, West Bengal, India, 741235
 Contact: subha60kundu@gmail.com
 
-These Terms of Use explain the rules for using Mulberry, a private app for Android, iPhone, and iPad for two people to share a drawing canvas that can appear on each other's wallpaper.
+These Terms of Use explain the rules for using Mulberry, a private app for Android, iPhone, iPad, and Mac for two people to share a drawing canvas that can appear on each other's wallpaper or Mac desktop.
 
 Overview
 
-These terms are written for Mulberry's current India-only, two-person launch on Android, iPhone, and iPad and should be read with the Privacy Policy.
+These terms are written for Mulberry's current India-only, two-person launch on Android, iPhone, iPad, and Mac and should be read with the Privacy Policy.
 
 1. Acceptance of these terms
 
@@ -26,9 +26,9 @@ If Mulberry becomes available outside India, these terms may be updated before t
 
 3. The Mulberry service
 
-Mulberry provides a paired-device experience where two users can share a private drawing canvas. Shared drawings may sync between paired users and may appear locally on your wallpaper: through the live wallpaper on Android, or through a Shortcuts automation you set up on iPhone and iPad.
+Mulberry provides a paired-device experience where two users can share a private drawing canvas. Shared drawings may sync between paired users and may appear locally on your wallpaper: through the live wallpaper on Android, or through a Shortcuts automation you set up on iPhone and iPad. On Mac, the shared canvas may appear on your desktop and in the menu bar.
 
-Mulberry is not a public social network, publishing platform, marketplace, payment service, emergency communication tool, or backup service. Background sync, push delivery, wallpapers, and device behavior may depend on Android, iOS, iPadOS, Google and Apple services, the Shortcuts app, network availability, and device settings.
+Mulberry is not a public social network, publishing platform, marketplace, payment service, emergency communication tool, or backup service. Background sync, push delivery, wallpapers, and device behavior may depend on Android, iOS, iPadOS, macOS, Google and Apple services, the Shortcuts app, network availability, and device settings.
 
 4. Accounts, sign-in, and security
 
@@ -45,6 +45,8 @@ Mulberry invite codes are used to connect exactly two users into a private pair 
 The shared canvas is visible to both paired users. Either paired user may draw, erase, delete strokes, clear the canvas, or otherwise change the shared canvas where the app allows those actions.
 
 Mulberry cannot control what your paired partner does after viewing shared content, including screenshots, screen recordings, photos of a device, or sharing outside Mulberry. Do not put anything on the shared canvas that you do not want your paired partner to see or save.
+
+If your paired partner misuses Mulberry or shares content that breaks these terms, you can unpair at any time, which stops shared drawing straight away, and you can delete your account. You can also report it to subha60kundu@gmail.com. Mulberry reviews reports promptly and may remove content or suspend or terminate the accounts involved.
 
 6. Your content and Mulberry's operating license
 
@@ -69,7 +71,7 @@ You agree to use Mulberry respectfully, lawfully, and only for its intended pair
 
 Mulberry may store account state, pairing state, canvas state, tokens, cached files, wallpaper backgrounds, and app preferences locally on your device. Your device-local wallpaper background is intended to remain on your device unless you share it outside Mulberry or add it to shared content yourself.
 
-You are responsible for your device settings, lock screen visibility, screenshots, backups outside Mulberry, and any manual sharing or exporting you perform.
+You are responsible for your device settings, lock screen and desktop visibility, screenshots, backups outside Mulberry, and any manual sharing or exporting you perform, including drawings you export from Mulberry on Mac.
 
 9. Third-party services and app store terms
 
@@ -101,7 +103,7 @@ You are responsible for installing updates needed for security, compatibility, b
 
 14. Suspension and termination
 
-You may stop using Mulberry at any time. You may also use available account deletion flows or contact Mulberry to request account deletion.
+You may stop using Mulberry at any time. You can delete your account in Mulberry's settings on iPhone, iPad, and Mac, or by emailing subha60kundu@gmail.com from Android. Deleting your account ends your pairing and deletes the shared canvas for both of you, as described in the Privacy Policy.
 
 Mulberry may suspend, limit, or terminate access if you violate these terms, create legal or security risk, misuse the service, infringe rights, threaten safety, or if continued operation is no longer commercially, technically, or legally practical.
 
@@ -137,6 +139,21 @@ Mulberry may update these terms from time to time. If changes are material, Mulb
 
 The Last updated date at the top of this page shows when these terms were last changed. Continued use after updated terms take effect means you accept the updated terms.
 
-20. Contact
+20. Additional terms for Apple devices
+
+These terms apply when you download Mulberry from Apple's App Store, in addition to the rest of these Terms of Use. If they conflict with the rest of these terms, this section controls for the app you downloaded from the App Store.
+
+- These terms are between you and Subhajit Kundu, not Apple Inc. Subhajit Kundu, not Apple, is solely responsible for Mulberry and its content.
+- Your license to use Mulberry is non-transferable and limited to Apple-branded products that you own or control, as permitted by the Usage Rules in the Apple Media Services Terms and Conditions, except that Mulberry may be accessed by other accounts associated with you through Family Sharing or volume purchasing.
+- Subhajit Kundu, not Apple, is solely responsible for providing maintenance and support for Mulberry. Apple has no obligation to provide any maintenance or support services for Mulberry.
+- Subhajit Kundu is solely responsible for any product warranties, whether express or implied by law, to the extent not effectively disclaimed. If Mulberry fails to conform to an applicable warranty, you may notify Apple, and Apple will refund any purchase price you paid for Mulberry. To the maximum extent permitted by law, Apple has no other warranty obligation with respect to Mulberry, and any other claims, losses, liabilities, damages, costs, or expenses attributable to a failure to conform to a warranty are Subhajit Kundu's responsibility.
+- Subhajit Kundu, not Apple, is responsible for addressing any claims by you or a third party relating to Mulberry or your possession and use of it, including product liability claims, claims that Mulberry fails to conform to any applicable legal or regulatory requirement, and claims arising under consumer protection, privacy, or similar laws.
+- If a third party claims that Mulberry or your possession and use of it infringes that third party's intellectual property rights, Subhajit Kundu, not Apple, is solely responsible for the investigation, defense, settlement, and discharge of that claim.
+- You represent and warrant that you are not located in a country that is subject to a U.S. Government embargo or that has been designated by the U.S. Government as a "terrorist supporting" country, and that you are not listed on any U.S. Government list of prohibited or restricted parties.
+- Questions, complaints, or claims about Mulberry can be sent to Subhajit Kundu at the contact details in section 21.
+- You must comply with applicable third-party terms when using Mulberry, such as the terms of your wireless data service.
+- Apple and its subsidiaries are third-party beneficiaries of these terms. Once you accept these terms, Apple has the right, and will be deemed to have accepted the right, to enforce them against you as a third-party beneficiary.
+
+21. Contact
 
 For questions about these terms, account deletion, support, complaints, or legal notices, contact Subhajit Kundu at subha60kundu@gmail.com or by mail at ITI Crossing, Kalyani, West Bengal, India, 741235.
