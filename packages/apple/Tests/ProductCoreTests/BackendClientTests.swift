@@ -17,6 +17,7 @@ private actor TestTransport: BackendTransport {
     var requests: [URLRequest] = []
     var refreshStatus = 200
     var holdRefresh = false
+    var deleteStatus = 204
     private var refreshContinuation: CheckedContinuation<Void, Never>?
     private var enteredRefresh: CheckedContinuation<Void, Never>?
     private var refreshStarted = false
@@ -24,6 +25,7 @@ private actor TestTransport: BackendTransport {
 
     init() throws { bootstrap = try fixture("bootstrap") }
     func configureRefresh(status: Int = 200, hold: Bool = false) { refreshStatus = status; holdRefresh = hold }
+    func configureDelete(status: Int) { deleteStatus = status }
     func waitForRefresh() async {
         if refreshStarted { return }
         await withCheckedContinuation { enteredRefresh = $0 }
@@ -42,6 +44,9 @@ private actor TestTransport: BackendTransport {
             return response(request, body: try JSONSerialization.data(withJSONObject: auth))
         }
         if path == "/auth/logout" { return response(request, body: Data()) }
+        if path == "/me" && request.httpMethod == "DELETE" {
+            return response(request, status: deleteStatus, body: deleteStatus == 204 ? Data() : Data(#"{"message":"Try again"}"#.utf8))
+        }
         if path == "/wallpapers" { return response(request, body: Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
         if request.value(forHTTPHeaderField: "Authorization") == "Bearer expired" {
             return response(request, status: 401, body: Data(#"{"message":"Token expired"}"#.utf8))
@@ -125,4 +130,28 @@ private actor TestTransport: BackendTransport {
     #expect(body.contains("name=\"partnerDisplayName\"\r\n\r\nAlex\r\n"))
     #expect(body.contains("name=\"anniversaryDate\"\r\n\r\n2024-06-12\r\n"))
     #expect(body.contains("name=\"image\"; filename=\"profile.jpg\""))
+}
+
+@Test func deletingTheAccountForgetsTheSession() async throws {
+    let store = TestTokenStore(.init(accessToken: "fresh", refreshToken: "r", userId: savedSession.userId))
+    let transport = try TestTransport()
+    let client = try BackendClient(baseURL: URL(string: "https://example.invalid")!, tokenStore: store, transport: transport)
+    try await client.deleteAccount()
+    let request = await transport.requests[0]
+    #expect(request.httpMethod == "DELETE")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fresh")
+    #expect(store.load() == nil)
+    #expect(await client.signedInUserId == nil)
+}
+
+@Test func failedAccountDeletionKeepsTheSession() async throws {
+    let session = SessionTokens(accessToken: "fresh", refreshToken: "r", userId: savedSession.userId)
+    let store = TestTokenStore(session)
+    let transport = try TestTransport()
+    await transport.configureDelete(status: 500)
+    let client = try BackendClient(baseURL: URL(string: "https://example.invalid")!, tokenStore: store, transport: transport)
+    do { try await client.deleteAccount(); Issue.record("Expected the deletion to fail") }
+    catch { #expect(error as? BackendError == .rejected(500, "Try again")) }
+    #expect(store.load() == session)
+    #expect(await client.signedInUserId == savedSession.userId)
 }

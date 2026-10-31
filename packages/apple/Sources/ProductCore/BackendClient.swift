@@ -82,6 +82,17 @@ public actor BackendClient {
         try Self.validate(data, response)
     }
 
+    /// Deletes the account on the server, then forgets the session it ended. If the server refuses,
+    /// the session stays so the person is not left believing their account is gone.
+    public func deleteAccount() async throws {
+        let _: JSONValue = try await decode(makeRequest("me", method: "DELETE"))
+        generation += 1
+        refreshTask?.cancel()
+        refreshTask = nil
+        try tokenStore.clear()
+        tokens = nil
+    }
+
     public func accessToken() async throws -> String {
         guard let tokens else { throw BackendError.signedOut }
         return tokens.accessToken
