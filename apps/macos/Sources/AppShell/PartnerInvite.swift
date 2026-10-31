@@ -1,3 +1,4 @@
+import AppKit
 import ProductCore
 import SwiftUI
 
@@ -10,6 +11,11 @@ final class PartnerInvite: ObservableObject {
     @Published private(set) var errorMessage: String?
     private let api: () -> BackendClient
     private var user: String?
+
+    /// What sharing the code sends: the link that opens Mulberry on it, and the code to type.
+    static func message(code: String) -> String {
+        "Join me on Mulberry: https://mulberry.my/invite?code=\(code)\n\nMy invite code is \(code)."
+    }
 
     init(api: @escaping () -> BackendClient) {
         self.api = api
@@ -59,7 +65,7 @@ struct InviteCodeCard: View {
                             Text("Expires \(expiry, style: .relative)")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
-                            ShareLink(item: "Join me on Mulberry: https://mulberry.my/invite?code=\(current.code)\n\nMy invite code is \(current.code).") {
+                            ShareLink(item: PartnerInvite.message(code: current.code)) {
                                 Label("Share Invite Code", systemImage: "square.and.arrow.up")
                             }
                             .buttonStyle(.glassProminent)
@@ -77,5 +83,40 @@ struct InviteCodeCard: View {
             }
         }
         .task { await invite.load() }
+    }
+}
+
+/// Where the share menu opens from, and what it reports back.
+@MainActor
+final class ShareAnchor: NSObject, NSSharingServicePickerDelegate {
+    weak var view: NSView?
+    private var chosen: (() -> Void)?
+
+    func share(_ text: String, chosen: @escaping () -> Void) {
+        guard let view else { return }
+        self.chosen = chosen
+        let picker = NSSharingServicePicker(items: [text])
+        picker.delegate = self
+        picker.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+    }
+
+    /// AppKit reports the choice on the main thread.
+    nonisolated func sharingServicePicker(_ picker: NSSharingServicePicker, didChoose service: NSSharingService?) {
+        guard service != nil else { return }
+        MainActor.assumeIsolated { chosen?() }
+    }
+}
+
+struct ShareAnchorView: NSViewRepresentable {
+    let anchor: ShareAnchor
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        anchor.view = view
     }
 }

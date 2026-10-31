@@ -403,7 +403,7 @@ private struct InviteScreen: View {
             Spacer(minLength: 12)
             // Share leads until the code has gone out; then Continue does.
             if let invite = flow.invite {
-                InviteShareButton(text: "Join me on Mulberry: https://mulberry.my/invite?code=\(invite.code)\n\nMy invite code is \(invite.code).",
+                InviteShareButton(text: PartnerInvite.message(code: invite.code),
                                   primary: !flow.inviteShared) {
                     withAnimation(.easeOut(duration: 0.25)) { flow.inviteShared = true }
                 }
@@ -540,41 +540,6 @@ private struct InviteShareButton: View {
         }
         .buttonStyle(.plain)
         .background(ShareAnchorView(anchor: anchor))
-    }
-}
-
-/// Where the share menu opens from, and what it reports back.
-@MainActor
-private final class ShareAnchor: NSObject, NSSharingServicePickerDelegate {
-    weak var view: NSView?
-    private var chosen: (() -> Void)?
-
-    func share(_ text: String, chosen: @escaping () -> Void) {
-        guard let view else { return }
-        self.chosen = chosen
-        let picker = NSSharingServicePicker(items: [text])
-        picker.delegate = self
-        picker.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
-    }
-
-    /// AppKit reports the choice on the main thread.
-    nonisolated func sharingServicePicker(_ picker: NSSharingServicePicker, didChoose service: NSSharingService?) {
-        guard service != nil else { return }
-        MainActor.assumeIsolated { chosen?() }
-    }
-}
-
-private struct ShareAnchorView: NSViewRepresentable {
-    let anchor: ShareAnchor
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        anchor.view = view
-        return view
-    }
-
-    func updateNSView(_ view: NSView, context: Context) {
-        anchor.view = view
     }
 }
 
