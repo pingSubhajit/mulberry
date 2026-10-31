@@ -5,7 +5,7 @@ import type { BootstrapResponse } from "../../contracts/bootstrap.js"
 import type { AcceptInviteResponse, CreateInviteResponse, RedeemInviteResponse } from "../../contracts/pairing.js"
 import type { InviteRecord, ProfileRecord } from "../../contracts/dbRecords.js"
 import { requireSessionContext } from "../_shared/session.js"
-import { getProfileFrom } from "../_shared/profiles.js"
+import { clearPartnerMetadata, getProfileFrom } from "../_shared/profiles.js"
 import { getPairSession } from "../_shared/pairs.js"
 import { isUniqueViolation } from "../_shared/dbErrors.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
@@ -226,7 +226,7 @@ export class PairingService {
 
     await this.db.transaction(async (tx) => {
       await tx.query(`DELETE FROM pair_sessions WHERE id = $1`, [pairSession.id])
-      await this.clearPartnerMetadataForUsers(tx, [pairSession.user_one_id, pairSession.user_two_id])
+      await clearPartnerMetadata(tx, [pairSession.user_one_id, pairSession.user_two_id])
     })
 
     this.pushDispatchService?.enqueuePairingDisconnected(
@@ -278,27 +278,6 @@ export class PairingService {
     if (!profile?.partner_display_name?.trim() || !profile.anniversary_date?.trim()) {
       throw new HttpError(400, PARTNER_DETAILS_REQUIRED_MESSAGE)
     }
-  }
-
-  private async clearPartnerMetadataForUsers(
-    db: Pick<Database, "query">,
-    userIds: string[],
-  ): Promise<void> {
-    if (userIds.length === 0) return
-    const placeholders = userIds.map((_, index) => `$${index + 1}`).join(", ")
-    await db.query(
-      `
-      UPDATE user_profiles
-      SET
-        partner_display_name = NULL,
-        anniversary_date = NULL,
-        partner_profile_photo_path = NULL,
-        partner_profile_updated_at = NULL,
-        updated_at = NOW()
-      WHERE user_id IN (${placeholders})
-      `,
-      userIds,
-    )
   }
 
   private async hydrateRecipientProfileFromInvite(

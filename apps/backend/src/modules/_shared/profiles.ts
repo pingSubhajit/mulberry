@@ -56,3 +56,25 @@ export async function getProfileFrom(
   }
 }
 
+
+/** Forgets who each user was paired with: the partner's name, photo and the anniversary. */
+export async function clearPartnerMetadata(
+  db: Pick<Database, "query">,
+  userIds: string[],
+): Promise<void> {
+  if (userIds.length === 0) return
+  const placeholders = userIds.map((_, index) => `$${index + 1}`).join(", ")
+  await db.query(
+    `
+      UPDATE user_profiles
+      SET
+        partner_display_name = NULL,
+        anniversary_date = NULL,
+        partner_profile_photo_path = NULL,
+        partner_profile_updated_at = NULL,
+        updated_at = NOW()
+      WHERE user_id IN (${placeholders})
+      `,
+    userIds,
+  )
+}
