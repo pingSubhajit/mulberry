@@ -54,8 +54,9 @@ public final class OverlayController: NSObject, ObservableObject {
         self.isVisible = settings.isVisible
         self.selectedDisplayID = settings.selectedDisplayID
         self.opacity = settingsStore.loadOpacity()
+        // Blank until the app hands over the pair's drawing.
         self.canvasModel = CanvasRenderModel(
-            state: CanvasRenderFixture.previewState(),
+            state: DrawingState(),
             strokeRenderMode: .dryBrush
         )
         super.init()
