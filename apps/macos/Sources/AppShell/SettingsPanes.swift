@@ -268,7 +268,7 @@ struct AccountPane: View {
                     }
                 }
 
-                SettingsSection("Google Account", footer: "Your account and pairing stay saved when you log out.") {
+                SettingsSection("Google Account") {
                     SettingsRow(bootstrap.userEmail ?? "Signed in") {
                         Button("Log Out…") { confirmingLogOut = true }
                             .buttonStyle(.settings)
