@@ -99,6 +99,35 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(descriptor['BundleIdentifier'], 'com.subhajit.mulberry.beta')
         self.assertNotIn(b'com.subhajit.mulberry.dev', (self.directory / 'Mulberry Sync.plist').read_bytes())
 
+    def test_symbols_use_the_selected_package_cache(self):
+        for custom in [False, True]:
+            with self.subTest(custom_cache=custom):
+                packages = self.directory / ('Custom Package Cache' if custom else 'DerivedData/SourcePackages')
+                runner = packages / 'checkouts/firebase-ios-sdk/Crashlytics/run'
+                runner.parent.mkdir(parents=True)
+                runner.write_text('#!/bin/sh\nprintf uploaded > "$SYMBOL_TEST_OUTPUT"\n')
+                runner.chmod(0o755)
+                output = self.directory / f'symbols-{custom}'
+                env = {k: v for k, v in os.environ.items() if not k.startswith('MULBERRY_')}
+                env.update(CONFIGURATION='Release', BUILD_DIR=str(self.directory / 'DerivedData/Build/Products'),
+                           SYMBOL_TEST_OUTPUT=str(output))
+                if custom:
+                    env['MULBERRY_SOURCE_PACKAGES_DIR'] = str(packages)
+                result = subprocess.run(['sh', str(ROOT / 'scripts/upload-crashlytics-symbols.sh')],
+                                        env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(output.read_text(), 'uploaded')
+
+    def test_symbols_do_not_upload_for_local_builds(self):
+        for settings in [dict(CONFIGURATION='ProdDebug'),
+                         dict(CONFIGURATION='Release', MULBERRY_ALLOW_LOCAL_SERVER='YES'),
+                         dict(CONFIGURATION='Release', MULBERRY_LOCAL_DEVICE_BUILD='YES')]:
+            with self.subTest(settings=settings):
+                env = {k: v for k, v in os.environ.items() if not k.startswith('MULBERRY_')}
+                result = subprocess.run(['sh', str(ROOT / 'scripts/upload-crashlytics-symbols.sh')],
+                                        env=env | settings, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

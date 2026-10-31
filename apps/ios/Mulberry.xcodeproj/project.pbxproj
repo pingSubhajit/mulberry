@@ -941,7 +941,7 @@
 			"outputPaths" = ();
 			"runOnlyForDeploymentPostprocessing" = "0";
 			"shellPath" = "/bin/sh";
-			"shellScript" = "if [ \"$CONFIGURATION\" = \"Release\" ] && [ \"$MULBERRY_ALLOW_LOCAL_SERVER\" != \"YES\" ] && [ \"$MULBERRY_LOCAL_DEVICE_BUILD\" != \"YES\" ]; then\n  \"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\nfi";
+			"shellScript" = "/bin/sh \"$SRCROOT/scripts/upload-crashlytics-symbols.sh\"";
 			"alwaysOutOfDate" = "1";
 			"name" = "Upload Crashlytics symbols";
 		};

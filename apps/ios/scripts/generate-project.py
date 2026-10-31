@@ -79,7 +79,7 @@ crashlytics_phase = add('crashlytics-symbols-phase', isa='PBXShellScriptBuildPha
                 '$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist',
                 '$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)'],
     outputPaths=[], runOnlyForDeploymentPostprocessing='0', shellPath='/bin/sh',
-    shellScript='if [ "$CONFIGURATION" = "Release" ] && [ "$MULBERRY_ALLOW_LOCAL_SERVER" != "YES" ] && [ "$MULBERRY_LOCAL_DEVICE_BUILD" != "YES" ]; then\n  "${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run"\nfi', alwaysOutOfDate='1', name='Upload Crashlytics symbols')
+    shellScript='/bin/sh "$SRCROOT/scripts/upload-crashlytics-symbols.sh"', alwaysOutOfDate='1', name='Upload Crashlytics symbols')
 firebase_phase = add('firebase-config-phase', isa='PBXShellScriptBuildPhase', buildActionMask='2147483647', files=[], inputPaths=[], outputPaths=[], runOnlyForDeploymentPostprocessing='0', shellPath='/bin/sh', shellScript='python3 "$SRCROOT/scripts/copy-client-config.py"', alwaysOutOfDate='1', name='Copy public Firebase client configuration')
 shortcut_phase = add('shortcut-phase', isa='PBXShellScriptBuildPhase', buildActionMask='2147483647', files=[],
     inputPaths=['$(SRCROOT)/scripts/make-shortcut.py'], outputPaths=[], runOnlyForDeploymentPostprocessing='0', shellPath='/bin/sh',
