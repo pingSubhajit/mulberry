@@ -7,7 +7,9 @@ struct SettingsView: View {
     @ObservedObject var library: WallpaperLibrary
     let onWallpaperSetup: () -> Void
     @Environment(\.dismiss) private var dismiss
+    #if DEBUG
     @AppStorage("developerOptions") private var developerOptions = false
+    #endif
     @State private var logout = false
     @State private var deleteAccount = false
     @State private var deletingAccount = false
@@ -75,9 +77,11 @@ struct SettingsView: View {
                 Section {
                     NavigationLink { AboutView() } label: { SettingsRow("About", symbol: "info", tint: .gray) }
                     NavigationLink { FeedbackView() } label: { SettingsRow("Send feedback", symbol: "bubble.left.fill", tint: .purple) }
+                    #if DEBUG
                     if developerOptions {
                         NavigationLink { DeveloperSettingsView(model: model) } label: { SettingsRow("Developer options", symbol: "hammer.fill", tint: .gray) }
                     }
+                    #endif
                 }
 
                 if let error = model.errorMessage { Section { InlineError(message: error) }.listRowInsets(EdgeInsets()).listRowBackground(Color.clear) }
@@ -672,8 +676,10 @@ struct PartnerSettingsView: View {
 // MARK: About
 
 struct AboutView: View {
+    #if DEBUG
     @AppStorage("developerOptions") private var developerOptions = false
     @State private var taps = 0
+    #endif
     @State private var legal: LegalDocument?
 
     var body: some View {
@@ -693,8 +699,10 @@ struct AboutView: View {
             }
             .listRowBackground(Color.clear)
 
+            #if DEBUG
             Section {
-                // Seven taps on the version unlock developer options, as on Android.
+                // Seven taps on the version unlock developer options, as on Android. Debug builds
+                // only: App Review rejects hidden features in the App Store build.
                 Button { taps += 1; if taps >= 7 { developerOptions = true } } label: {
                     LabeledContent("Version", value: AppVersion.version)
                 }
@@ -703,6 +711,12 @@ struct AboutView: View {
             } footer: {
                 if developerOptions { Text("Developer options are on.") }
             }
+            #else
+            Section {
+                LabeledContent("Version", value: AppVersion.version)
+                LabeledContent("Build", value: AppVersion.build)
+            }
+            #endif
 
             Section {
                 Button { legal = .privacy } label: { SettingsRow("Privacy Policy", symbol: "hand.raised.fill", tint: .blue) }
@@ -736,6 +750,7 @@ private struct ExternalRow: View {
     }
 }
 
+#if DEBUG
 /// Where the canvas is in its sync, following the drawing as it changes.
 private struct CanvasDiagnostics: View {
     @ObservedObject var canvas: CanvasModel
@@ -778,6 +793,7 @@ private struct DeveloperSettingsView: View {
         }.navigationTitle("Developer options").navigationBarTitleDisplayMode(.inline)
     }
 }
+#endif
 
 private struct FeedbackView: View {
     @State private var url: URL?
