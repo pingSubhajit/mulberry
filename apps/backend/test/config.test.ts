@@ -5,6 +5,20 @@ import { describe, expect, it } from "vitest"
 import { loadConfig } from "../src/infra/config/config.js"
 
 describe("loadConfig", () => {
+  it("turns the debug routes off by default in production and on in development", () => {
+    // Explicit values, so a developer's own .env doesn't decide the outcome.
+    const production = {
+      NODE_ENV: "production",
+      DATABASE_URL: "postgres://x",
+      GOOGLE_SERVER_CLIENT_ID: "server-client",
+      STICKER_LOCAL_STORAGE_DIR: "",
+    }
+    expect(loadConfig(production).enableDebugRoutes).toBe(false)
+    expect(loadConfig({ ...production, ENABLE_DEBUG_ROUTES: "true" }).enableDebugRoutes).toBe(true)
+    expect(loadConfig({ NODE_ENV: "development" }).enableDebugRoutes).toBe(true)
+    expect(loadConfig({ NODE_ENV: "development", ENABLE_DEBUG_ROUTES: "false" }).enableDebugRoutes).toBe(false)
+  })
+
   it("loads root .env values when the process starts from a child directory", () => {
     const root = mkdtempSync(join(tmpdir(), "mulberry-config-"))
     try {

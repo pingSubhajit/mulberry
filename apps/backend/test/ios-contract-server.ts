@@ -34,6 +34,7 @@ const app = await createApp({
     googleClientId: "",
     googleAllowedClientIds: [],
     allowDevGoogleTokens: true,
+    enableDebugRoutes: false,
     posthogDisabled: true,
     cannySsoPrivateKey: "isolated-contract-test-key",
   },

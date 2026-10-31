@@ -53,5 +53,6 @@ function testConfig(): AppConfig {
     googleClientId: "android-server-client",
     googleAllowedClientIds: ["macos-native-client", "web-client", "android-server-client"],
     allowDevGoogleTokens: false,
+    enableDebugRoutes: false,
   }
 }

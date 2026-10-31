@@ -47,6 +47,7 @@ import { registerWallpaperRoutes } from "../modules/wallpapers/routes.js"
 import { registerHealthRoutes } from "../modules/health/routes.js"
 import { FeedbackService } from "../modules/feedback/service.js"
 import { registerFeedbackRoutes } from "../modules/feedback/routes.js"
+import { registerDebugRoutes } from "../modules/debug/routes.js"
 import { AccountService } from "../modules/account/service.js"
 import { registerAccountRoutes } from "../modules/account/routes.js"
 
@@ -159,6 +160,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   registerCanvasSyncRoutes(app, canvasSyncHub)
   registerFeedbackRoutes(app, feedbackService)
   registerAccountRoutes(app, accountService)
+  if (config.enableDebugRoutes) {
+    registerDebugRoutes(app, pairingService, streakService)
+  }
   registerHealthRoutes(app)
 
   return app

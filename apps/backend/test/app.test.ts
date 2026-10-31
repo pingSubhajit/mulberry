@@ -56,6 +56,7 @@ describe("Mulberry backend", () => {
         googleClientId: "",
         googleAllowedClientIds: [],
         allowDevGoogleTokens: true,
+        enableDebugRoutes: true,
         wallpaperAdminPassword: "admin-password",
         cannySsoPrivateKey: "test-canny-secret",
       },
@@ -1054,6 +1055,51 @@ describe("Mulberry backend", () => {
         actorDisplayName: "Subhajit",
       },
     })
+  })
+
+  it("leaves the debug routes out when they are turned off, as in production", async () => {
+    const pool = new (newDb({ autoCreateForeignKeyIndices: true }).adapters.createPg().Pool)()
+    await runMigrations(pool)
+    const productionApp = await createApp({
+      db: {
+        query: pool.query.bind(pool),
+        transaction: async (fn) => fn({ query: pool.query.bind(pool) }),
+        end: async () => {
+          await pool.end()
+        },
+      },
+      pushSender,
+      config: {
+        port: 8080,
+        databaseUrl: "postgres://unused",
+        googleClientId: "",
+        googleAllowedClientIds: [],
+        allowDevGoogleTokens: true,
+        enableDebugRoutes: false,
+      },
+    })
+    try {
+      const auth = await productionApp.inject({
+        method: "POST",
+        url: "/auth/google",
+        payload: { idToken: "dev-google:subhajit@elaris.dev:Subhajit" },
+      })
+      for (const url of [
+        "/debug/pairing-confirmation-push",
+        "/debug/pairing-disconnected-push",
+        "/debug/streak/clear-activity-day",
+      ]) {
+        const response = await productionApp.inject({
+          method: "POST",
+          url,
+          headers: bearer(auth.json().accessToken),
+          payload: {},
+        })
+        expect(response.statusCode).toBe(404)
+      }
+    } finally {
+      await productionApp.close()
+    }
   })
 
   it("initializes per-user draw reminders when pairing is created", async () => {

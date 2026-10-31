@@ -8,6 +8,8 @@ export interface AppConfig {
   googleClientId: string
   googleAllowedClientIds: string[]
   allowDevGoogleTokens: boolean
+  /** The developer menus' test pushes and streak reset. Off by default in production. */
+  enableDebugRoutes: boolean
   firebaseServiceAccountPath?: string
   firebaseServiceAccountJson?: string
   posthogProjectApiKey?: string
@@ -58,6 +60,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     googleClientId,
     googleAllowedClientIds,
     allowDevGoogleTokens: (env.ALLOW_DEV_GOOGLE_TOKENS ?? (isProduction ? "false" : "true")) === "true",
+    enableDebugRoutes: (env.ENABLE_DEBUG_ROUTES ?? (isProduction ? "false" : "true")) === "true",
     firebaseServiceAccountPath: env.FIREBASE_SERVICE_ACCOUNT_PATH,
     firebaseServiceAccountJson: env.FIREBASE_SERVICE_ACCOUNT_JSON,
     posthogProjectApiKey: posthogProjectApiKey?.trim() ? posthogProjectApiKey : undefined,

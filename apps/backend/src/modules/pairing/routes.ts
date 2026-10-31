@@ -35,13 +35,5 @@ export function registerPairingRoutes(app: FastifyInstance, service: PairingServ
   app.post("/pairing/disconnect", async (request) => {
     return service.disconnectPairing(requireBearerToken(request))
   })
-
-  app.post("/debug/pairing-confirmation-push", async (request) => {
-    return service.sendDebugPairingConfirmed(requireBearerToken(request))
-  })
-
-  app.post("/debug/pairing-disconnected-push", async (request) => {
-    return service.sendDebugPairingDisconnected(requireBearerToken(request))
-  })
 }
 

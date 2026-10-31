@@ -32,6 +32,8 @@ ALLOW_DEV_GOOGLE_TOKENS=true
 Docker Compose reads this setting from the root `.env` (and defaults to `true` if it is unset).
 Set `ALLOW_DEV_GOOGLE_TOKENS=false` to require real Google sign-in during local testing.
 
+The apps' developer menus use `/debug/...` routes for test pushes and clearing a streak day. They are on by default in development and off when `NODE_ENV=production`, where they return 404; `ENABLE_DEBUG_ROUTES=true` or `false` overrides either default.
+
 Real Google sign-in requires setting `GOOGLE_SERVER_CLIENT_ID` in a local `.env` file at the repo root:
 
 ```bash
