@@ -10,12 +10,16 @@ import { parseEnv, parseArgs } from 'node:util';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const require = createRequire(path.join(root, 'apps/backend/package.json'));
 const { GoogleAuth } = require('google-auth-library');
-const bundleId = 'com.subhajit.mulberry.dev';
 const { values: options } = parseArgs({ options: {
+  environment: { type: 'string', default: 'dev' },
   create: { type: 'boolean', default: false },
   'ios-client-id': { type: 'string' },
   'api-url': { type: 'string' },
 } });
+if (!['dev', 'prod'].includes(options.environment)) throw new Error('Environment must be dev or prod.');
+const variant = options.environment;
+const bundleId = variant === 'dev' ? 'com.subhajit.mulberry.dev' : 'com.subhajit.mulberry.beta';
+if (variant === 'prod' && options['api-url']) throw new Error('Use run-device.py --api-url for a local production-identity test; do not persist its URL in release settings.');
 
 async function main() {
   const env = parseEnv(fs.readFileSync(path.join(root, '.env'), 'utf8'));
@@ -42,8 +46,8 @@ async function main() {
   } while (pageToken);
   let app = apps.find(candidate => candidate.bundleId === bundleId && candidate.state === 'ACTIVE');
   if (!app) {
-    if (!options.create) throw new Error('No development iOS app exists. Run with --create to register it.');
-    let operation = await call(`${parent}/iosApps`, { bundleId, displayName: 'Mulberry iOS Dev' });
+    if (!options.create) throw new Error('No matching iOS app exists. Register the bundle ID in the existing Firebase project.');
+    let operation = await call(`${parent}/iosApps`, { bundleId, displayName: variant === 'dev' ? 'Mulberry iOS Dev' : 'Mulberry iOS' });
     for (let attempt = 0; !operation.done && attempt < 30; attempt++) {
       await new Promise(resolve => setTimeout(resolve, 1000));
       operation = await call(operation.name);
@@ -53,23 +57,25 @@ async function main() {
     app = operation.response;
   }
   const config = await call(`${app.name}/config`);
-  const destination = path.join(root, 'apps/ios/Configuration/GoogleService-Info.dev.plist');
+  const destination = path.join(root, `apps/ios/Configuration/GoogleService-Info.${variant}.plist`);
   fs.writeFileSync(destination, Buffer.from(config.configFileContents, 'base64'), { mode: 0o600 });
   fs.chmodSync(destination, 0o600);
   const plist = Buffer.from(config.configFileContents, 'base64').toString('utf8');
   const clientId = options['ios-client-id'] ?? plist.match(/<key>CLIENT_ID<\/key>\s*<string>([^<]+)<\/string>/)?.[1];
-  if (clientId && options['api-url']) {
+  if (clientId) {
     const serverId = env.GOOGLE_SERVER_CLIENT_ID;
     const clientPattern = /^\d+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/;
     if (!clientPattern.test(clientId) || !clientPattern.test(serverId ?? '')) throw new Error('Invalid OAuth client ID.');
-    const apiURL = new URL(options['api-url']);
-    if (!['http:', 'https:'].includes(apiURL.protocol) || apiURL.username || apiURL.password) throw new Error('Invalid local API URL.');
-    const local = path.join(root, 'apps/ios/Configuration/Local.xcconfig');
+    const apiURL = options['api-url'] ? new URL(options['api-url']) : undefined;
+    if (apiURL && (!['http:', 'https:'].includes(apiURL.protocol) || apiURL.username || apiURL.password)) throw new Error('Invalid local API URL.');
+    const local = path.join(root, `apps/ios/Configuration/${variant === 'dev' ? 'Local' : 'Production.local'}.xcconfig`);
     const previous = fs.existsSync(local) ? fs.readFileSync(local, 'utf8') : '';
     const team = previous.match(/^DEVELOPMENT_TEAM\s*=\s*([A-Z0-9]{10})\s*$/m)?.[1];
+    const apiSetting = apiURL ? apiURL.href.replace('://', ':/$()/')
+      : variant === 'dev' ? previous.match(/^MULBERRY_API_BASE_URL\s*=\s*(.+)$/m)?.[1] : undefined;
     fs.writeFileSync(local, [
-      '// Public development client settings. Never add server credentials here.',
-      `MULBERRY_API_BASE_URL = ${apiURL.href.replace('://', ':/$()/')}`,
+      '// Public client settings. Never add server credentials here.',
+      ...(apiSetting ? [`MULBERRY_API_BASE_URL = ${apiSetting}`] : []),
       `GOOGLE_IOS_CLIENT_ID = ${clientId}`,
       `GOOGLE_REVERSED_CLIENT_ID = ${clientId.split('.').reverse().join('.')}`,
       `GOOGLE_SERVER_CLIENT_ID = ${serverId}`,
@@ -79,7 +85,7 @@ async function main() {
     fs.chmodSync(local, 0o600);
     console.log(`Configured ${bundleId}. Client plist and local build settings saved; server credentials were not copied.`);
   } else {
-    console.log('Firebase client plist saved. Supply --ios-client-id and --api-url to write the local build settings.');
+    console.log('Firebase client plist saved. Supply --ios-client-id to write the matching build settings.');
   }
 }
 

@@ -7,7 +7,7 @@ struct SettingsView: View {
     @ObservedObject var library: WallpaperLibrary
     let onWallpaperSetup: () -> Void
     @Environment(\.dismiss) private var dismiss
-    #if DEBUG
+    #if MULBERRY_DEV
     @AppStorage("developerOptions") private var developerOptions = false
     #endif
     @State private var logout = false
@@ -77,7 +77,7 @@ struct SettingsView: View {
                 Section {
                     NavigationLink { AboutView() } label: { SettingsRow("About", symbol: "info", tint: .gray) }
                     NavigationLink { FeedbackView() } label: { SettingsRow("Send feedback", symbol: "bubble.left.fill", tint: .purple) }
-                    #if DEBUG
+                    #if MULBERRY_DEV
                     if developerOptions {
                         NavigationLink { DeveloperSettingsView(model: model) } label: { SettingsRow("Developer options", symbol: "hammer.fill", tint: .gray) }
                     }
@@ -676,7 +676,7 @@ struct PartnerSettingsView: View {
 // MARK: About
 
 struct AboutView: View {
-    #if DEBUG
+    #if MULBERRY_DEV
     @AppStorage("developerOptions") private var developerOptions = false
     @State private var taps = 0
     #endif
@@ -699,10 +699,10 @@ struct AboutView: View {
             }
             .listRowBackground(Color.clear)
 
-            #if DEBUG
+            #if MULBERRY_DEV
             Section {
-                // Seven taps on the version unlock developer options, as on Android. Debug builds
-                // only: App Review rejects hidden features in the App Store build.
+                // Seven taps on the version unlock developer options, as on Android.
+                // Only the development environment includes these tools.
                 Button { taps += 1; if taps >= 7 { developerOptions = true } } label: {
                     LabeledContent("Version", value: AppVersion.version)
                 }
@@ -750,7 +750,7 @@ private struct ExternalRow: View {
     }
 }
 
-#if DEBUG
+#if MULBERRY_DEV
 /// Where the canvas is in its sync, following the drawing as it changes.
 private struct CanvasDiagnostics: View {
     @ObservedObject var canvas: CanvasModel

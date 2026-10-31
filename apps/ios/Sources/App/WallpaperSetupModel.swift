@@ -117,7 +117,9 @@ final class WallpaperSetupModel: ObservableObject {
 
     func runShortcut() async {
         try? await journal?.append(.init(stage: "manual_shortcut_requested", detail: "Manual wallpaper update; not an automatic delivery test."))
-        let scheme = Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true ? "mulberry-dev" : "mulberry"
+        // The callback must belong to this exact app. Dev and production can be
+        // installed together, so shared schemes can return to the wrong setup.
+        guard let scheme = Bundle.main.bundleIdentifier else { return }
         var url = URLComponents(string: "shortcuts://x-callback-url/run-shortcut")!
         url.queryItems = [.init(name: "name", value: shortcutName), .init(name: "x-success", value: "\(scheme)://wallpaper-return"),
                           .init(name: "x-error", value: "\(scheme)://shortcut-error"), .init(name: "x-cancel", value: "\(scheme)://shortcut-cancelled")]

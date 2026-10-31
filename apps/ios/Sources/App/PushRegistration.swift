@@ -65,7 +65,8 @@ final class PushRegistration: NSObject, MessagingDelegate {
             guard !signingOut, user == (await api.signedInUserId) else { return }
             let key = "\(user):\(value)"
             guard registered != key else { return }
-            try await api.registerPushToken(value, environment: Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true ? "development" : "production")
+            let environment = Bundle.main.object(forInfoDictionaryKey: "MulberryAppEnvironment") as? String ?? "prod"
+            try await api.registerPushToken(value, environment: environment)
             guard !signingOut, user == (await api.signedInUserId) else {
                 try? await api.unregisterPushToken(value)
                 return

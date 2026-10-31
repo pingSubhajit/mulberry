@@ -1,4 +1,8 @@
-// Public client settings only. Local.xcconfig is generated on the developer's Mac.
+// The production environment. Debug/Release controls compilation, not identity.
+MULBERRY_APP_ENVIRONMENT = prod
+MULBERRY_BUNDLE_IDENTIFIER = com.subhajit.mulberry.beta
+MULBERRY_APP_ICON = AppIcon
+MULBERRY_ALLOW_LOCAL_SERVER = NO
 MULBERRY_API_BASE_URL = https:/$()/api.mulberry.my/
 GOOGLE_IOS_CLIENT_ID =
 GOOGLE_REVERSED_CLIENT_ID =
@@ -6,3 +10,4 @@ GOOGLE_SERVER_CLIENT_ID =
 
 MULBERRY_ENTITLEMENTS_FILE = Configuration/Mulberry.entitlements
 APS_ENVIRONMENT = production
+#include? "Production.local.xcconfig"

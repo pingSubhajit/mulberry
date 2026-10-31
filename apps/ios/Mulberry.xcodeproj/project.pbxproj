@@ -802,7 +802,7 @@
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "folder";
 			"path" = "ShortcutTemplates";
-			"sourceTree" = "<group>";
+			"sourceTree" = "DERIVED_FILE_DIR";
 		};
 		"DC62F6EDFCF365902C12F3A7" = {
 			"isa" = "PBXBuildFile";
@@ -941,7 +941,7 @@
 			"outputPaths" = ();
 			"runOnlyForDeploymentPostprocessing" = "0";
 			"shellPath" = "/bin/sh";
-			"shellScript" = "\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"";
+			"shellScript" = "if [ \"$CONFIGURATION\" = \"Release\" ] && [ \"$MULBERRY_ALLOW_LOCAL_SERVER\" != \"YES\" ] && [ \"$MULBERRY_LOCAL_DEVICE_BUILD\" != \"YES\" ]; then\n  \"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\nfi";
 			"alwaysOutOfDate" = "1";
 			"name" = "Upload Crashlytics symbols";
 		};
@@ -957,6 +957,18 @@
 			"alwaysOutOfDate" = "1";
 			"name" = "Copy public Firebase client configuration";
 		};
+		"03A85158959C9AEA62D80E29" = {
+			"isa" = "PBXShellScriptBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ();
+			"inputPaths" = ("$(SRCROOT)/scripts/make-shortcut.py");
+			"outputPaths" = ();
+			"runOnlyForDeploymentPostprocessing" = "0";
+			"shellPath" = "/bin/sh";
+			"shellScript" = "python3 \"$SRCROOT/scripts/prepare-shortcut.py\"";
+			"alwaysOutOfDate" = "1";
+			"name" = "Prepare this build's wallpaper Shortcut";
+		};
 		"861B9BFD4DF1AFF0067C9134" = {
 			"isa" = "PBXShellScriptBuildPhase";
 			"buildActionMask" = "2147483647";
@@ -967,7 +979,7 @@
 			"shellPath" = "/bin/sh";
 			"shellScript" = "python3 \"$SRCROOT/scripts/allow-local-server.py\"";
 			"alwaysOutOfDate" = "1";
-			"name" = "Allow the local development server in Debug";
+			"name" = "Configure local backend access";
 		};
 		"38A007151ABE87CC01A5B6E9" = {
 			"isa" = "PBXFileReference";
@@ -1037,7 +1049,7 @@
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
 				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
 				"ENABLE_TESTABILITY" = "YES";
-				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG MULBERRY_DEV";
 			};
 		};
 		"4D8F54E7CBAF670D9F6C230D" = {
@@ -1046,9 +1058,77 @@
 			"baseConfigurationReference" = "B5C7F2810D4BBD4285057223";
 			"buildSettings" = {
 				"PRODUCT_NAME" = "Mulberry";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.subhajit.mulberry.dev";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(MULBERRY_BUNDLE_IDENTIFIER)";
 				"MULBERRY_DISPLAY_NAME" = "Mulberry";
-				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIconDev";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "$(MULBERRY_APP_ICON)";
+				"INFOPLIST_FILE" = "Configuration/Info.plist";
+				"CODE_SIGN_ENTITLEMENTS" = "$(MULBERRY_ENTITLEMENTS_FILE)";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS" = "YES";
+				"ENABLE_DEBUG_DYLIB" = "NO";
+			};
+		};
+		"78D7CB57AF24D91AA452EFFB" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "DevRelease";
+			"buildSettings" = {
+				"SDKROOT" = "iphoneos";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "27.0";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"SWIFT_VERSION" = "5.0";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+				"ENABLE_TESTABILITY" = "NO";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "MULBERRY_DEV";
+			};
+		};
+		"C286B2887445EA2A4DABD6DB" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "DevRelease";
+			"baseConfigurationReference" = "B5C7F2810D4BBD4285057223";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "Mulberry";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(MULBERRY_BUNDLE_IDENTIFIER)";
+				"MULBERRY_DISPLAY_NAME" = "Mulberry";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "$(MULBERRY_APP_ICON)";
+				"INFOPLIST_FILE" = "Configuration/Info.plist";
+				"CODE_SIGN_ENTITLEMENTS" = "$(MULBERRY_ENTITLEMENTS_FILE)";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS" = "YES";
+				"ENABLE_DEBUG_DYLIB" = "NO";
+			};
+		};
+		"F1986269F21AB0A39C26F267" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "ProdDebug";
+			"buildSettings" = {
+				"SDKROOT" = "iphoneos";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "27.0";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"SWIFT_VERSION" = "5.0";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+				"ENABLE_TESTABILITY" = "YES";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+			};
+		};
+		"94D9CDB164A4C329ED108A36" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "ProdDebug";
+			"baseConfigurationReference" = "E01A37539DD44DE20F00A582";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "Mulberry";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(MULBERRY_BUNDLE_IDENTIFIER)";
+				"MULBERRY_DISPLAY_NAME" = "Mulberry";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "$(MULBERRY_APP_ICON)";
 				"INFOPLIST_FILE" = "Configuration/Info.plist";
 				"CODE_SIGN_ENTITLEMENTS" = "$(MULBERRY_ENTITLEMENTS_FILE)";
 				"CODE_SIGN_STYLE" = "Automatic";
@@ -1080,9 +1160,9 @@
 			"baseConfigurationReference" = "E01A37539DD44DE20F00A582";
 			"buildSettings" = {
 				"PRODUCT_NAME" = "Mulberry";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.subhajit.mulberry";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(MULBERRY_BUNDLE_IDENTIFIER)";
 				"MULBERRY_DISPLAY_NAME" = "Mulberry";
-				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "$(MULBERRY_APP_ICON)";
 				"INFOPLIST_FILE" = "Configuration/Info.plist";
 				"CODE_SIGN_ENTITLEMENTS" = "$(MULBERRY_ENTITLEMENTS_FILE)";
 				"CODE_SIGN_STYLE" = "Automatic";
@@ -1100,7 +1180,7 @@
 			"baseConfigurationReference" = "B5C7F2810D4BBD4285057223";
 			"buildSettings" = {
 				"PRODUCT_NAME" = "MulberryWidgets";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.subhajit.mulberry.dev.widgets";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(MULBERRY_BUNDLE_IDENTIFIER).widgets";
 				"INFOPLIST_FILE" = "Configuration/Widgets-Info.plist";
 				"GENERATE_INFOPLIST_FILE" = "NO";
 				"CODE_SIGN_STYLE" = "Automatic";
@@ -1110,7 +1190,45 @@
 				"SKIP_INSTALL" = "YES";
 				"APPLICATION_EXTENSION_API_ONLY" = "YES";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) WIDGET_EXTENSION DEBUG";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) WIDGET_EXTENSION";
+			};
+		};
+		"E905B4B8DB3844DCD2D80B61" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "DevRelease";
+			"baseConfigurationReference" = "B5C7F2810D4BBD4285057223";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "MulberryWidgets";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(MULBERRY_BUNDLE_IDENTIFIER).widgets";
+				"INFOPLIST_FILE" = "Configuration/Widgets-Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"SKIP_INSTALL" = "YES";
+				"APPLICATION_EXTENSION_API_ONLY" = "YES";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) WIDGET_EXTENSION";
+			};
+		};
+		"E5FEEE3AB7DFFB7BD0AE1F98" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "ProdDebug";
+			"baseConfigurationReference" = "E01A37539DD44DE20F00A582";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "MulberryWidgets";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(MULBERRY_BUNDLE_IDENTIFIER).widgets";
+				"INFOPLIST_FILE" = "Configuration/Widgets-Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"SKIP_INSTALL" = "YES";
+				"APPLICATION_EXTENSION_API_ONLY" = "YES";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) WIDGET_EXTENSION";
 			};
 		};
 		"261315CCA0B4FA0079C9F97E" = {
@@ -1119,7 +1237,7 @@
 			"baseConfigurationReference" = "E01A37539DD44DE20F00A582";
 			"buildSettings" = {
 				"PRODUCT_NAME" = "MulberryWidgets";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.subhajit.mulberry.widgets";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(MULBERRY_BUNDLE_IDENTIFIER).widgets";
 				"INFOPLIST_FILE" = "Configuration/Widgets-Info.plist";
 				"GENERATE_INFOPLIST_FILE" = "NO";
 				"CODE_SIGN_STYLE" = "Automatic";
@@ -1134,7 +1252,7 @@
 		};
 		"7475E6A6368E532E2681E781" = {
 			"isa" = "XCConfigurationList";
-			"buildConfigurations" = ("5D347E9C9E7CF37AD766A666", "261315CCA0B4FA0079C9F97E");
+			"buildConfigurations" = ("5D347E9C9E7CF37AD766A666", "E905B4B8DB3844DCD2D80B61", "E5FEEE3AB7DFFB7BD0AE1F98", "261315CCA0B4FA0079C9F97E");
 			"defaultConfigurationIsVisible" = "0";
 			"defaultConfigurationName" = "Release";
 		};
@@ -1197,13 +1315,13 @@
 		};
 		"640DC9EFD529235A8D9E2727" = {
 			"isa" = "XCConfigurationList";
-			"buildConfigurations" = ("ED8772ADEC3A6C25161BC957", "00F209874A1F7309F6DCEAA7");
+			"buildConfigurations" = ("ED8772ADEC3A6C25161BC957", "78D7CB57AF24D91AA452EFFB", "F1986269F21AB0A39C26F267", "00F209874A1F7309F6DCEAA7");
 			"defaultConfigurationIsVisible" = "0";
 			"defaultConfigurationName" = "Release";
 		};
 		"976B52545947CA66FD9EF2A4" = {
 			"isa" = "XCConfigurationList";
-			"buildConfigurations" = ("4D8F54E7CBAF670D9F6C230D", "1A6EFC2CD0AF63DD14BE0438");
+			"buildConfigurations" = ("4D8F54E7CBAF670D9F6C230D", "C286B2887445EA2A4DABD6DB", "94D9CDB164A4C329ED108A36", "1A6EFC2CD0AF63DD14BE0438");
 			"defaultConfigurationIsVisible" = "0";
 			"defaultConfigurationName" = "Release";
 		};
@@ -1214,7 +1332,7 @@
 			"productType" = "com.apple.product-type.application";
 			"productReference" = "38A007151ABE87CC01A5B6E9";
 			"buildConfigurationList" = "976B52545947CA66FD9EF2A4";
-			"buildPhases" = ("F612CD2E22E187AC48B5913C", "69680EDE0CF9B24DB8DBFE04", "86F6FE2DD6E869C1842A14B3", "09116CEAEBB202A6AB99C97F", "0E58D8A63A91798B77524488", "861B9BFD4DF1AFF0067C9134", "DD17C78D22CE14910EF1013F");
+			"buildPhases" = ("03A85158959C9AEA62D80E29", "F612CD2E22E187AC48B5913C", "69680EDE0CF9B24DB8DBFE04", "86F6FE2DD6E869C1842A14B3", "09116CEAEBB202A6AB99C97F", "0E58D8A63A91798B77524488", "861B9BFD4DF1AFF0067C9134", "DD17C78D22CE14910EF1013F");
 			"dependencies" = ("A9181351A1FEE60D4A78323F");
 			"buildRules" = ();
 			"packageProductDependencies" = ("F2E404ED01FBAA7F00F90828", "8E2608B89677C6E7F69501BC", "2587D020BEFC96279C957461");

@@ -5,7 +5,9 @@ import plistlib
 from pathlib import Path
 
 root = Path(os.environ['SRCROOT'])
-variant = 'dev' if os.environ['CONFIGURATION'] == 'Debug' else 'prod'
+variant = os.environ['MULBERRY_APP_ENVIRONMENT']
+if variant not in {'dev', 'prod'}:
+    raise SystemExit('error: MULBERRY_APP_ENVIRONMENT must be dev or prod.')
 source = root / f'Configuration/GoogleService-Info.{variant}.plist'
 destination = Path(os.environ['TARGET_BUILD_DIR']) / os.environ['UNLOCALIZED_RESOURCES_FOLDER_PATH'] / 'GoogleService-Info.plist'
 if source.exists():

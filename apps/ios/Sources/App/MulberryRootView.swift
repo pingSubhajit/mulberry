@@ -116,7 +116,7 @@ struct MulberryRootView: View {
         }
         .onOpenURL { url in
             if GoogleAuthentication.handle(url) { return }
-            guard ["mulberry", "mulberry-dev"].contains(url.scheme) else { return }
+            guard url.scheme == Bundle.main.bundleIdentifier else { return }
             switch url.host {
             case "wallpaper-return": Task { await setup.refresh() }
             case "shortcut-error": setup.message = "The Shortcut could not finish. Open it to check its actions and permissions."; setupOpen = true

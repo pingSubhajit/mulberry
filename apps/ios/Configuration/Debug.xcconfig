@@ -1,4 +1,12 @@
 #include "Base.xcconfig"
+MULBERRY_APP_ENVIRONMENT = dev
+MULBERRY_BUNDLE_IDENTIFIER = com.subhajit.mulberry.dev
+MULBERRY_APP_ICON = AppIconDev
+MULBERRY_ALLOW_LOCAL_SERVER = YES
+MULBERRY_API_BASE_URL = http:/$()/127.0.0.1:8080/
+GOOGLE_IOS_CLIENT_ID =
+GOOGLE_REVERSED_CLIENT_ID =
+GOOGLE_SERVER_CLIENT_ID =
 MULBERRY_ENTITLEMENTS_FILE = Configuration/LocalDelivery.entitlements
 APS_ENVIRONMENT = development
 #include? "Local.xcconfig"

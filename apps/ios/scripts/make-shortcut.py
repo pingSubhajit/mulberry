@@ -15,14 +15,15 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--team-id', default='FAKETEAMID')
 parser.add_argument('--bundle-id', default='com.subhajit.mulberry.dev')
 parser.add_argument('--name', default=None, help='Shortcut name; defaults to Mulberry Sync')
+parser.add_argument('--output-dir', type=Path, help='Write this build\'s template outside the source tree')
 parser.add_argument('--unsigned-only', action='store_true')
 parser.add_argument('--manual-only', action='store_true', help='Omit the iOS 27 notification trigger')
 args = parser.parse_args()
 shortcut_name = args.name or 'Mulberry Sync'
 app_name = 'Mulberry'
 root = Path(__file__).resolve().parents[1]
-out = root / 'ShortcutTemplates'
-out.mkdir(exist_ok=True)
+out = args.output_dir or root / 'ShortcutTemplates'
+out.mkdir(parents=True, exist_ok=True)
 fetch_id = '91629C27-A53A-4C05-A3DB-7F8FD39A2F99'
 def output(uuid, name):
     return {'Value': {'OutputUUID': uuid, 'Type': 'ActionOutput', 'OutputName': name},

@@ -27,8 +27,7 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>mulberry</string>
-				<string>mulberry-dev</string>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			</array>
 		</dict>
 	</array>
@@ -71,6 +70,8 @@
 	<true/>
 	<key>MulberryAPIBaseURL</key>
 	<string>$(MULBERRY_API_BASE_URL)</string>
+	<key>MulberryAppEnvironment</key>
+	<string>$(MULBERRY_APP_ENVIRONMENT)</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Fonts/poppins_bold.ttf</string>

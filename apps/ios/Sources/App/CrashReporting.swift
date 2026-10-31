@@ -3,7 +3,7 @@ import FirebaseCrashlytics
 /// Crash reports go to Firebase Crashlytics, beside Android's. Reports carry no account details,
 /// matching the privacy manifest, which declares crash data as not linked to the user.
 enum CrashReporting {
-    #if DEBUG
+    #if MULBERRY_DEV
     /// Developer options' check that reports arrive: the crash is sent when Mulberry next opens.
     static func testCrash() -> Never {
         fatalError("Mulberry test crash from Developer options")
