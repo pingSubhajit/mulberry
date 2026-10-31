@@ -35,6 +35,13 @@ public struct MacLocalStore: @unchecked Sendable {
         defaults.removeObject(forKey: bootstrapKey(userId))
     }
 
+    /// The account was deleted: every setting kept for it is keyed by its id, so all of them go.
+    public func forgetAccount(userId: String) {
+        for key in defaults.dictionaryRepresentation().keys where key.contains(userId) {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     /// Identifies this Mac's overlay to the backend across launches.
     public var installationID: String {
         if let existing = defaults.string(forKey: "installationID") {

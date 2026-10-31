@@ -12,10 +12,12 @@ final class AccountSettings: ObservableObject {
 
     private let api: () -> BackendClient
     private let apply: (BootstrapState) -> Void
+    private let deleted: @MainActor () async -> Void
 
-    init(api: @escaping () -> BackendClient, apply: @escaping (BootstrapState) -> Void) {
+    init(api: @escaping () -> BackendClient, apply: @escaping (BootstrapState) -> Void, deleted: @escaping @MainActor () async -> Void) {
         self.api = api
         self.apply = apply
+        self.deleted = deleted
     }
 
     func updateName(_ name: String) async -> Bool {
@@ -36,6 +38,24 @@ final class AccountSettings: ObservableObject {
 
     func unpair() async -> Bool {
         await perform { try await $0.disconnect() }
+    }
+
+    /// Only once the server has deleted the account does this Mac forget it and sign out.
+    func deleteAccount() async -> Bool {
+        guard !busy else { return false }
+        busy = true
+        errorMessage = nil
+        defer { busy = false }
+        do {
+            try await api().deleteAccount()
+            await deleted()
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     private func perform(_ operation: (BackendClient) async throws -> BootstrapState) async -> Bool {

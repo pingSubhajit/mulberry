@@ -222,6 +222,7 @@ struct AccountPane: View {
     @State private var choosingPhoto = false
     @State private var preparingPhoto = false
     @State private var confirmingLogOut = false
+    @State private var confirmingDelete = false
 
     private var bootstrap: BootstrapState? { appStateController.loadState.bootstrap }
     private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -274,6 +275,16 @@ struct AccountPane: View {
                             .buttonStyle(.settings)
                     }
                 }
+
+                // Under the card, where a section footer sits.
+                Button("Delete your account") { confirmingDelete = true }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.red)
+                    .disabled(account.busy)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal, 16)
+                    .padding(.top, -14)
             }
             .onAppear { name = bootstrap.userDisplayName ?? "" }
             .onChange(of: bootstrap.userDisplayName) { _, saved in name = saved ?? "" }
@@ -293,6 +304,13 @@ struct AccountPane: View {
                 Button("Log Out", role: .destructive) { Task { await authController.signOut() } }
             } message: {
                 Text("Your account and pairing stay saved.")
+            }
+            .confirmationDialog("Delete your Mulberry account?", isPresented: $confirmingDelete) {
+                Button("Delete Account", role: .destructive) { Task { _ = await account.deleteAccount() } }
+            } message: {
+                Text(bootstrap.isPaired
+                     ? "This also unpairs you from \(bootstrap.partnerDisplayName?.nonEmpty ?? "your partner") and erases your shared canvas and streak. This can’t be undone."
+                     : "This can’t be undone.")
             }
         } else {
             SettingsEmptyState(

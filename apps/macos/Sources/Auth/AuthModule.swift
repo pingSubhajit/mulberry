@@ -153,6 +153,14 @@ public final class AuthSessionController: ObservableObject {
         state = .signedOut
     }
 
+    /// The server deleted the account, and its session with it: forget the account and sign out.
+    public func accountDeleted() {
+        if case let .signedIn(session) = state {
+            store.forgetAccount(userId: session.userID)
+        }
+        state = .signedOut
+    }
+
     public func signOut() async {
         if case let .signedIn(session) = state {
             store.clearBootstrap(userId: session.userID)

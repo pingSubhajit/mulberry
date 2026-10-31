@@ -158,6 +158,12 @@ public final class CanvasSyncController: ObservableObject {
         refreshStatus(pending: 0)
     }
 
+    /// The account was deleted: forget the canvas on screen and the edits saved for it.
+    public func erase(userID: String, pairSessionID: String) async {
+        reset()
+        try? await store.remove(userId: userID, pairSessionId: pairSessionID)
+    }
+
     /// Saves local edits first, then sends them when connected.
     public func submit(_ operations: [DrawingOperation]) {
         guard let session, operations.isEmpty == false else { return }

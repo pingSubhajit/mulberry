@@ -27,6 +27,11 @@ struct LastAccount: Codable, Equatable {
         guard account != load(defaults), let data = try? JSONEncoder().encode(account) else { return }
         defaults.set(data, forKey: key)
     }
+
+    /// A deleted account is not welcomed back.
+    static func forget(_ defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: key)
+    }
 }
 
 /// The window while signed out: wide and nearly opaque, the mark glowing above a welcome and

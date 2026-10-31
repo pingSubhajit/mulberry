@@ -82,6 +82,13 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     private lazy var accountSettings = AccountSettings(api: { [unowned self] in api }) { [weak self] bootstrap in
         guard let self else { return }
         appStateController.apply(bootstrap, syncController: syncController)
+    } deleted: { [weak self] in
+        guard let self else { return }
+        if let bootstrap = appStateController.loadState.bootstrap, let user = bootstrap.userId, let pair = bootstrap.pairSessionId {
+            await syncController.erase(userID: user, pairSessionID: pair)
+        }
+        LastAccount.forget()
+        authController.accountDeleted()
     }
     private var preferencesCancellable: AnyCancellable?
     private var lastOverlayPresenceReportSignature: OverlayPresenceReportSignature?
