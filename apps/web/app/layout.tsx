@@ -13,7 +13,7 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: "Mulberry | A shared canvas for your wallpaper",
   description:
-    "Mulberry lets couples share a private canvas that appears on each other's Android wallpaper.",
+    "Mulberry lets couples share a private canvas that appears on each other's wallpaper.",
   metadataBase: new URL("https://mulberry.my"),
   openGraph: {
     title: "Mulberry",

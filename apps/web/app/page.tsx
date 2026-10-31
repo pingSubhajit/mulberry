@@ -33,7 +33,7 @@ export default function LandingPage() {
             Draw something. Let it arrive quietly.
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-white/80 sm:text-lg">
-            Mulberry is a minimal Android app for couples to share small drawings
+            Mulberry is a minimal app for couples to share small drawings
             on each other&apos;s wallpaper. No feed. No noise. Just one shared
             canvas.
           </p>
@@ -117,6 +117,9 @@ export default function LandingPage() {
             </Link>
             <Link href="/terms" className="transition hover:text-brand">
               Terms
+            </Link>
+            <Link href="/support" className="transition hover:text-brand">
+              Support
             </Link>
           <Link href={CONTACT_MAILTO} className="transition hover:text-brand">
             Contact
