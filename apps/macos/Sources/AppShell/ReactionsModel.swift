@@ -50,6 +50,9 @@ final class ReactionsModel: ObservableObject {
         }
     }
 
+    /// A reaction this Mac sent reached the server.
+    var onSent: (() -> Void)?
+
     private let api: () -> BackendClient
     private let deviceID: String
     private var user: String?
@@ -87,6 +90,7 @@ final class ReactionsModel: ObservableObject {
         do {
             try await api().sendReaction(type)
             guard self.user == user else { return false }
+            onSent?()
             Haptics.tap()
             // Shown leaving only over a canvas on screen, never queued for later.
             if surface != nil { sent = Sent(type: type) }

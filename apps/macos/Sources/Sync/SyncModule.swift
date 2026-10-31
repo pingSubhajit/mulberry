@@ -63,6 +63,7 @@ public struct MacSyncStatusSnapshot: Equatable, Sendable {
 
 /// Runs ProductCore's canvas sync for the Mac. Edits are saved with ProductCore's `DrawingStore`
 /// before they are sent, exactly as on iPhone and iPad, so the outbox survives a quit or a crash.
+/// They go over the live connection while one is open, and otherwise over HTTP, whatever the demand.
 @MainActor
 public final class CanvasSyncController: ObservableObject {
     @Published public private(set) var connectionState: MacSyncConnectionState = .signedOut
@@ -105,6 +106,12 @@ public final class CanvasSyncController: ObservableObject {
     private var hasLoadedDocument = false
     private var lastSuccessfulRecoveryAt: Date?
     private var lastError: String?
+    private var sendingWaiting = false
+    /// Sending saved edits again after it failed, waiting longer each time.
+    private var waitingRetry: Task<Void, Never>?
+    private var waitingRetryDelay = CanvasSyncController.firstWaitingRetryDelay
+    private static let firstWaitingRetryDelay: Duration = .seconds(5)
+    private static let longestWaitingRetryDelay: Duration = .seconds(300)
 
     public init(
         api: BackendClient,
@@ -128,6 +135,7 @@ public final class CanvasSyncController: ObservableObject {
         let next = Session(userID: userID, pairSessionID: pairSessionID)
         guard next != session else { return }
         stopRunningSync()
+        stopWaitingRetry()
         session = next
         clearDrawing()
         documentVersion = nil
@@ -186,6 +194,7 @@ public final class CanvasSyncController: ObservableObject {
                 unsaved.removeAll { ids.contains($0.id) }
                 accept(document)
                 publishDrawing()
+                if live == nil { await sendWaiting(session) }
             } catch {
                 guard self.session == session else { return }
                 // Not saved, so not shown either.
@@ -196,9 +205,24 @@ public final class CanvasSyncController: ObservableObject {
         }
     }
 
+    /// Fetches the whole canvas again from the server and rebuilds this Mac's copy from it, keeping
+    /// the edits made here that are still to be sent.
     public func recoverNow() {
         guard let session else { return }
-        Task { await catchUp(session) }
+        Task { await rebuild(session) }
+    }
+
+    /// The Mac woke, or its network returned: connect now rather than at the live connection's next
+    /// try, catch up, and send the edits that waited.
+    public func reconnect() {
+        guard let session, hasLoadedDocument else { return }
+        if live != nil {
+            stopLiveSync()
+            startLiveSync(session)
+        } else {
+            stopWaitingRetry()
+            Task { await catchUp(session) }
+        }
     }
 
     /// Await the actual catch-up before recording a remote update as applied.
@@ -231,6 +255,7 @@ public final class CanvasSyncController: ObservableObject {
             accept(document)
             hasLoadedDocument = true
             reconcileDemand()
+            if live == nil { await sendWaiting(session) }
         } catch {
             guard self.session == session else { return }
             recordError("Your saved canvas could not be opened. \(error.localizedDescription)")
@@ -254,6 +279,8 @@ public final class CanvasSyncController: ObservableObject {
         case .idle:
             stopRunningSync()
             connectionState = .disconnected
+            // Edits the live connection had not sent yet, as when Quick Draw closes offline.
+            Task { await sendWaiting(session) }
         }
     }
 
@@ -323,13 +350,101 @@ public final class CanvasSyncController: ObservableObject {
                 connectionState = .disconnected
             }
             refreshStatus(pending: updated.pending.count)
+            if live == nil, !updated.pending.isEmpty { await sendWaiting(session) }
+        } catch DrawingError.wrongSession {
+            guard self.session == session else { return }
+            onPairingChanged?()
+        } catch DrawingError.revisionGap, DrawingError.missingStroke {
+            // This Mac's copy no longer follows the server's history: start it again from the whole.
+            guard self.session == session else { return }
+            await rebuild(session)
+        } catch {
+            guard self.session == session, !Task.isCancelled else { return }
+            recordError(error.localizedDescription)
+        }
+    }
+
+    /// The whole canvas from the server's history, with this Mac's unsent edits laid over it.
+    private func rebuild(_ session: Session) async {
+        do {
+            let operations = try await api.canvasOperations(after: 0)
+            guard self.session == session else { return }
+            let rebuilt = try await store.receive(userId: session.userID, pairSessionId: session.pairSessionID,
+                                                  operations: operations, rebuild: true)
+            guard self.session == session else { return }
+            accept(rebuilt)
+            lastError = nil
+            lastSuccessfulRecoveryAt = Date()
+            refreshStatus(pending: rebuilt.pending.count)
+            if live == nil, !rebuilt.pending.isEmpty { await sendWaiting(session) }
         } catch DrawingError.wrongSession {
             guard self.session == session else { return }
             onPairingChanged?()
         } catch {
             guard self.session == session, !Task.isCancelled else { return }
-            recordError(error.localizedDescription)
+            recordError("The canvas could not be recovered. \(error.localizedDescription)")
         }
+    }
+
+    /// Sends the edits saved here while no live connection is open, over HTTP, so they reach the
+    /// partner without a canvas opening again. One that fails is tried again later, and as the Mac
+    /// wakes or its network returns.
+    private func sendWaiting(_ session: Session) async {
+        guard !sendingWaiting, live == nil, self.session == session else { return }
+        sendingWaiting = true
+        defer { sendingWaiting = false }
+        do {
+            var document = try await store.load(userId: session.userID, pairSessionId: session.pairSessionID)
+            guard !document.pending.isEmpty else { return }
+            // HTTP adds to the account's current pairing; these edits belong to this one.
+            let bootstrap = try await api.bootstrap()
+            guard self.session == session else { return }
+            guard bootstrap.isPaired, bootstrap.userId == session.userID, bootstrap.pairSessionId == session.pairSessionID else {
+                onPairingChanged?()
+                return
+            }
+            while live == nil, self.session == session, !document.pending.isEmpty {
+                let waiting = document.pending.count
+                _ = try await api.submit(DrawingBatch(operations: Array(document.pending.prefix(128))))
+                // The server's history from here holds them, and whatever the partner added between.
+                let operations = try await api.canvasOperations(after: document.confirmed.revision)
+                guard self.session == session else { return }
+                document = try await store.receive(userId: session.userID, pairSessionId: session.pairSessionID, operations: operations)
+                accept(document)
+                // None were taken: leave them for the live connection rather than send them again now.
+                guard document.pending.count < waiting else { break }
+            }
+            guard self.session == session else { return }
+            stopWaitingRetry()
+            lastError = nil
+            lastSuccessfulRecoveryAt = Date()
+            refreshStatus(pending: document.pending.count)
+        } catch DrawingError.wrongSession {
+            guard self.session == session else { return }
+            onPairingChanged?()
+        } catch {
+            guard self.session == session, !Task.isCancelled else { return }
+            recordError("Your drawing will be sent once Mulberry connects. \(error.localizedDescription)")
+            retryWaitingLater(session)
+        }
+    }
+
+    private func retryWaitingLater(_ session: Session) {
+        guard waitingRetry == nil else { return }
+        let delay = waitingRetryDelay
+        waitingRetryDelay = min(delay * 2, Self.longestWaitingRetryDelay)
+        waitingRetry = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, !Task.isCancelled else { return }
+            waitingRetry = nil
+            await sendWaiting(session)
+        }
+    }
+
+    private func stopWaitingRetry() {
+        waitingRetry?.cancel()
+        waitingRetry = nil
+        waitingRetryDelay = Self.firstWaitingRetryDelay
     }
 
     private func accept(_ document: DrawingDocument) {
@@ -359,6 +474,7 @@ public final class CanvasSyncController: ObservableObject {
 
     private func stop(signedOut: Bool) {
         stopRunningSync()
+        stopWaitingRetry()
         session = nil
         hasLoadedDocument = false
         documentVersion = nil

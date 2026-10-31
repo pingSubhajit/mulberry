@@ -17,6 +17,10 @@ private struct Tokens: SessionTokenStore {
 /// The backend's canvas log for one pair, reachable over REST and the live socket.
 private actor CanvasServer {
     private(set) var log: [DrawingOperation] = []
+    /// Off, every request fails as it would offline.
+    private(set) var reachable = true
+
+    func setReachable(_ value: Bool) { reachable = value }
 
     func record(_ operations: [DrawingOperation], actor: String) -> [DrawingOperation] {
         operations.map { operation in
@@ -41,6 +45,7 @@ private struct ServerTransport: BackendTransport {
 
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let url = try #require(request.url)
+        guard await server.reachable else { throw URLError(.notConnectedToInternet) }
         let body: Data
         switch url.path {
         case "/bootstrap":
@@ -53,6 +58,10 @@ private struct ServerTransport: BackendTransport {
             let after = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
                 .first { $0.name == "afterRevision" }?.value.flatMap { Int64($0) } ?? 0
             body = try JSONEncoder().encode(["operations": await server.operations(after: after)])
+        case "/canvas/ops/batch":
+            struct Batch: Decodable { let operations: [DrawingOperation] }
+            let batch = try JSONDecoder().decode(Batch.self, from: try #require(request.httpBody))
+            body = try JSONEncoder().encode(["operations": await server.record(batch.operations, actor: user)])
         default:
             throw URLError(.badURL)
         }
@@ -160,7 +169,7 @@ func overlayCatchesUpWithThePartnersDrawingWithoutALiveConnection() async throws
 
 @MainActor
 @Test(.timeLimit(.minutes(1)))
-func editsMadeWhileIdleAreSavedThenSentWhenTheWindowConnects() async throws {
+func editsMadeWhileIdleAreSentWithoutALiveConnection() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let server = CanvasServer()
@@ -170,11 +179,56 @@ func editsMadeWhileIdleAreSavedThenSentWhenTheWindowConnects() async throws {
 
     let drawn = stroke(0.4)
     controller.submit(try DrawingOperation.restore(drawn))
-    try await waitUntil { controller.status.pendingCount == 3 }
+    try await waitUntil { controller.status.pendingCount == 0 && controller.status.lastAppliedServerRevision == 3 }
+    #expect(await server.log.count == 3)
+    #expect(controller.drawing.finishedStrokes == [drawn])
+    #expect(controller.connectionState == .disconnected)
+    #expect(controller.status.lastError == nil)
+    controller.stop()
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func editsMadeOfflineWaitThenGoAsTheMacReconnects() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let server = CanvasServer()
+    let controller = try makeController(server: server, directory: directory)
+    controller.updateSession(userID: user, pairSessionID: pair, shouldSync: true)
+    try await waitUntil { controller.connectionState == .disconnected }
+    await server.setReachable(false)
+
+    let drawn = stroke(0.4)
+    controller.submit(try DrawingOperation.restore(drawn))
+    try await waitUntil { controller.status.pendingCount == 3 && controller.status.lastError != nil }
     #expect(controller.drawing.finishedStrokes == [drawn])
     let saved = try await DrawingStore(directory: directory).load(userId: user, pairSessionId: pair)
     #expect(saved.pending.count == 3)
     #expect(await server.log.isEmpty)
+
+    await server.setReachable(true)
+    controller.reconnect()
+    try await waitUntil { controller.status.pendingCount == 0 && controller.status.lastError == nil }
+    #expect(await server.log.count == 3)
+    #expect(controller.drawing.finishedStrokes == [drawn])
+    controller.stop()
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func editsWaitingOfflineGoOverTheWindowsLiveConnection() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let server = CanvasServer()
+    let controller = try makeController(server: server, directory: directory)
+    controller.updateSession(userID: user, pairSessionID: pair, shouldSync: true)
+    try await waitUntil { controller.connectionState == .disconnected }
+    await server.setReachable(false)
+
+    let drawn = stroke(0.4)
+    controller.submit(try DrawingOperation.restore(drawn))
+    try await waitUntil { controller.status.pendingCount == 3 && controller.status.lastError != nil }
+    await server.setReachable(true)
 
     controller.updateDemand(.foregroundWebSocket)
     try await waitUntil { controller.connectionState == .connected && controller.status.pendingCount == 0 }
@@ -212,9 +266,10 @@ func editsShowAtOnceAndNeverFlashBackWhileTheyAreSaved() async throws {
     controller.submit([.update(.sticker(moved))])
     #expect(controller.drawing.canvasElements.first?.sticker?.center.x == 0.6)
 
-    try await waitUntil { controller.status.pendingCount == 3 }
+    // Saved, then sent and confirmed by the server.
+    try await waitUntil { controller.status.pendingCount == 0 && controller.status.lastAppliedServerRevision == 3 }
     #expect(controller.drawing.canvasElements.first?.sticker?.center.x == 0.6)
-    // Never back to an earlier place once moved on, while the saves caught up.
+    // Never back to an earlier place once moved on, while the saves and the server caught up.
     var furthest = 0.0
     for centre in centres {
         #expect(centre >= furthest)
@@ -270,4 +325,26 @@ func remoteNotificationCatchesUpWhileIdleAndReturnsTheAppliedRevision() async th
     #expect(controller.connectionState == .disconnected)
     controller.stop()
     #expect(await controller.recoverAfterNotification() == nil)
+}
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func recoveringRebuildsTheWholeCanvasFromTheServer() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let server = CanvasServer()
+    let first = stroke(0.2)
+    let second = stroke(0.5)
+    _ = await server.record(try DrawingOperation.restore(first), actor: partner)
+    _ = await server.record(try DrawingOperation.restore(second), actor: partner)
+    let controller = try makeController(server: server, directory: directory)
+    controller.updateSession(userID: user, pairSessionID: pair, shouldSync: true)
+    try await waitUntil { controller.connectionState == .disconnected }
+    #expect(controller.drawing.finishedStrokes.isEmpty)
+
+    controller.recoverNow()
+    try await waitUntil { controller.drawing.finishedStrokes == [first, second] }
+    #expect(controller.status.lastAppliedServerRevision == 6)
+    #expect(controller.status.lastError == nil)
+    controller.stop()
 }

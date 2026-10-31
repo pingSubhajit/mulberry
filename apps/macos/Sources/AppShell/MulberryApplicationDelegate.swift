@@ -73,6 +73,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     private lazy var reactions = ReactionsModel(api: { [unowned self] in api }, deviceID: store.installationID)
     private var reactionIsland: ReactionIslandController?
     private var reactionPolling: Task<Void, Never>?
+    private var streakCheck: Task<Void, Never>?
+    private var connectionWatcher: ConnectionWatcher?
     private var surfaceObservers: [NSObjectProtocol] = []
     private lazy var accountSettings = AccountSettings(api: { [unowned self] in api }) { [weak self] bootstrap in
         guard let self else { return }
@@ -123,7 +125,37 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 UserDefaults.standard.set(revision, forKey: "lastRemotePushAppliedRevision")
                 UserDefaults.standard.set(Date(), forKey: "lastRemotePushAppliedAt")
             }
-        } else if event.type == "REACTION" { await reactions.check() }
+            checkStreakRise(after: .zero)
+        } else if event.type == "REACTION" {
+            await reactions.check()
+            checkStreakRise(after: .zero)
+        }
+    }
+
+    /// The Mac woke or its network returned: whatever waited for a connection goes now.
+    private func connectionReturned() {
+        Task { await authController.retryUnreachable() }
+        guard authController.state.isSignedIn else { return }
+        syncController.reconnect()
+        Task {
+            await appStateController.refreshBootstrapAndReportOverlay(overlayController: overlayController, syncController: syncController)
+            await pushRegistration.refresh()
+            await reactions.check()
+            if appStateController.loadState.bootstrap?.isPaired == true { await streaks.refresh(api: api) }
+        }
+    }
+
+    /// The day's first drawing or reaction, by either of the pair, raises the streak: look for its
+    /// level-up once it has reached the server.
+    private func checkStreakRise(after delay: Duration = .seconds(2)) {
+        guard appStateController.loadState.bootstrap?.isPaired == true else { return }
+        if let streak = streaks.streak, streak.today == ServerDate.localDay(), streak.hasActivityToday { return }
+        streakCheck?.cancel()
+        streakCheck = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, !Task.isCancelled else { return }
+            await streaks.refresh(api: api)
+        }
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
@@ -135,6 +167,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         NSApp.setActivationPolicy(.accessory)
         installMainMenu()
         listenForSecondCopies()
+        connectionWatcher = ConnectionWatcher { [weak self] in self?.connectionReturned() }
         let quickDrawController = QuickDrawController(overlayController: overlayController)
         self.quickDrawController = quickDrawController
         installQuickDraw()
@@ -269,6 +302,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     /// The canvases' edits go to sync; the account's first drawing is celebrated as it is saved.
     private func submit(_ operations: [DrawingOperation]) {
         syncController.submit(operations)
+        if DrawingOperation.drawsSomething(operations) { checkStreakRise() }
         firstDrawing.saved(operations, paired: appStateController.loadState.bootstrap?.isPaired == true, streaks: streaks) { [weak self] in
             guard let self else { return }
             await streaks.refresh(api: api)
@@ -395,9 +429,10 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     // MARK: Reactions
 
     /// The partner's reactions: played over a canvas on screen, else shown in the notch or under
-    /// the menu bar icon until a canvas opens. The Mac looks every five seconds while paired, as
-    /// the iPhone does while open, until reaction pushes can reach it.
+    /// the menu bar icon until a canvas opens. A push tells the Mac they arrived; it also looks as a
+    /// canvas opens, and as the Mac wakes or its network returns.
     private func installReactions() {
+        reactions.onSent = { [weak self] in self?.checkStreakRise() }
         reactionIsland = ReactionIslandController(
             reactions: reactions,
             partner: { [unowned self] in
@@ -437,14 +472,18 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             }
             firstDrawing.runDebugFirstDrawing()
             #endif
-            // Reactions every five seconds; the streak every thirty, so its level-up lands soon
-            // after the day's first drawing or reaction.
+            // Pushes tell the Mac about the partner's reactions and drawings. Without them, as in a
+            // build signed without push, it looks for reactions every five seconds and for the
+            // streak's level-up every thirty.
             reactionPolling = Task { [weak self] in
                 var tick = 0
                 while !Task.isCancelled {
-                    await self?.reactions.check()
-                    if tick % 6 == 0, let self { await self.streaks.refresh(api: self.api) }
-                    tick += 1
+                    guard let self else { return }
+                    if !pushRegistration.isRegistered {
+                        await reactions.check()
+                        if tick % 6 == 0 { await streaks.refresh(api: api) }
+                        tick += 1
+                    }
                     try? await Task.sleep(for: .seconds(5))
                 }
             }

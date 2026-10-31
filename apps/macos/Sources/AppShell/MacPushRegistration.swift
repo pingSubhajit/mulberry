@@ -31,6 +31,8 @@ final class MacPushRegistration: NSObject, MessagingDelegate {
     private var hasAPNsToken = false
     private var requestedAPNs = false
     init(api: BackendClient) { self.api = api }
+    /// Whether the server can reach this Mac by push, so it need not look for changes itself.
+    var isRegistered: Bool { registered != nil }
     func configure() {
         guard enabled, FirebaseApp.app() != nil else { return }
         Messaging.messaging().delegate = self
