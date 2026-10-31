@@ -73,6 +73,14 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       revoked_at TIMESTAMPTZ
     );
 
+    -- An iPhone's reactions Live Activity: the app's push-to-start token, and the push token of the
+    -- activity it shows, if any.
+    ALTER TABLE device_tokens
+      ADD COLUMN IF NOT EXISTS live_activity_start_token TEXT;
+
+    ALTER TABLE device_tokens
+      ADD COLUMN IF NOT EXISTS live_activity_token TEXT;
+
     CREATE INDEX IF NOT EXISTS device_tokens_active_user_idx
       ON device_tokens(user_id)
       WHERE revoked_at IS NULL;

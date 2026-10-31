@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createApp } from "../src/app/createApp.js"
 import { runBackfills, runMigrations, type Database } from "../src/infra/db/database.js"
 import { PushDispatchService } from "../src/infra/push/dispatchService.js"
-import type { MulberryPushMessage, PushSender } from "../src/infra/push/types.js"
+import type { MulberryPushMessage, PushSender, ReactionLiveActivityMessage } from "../src/infra/push/types.js"
+import type { DevicePlatform } from "../src/contracts/devices.js"
 import type {
   ProcessedWallpaperImage,
   WallpaperImageProcessor,
@@ -252,6 +253,122 @@ describe("Mulberry backend", () => {
     expect((secondPush?.data as any).hugCount).toBe("0")
     expect((secondPush?.data as any).kissCount).toBe("1")
     expect((secondPush?.data as any).smileCount).toBe("0")
+  })
+
+  it("tells Mac tokens apart from the rest", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-phone", "IOS")
+    await registerFcmToken(recipient.accessToken, "recipient-mac", "MACOS")
+
+    await app.inject({
+      method: "POST",
+      url: "/reactions/send",
+      headers: bearer(inviter.accessToken),
+      payload: { reactionType: "HEART" },
+    })
+
+    await eventually(() => pushSender.sentMessages.length === 1)
+    expect(pushSender.sentMessages[0].tokens.sort()).toEqual(["recipient-mac", "recipient-phone"])
+    expect(pushSender.sentMessages[0].macTokens).toEqual(["recipient-mac"])
+  })
+
+  it("starts the reactions Live Activity on an iPhone, then updates the one it shows", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-phone", "IOS")
+    await registerFcmToken(recipient.accessToken, "recipient-mac", "MACOS")
+    const tokens = await app.inject({
+      method: "PUT",
+      url: "/devices/live-activity",
+      headers: bearer(recipient.accessToken),
+      payload: { token: "recipient-phone", pushToStartToken: "start-token" },
+    })
+    expect(tokens.statusCode).toBe(204)
+
+    await app.inject({
+      method: "POST",
+      url: "/reactions/send",
+      headers: bearer(inviter.accessToken),
+      payload: { reactionType: "HEART" },
+    })
+    await eventually(() => pushSender.sentLiveActivities.length === 1)
+    expect(pushSender.sentLiveActivities[0]).toEqual({
+      token: "recipient-phone",
+      liveActivityToken: "start-token",
+      event: "start",
+      partnerName: "Subhajit",
+      contentState: { counts: { HEART: 1 }, latest: "HEART" },
+      alert: { title: "Subhajit", body: "Sent you love ❤️" },
+    })
+
+    // The activity it started reports its own token.
+    await app.inject({
+      method: "PUT",
+      url: "/devices/live-activity",
+      headers: bearer(recipient.accessToken),
+      payload: { token: "recipient-phone", activityPushToken: "activity-token" },
+    })
+    await app.inject({
+      method: "POST",
+      url: "/reactions/send",
+      headers: bearer(inviter.accessToken),
+      payload: { reactionType: "KISS" },
+    })
+    await eventually(() => pushSender.sentLiveActivities.length === 2)
+    expect(pushSender.sentLiveActivities[1]).toMatchObject({
+      liveActivityToken: "activity-token",
+      event: "update",
+      contentState: { counts: { HEART: 1, KISS: 1 }, latest: "KISS" },
+      alert: { title: "Subhajit", body: "Sent you kisses 💋" },
+    })
+
+    // An activity that has ended refuses the update, so a new one starts.
+    pushSender.refusedLiveActivityTokens.add("activity-token")
+    await app.inject({
+      method: "POST",
+      url: "/reactions/send",
+      headers: bearer(inviter.accessToken),
+      payload: { reactionType: "HUG" },
+    })
+    await eventually(() => pushSender.sentLiveActivities.length === 4)
+    expect(pushSender.sentLiveActivities.slice(2).map((message) => [message.event, message.liveActivityToken])).toEqual([
+      ["update", "activity-token"],
+      ["start", "start-token"],
+    ])
+    const stored = await db.query<{ live_activity_token: string | null }>(
+      "SELECT live_activity_token FROM device_tokens WHERE token = $1",
+      ["recipient-phone"],
+    )
+    expect(stored.rows[0].live_activity_token).toBeNull()
+  })
+
+  it("keeps Live Activity tokens to the signed-in iPhone's own registration", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-android")
+
+    const notIPhone = await app.inject({
+      method: "PUT",
+      url: "/devices/live-activity",
+      headers: bearer(recipient.accessToken),
+      payload: { token: "recipient-android", pushToStartToken: "start-token" },
+    })
+    expect(notIPhone.statusCode).toBe(404)
+
+    await registerFcmToken(recipient.accessToken, "recipient-phone", "IOS")
+    const someoneElses = await app.inject({
+      method: "PUT",
+      url: "/devices/live-activity",
+      headers: bearer(inviter.accessToken),
+      payload: { token: "recipient-phone", pushToStartToken: "start-token" },
+    })
+    expect(someoneElses.statusCode).toBe(404)
+
+    const empty = await app.inject({
+      method: "PUT",
+      url: "/devices/live-activity",
+      headers: bearer(recipient.accessToken),
+      payload: { token: "recipient-phone", pushToStartToken: "" },
+    })
+    expect(empty.statusCode).toBe(400)
   })
 
   it("rate limits reaction sends per actor and pair session", async () => {
@@ -2770,14 +2887,14 @@ describe("Mulberry backend", () => {
     }
   }
 
-  async function registerFcmToken(accessToken: string, token: string) {
+  async function registerFcmToken(accessToken: string, token: string, platform: DevicePlatform = "ANDROID") {
     const response = await app.inject({
       method: "POST",
       url: "/devices/fcm-token",
       headers: bearer(accessToken),
       payload: {
         token,
-        platform: "ANDROID",
+        platform,
         appEnvironment: "dev",
       },
     })
@@ -3113,7 +3230,15 @@ function offsetDate(deltaDays: number): string {
 
 class RecordingPushSender implements PushSender {
   readonly sentMessages: MulberryPushMessage[] = []
+  readonly sentLiveActivities: ReactionLiveActivityMessage[] = []
   readonly invalidTokens = new Set<string>()
+  /** Live Activity tokens APNs refuses, as for an activity that has ended. */
+  readonly refusedLiveActivityTokens = new Set<string>()
+
+  async sendLiveActivity(message: ReactionLiveActivityMessage) {
+    this.sentLiveActivities.push(message)
+    return !this.refusedLiveActivityTokens.has(message.liveActivityToken)
+  }
 
   async send(message: MulberryPushMessage) {
     this.sentMessages.push(message)

@@ -65,6 +65,8 @@ export interface DeviceTokenRow {
   token: string
   platform: DevicePlatform
   app_environment: string
+  live_activity_start_token: string | null
+  live_activity_token: string | null
   last_seen_at: Date | string
   revoked_at: Date | string | null
 }

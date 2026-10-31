@@ -5,11 +5,12 @@ import type { AnalyticsClient } from "../../infra/analytics/analytics.js"
 import { requireSessionContext } from "../_shared/session.js"
 import { getPairSession } from "../_shared/pairs.js"
 import { dateOnly } from "../_shared/dates.js"
+import { ReactionTypes, type ReactionType } from "../../contracts/reactions.js"
 
 const REACTION_SEND_RATE_LIMIT_CAPACITY = 6
 const REACTION_SEND_RATE_LIMIT_REFILL_TOKENS_PER_SEC = 1
 
-type NormalizedReactionType = "HEART" | "HUG" | "KISS" | "SMILE" | "LAUGH" | "SPARKLE"
+type NormalizedReactionType = ReactionType
 
 interface PendingReactionBatch {
   generation: number
@@ -110,7 +111,7 @@ export class ReactionsService {
       }
     }
 
-    this.pushDispatchService?.enqueueReaction(pairSession.id, context.user.id, updated.generation, {
+    this.pushDispatchService?.enqueueReaction(pairSession.id, context.user.id, updated.generation, normalizedType, {
       heartCount: updated.heartCount,
       hugCount: updated.hugCount,
       kissCount: updated.kissCount,
@@ -687,17 +688,7 @@ export class ReactionsService {
 
 function normalizeReactionType(raw: string): NormalizedReactionType | null {
   const value = raw.trim().toUpperCase()
-  if (
-    value === "HEART" ||
-    value === "HUG" ||
-    value === "KISS" ||
-    value === "SMILE" ||
-    value === "LAUGH" ||
-    value === "SPARKLE"
-  ) {
-    return value
-  }
-  return null
+  return ReactionTypes.find((type) => type === value) ?? null
 }
 
 function weekStartFromDay(day: string): string {

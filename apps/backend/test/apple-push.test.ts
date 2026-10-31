@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import type { Messaging } from "firebase-admin/messaging"
-import { FirebaseAdminPushSender } from "../src/infra/push/sender.js"
+import { FirebaseAdminPushSender, reactionLiveActivityConfiguration } from "../src/infra/push/sender.js"
 import type { MulberryPushMessage } from "../src/infra/push/types.js"
 
 describe("Apple wallpaper delivery", () => {
@@ -44,5 +44,72 @@ describe("Apple wallpaper delivery", () => {
       CANVAS_NUDGE: "passive",
       DRAW_REMINDER: "passive",
     })
+  })
+
+  it("catches Macs up silently instead of telling them about the wallpaper", async () => {
+    const send = vi.fn().mockResolvedValue({ responses: [{ success: true }] })
+    const sender = new FirebaseAdminPushSender({ sendEachForMulticast: send } as unknown as Messaging)
+    const canvas = { pairSessionId: "pair-one", latestRevision: "14", actorUserId: "partner" }
+    for (const data of [
+      { ...canvas, type: "CANVAS_UPDATED", snapshotRevision: "12" },
+      { ...canvas, type: "CANVAS_NUDGE", actorDisplayName: "Sam" },
+    ] as const) {
+      send.mockClear()
+      await sender.send({
+        tokens: ["phone", "mac"],
+        macTokens: ["mac"],
+        data,
+        android: { priority: "high", collapseKey: "canvas-pair-one", ttlMs: 60_000 },
+      })
+      expect(send).toHaveBeenCalledTimes(2)
+      const [phone, mac] = send.mock.calls.map((call) => call[0])
+      expect(phone.tokens).toEqual(["phone"])
+      expect(phone.apns.headers["apns-push-type"]).toBe("alert")
+      expect(mac.tokens).toEqual(["mac"])
+      expect(mac.data).toEqual(data)
+      expect(mac.apns.headers).toMatchObject({ "apns-push-type": "background", "apns-priority": "5" })
+      expect(mac.apns.payload.aps).toEqual({ contentAvailable: true })
+    }
+  })
+
+  it("reports invalid tokens from each platform's send", async () => {
+    const send = vi.fn()
+      .mockResolvedValueOnce({ responses: [{ success: false, error: { code: "messaging/registration-token-not-registered" } }] })
+      .mockResolvedValueOnce({ responses: [{ success: false, error: { code: "messaging/internal-error" } }, { success: false, error: { code: "messaging/invalid-registration-token" } }] })
+    const sender = new FirebaseAdminPushSender({ sendEachForMulticast: send } as unknown as Messaging)
+    const result = await sender.send({
+      tokens: ["phone", "mac-one", "mac-two"],
+      macTokens: ["mac-one", "mac-two"],
+      data: { type: "PAIRING_CONFIRMED", pairSessionId: "pair-one", actorUserId: "partner", actorDisplayName: "Sam" },
+      android: { priority: "high", collapseKey: "pairing-pair-one", ttlMs: 60_000 },
+    })
+    expect(result.invalidTokens).toEqual(["phone", "mac-two"])
+  })
+
+  it("starts the reactions Live Activity with its Swift type, and updates it with content alone", () => {
+    const message = {
+      token: "phone",
+      liveActivityToken: "start-token",
+      partnerName: "Sam",
+      contentState: { counts: { HEART: 2 }, latest: "HEART" as const },
+      alert: { title: "Sam", body: "Sent you love ❤️" },
+    }
+    const now = 1_800_000_000_000
+    const start = reactionLiveActivityConfiguration({ ...message, event: "start" }, now)
+    expect(start.liveActivityToken).toBe("start-token")
+    expect(start.headers).toEqual({ "apns-priority": "10" })
+    expect(start.payload?.aps).toEqual({
+      timestamp: 1_800_000_000,
+      event: "start",
+      "content-state": { counts: { HEART: 2 }, latest: "HEART" },
+      "stale-date": 1_800_000_300,
+      alert: { title: "Sam", body: "Sent you love ❤️", sound: "default" },
+      "attributes-type": "ReactionActivityAttributes",
+      attributes: { partnerName: "Sam" },
+    })
+    const update = reactionLiveActivityConfiguration({ ...message, liveActivityToken: "activity-token", event: "update" }, now)
+    expect(update.payload?.aps).not.toHaveProperty("attributes")
+    expect(update.payload?.aps).not.toHaveProperty("attributes-type")
+    expect(update.payload?.aps.event).toBe("update")
   })
 })

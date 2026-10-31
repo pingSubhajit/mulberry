@@ -1,5 +1,55 @@
 import type { Database } from "../db/database.js"
-import type { PushSendResult, PushSender } from "./types.js"
+import type { DeviceTokenRow } from "../../contracts/dbRecords.js"
+import type { ReactionType } from "../../contracts/reactions.js"
+import type { PushRecipients, PushSendResult, PushSender, ReactionActivityContentState } from "./types.js"
+
+type DeviceTokenTarget = Pick<DeviceTokenRow, "token" | "platform">
+
+type LiveActivityDevice = Pick<DeviceTokenRow, "user_id" | "token" | "live_activity_start_token" | "live_activity_token">
+
+export interface ReactionCounts {
+  heartCount: number
+  hugCount: number
+  kissCount: number
+  smileCount: number
+  laughCount: number
+  sparkleCount: number
+}
+
+const REACTION_COUNT_KEYS: Record<ReactionType, keyof ReactionCounts> = {
+  HEART: "heartCount",
+  HUG: "hugCount",
+  KISS: "kissCount",
+  SMILE: "smileCount",
+  LAUGH: "laughCount",
+  SPARKLE: "sparkleCount",
+}
+
+/** As the iPhone words it when it shows the activity itself: "Sent you love ❤️". */
+const REACTION_WORDS: Record<ReactionType, string> = {
+  HEART: "love ❤️",
+  HUG: "hugs 🤗",
+  KISS: "kisses 💋",
+  SMILE: "smiles 😊",
+  LAUGH: "laughs 😂",
+  SPARKLE: "sparkles ✨",
+}
+
+/** Only the kinds that arrived, as the iPhone keys them. */
+function reactionActivityContent(latest: ReactionType, counts: ReactionCounts): ReactionActivityContentState {
+  const arrived: ReactionActivityContentState["counts"] = {}
+  for (const [type, key] of Object.entries(REACTION_COUNT_KEYS) as [ReactionType, keyof ReactionCounts][]) {
+    if (counts[key] > 0) arrived[type] = counts[key]
+  }
+  return { counts: arrived, latest }
+}
+
+function pushRecipients(rows: DeviceTokenTarget[]): PushRecipients {
+  return {
+    tokens: rows.map((row) => row.token),
+    macTokens: rows.filter((row) => row.platform === "MACOS").map((row) => row.token),
+  }
+}
 
 interface PendingCanvasUpdate {
   pairSessionId: string
@@ -137,16 +187,12 @@ export class PushDispatchService {
     pairSessionId: string,
     actorUserId: string,
     generation: number,
-    counts: {
-      heartCount: number
-      hugCount: number
-      kissCount: number
-      smileCount: number
-      laughCount: number
-      sparkleCount: number
-    },
+    latest: ReactionType,
+    counts: ReactionCounts,
   ): void {
-    void this.sendReaction(pairSessionId, actorUserId, generation, counts)
+    void this.sendReaction(pairSessionId, actorUserId, generation, counts).then(() =>
+      this.showReactionLiveActivities(pairSessionId, actorUserId, latest, counts),
+    )
   }
 
   enqueueCanvasNudge(
@@ -228,7 +274,7 @@ export class PushDispatchService {
     }
     this.pendingByPairSession.delete(pairSessionId)
 
-    const tokens = await this.activePeerTokens(pending.pairSessionId, pending.actorUserId)
+    const { tokens, macTokens } = await this.activePeerTokens(pending.pairSessionId, pending.actorUserId)
     if (tokens.length === 0) {
       console.info("[push] no active peer tokens", {
         pairSessionId: pending.pairSessionId,
@@ -250,6 +296,7 @@ export class PushDispatchService {
     try {
       result = await this.sender.send({
         tokens,
+          macTokens,
         data: {
           type: "CANVAS_UPDATED",
           pairSessionId: pending.pairSessionId,
@@ -288,7 +335,7 @@ export class PushDispatchService {
     actorUserId: string,
     actorDisplayName: string,
   ): Promise<void> {
-    const tokens = await this.activePeerTokens(pairSessionId, actorUserId)
+    const { tokens, macTokens } = await this.activePeerTokens(pairSessionId, actorUserId)
     if (tokens.length === 0) {
       console.info("[push] no active peer tokens for pairing confirmation", {
         pairSessionId,
@@ -307,6 +354,7 @@ export class PushDispatchService {
     try {
       result = await this.sender.send({
         tokens,
+          macTokens,
         data: {
           type: "PAIRING_CONFIRMED",
           pairSessionId,
@@ -344,7 +392,7 @@ export class PushDispatchService {
     actorUserId: string,
     actorDisplayName: string,
   ): Promise<void> {
-    const tokens = await this.activeUserTokens(recipientUserId)
+    const { tokens, macTokens } = await this.activeUserTokens(recipientUserId)
     if (tokens.length === 0) {
       console.info("[push] no active tokens for pairing disconnected", {
         pairSessionId,
@@ -365,6 +413,7 @@ export class PushDispatchService {
     try {
       result = await this.sender.send({
         tokens,
+          macTokens,
         data: {
           type: "PAIRING_DISCONNECTED",
           pairSessionId,
@@ -408,7 +457,7 @@ export class PushDispatchService {
       wallpaperSelectedOnLock: boolean
     },
   ): Promise<void> {
-    const tokens = await this.activePeerTokens(pairSessionId, actorUserId)
+    const { tokens, macTokens } = await this.activePeerTokens(pairSessionId, actorUserId)
     if (tokens.length === 0) {
       console.info("[push] no active peer tokens for partner visibility", {
         pairSessionId,
@@ -428,6 +477,7 @@ export class PushDispatchService {
     try {
       result = await this.sender.send({
         tokens,
+          macTokens,
         data: {
           type: "PARTNER_VISIBILITY_CHANGED",
           pairSessionId,
@@ -467,16 +517,9 @@ export class PushDispatchService {
     pairSessionId: string,
     actorUserId: string,
     generation: number,
-    counts: {
-      heartCount: number
-      hugCount: number
-      kissCount: number
-      smileCount: number
-      laughCount: number
-      sparkleCount: number
-    },
+    counts: ReactionCounts,
   ): Promise<void> {
-    const tokens = await this.activePeerTokens(pairSessionId, actorUserId)
+    const { tokens, macTokens } = await this.activePeerTokens(pairSessionId, actorUserId)
     const totalCount =
       counts.heartCount +
       counts.hugCount +
@@ -503,6 +546,7 @@ export class PushDispatchService {
     try {
       result = await this.sender.send({
         tokens,
+          macTokens,
         data: {
           type: "REACTION",
           pairSessionId,
@@ -539,6 +583,72 @@ export class PushDispatchService {
     }
   }
 
+  /** The batch in each of the recipient's iPhones' Dynamic Island and Lock Screen: the activity on
+   * screen is updated, or one is started. An update that is refused means that activity has
+   * ended, so a new one starts. */
+  private async showReactionLiveActivities(
+    pairSessionId: string,
+    actorUserId: string,
+    latest: ReactionType,
+    counts: ReactionCounts,
+  ): Promise<void> {
+    try {
+      const devices = await this.db.query<LiveActivityDevice>(
+        `
+        SELECT dt.user_id, dt.token, dt.live_activity_start_token, dt.live_activity_token
+        FROM pair_sessions ps
+        JOIN device_tokens dt
+          ON dt.user_id = CASE
+            WHEN ps.user_one_id = $2 THEN ps.user_two_id
+            ELSE ps.user_one_id
+          END
+        WHERE ps.id = $1
+          AND ($2 = ps.user_one_id OR $2 = ps.user_two_id)
+          AND dt.platform = 'IOS'
+          AND dt.revoked_at IS NULL
+          AND (dt.live_activity_start_token IS NOT NULL OR dt.live_activity_token IS NOT NULL)
+        `,
+        [pairSessionId, actorUserId],
+      )
+      if (devices.rows.length === 0) return
+      const partnerName = await this.lookupPartnerDisplayName(devices.rows[0].user_id)
+      const content = {
+        partnerName,
+        contentState: reactionActivityContent(latest, counts),
+        alert: { title: partnerName, body: `Sent you ${REACTION_WORDS[latest]}` },
+      }
+      for (const device of devices.rows) {
+        if (device.live_activity_token) {
+          const updated = await this.sender.sendLiveActivity({
+            ...content,
+            token: device.token,
+            liveActivityToken: device.live_activity_token,
+            event: "update",
+          })
+          if (updated) continue
+          await this.db.query(
+            `UPDATE device_tokens SET live_activity_token = NULL WHERE token = $1 AND live_activity_token = $2`,
+            [device.token, device.live_activity_token],
+          )
+        }
+        if (device.live_activity_start_token) {
+          await this.sender.sendLiveActivity({
+            ...content,
+            token: device.token,
+            liveActivityToken: device.live_activity_start_token,
+            event: "start",
+          })
+        }
+      }
+    } catch (error) {
+      console.error("[push] reaction live activity failed", {
+        pairSessionId,
+        actorUserId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   dispose(): void {
     this.timers.forEach((timer) => clearTimeout(timer))
     this.timers.clear()
@@ -553,10 +663,10 @@ export class PushDispatchService {
     }
   }
 
-  private async activePeerTokens(pairSessionId: string, actorUserId: string): Promise<string[]> {
-    const rows = await this.db.query<{ token: string }>(
+  private async activePeerTokens(pairSessionId: string, actorUserId: string): Promise<PushRecipients> {
+    const rows = await this.db.query<DeviceTokenTarget>(
       `
-      SELECT dt.token
+      SELECT dt.token, dt.platform
       FROM pair_sessions ps
       JOIN device_tokens dt
         ON dt.user_id = CASE
@@ -569,20 +679,20 @@ export class PushDispatchService {
       `,
       [pairSessionId, actorUserId],
     )
-    return rows.rows.map((row) => row.token)
+    return pushRecipients(rows.rows)
   }
 
-  private async activeUserTokens(userId: string): Promise<string[]> {
-    const rows = await this.db.query<{ token: string }>(
+  private async activeUserTokens(userId: string): Promise<PushRecipients> {
+    const rows = await this.db.query<DeviceTokenTarget>(
       `
-      SELECT token
+      SELECT token, platform
       FROM device_tokens
       WHERE user_id = $1
         AND revoked_at IS NULL
       `,
       [userId],
     )
-    return rows.rows.map((row) => row.token)
+    return pushRecipients(rows.rows)
   }
 
   private async revokeTokens(tokens: string[]): Promise<void> {
@@ -648,7 +758,7 @@ export class PushDispatchService {
         const latestRevision = Number(item.latest_revision)
         if (!Number.isFinite(latestRevision) || latestRevision <= 0) continue
 
-        const tokens = await this.activePeerTokens(pairSessionId, actorUserId)
+        const { tokens, macTokens } = await this.activePeerTokens(pairSessionId, actorUserId)
         if (tokens.length === 0) {
           console.info("[push] no active peer tokens for canvas nudge", {
             pairSessionId,
@@ -670,6 +780,7 @@ export class PushDispatchService {
         try {
           result = await this.sender.send({
             tokens,
+            macTokens,
             data: {
               type: "CANVAS_NUDGE",
               pairSessionId,
@@ -818,7 +929,7 @@ export class PushDispatchService {
         const userId = item.user_id
         const reminderCount = Number(item.reminder_count) || 0
 
-        const tokens = await this.activeUserTokens(userId)
+        const { tokens, macTokens } = await this.activeUserTokens(userId)
         if (tokens.length === 0) {
           console.info("[push] no active tokens for draw reminder", {
             pairSessionId,
@@ -840,6 +951,7 @@ export class PushDispatchService {
         try {
           result = await this.sender.send({
             tokens,
+            macTokens,
             data: {
               type: "DRAW_REMINDER",
               pairSessionId,

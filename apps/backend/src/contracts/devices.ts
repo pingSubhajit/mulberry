@@ -16,3 +16,12 @@ export interface DeviceTokenRecord {
   lastSeenAt: string
   revokedAt: string | null
 }
+
+/** An iPhone's reactions Live Activity tokens, sent as they change. `null` clears one; an absent one
+ * stays as it was. */
+export interface UpdateLiveActivityTokensRequest {
+  /** The FCM registration token the device registered. */
+  token: string
+  pushToStartToken?: string | null
+  activityPushToken?: string | null
+}

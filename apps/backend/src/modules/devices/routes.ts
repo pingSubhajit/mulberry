@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { requireBearerToken } from "../../infra/http/auth.js"
 import type { DevicesService } from "./service.js"
-import type { DevicePlatform } from "../../contracts/devices.js"
+import type { DevicePlatform, UpdateLiveActivityTokensRequest } from "../../contracts/devices.js"
 
 export function registerDeviceRoutes(app: FastifyInstance, service: DevicesService): void {
   app.post("/devices/fcm-token", async (request) => {
@@ -15,6 +15,16 @@ export function registerDeviceRoutes(app: FastifyInstance, service: DevicesServi
       platform: body.platform ?? "ANDROID",
       appEnvironment: body.appEnvironment ?? "",
     })
+  })
+
+  app.put("/devices/live-activity", async (request, reply) => {
+    const body = request.body as Partial<UpdateLiveActivityTokensRequest>
+    await service.updateLiveActivityTokens(requireBearerToken(request), {
+      token: body.token ?? "",
+      pushToStartToken: body.pushToStartToken,
+      activityPushToken: body.activityPushToken,
+    })
+    reply.code(204).send()
   })
 
   app.delete("/devices/fcm-token", async (request, reply) => {
