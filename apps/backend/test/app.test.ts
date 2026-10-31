@@ -1278,6 +1278,171 @@ describe("Mulberry backend", () => {
     expect(secondDisconnect.statusCode).toBe(400)
   })
 
+  it("deletes an account, unpairs the partner and lets the same Google account start over", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-token")
+    const draw = await app.inject({
+      method: "POST",
+      url: "/canvas/ops/batch",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        batchId: "batch-before-delete",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [clearCanvasOperation("client-op-before-delete")],
+      },
+    })
+    expect(draw.statusCode).toBe(200)
+
+    const deletion = await app.inject({
+      method: "DELETE",
+      url: "/me",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(deletion.statusCode).toBe(204)
+
+    const staleBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(staleBootstrap.statusCode).toBe(401)
+    const staleRefresh = await app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      payload: { refreshToken: inviter.refreshToken },
+    })
+    expect(staleRefresh.statusCode).toBe(401)
+
+    const recipientBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(recipientBootstrap.statusCode).toBe(200)
+    expect(recipientBootstrap.json().pairingStatus).toBe("UNPAIRED")
+    expect(recipientBootstrap.json().userDisplayName).toBe("Ankita")
+    expect(recipientBootstrap.json().partnerDisplayName).toBeNull()
+    expect(recipientBootstrap.json().anniversaryDate).toBeNull()
+
+    await eventually(() => pushSender.sentMessages.length === 1)
+    expect(pushSender.sentMessages[0]).toMatchObject({
+      tokens: ["recipient-token"],
+      data: {
+        type: "PAIRING_DISCONNECTED",
+        pairSessionId: inviter.pairSessionId,
+        actorUserId: inviter.userId,
+        actorDisplayName: "Subhajit",
+      },
+    })
+
+    const leftovers = await db.query<{ count: string | number }>(
+      `
+      SELECT
+        (SELECT COUNT(*) FROM users WHERE id = $1)
+        + (SELECT COUNT(*) FROM sessions WHERE user_id = $1)
+        + (SELECT COUNT(*) FROM user_profiles WHERE user_id = $1)
+        + (SELECT COUNT(*) FROM invites WHERE inviter_user_id = $1 OR recipient_user_id = $1)
+        + (SELECT COUNT(*) FROM canvas_operations WHERE pair_session_id = $2)
+        + (SELECT COUNT(*) FROM pair_sessions WHERE id = $2) AS count
+      `,
+      [inviter.userId, inviter.pairSessionId],
+    )
+    expect(Number(leftovers.rows[0].count)).toBe(0)
+
+    const fresh = await signIn("subhajit@elaris.dev", "Subhajit")
+    expect(fresh.userId).not.toBe(inviter.userId)
+    const freshBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(fresh.accessToken),
+    })
+    expect(freshBootstrap.json().onboardingCompleted).toBe(false)
+    expect(freshBootstrap.json().pairingStatus).toBe("UNPAIRED")
+  })
+
+  it("deletes an unpaired account without pushing anyone", async () => {
+    const auth = await signIn("subhajit@elaris.dev", "Subhajit")
+    await completeProfile(auth.accessToken, "Subhajit", "Ankita", "2026-01-01")
+    await app.inject({ method: "POST", url: "/invites", headers: bearer(auth.accessToken) })
+
+    const deletion = await app.inject({
+      method: "DELETE",
+      url: "/me",
+      headers: bearer(auth.accessToken),
+    })
+    expect(deletion.statusCode).toBe(204)
+
+    const users = await db.query(`SELECT id FROM users WHERE id = $1`, [auth.userId])
+    expect(users.rows).toHaveLength(0)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(pushSender.sentMessages).toHaveLength(0)
+  })
+
+  it("refuses to delete an account without a valid session", async () => {
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/me",
+      headers: bearer("not-a-session"),
+    })
+    expect(response.statusCode).toBe(401)
+  })
+
+  it("removes the deleted user's photos but keeps the partner's own photo", async () => {
+    const { inviter, recipient } = await pairUsers()
+    const uploadPhoto = async (accessToken: string) => {
+      const upload = createImageUploadPayload()
+      const response = await app.inject({
+        method: "PUT",
+        url: "/me/profile-photo",
+        headers: { ...bearer(accessToken), "content-type": upload.contentType },
+        payload: upload.body,
+      })
+      expect(response.statusCode).toBe(200)
+      return String(response.json().userPhotoUrl).replace("https://storage.example.test/", "")
+    }
+    const inviterPhoto = await uploadPhoto(inviter.accessToken)
+    const recipientPhoto = await uploadPhoto(recipient.accessToken)
+    wallpaperStorage.removedPaths.length = 0
+
+    const deletion = await app.inject({
+      method: "DELETE",
+      url: "/me",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(deletion.statusCode).toBe(204)
+    expect(wallpaperStorage.removedPaths).toEqual([inviterPhoto])
+
+    const recipientBootstrap = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: bearer(recipient.accessToken),
+    })
+    expect(recipientBootstrap.json().userPhotoUrl).toBe(`https://storage.example.test/${recipientPhoto}`)
+  })
+
+  it("closes the pair's canvas sync sockets when an account is deleted", async () => {
+    const { inviter, recipient } = await pairUsers()
+    const socket = await app.injectWS("/canvas/sync")
+    socket.send(
+      JSON.stringify({
+        type: "HELLO",
+        accessToken: recipient.accessToken,
+        pairSessionId: recipient.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }),
+    )
+    expect((await nextWsJson(socket)).type).toBe("READY")
+    const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()))
+
+    const deletion = await app.inject({
+      method: "DELETE",
+      url: "/me",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(deletion.statusCode).toBe(204)
+    await closed
+  })
+
   it("requires fresh partner details before inviting after disconnect", async () => {
     const { inviter } = await pairUsers()
 

@@ -46,6 +46,20 @@ export class CanvasSyncHub {
     })
   }
 
+  /**
+   * Closes every socket on a pair that no longer exists. Clients reconnect, find they are no longer
+   * paired in bootstrap, and stop syncing.
+   */
+  closePairSession(pairSessionId: string): void {
+    const connections = this.connectionsByPairSession.get(pairSessionId)
+    if (!connections) return
+    this.connectionsByPairSession.delete(pairSessionId)
+    for (const socket of connections) {
+      this.contexts.delete(socket)
+      socket.close(1000, "pair_session_ended")
+    }
+  }
+
   private async handleMessage(socket: WebSocket, raw: string): Promise<void> {
     let message: ClientMessage
     try {

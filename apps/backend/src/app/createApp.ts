@@ -47,6 +47,8 @@ import { registerWallpaperRoutes } from "../modules/wallpapers/routes.js"
 import { registerHealthRoutes } from "../modules/health/routes.js"
 import { FeedbackService } from "../modules/feedback/service.js"
 import { registerFeedbackRoutes } from "../modules/feedback/routes.js"
+import { AccountService } from "../modules/account/service.js"
+import { registerAccountRoutes } from "../modules/account/routes.js"
 
 export interface CreateAppOptions {
   config?: AppConfig
@@ -111,6 +113,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const canvasService = new CanvasService(db, streakService, pushDispatchService, analytics)
   const canvasSyncHub = new CanvasSyncHub(canvasService)
   const feedbackService = new FeedbackService(db, config.cannySsoPrivateKey)
+  const accountService = new AccountService(db, pushDispatchService, storage, canvasSyncHub)
 
   const app = Fastify({ logger: false })
   await app.register(fastifyCors, {
@@ -155,6 +158,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   registerStickerRoutes(app, stickerCatalogService, stickerStorage)
   registerCanvasSyncRoutes(app, canvasSyncHub)
   registerFeedbackRoutes(app, feedbackService)
+  registerAccountRoutes(app, accountService)
   registerHealthRoutes(app)
 
   return app
