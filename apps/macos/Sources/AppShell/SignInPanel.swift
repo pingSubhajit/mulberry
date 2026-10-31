@@ -157,7 +157,8 @@ private extension View {
 }
 
 /// Near-black, lifted a little in the middle. Almost opaque: the desktop is only a hint through it.
-private struct SignInBackdrop: View {
+/// Onboarding draws it too, as the sign-in window turns into the phone.
+struct SignInBackdrop: View {
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size

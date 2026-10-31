@@ -26,7 +26,10 @@ final class OnboardingController {
 
     var isShowing: Bool { window != nil }
 
-    func show(authController: AuthSessionController, ended: @escaping (OnboardingFlow.Ending) -> Void) {
+    /// - Parameter source: the window an account's setup began in, which turns into the phone, and
+    ///   whether it was the sign-in window.
+    func show(authController: AuthSessionController, from source: (window: NSWindow, signIn: Bool)? = nil,
+              ended: @escaping (OnboardingFlow.Ending) -> Void) {
         guard window == nil else { return }
         // Tangerine and Poppins, from the app's fonts.
         CanvasFonts.registerBundledFonts()
@@ -71,6 +74,13 @@ final class OnboardingController {
         // Found as the phone leaves: the icon may not be placed yet at launch.
         flow.locateIcon = { [weak self] in self?.iconPoint() }
         flow.screenHeight = frame.height
+        // A window on another screen fades out instead of turning into this screen's phone.
+        if let source, source.window.isVisible, frame.intersects(source.window.frame) {
+            let window = source.window.frame
+            flow.begin(from: OnboardingFlow.Shell(
+                frame: CGRect(x: window.minX - frame.minX, y: frame.maxY - window.maxY, width: window.width, height: window.height),
+                signIn: source.signIn))
+        }
         Task { await flow.run() }
     }
 

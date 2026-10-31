@@ -19,6 +19,11 @@ struct OnboardingView: View {
                 if flow.scene == .intro {
                     IntroScene(flow: flow, authController: authController, center: center, height: size.height)
                 }
+                // The window an account's setup began in, turning into the phone.
+                if let shell = flow.shell {
+                    WindowShell(shell: shell, target: Self.phoneFrame(center: center, scale: phoneScale),
+                                targetRadius: Self.phoneRadius * phoneScale, morph: flow.shellMorph)
+                }
                 // The phone stays through its flight into the menu bar, under what comes next.
                 if flow.scene == .phone || flow.phoneFlying {
                     phone(scale: phoneScale, center: center)
@@ -74,6 +79,15 @@ struct OnboardingView: View {
         min(1.4, max(0.8, size.height * 0.74 / phoneHeight))
     }
 
+    /// The phone's outer corners, round its bezel.
+    static let phoneRadius = LockScreenView.screenRadius + LockScreenView.bezel
+
+    /// The phone itself, without the room for its shadow: its middle is the screen's.
+    static func phoneFrame(center: CGPoint, scale: CGFloat) -> CGRect {
+        let size = CGSize(width: (LockScreenView.screen.width + LockScreenView.bezel * 2) * scale, height: phoneHeight * scale)
+        return CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
+    }
+
     private func phone(scale: CGFloat, center: CGPoint) -> some View {
         // The panel holds room for the phone's shadow, more below it than above: its middle sits
         // that much lower than the phone's.
@@ -91,8 +105,8 @@ struct OnboardingView: View {
             .frame(width: LockScreenView.panelSize.width, height: LockScreenView.panelSize.height)
             // One picture as it fades, so the screens inside do not show through each other.
             .compositingGroup()
-            .scaleEffect((away ? 0.03 : flow.phoneShown ? 1 : 1.05) * scale)
-            .blur(radius: flow.phoneShown || away ? 0 : 8)
+            .scaleEffect((away ? 0.03 : flow.phoneShown || flow.formsFromWindow ? 1 : 1.05) * scale)
+            .blur(radius: flow.phoneShown || away || flow.formsFromWindow ? 0 : 8)
             .opacity(away ? 0 : flow.phoneShown ? 1 : 0)
             .position(x: away ? target.x : center.x, y: away ? target.y : center.y + panelOffset * scale)
     }
@@ -147,6 +161,43 @@ struct OnboardingView: View {
         .glassEffect(.clear.interactive(), in: .circle)
         .help(flow.muted ? "Play music" : "Mute music")
         .accessibilityLabel(flow.muted ? "Play music" : "Mute music")
+    }
+}
+
+/// The window an account's setup began in, as it turns into the phone: it draws itself from the
+/// window's frame and corners into the phone's, its contents giving way to the phone's black. The
+/// sign-in window's dark is drawn again here; the canvas can't be, so the canvas window fades away
+/// behind a shape darkening out of it.
+private struct WindowShell: View {
+    let shell: OnboardingFlow.Shell
+    let target: CGRect
+    let targetRadius: CGFloat
+    let morph: CGFloat
+
+    /// A macOS 26 window's corners: tighter without a toolbar, as the sign-in window has none.
+    private var windowRadius: CGFloat { shell.signIn ? 16 : 26 }
+
+    var body: some View {
+        let from = shell.frame
+        let frame = CGRect(x: from.minX + (target.minX - from.minX) * morph,
+                           y: from.minY + (target.minY - from.minY) * morph,
+                           width: from.width + (target.width - from.width) * morph,
+                           height: from.height + (target.height - from.height) * morph)
+        let shape = RoundedRectangle(cornerRadius: windowRadius + (targetRadius - windowRadius) * morph, style: .continuous)
+        ZStack {
+            Color.black
+            if shell.signIn {
+                SignInBackdrop().opacity(1 - morph)
+            }
+        }
+        .opacity(shell.signIn ? 1 : morph)
+        .frame(width: frame.width, height: frame.height)
+        .clipShape(shape)
+        .overlay { shape.strokeBorder(.white.opacity(0.16 * morph), lineWidth: 1) }
+        .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
+        .position(x: frame.midX, y: frame.midY)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

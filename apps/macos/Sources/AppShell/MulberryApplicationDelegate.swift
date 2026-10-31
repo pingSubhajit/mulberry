@@ -190,6 +190,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 self.refreshStatusMenu()
                 self.bindReactions()
                 self.updatePartnerWaiting()
+                self.considerSetup()
             }
         }
         // The drawing changes with every batch of points; the connection far less often.
@@ -236,6 +237,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     /// In the Dock while a window is open, or always when Settings says so.
     private func updateActivationPolicy() {
         let windowOpen = mainWindowController?.window?.isVisible == true || settingsWindowController?.isVisible == true
+            || onboarding?.isShowing == true
         let policy: NSApplication.ActivationPolicy = preferences.showsInDock || windowOpen ? .regular : .accessory
         if NSApp.activationPolicy() != policy { NSApp.setActivationPolicy(policy) }
     }
@@ -507,20 +509,32 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         default: break
         }
         #endif
-        guard !defaults.bool(forKey: OnboardingProgress.completedKey) else { return }
+        guard !defaults.bool(forKey: OnboardingProgress.completedKey) else {
+            #if DEBUG
+            startSetupPreviewFromWindow()
+            #endif
+            return considerSetup()
+        }
         if !signedIn {
             startOnboarding(.intro)
         } else if defaults.bool(forKey: OnboardingProgress.startedKey) {
             startOnboarding(.phone)
         } else {
             defaults.set(true, forKey: OnboardingProgress.completedKey)
+            considerSetup()
         }
     }
 
-    private func startOnboarding(_ start: OnboardingFlow.Start) {
+    /// - Parameter fromWindow: an account's setup turns the open window into the phone, which
+    ///   goes once the phone's shell has covered it.
+    private func startOnboarding(_ start: OnboardingFlow.Start, fromWindow: Bool = false) {
         guard onboarding == nil else { return }
         lockScreen.close()
-        mainWindowController?.close()
+        let window = mainWindowController?.window
+        let source = fromWindow ? window.map { (window: $0, signIn: windowState.showsSignIn) } : nil
+        if source == nil {
+            mainWindowController?.close()
+        }
         if case .partnerJoined = start {} else { UserDefaults.standard.set(true, forKey: OnboardingProgress.startedKey) }
         let flow = OnboardingFlow(start: start, authController: authController, appStateController: appStateController,
                                   syncController: syncController, launchAtLogin: launchAtLogin, deviceID: store.installationID)
@@ -531,11 +545,12 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             flow.abandon()
             controller.close()
             onboarding = nil
-            startOnboarding(.intro)
+            startOnboarding(start == .setup ? .setup : .intro)
         }
         #endif
-        controller.show(authController: authController) { [unowned self] ending in
+        controller.show(authController: authController, from: source) { [unowned self] ending in
             onboarding = nil
+            if start == .setup { setupEnded = setupSignature }
             if case .partnerJoined = start {} else { UserDefaults.standard.set(true, forKey: OnboardingProgress.completedKey) }
             if appStateController.loadState.bootstrap?.isPaired == true { partnerArrival.welcomed() }
             updatePartnerWaiting()
@@ -550,7 +565,100 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 break
             }
         }
+        // The sign-in window goes once its likeness covers it; the canvas window fades as the
+        // phone's shape darkens out of it.
+        if let source {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (source.signIn ? 0.15 : 0.05)) { [weak self] in
+                self?.mainWindowController?.closeAfterHandOff(fading: !source.signIn)
+            }
+        }
     }
+
+    // MARK: Setting up a later account
+
+    /// The account as it stood when its setup last ended. Should the server still say it needs
+    /// setting up, it is not set up again by itself until Mulberry is opened, so nothing loops.
+    private var setupEnded: String?
+
+    private var setupSignature: String? {
+        guard let bootstrap = appStateController.loadState.bootstrap, let user = bootstrap.userId else { return nil }
+        return [user, bootstrap.pairingStatus, String(bootstrap.onboardingCompleted),
+                bootstrap.partnerDisplayName ?? "", bootstrap.anniversaryDate ?? ""].joined(separator: "|")
+    }
+
+    /// Whether the signed-in account needs the phone before Mulberry's window is any use to it.
+    private var accountNeedsSetup: Bool {
+        guard authController.state.isSignedIn, let bootstrap = appStateController.loadState.bootstrap else { return false }
+        #if DEBUG
+        if let preview = setupPreview { return !preview.shown }
+        #endif
+        return OnboardingFlow.needsSetup(bootstrap)
+    }
+
+    /// After the first run, an account that is not ready, new, invited, or without its partner's
+    /// details, is set up on the phone as soon as it is known: from the window, if one is open.
+    /// The sign-in window hands over itself, once its welcome has gone.
+    private func considerSetup() {
+        guard onboarding == nil, onboardingConsidered,
+              UserDefaults.standard.bool(forKey: OnboardingProgress.completedKey),
+              !overlayController.isQuickDrawActive, accountNeedsSetup else { return }
+        let windowOpen = mainWindowController?.window?.isVisible == true
+        if windowOpen, windowState.showsSignIn { return }
+        #if DEBUG
+        if setupPreview?.holding == true { return }
+        #endif
+        guard setupSignature != setupEnded || setupSignature == nil else { return }
+        startSetup(fromWindow: windowOpen)
+    }
+
+    private func startSetup(fromWindow: Bool) {
+        #if DEBUG
+        setupPreview?.shown = true
+        #endif
+        startOnboarding(.setup, fromWindow: fromWindow)
+    }
+
+    /// The sign-in window, signed in: the phone takes over from it when the account needs setting up.
+    private func handOffSignIn() -> Bool {
+        guard onboarding == nil, accountNeedsSetup else { return false }
+        startSetup(fromWindow: true)
+        return true
+    }
+
+    #if DEBUG
+    /// `-setupPreview YES` treats the signed-in account, once, as one the phone sets up: from
+    /// nothing as Mulberry opens; from the sign-in window with `-signInPreview YES
+    /// -signInPreviewAuto YES` as its pretend sign-in ends; from the canvas window, a moment after
+    /// it opens, with `-setupPreviewWindow YES`. Add `-onboardingScreen profile` to send nothing.
+    private final class SetupPreview {
+        var shown = false
+        var holding = false
+    }
+
+    private lazy var setupPreview: SetupPreview? = UserDefaults.standard.bool(forKey: "setupPreview") ? SetupPreview() : nil
+
+    /// Opens the window the preview starts from: the sign-in window hands over by itself as its
+    /// pretend sign-in ends; the canvas window turns into the phone a moment after it opens.
+    private func startSetupPreviewFromWindow() {
+        guard let preview = setupPreview else { return }
+        let signIn = UserDefaults.standard.bool(forKey: "signInPreview")
+        guard signIn || UserDefaults.standard.bool(forKey: "setupPreviewWindow") else { return }
+        preview.holding = true
+        // Opened as the window it is, rather than redirected to the phone.
+        preview.shown = true
+        showMainWindow()
+        preview.shown = false
+        guard !signIn else {
+            preview.holding = false
+            return
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            preview.holding = false
+            self?.considerSetup()
+        }
+    }
+    #endif
 
     /// The partner joined since onboarding: the two photos, then Quick Draw or the window.
     private func showPartnerWelcome(then ending: OnboardingFlow.Ending) {
@@ -580,8 +688,9 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     private func updatePartnerWaiting() {
         let bootstrap = appStateController.loadState.bootstrap
         let signedIn = authController.state.isSignedIn
+        let ready = bootstrap.map { !OnboardingFlow.needsSetup($0) } ?? false
         invite.bind(user: signedIn ? bootstrap?.userId : nil,
-                    unpaired: bootstrap?.isPaired == false && bootstrap?.onboardingCompleted == true && bootstrap?.pairingStatus == "UNPAIRED")
+                    unpaired: ready && bootstrap?.isPaired == false && bootstrap?.onboardingCompleted == true && bootstrap?.pairingStatus == "UNPAIRED")
         partnerArrival.update(bootstrap, signedIn: signedIn, onboarding: onboarding?.isShowing == true)
     }
 
@@ -862,6 +971,12 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         if partnerArrival.isPending(appStateController.loadState.bootstrap) {
             return showPartnerWelcome(then: .openApp)
         }
+        // An account not ready for the window is set up on the phone instead, even after a setup
+        // that ended with the server still unsure.
+        if onboardingConsidered, UserDefaults.standard.bool(forKey: OnboardingProgress.completedKey), accountNeedsSetup,
+           !(mainWindowController?.window?.isVisible == true) {
+            return startSetup(fromWindow: false)
+        }
         if mainWindowController == nil {
             mainWindowController = MainWindowController(
                 windowState: windowState,
@@ -879,6 +994,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             ) { [weak self] in
                 self?.returnToAccessoryMode()
             }
+            mainWindowController?.handOff = { [unowned self] in handOffSignIn() }
         }
 
         windowState.showsStreak = showingStreak
@@ -1090,6 +1206,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             turning = Task { [weak self] in
                 if animated { try? await Task.sleep(for: .seconds(0.2)) }
                 guard let self, !Task.isCancelled else { return }
+                // An account to set up: the window turns into the phone instead.
+                if handOff?() == true { return }
                 shape(false, animated: animated)
                 if animated { try? await Task.sleep(for: .seconds(Self.turnDuration)) }
                 guard !Task.isCancelled else { return }
@@ -1098,6 +1216,32 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 withAnimation(.easeOut(duration: 0.35)) { windowState.showsSignIn = false }
             }
         }
+    }
+
+    /// Asked as the sign-in window's welcome leaves: whether the phone takes over from here.
+    var handOff: (() -> Bool)?
+
+    /// The phone has taken over from the window it turned out of: the window goes, fading or at
+    /// once, and becomes the canvas's shape again for next time.
+    func closeAfterHandOff(fading: Bool) {
+        guard let window else { return }
+        if fading, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.45
+                window.animator().alphaValue = 0
+            } completionHandler: {
+                MainActor.assumeIsolated {
+                    window.close()
+                    window.alphaValue = 1
+                }
+            }
+        } else {
+            window.close()
+        }
+        guard windowState.showsSignIn else { return }
+        windowState.showsSignIn = false
+        windowState.signInLeaving = false
+        shape(false, animated: false)
     }
 
     /// Sizes the window for either shape about its middle, kept on its screen.

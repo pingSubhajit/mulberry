@@ -19,6 +19,10 @@ import UserNotifications
 /// person still waiting for their partner is told they will hear when the partner joins.
 ///
 /// A soft acoustic guitar plays throughout and fades as Quick Draw opens.
+///
+/// An account signed in later that is not ready for Mulberry's window, new, invited, or without
+/// the partner's details a code needs, is set up on the same phone: the window it signed in from
+/// turns into the phone, bare and quiet, without the film, the hearts or the music.
 @MainActor
 final class OnboardingFlow: ObservableObject {
     enum Scene: Equatable { case intro, phone, waiting, welcome }
@@ -35,6 +39,15 @@ final class OnboardingFlow: ObservableObject {
         case phone
         /// The partner has joined since: the two photos alone.
         case partnerJoined(Ending)
+        /// An account to set up after the first run: the phone alone, from the window it was in.
+        case setup
+    }
+
+    /// The window an account's setup began in, as it turns into the phone: where it was, in the
+    /// onboarding window's top-left coordinates, and whether it was the sign-in window.
+    struct Shell: Equatable {
+        let frame: CGRect
+        let signIn: Bool
     }
 
     // The film's state, read by the views.
@@ -72,6 +85,9 @@ final class OnboardingFlow: ObservableObject {
     @Published private(set) var leaving = false
     @Published private(set) var muted = false
     @Published private(set) var musicPlaying = false
+    /// The window turning into the phone, and how far it has turned.
+    @Published private(set) var shell: Shell?
+    @Published private(set) var shellMorph: CGFloat = 0
     /// The screen's height, which sets how far the mark rises.
     var screenHeight: CGFloat = 982
     /// Where the menu bar icon is, in the window, for the phone to fly to.
@@ -144,6 +160,23 @@ final class OnboardingFlow: ObservableObject {
     private var bootstrap: BootstrapState? { appStateController.loadState.bootstrap }
     private var api: BackendClient { authController.api }
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var settingUp: Bool { start == .setup }
+
+    /// An account not ready for Mulberry's window: new, invited by a partner, or without the
+    /// partner's name and anniversary a code needs. The phone sets it up.
+    static func needsSetup(_ bootstrap: BootstrapState) -> Bool {
+        guard !bootstrap.isPaired else { return false }
+        return bootstrap.pairingStatus == "INVITE_PENDING_ACCEPTANCE" || !bootstrap.onboardingCompleted || needsPartnerDetails(bootstrap)
+    }
+
+    /// Where the phone forms from, set before the run.
+    func begin(from shell: Shell?) {
+        self.shell = shell
+        formsFromWindow = shell != nil
+    }
+
+    /// The phone comes through the window that turned into it, at its own size.
+    private(set) var formsFromWindow = false
 
     /// The partner's name as the person wrote it, for the screens that speak of them.
     var partnerDisplayName: String {
@@ -161,8 +194,11 @@ final class OnboardingFlow: ObservableObject {
     // MARK: The film
 
     func run() async {
-        music.start()
-        musicPlaying = music.playing
+        // Setting up a later account is quieter than the first run.
+        if !settingUp {
+            music.start()
+            musicPlaying = music.playing
+        }
         // Everything drawn once hidden, so the first fades run.
         await pause(0.05)
         switch start {
@@ -176,7 +212,14 @@ final class OnboardingFlow: ObservableObject {
                 return await afterSignIn()
             }
             #endif
-            await showPhone(drawn: true)
+            await showPhone(.fadeIn)
+        case .setup:
+            if shell == nil {
+                await show(backdrop: true)
+                await showPhone(.fadeIn)
+            } else {
+                await showPhone(.fromWindow)
+            }
         case let .partnerJoined(ending):
             await loadPhotos()
             await show(backdrop: true)
@@ -261,7 +304,7 @@ final class OnboardingFlow: ObservableObject {
         await pause(0.7)
         await drawHearts()
         await pause(0.5)
-        await showPhone(drawn: false)
+        await showPhone(.aroundHearts)
     }
 
     /// The hearts draw themselves on the desktop, a point at a time.
@@ -285,23 +328,46 @@ final class OnboardingFlow: ObservableObject {
 
     static let desktopScale: CGFloat = 1.5
 
-    /// The phone forms around the hearts, then lights up as a lock screen asking for a swipe.
-    private func showPhone(drawn: Bool) async {
+    /// How the phone arrives: around the hearts just drawn, fading in, or from the window an
+    /// account's setup began in.
+    private enum Entrance { case aroundHearts, fadeIn, fromWindow }
+
+    /// The phone forms, then lights up as a lock screen asking for a swipe.
+    private func showPhone(_ entrance: Entrance) async {
         scene = .phone
-        lock.drawing = OnboardingHearts.image(size: LockScreenView.canvasSize, scale: 4)
+        // A later account's phone is bare: the hearts belong to the first run.
+        lock.drawing = settingUp ? nil : OnboardingHearts.image(size: LockScreenView.canvasSize, scale: 4)
         lock.unlocked = false
         lock.swipe = 0
         // Drawn once hidden first, so it forms rather than appearing whole.
         await pause(0.05)
-        if drawn {
+        switch entrance {
+        case .fadeIn:
             withAnimation(.easeOut(duration: 0.8)) { phoneShown = true }
-        } else {
+        case .aroundHearts:
             withAnimation(.smooth(duration: 1.0)) {
                 heartsShrunk = true
                 phoneShown = true
             }
             await pause(1.0)
             heartsShown = false
+        case .fromWindow:
+            // The desktop darkens as the window draws itself into the phone's shape, then the
+            // phone itself comes through it. With Reduce Motion the window fades into the phone.
+            withAnimation(.easeInOut(duration: 0.9)) { backdropShown = true }
+            if reduceMotion {
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    shellMorph = 1
+                    phoneShown = true
+                }
+                await pause(0.4)
+            } else {
+                withAnimation(.smooth(duration: 0.75)) { shellMorph = 1 }
+                await pause(0.62)
+                withAnimation(.easeOut(duration: 0.3)) { phoneShown = true }
+                await pause(0.3)
+            }
+            shell = nil
         }
         await pause(0.6)
         Task { await loadPhotos() }

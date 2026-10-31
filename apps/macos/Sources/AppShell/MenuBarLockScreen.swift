@@ -376,7 +376,7 @@ struct LockScreenView: View {
     static var panelSize: CGSize {
         CGSize(width: screen.width + (bezel + margin) * 2, height: screen.height + bezel * 2 + topInset + margin)
     }
-    private static let screenRadius: CGFloat = 45
+    static let screenRadius: CGFloat = 45
 
     /// The clock's tint: a deep mulberry that reads on the wallpaper's pale sky, as iOS lets a
     /// lock screen's clock take a colour from its wallpaper.
