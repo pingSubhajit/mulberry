@@ -29,22 +29,6 @@ struct ColourPaletteIcon: View {
     }
 }
 
-private struct ConfirmColourButton: View {
-    let action: () -> Void
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "checkmark")
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 24, height: 24)
-        }
-        .buttonStyle(.glassProminent)
-        .buttonBorderShape(.circle)
-        .tint(MulberryDesign.accent)
-        .accessibilityLabel("Use colour and return to canvas")
-    }
-}
-
 struct CustomColourWell: UIViewRepresentable {
     let color: UInt32
     func makeUIView(context: Context) -> UIColorWell {
@@ -62,48 +46,34 @@ private struct EmbeddedColourPicker: UIViewControllerRepresentable {
     @Binding var color: UInt32
     let onConfirm: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(color: $color) }
+    func makeCoordinator() -> Coordinator { Coordinator(color: $color, onConfirm: onConfirm) }
 
-    func makeUIViewController(context: Context) -> UIViewController {
-        let container = UIViewController()
+    func makeUIViewController(context: Context) -> ColourPickerNavigation {
         let picker = UIColorPickerViewController()
         picker.title = "Custom colour"
         picker.supportsAlpha = false
         picker.selectedColor = UIColor(argb: color)
         picker.delegate = context.coordinator
         context.coordinator.picker = picker
-        container.addChild(picker)
-        container.view.addSubview(picker.view)
-        picker.view.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            picker.view.leadingAnchor.constraint(equalTo: container.view.leadingAnchor),
-            picker.view.trailingAnchor.constraint(equalTo: container.view.trailingAnchor),
-            picker.view.topAnchor.constraint(equalTo: container.view.topAnchor),
-            picker.view.bottomAnchor.constraint(equalTo: container.view.bottomAnchor)
-        ])
-        picker.didMove(toParent: container)
 
-        // Anchor the SwiftUI action inside the native picker's own header.
-        // A SwiftUI overlay on its representable can be laid out in the presenting window.
-        let confirmation = UIHostingController(rootView: ConfirmColourButton(action: onConfirm))
-        confirmation.view.backgroundColor = .clear
-        picker.addChild(confirmation)
-        picker.view.addSubview(confirmation.view)
-        confirmation.view.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            confirmation.view.topAnchor.constraint(equalTo: picker.view.safeAreaLayoutGuide.topAnchor, constant: 16),
-            confirmation.view.trailingAnchor.constraint(equalTo: picker.view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            confirmation.view.widthAnchor.constraint(equalToConstant: 44),
-            confirmation.view.heightAnchor.constraint(equalToConstant: 44)
-        ])
-        confirmation.didMove(toParent: picker)
-        context.coordinator.confirmation = confirmation
-        return container
+        // Inside a navigation controller the picker leaves out its close button, so the
+        // system's Done checkmark takes that place in the bar instead.
+        let confirm = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [coordinator = context.coordinator] _ in
+            coordinator.onConfirm()
+        })
+        confirm.tintColor = UIColor(MulberryDesign.accent)
+        confirm.accessibilityLabel = "Use colour and return to canvas"
+        picker.navigationItem.rightBarButtonItem = confirm
+        // The picker draws the title itself, beside its eyedropper.
+        picker.navigationItem.titleView = UIView()
+        let navigation = ColourPickerNavigation(navigationBarClass: PassThroughNavigationBar.self, toolbarClass: nil)
+        navigation.viewControllers = [picker]
+        return navigation
     }
 
-    func updateUIViewController(_ controller: UIViewController, context: Context) {
+    func updateUIViewController(_ controller: ColourPickerNavigation, context: Context) {
         context.coordinator.color = $color
-        context.coordinator.confirmation?.rootView = ConfirmColourButton(action: onConfirm)
+        context.coordinator.onConfirm = onConfirm
         if context.coordinator.picker?.selectedColor.argb != color {
             context.coordinator.picker?.selectedColor = UIColor(argb: color)
         }
@@ -111,12 +81,41 @@ private struct EmbeddedColourPicker: UIViewControllerRepresentable {
 
     final class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
         var color: Binding<UInt32>
+        var onConfirm: () -> Void
         weak var picker: UIColorPickerViewController?
-        weak var confirmation: UIHostingController<ConfirmColourButton>?
-        init(color: Binding<UInt32>) { self.color = color }
+        init(color: Binding<UInt32>, onConfirm: @escaping () -> Void) {
+            self.color = color
+            self.onConfirm = onConfirm
+        }
 
         func colorPickerViewController(_ viewController: UIColorPickerViewController, didSelect color: UIColor, continuously: Bool) {
             self.color.wrappedValue = color.argb
         }
+    }
+}
+
+/// Lifts the picker under its navigation bar, so the picker's own header (eyedropper and
+/// title) shares one row with the bar's Done checkmark rather than sitting beneath it.
+private final class ColourPickerNavigation: UINavigationController {
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard let picker = viewControllers.first else { return }
+        let inset = -navigationBar.bounds.height
+        if picker.additionalSafeAreaInsets.top != inset {
+            picker.additionalSafeAreaInsets.top = inset
+        }
+    }
+}
+
+/// The bar shares its row with the picker's eyedropper, so it keeps only touches on its buttons.
+private final class PassThroughNavigationBar: UINavigationBar {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        var view = hit
+        while let current = view, current !== self {
+            if current is UIControl { return hit }
+            view = current.superview
+        }
+        return nil
     }
 }
