@@ -7,33 +7,44 @@ import { CONTACT_EMAIL, CONTACT_MAILTO } from "@/lib/constants"
 export const metadata: Metadata = {
   title: "Delete Your Account | Mulberry",
   description:
-    "How to request deletion of your Mulberry account and related app data.",
+    "How to delete your Mulberry account and related app data.",
   alternates: {
     canonical: "/delete-account"
   }
 }
 
-const requestSteps = [
+const inAppSteps = [
+  'On iPhone or iPad, open Settings in Mulberry and tap "Delete your account", below Log Out.',
+  'On Mac, open Mulberry\'s Settings, choose Account, and click "Delete your account", below the Google Account section.',
+  "Confirm. Your account is deleted straight away, and the device signs you out."
+]
+
+const emailSteps = [
   `Email ${CONTACT_EMAIL} from the Google account email address you use with Mulberry.`,
   'Use the subject line "Mulberry account deletion request".',
   "Include the email address on your Mulberry account and, if available, your display name in the app.",
   "Do not send your Google password, device passcode, authentication tokens, or private content.",
-  "Mulberry will review the request, may ask for reasonable verification, and will confirm when the deletion request has been processed."
+  "Mulberry will review the request, may ask for reasonable verification, and will confirm when the deletion has been completed, within 30 days."
 ]
 
 const deletedData = [
-  "Mulberry account and profile records.",
-  "Mulberry-created access sessions, refresh sessions, and authentication state controlled by Mulberry.",
-  "Device and Firebase Cloud Messaging tokens linked to the deleted account.",
-  "Pending invite records and pairing records linked to the deleted account.",
-  "Related shared canvas operations and server-side canvas snapshots for pair data removed by the deletion request."
+  "Your Mulberry account, profile, and sign-in sessions on every device.",
+  "Profile photos you uploaded, unless your paired partner's own profile still uses that photo.",
+  "Device and Firebase Cloud Messaging tokens linked to your account.",
+  "Pending invites.",
+  "Your pairing, including the shared canvas, its operations and server-side snapshots, your streak and activity history together, reminders, and reactions. Your paired partner keeps their own account and is told the pairing has ended.",
+  "On the iPhone, iPad, or Mac you delete from: the cached canvas, rendered wallpaper images, and account settings stored by Mulberry. On iPhone and iPad, Mulberry also asks Google to revoke its access to your Google account."
 ]
 
 const retainedData = [
+  "Copies in backups or service provider records are deleted or anonymized within 30 days.",
+  "Product analytics events are recorded against pairing and invite identifiers rather than your account, and are kept for up to 30 days.",
+  "Crash reports are not linked to your account and are kept by Firebase Crashlytics for up to 90 days.",
+  `Feedback you sent through Canny stays with Canny. Email ${CONTACT_EMAIL} to have it removed.`,
   "Support and privacy request emails may be retained for up to 30 days after the request is resolved, unless a longer period is required by law or needed to protect rights, safety, or the service.",
-  "Analytics, crash, diagnostic, and operational log data controlled by Mulberry may be retained for up to 30 days.",
   "Limited records may be retained for longer where required by law or needed for security, fraud prevention, dispute resolution, or enforcement.",
-  "Device-local app data remains on your device until you clear app data, remove local backgrounds, uninstall Mulberry, or the app deletes or overwrites cached data.",
+  "Other devices where you were signed in are signed out when they next connect, but keep what they stored locally until you delete Mulberry from them.",
+  "On Mac, you can remove Mulberry's access to your Google account in your Google Account's security settings.",
   "Mulberry cannot delete screenshots, recordings, exports, or other copies saved outside Mulberry by you, your paired partner, your device, or third-party services."
 ]
 
@@ -52,7 +63,7 @@ export default function DeleteAccountPage() {
           </h1>
           <p className="mt-6 max-w-3xl text-base leading-8 text-white/76 sm:text-lg">
             This page explains how users of Mulberry, developed by Subhajit
-            Kundu, can request deletion of their account and related app data.
+            Kundu, can delete their account and related app data.
           </p>
           <div className="mt-8 flex flex-col gap-3 text-sm leading-7 text-white/78 sm:flex-row sm:items-center">
             <span className="font-medium text-white">Deletion request email:</span>
@@ -76,7 +87,7 @@ export default function DeleteAccountPage() {
                   href="#request"
                   className="block px-3 py-2 transition hover:bg-soft-surface hover:text-brand"
                 >
-                  How to request deletion
+                  How to delete your account
                 </Link>
               </li>
               <li>
@@ -102,26 +113,24 @@ export default function DeleteAccountPage() {
         <article className="grid gap-14">
           <section id="request" className="scroll-mt-8">
             <h2 className="text-3xl font-semibold leading-tight text-foreground sm:text-4xl">
-              How to request account deletion
+              How to delete your account
             </h2>
-            <p className="mt-5 max-w-3xl text-base leading-8 text-muted-foreground">
-              To delete your Mulberry account, send an email to{" "}
+            <h3 className="mt-8 text-xl font-semibold text-foreground">
+              In the app on iPhone, iPad, and Mac
+            </h3>
+            <StepList steps={inAppSteps} />
+            <h3 className="mt-10 text-xl font-semibold text-foreground">
+              By email, from Android or without a signed-in device
+            </h3>
+            <p className="mt-4 max-w-3xl text-base leading-8 text-muted-foreground">
+              Send an email to{" "}
               <Link href={CONTACT_MAILTO} className="font-medium text-brand">
                 {CONTACT_EMAIL}
               </Link>
-              . Requests are handled manually so Mulberry can verify the account
-              owner before deleting account data.
+              . Email requests are handled manually so Mulberry can verify the
+              account owner before deleting account data.
             </p>
-            <ol className="mt-6 grid gap-3 text-base leading-7 text-soft-surface-foreground">
-              {requestSteps.map((step, index) => (
-                <li key={step} className="flex gap-4 bg-soft-surface p-4">
-                  <span className="flex size-8 shrink-0 items-center justify-center bg-brand text-sm font-semibold text-white">
-                    {index + 1}
-                  </span>
-                  <span>{step}</span>
-                </li>
-              ))}
-            </ol>
+            <StepList steps={emailSteps} />
           </section>
 
           <section id="deleted" className="scroll-mt-8">
@@ -129,10 +138,9 @@ export default function DeleteAccountPage() {
               Data deleted or anonymized
             </h2>
             <p className="mt-5 max-w-3xl text-base leading-8 text-muted-foreground">
-              After account deletion, Mulberry deletes or anonymizes the
-              following data within 30 days, unless a longer period is required
-              by law or needed for security, fraud prevention, dispute
-              resolution, or enforcement.
+              Deleting your account in the app removes the following from
+              Mulberry straight away. Email requests are completed within 30
+              days of verification. Deletion cannot be undone.
             </p>
             <DataList items={deletedData} />
           </section>
@@ -186,5 +194,20 @@ function DataList({ items }: { items: string[] }) {
         </li>
       ))}
     </ul>
+  )
+}
+
+function StepList({ steps }: { steps: string[] }) {
+  return (
+    <ol className="mt-6 grid gap-3 text-base leading-7 text-soft-surface-foreground">
+      {steps.map((step, index) => (
+        <li key={step} className="flex gap-4 bg-soft-surface p-4">
+          <span className="flex size-8 shrink-0 items-center justify-center bg-brand text-sm font-semibold text-white">
+            {index + 1}
+          </span>
+          <span>{step}</span>
+        </li>
+      ))}
+    </ol>
   )
 }
