@@ -2305,7 +2305,7 @@ describe("Mulberry backend", () => {
     first.close()
   })
 
-  it.each(["ANDROID", "IOS"])("registers and revokes %s FCM device tokens", async (platform) => {
+  it.each(["ANDROID", "IOS", "MACOS"])("registers and revokes %s FCM device tokens", async (platform) => {
     const auth = await signIn("subhajit@elaris.dev", "Subhajit")
 
     const first = await app.inject({

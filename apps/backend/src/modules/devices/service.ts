@@ -3,6 +3,7 @@ import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import type { DeviceTokenRow } from "../../contracts/dbRecords.js"
 import type { DeviceTokenRecord, RegisterFcmTokenRequest } from "../../contracts/devices.js"
+import { DevicePlatforms } from "../../contracts/devices.js"
 import { requireSessionContext } from "../_shared/session.js"
 
 export class DevicesService {
@@ -13,7 +14,7 @@ export class DevicesService {
     if (!request.token?.trim()) {
       throw new HttpError(400, "token is required")
     }
-    if (request.platform !== "ANDROID" && request.platform !== "IOS") {
+    if (!DevicePlatforms.includes(request.platform)) {
       throw new HttpError(400, "Unsupported device platform")
     }
     if (!request.appEnvironment?.trim()) {

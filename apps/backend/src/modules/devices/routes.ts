@@ -1,12 +1,13 @@
 import type { FastifyInstance } from "fastify"
 import { requireBearerToken } from "../../infra/http/auth.js"
 import type { DevicesService } from "./service.js"
+import type { DevicePlatform } from "../../contracts/devices.js"
 
 export function registerDeviceRoutes(app: FastifyInstance, service: DevicesService): void {
   app.post("/devices/fcm-token", async (request) => {
     const body = request.body as {
       token?: string
-      platform?: "ANDROID" | "IOS"
+      platform?: DevicePlatform
       appEnvironment?: string
     }
     return service.registerFcmToken(requireBearerToken(request), {

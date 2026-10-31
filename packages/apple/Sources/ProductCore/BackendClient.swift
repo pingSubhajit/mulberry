@@ -170,8 +170,10 @@ public actor BackendClient {
         return try await json("me/presence-surfaces/\(surface.rawValue)", method: "PUT", body: body)
     }
 
-    public func registerPushToken(_ token: String, environment: String) async throws {
-        let _: JSONValue = try await json("devices/fcm-token", method: "POST", body: ["token": token, "platform": "IOS", "appEnvironment": environment])
+    public enum PushPlatform: String, Sendable { case iOS = "IOS", macOS = "MACOS" }
+
+    public func registerPushToken(_ token: String, environment: String, platform: PushPlatform = .iOS) async throws {
+        let _: JSONValue = try await json("devices/fcm-token", method: "POST", body: ["token": token, "platform": platform.rawValue, "appEnvironment": environment])
     }
 
     public func unregisterPushToken(_ token: String) async throws {
