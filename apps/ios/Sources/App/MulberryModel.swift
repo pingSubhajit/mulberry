@@ -185,6 +185,37 @@ final class MulberryModel: ObservableObject {
             }
         }
         GoogleAuthentication.signOut()
+        resetSignedOut()
+    }
+
+    /// Deletes the account on the server, then everything this device kept for it. A failure leaves
+    /// the person signed in, so they never believe an account is gone when it is not.
+    func deleteAccount() async {
+        guard !busy, let user = userId else { return }
+        busy = true; errorMessage = nil
+        let pair = bootstrap?.pairSessionId
+        do { try await api.deleteAccount() }
+        catch {
+            busy = false
+            await handle(error)
+            return
+        }
+        sessionEpoch += 1
+        await sync?.stop()
+        syncObserver?.cancel(); syncObserver = nil; sync = nil
+        await PushRegistration.shared.signOut()
+        await ReactionActivities.endAll()
+        if let pair { try? await AppRuntime.drawings.remove(userId: user, pairSessionId: pair) }
+        wallpaperService.forget(user: user)
+        // Every per-account setting is keyed by the account's id.
+        for key in UserDefaults.standard.dictionaryRepresentation().keys where key.contains(user) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        await GoogleAuthentication.disconnect()
+        resetSignedOut()
+    }
+
+    private func resetSignedOut() {
         HomeQuickActions.shared.pending = nil
         streaks.bind(userId: nil, pairSessionId: nil)
         firstDrawing.bind(userId: nil, hasDrawn: nil)

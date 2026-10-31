@@ -192,6 +192,22 @@ final class ProductWallpaperService {
         return try signature(canvas: canvas, background: background, state: state)
     }
 
+    /// Erases an account's wallpaper renders and delivery history once the account is deleted.
+    func forget(user: String) {
+        journals = journals.filter { !$0.key.hasPrefix("\(user)-") }
+        let delivery = AppRuntime.directory.appendingPathComponent("Delivery", isDirectory: true)
+        for directory in (try? FileManager.default.contentsOfDirectory(at: delivery, includingPropertiesForKeys: nil)) ?? []
+        where directory.lastPathComponent.hasPrefix("\(user)-") {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        for metadata in (try? FileManager.default.contentsOfDirectory(at: exportDirectory, includingPropertiesForKeys: nil)) ?? []
+        where metadata.pathExtension == "json" {
+            guard let export = try? JSONDecoder().decode(WallpaperExport.self, from: Data(contentsOf: metadata)), export.userId == user else { continue }
+            try? FileManager.default.removeItem(at: exportDirectory.appendingPathComponent(export.filename))
+            try? FileManager.default.removeItem(at: metadata)
+        }
+    }
+
     private func cachedState(user: String) -> BootstrapState? {
         guard let data = UserDefaults.standard.data(forKey: "bootstrap.\(user)"),
               let state = try? JSONDecoder().decode(BootstrapState.self, from: data), state.userId == user else { return nil }

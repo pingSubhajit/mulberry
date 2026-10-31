@@ -27,6 +27,11 @@ enum GoogleAuthentication {
         (error as NSError).domain == kGIDSignInErrorDomain && (error as NSError).code == GIDSignInError.canceled.rawValue
     }
     static func signOut() { GIDSignIn.sharedInstance.signOut() }
+    /// Revokes Mulberry's access to the Google account, after the Mulberry account is deleted.
+    static func disconnect() async {
+        if GIDSignIn.sharedInstance.currentUser == nil { _ = try? await GIDSignIn.sharedInstance.restorePreviousSignIn() }
+        do { try await GIDSignIn.sharedInstance.disconnect() } catch { GIDSignIn.sharedInstance.signOut() }
+    }
 }
 
 private enum GoogleConfigurationError: LocalizedError {
