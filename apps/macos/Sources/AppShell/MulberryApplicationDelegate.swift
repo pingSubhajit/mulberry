@@ -23,6 +23,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             fatalError("Unable to open Mulberry's saved session: \(error)")
         }
     }()
+    private lazy var pushRegistration = MacPushRegistration(api: api)
     private let windowState = MainWindowState()
     private var mainMenuController: MainMenuController?
     private lazy var authController = AuthSessionController(
@@ -104,9 +105,39 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         super.init()
     }
 
+    public func application(_ application: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        pushRegistration.receivedAPNsToken(deviceToken)
+    }
+    public func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: any Error) {
+        pushRegistration.failedToRegister()
+    }
+    public func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
+        guard let event = MacPushEvent(userInfo) else { return }
+        Task { await receiveRemoteUpdate(event) }
+    }
+    private func receiveRemoteUpdate(_ event: MacPushEvent) async {
+        guard authController.state.isSignedIn else { return }
+        UserDefaults.standard.set(event.type, forKey: "lastRemotePushType")
+        UserDefaults.standard.set(Date(), forKey: "lastRemotePushAt")
+        if let revision = event.revision { UserDefaults.standard.set(revision, forKey: "lastRemotePushRevision") }
+        if ["PAIRING_CONFIRMED", "PAIRING_DISCONNECTED", "PARTNER_VISIBILITY_CHANGED"].contains(event.type) {
+            await appStateController.refreshBootstrapAndReportOverlay(overlayController: overlayController, syncController: syncController)
+        }
+        guard let pair = appStateController.loadState.bootstrap?.pairSessionId, event.pairSessionID == pair else { return }
+        if event.type == "CANVAS_UPDATED" || event.type == "CANVAS_NUDGE" {
+            if let revision = await syncController.recoverAfterNotification() {
+                UserDefaults.standard.set(revision, forKey: "lastRemotePushAppliedRevision")
+                UserDefaults.standard.set(Date(), forKey: "lastRemotePushAppliedAt")
+            }
+        } else if event.type == "REACTION" { await reactions.check() }
+    }
+
     public func applicationDidFinishLaunching(_ notification: Notification) {
         if handOverToRunningCopy() { return NSApp.terminate(nil) }
         CrashReporting.start()
+        pushRegistration.configure()
+        authController.beforeSignOut = { [weak self] in await self?.pushRegistration.signOut() }
+        partnerArrival.remoteMessage = { [weak self] event in await self?.receiveRemoteUpdate(event) }
         NSApp.setActivationPolicy(.accessory)
         installMainMenu()
         listenForSecondCopies()
@@ -144,7 +175,10 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 }
                 self?.refreshStatusMenu()
                 self?.considerOnboarding()
-                if case let .signedIn(session) = self?.authController.state { LastAccount.remember(session.bootstrap) }
+                if case let .signedIn(session) = self?.authController.state {
+                    LastAccount.remember(session.bootstrap)
+                    Task { await self?.pushRegistration.refresh() }
+                }
             }
         }
         appStateCancellable = appStateController.objectWillChange.sink { [weak self] _ in
@@ -583,6 +617,10 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         if onboarding?.isShowing == true { return true }
         if !flag { openMulberry() }
         return true
+    }
+
+    public func applicationDidBecomeActive(_ notification: Notification) {
+        Task { await pushRegistration.refresh() }
     }
 
     public func applicationWillTerminate(_ notification: Notification) {

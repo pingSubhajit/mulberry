@@ -6,7 +6,7 @@ import UserNotifications
 /// bar icon, both leading to the two photos meeting. Until then, opening Mulberry shows the two
 /// photos first. Each pair is welcomed once.
 ///
-/// Without push notifications the Mac finds out by asking: every minute while it waits, and as it
+/// Push updates arrive through the app delegate. As a fallback, the Mac also asks: every minute while it waits, and as it
 /// wakes or Mulberry comes forward.
 @MainActor
 final class PartnerArrival: NSObject, UNUserNotificationCenterDelegate {
@@ -14,6 +14,7 @@ final class PartnerArrival: NSObject, UNUserNotificationCenterDelegate {
     var open: () -> Void = {}
     /// Asks the server for the account again.
     var refresh: () async -> Void = {}
+    var remoteMessage: @MainActor @Sendable (MacPushEvent) async -> Void = { _ in }
 
     private let defaults: UserDefaults
     private weak var statusButton: NSStatusBarButton?
@@ -157,10 +158,15 @@ final class PartnerArrival: NSObject, UNUserNotificationCenterDelegate {
     // MARK: UNUserNotificationCenterDelegate
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        if let event = MacPushEvent(notification.request.content.userInfo) {
+            await remoteMessage(event)
+            if event.type == "CANVAS_UPDATED" || event.type == "REACTION" { return [] }
+        }
+        return [.banner, .sound]
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        if let event = MacPushEvent(response.notification.request.content.userInfo) { await remoteMessage(event) }
         guard response.notification.request.content.categoryIdentifier == Self.category else { return }
         await MainActor.run { open() }
     }

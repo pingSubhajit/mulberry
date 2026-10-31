@@ -58,7 +58,8 @@ let package = Package(
                 .product(name: "CanvasDrawing", package: "apple"),
                 .product(name: "StickerAssets", package: "apple"),
                 .product(name: "ProductUI", package: "apple"),
-                .product(name: "FirebaseCrashlytics", package: "firebase-ios-sdk")
+                .product(name: "FirebaseCrashlytics", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseMessaging", package: "firebase-ios-sdk")
             ]
         ),
         .target(name: "Auth", dependencies: ["Networking", "Persistence", .product(name: "ProductCore", package: "apple")]),

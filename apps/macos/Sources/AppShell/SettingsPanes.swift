@@ -716,6 +716,10 @@ private enum PartnerVisibility {
 
 struct AdvancedPane: View {
     @ObservedObject var syncController: CanvasSyncController
+    @AppStorage("pushRegistered") private var pushRegistered = false
+    @AppStorage("lastRemotePushRevision") private var lastPushRevision = 0
+    @AppStorage("lastRemotePushAppliedRevision") private var lastAppliedPushRevision = 0
+    @AppStorage("pushRegistrationError") private var pushError = ""
 
     var body: some View {
         SettingsPage {
@@ -746,6 +750,18 @@ struct AdvancedPane: View {
                     Button("Recover", action: syncController.recoverNow)
                         .buttonStyle(.settings)
                 }
+            }
+            SettingsSection("Remote Updates") {
+                SettingsRow("Push Connection") {
+                    SettingsValue(pushRegistered ? "Connected" : "Waiting")
+                }
+                if lastPushRevision > 0 {
+                    SettingsRow("Last Push Revision") { SettingsValue(lastPushRevision.formatted()) }
+                }
+                if lastAppliedPushRevision > 0 {
+                    SettingsRow("Last Push Applied") { SettingsValue(lastAppliedPushRevision.formatted()) }
+                }
+                if !pushError.isEmpty { SettingsNotice(message: pushError) }
             }
             #if DEBUG
             // Development builds only: checks that reports reach Crashlytics, as the iPhone's

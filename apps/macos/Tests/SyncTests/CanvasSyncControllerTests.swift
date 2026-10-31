@@ -251,3 +251,23 @@ func aStrokeSubmittedPointByPointIsSavedAndSentInOrder() async throws {
     #expect(controller.status.lastError == nil)
     controller.stop()
 }
+
+@MainActor
+@Test(.timeLimit(.minutes(1)))
+func remoteNotificationCatchesUpWhileIdleAndReturnsTheAppliedRevision() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let server = CanvasServer()
+    let controller = try makeController(server: server, directory: directory)
+    #expect(await controller.recoverAfterNotification() == nil)
+    controller.updateSession(userID: user, pairSessionID: pair, shouldSync: true)
+    try await waitUntil { controller.connectionState == .disconnected }
+    let drawn = stroke(0.7)
+    _ = await server.record(try DrawingOperation.restore(drawn), actor: partner)
+    let revision = await controller.recoverAfterNotification()
+    #expect(revision == 3)
+    #expect(controller.drawing.finishedStrokes == [drawn])
+    #expect(controller.connectionState == .disconnected)
+    controller.stop()
+    #expect(await controller.recoverAfterNotification() == nil)
+}

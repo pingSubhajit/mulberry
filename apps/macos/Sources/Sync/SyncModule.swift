@@ -201,6 +201,14 @@ public final class CanvasSyncController: ObservableObject {
         Task { await catchUp(session) }
     }
 
+    /// Await the actual catch-up before recording a remote update as applied.
+    public func recoverAfterNotification() async -> Int64? {
+        guard let session, hasLoadedDocument else { return nil }
+        await catchUp(session)
+        guard self.session == session, lastError == nil else { return nil }
+        return status.lastAppliedServerRevision
+    }
+
     public func canReportOverlayCanSeeLatestDrawings(isOverlayVisible: Bool) -> Bool {
         guard isOverlayVisible, hasLoadedDocument, lastError == nil else { return false }
         switch demand {

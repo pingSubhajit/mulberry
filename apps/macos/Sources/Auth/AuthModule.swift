@@ -65,6 +65,8 @@ public enum AuthSessionState: Sendable {
 @MainActor
 public final class AuthSessionController: ObservableObject {
     @Published public private(set) var state: AuthSessionState = .signedOut
+    /// Revoke this device's push registration while its account is still authenticated.
+    public var beforeSignOut: (() async -> Void)?
 
     public let api: BackendClient
     private let configuration: MacAppConfiguration
@@ -162,13 +164,13 @@ public final class AuthSessionController: ObservableObject {
     }
 
     public func signOut() async {
+        await beforeSignOut?()
         if case let .signedIn(session) = state {
             store.clearBootstrap(userId: session.userID)
         }
         // Local sign-out is immediate even if the server cannot revoke the session.
         try? await api.signOut()
         state = .signedOut
-        // TODO: Phase 11 should unregister and clear notification tokens here.
     }
 
     private func userFacingMessage(for error: Error) -> String {
