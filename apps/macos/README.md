@@ -30,7 +30,7 @@ pnpm --dir apps/macos run smoke
 
 From the repository root, the same commands are `pnpm dev:macos`, `pnpm build:macos` and `pnpm smoke:macos`.
 
-Sign-in reads `MULBERRY_MAC_GOOGLE_CLIENT_ID` and `MULBERRY_MAC_GOOGLE_CLIENT_SECRET` from `apps/macos/.env` (see `.env.example`). The backend must list that client ID in `GOOGLE_ALLOWED_CLIENT_IDS`.
+Sign-in reads `MULBERRY_MAC_GOOGLE_CLIENT_ID` and `MULBERRY_MAC_GOOGLE_CLIENT_SECRET` from `apps/macos/.env` (see `.env.example`). The backend must list that client ID in `GOOGLE_ALLOWED_CLIENT_IDS`. Release builds (`CONFIGURATION=release`) read `apps/macos/.env.release` instead, and refuse an API address that isn't HTTPS; without one they use `https://api.mulberry.my/`.
 
 ## Shared Code
 

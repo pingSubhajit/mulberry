@@ -27,13 +27,21 @@ public struct MacAppConfiguration: Sendable {
         let environment = DotenvLoader.load().merging(ProcessInfo.processInfo.environment) { _, processValue in
             processValue
         }
-        let apiBaseURL = URL(string: environment["MULBERRY_MAC_API_BASE_URL"] ?? "http://127.0.0.1:8080/")
-            ?? URL(string: "http://127.0.0.1:8080/")!
+        let apiBaseURL = environment["MULBERRY_MAC_API_BASE_URL"].flatMap(URL.init(string:)) ?? defaultAPIBaseURL
         return MacAppConfiguration(
             apiBaseURL: apiBaseURL,
             googleClientID: environment["MULBERRY_MAC_GOOGLE_CLIENT_ID"] ?? "",
             googleClientSecret: environment["MULBERRY_MAC_GOOGLE_CLIENT_SECRET"] ?? ""
         )
+    }
+
+    /// The local development server while developing; the production API in the App Store build.
+    private static var defaultAPIBaseURL: URL {
+        #if DEBUG
+        URL(string: "http://127.0.0.1:8080/")!
+        #else
+        URL(string: "https://api.mulberry.my/")!
+        #endif
     }
 
     public var normalizedAPIBaseURL: URL {

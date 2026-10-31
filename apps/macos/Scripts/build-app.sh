@@ -52,8 +52,31 @@ for bundle in "${BUILD_DIR}"/*.bundle; do
   [ -d "${bundle}" ] && rsync -a "${bundle}" "${RESOURCES_DIR}/"
 done
 
-if [ -f ".env" ]; then
-  cp ".env" "${RESOURCES_DIR}/.env"
+# Release builds read .env.release, so the App Store build never carries the development server.
+if [ "${CONFIGURATION}" = "release" ]; then ENV_FILE=".env.release"; else ENV_FILE=".env"; fi
+if [ -f "${ENV_FILE}" ]; then
+  cp "${ENV_FILE}" "${RESOURCES_DIR}/.env"
+fi
+if [ "${CONFIGURATION}" = "release" ]; then
+  python3 - "${ENV_FILE}" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    raise SystemExit(f"error: Add {path} with the production Google client before a release build.")
+values = {}
+for line in path.read_text().splitlines():
+    line = line.strip().removeprefix("export ")
+    if line and not line.startswith("#") and "=" in line:
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip("'\"")
+if not values.get("MULBERRY_MAC_GOOGLE_CLIENT_ID"):
+    raise SystemExit(f"error: {path} needs MULBERRY_MAC_GOOGLE_CLIENT_ID for a release build.")
+api = values.get("MULBERRY_MAC_API_BASE_URL", "")
+if api and not api.startswith("https://"):
+    raise SystemExit(f"error: {path} must point MULBERRY_MAC_API_BASE_URL at the production API over HTTPS.")
+PY
 fi
 
 # The iPhone app's public Firebase client configuration, for crash reports: the Mac shares its
