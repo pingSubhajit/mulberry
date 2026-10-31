@@ -618,9 +618,35 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             openStreak: { [unowned self] in showMainWindow(showingStreak: true) },
             toggleOverlay: { [unowned self] in toggleOverlay() },
             openSettings: { [unowned self] in showSettings(nil) },
-            send: { [unowned self] reaction in send(reaction) }
+            send: { [unowned self] reaction in send(reaction) },
+            // In the sign-in window, which shows Google's progress and carries on from there.
+            signIn: { [unowned self] in
+                showMainWindow()
+                Task { await authController.signIn() }
+            }
         )
         refreshStatusMenu()
+        #if DEBUG
+        // With `-lockScreenAccount`, the lock screen opens by itself a moment after launch.
+        // `-lockScreenInviteCode 482913` gives it a code to share, `-lockScreenHome YES` opens the
+        // home screen and `-lockScreenRail YES` the reactions.
+        let defaults = UserDefaults.standard
+        if let preview = defaults.string(forKey: "lockScreenAccount") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let self else { return }
+                NSApp.activate(ignoringOtherApps: true)
+                lockScreen.open()
+                if preview == "signedOut" { lockScreenModel.drawing = nil }
+                if let code = defaults.string(forKey: "lockScreenInviteCode") { lockScreenModel.inviteCode = code }
+                try? await Task.sleep(for: .seconds(0.5))
+                if defaults.bool(forKey: "lockScreenHome") { lockScreenModel.setUnlocked(true) }
+                if defaults.bool(forKey: "lockScreenRail") {
+                    withAnimation(.spring(duration: 0.35, bounce: 0.3)) { lockScreenModel.railOpen = true }
+                }
+            }
+        }
+        #endif
     }
 
     @objc private func statusItemClicked() {
@@ -648,7 +674,13 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     private func refreshLockScreen() {
         let bootstrap = appStateController.loadState.bootstrap
         let model = lockScreenModel
-        let account: LockScreenModel.Account = !authController.state.isSignedIn ? .signedOut : bootstrap?.isPaired == true ? .paired : .unpaired
+        var account: LockScreenModel.Account = !authController.state.isSignedIn ? .signedOut : bootstrap?.isPaired == true ? .paired : .unpaired
+        #if DEBUG
+        // `-lockScreenAccount signedOut|unpaired|paired` shows the lock screen as that account would see it.
+        if let preview = UserDefaults.standard.string(forKey: "lockScreenAccount").flatMap(LockScreenModel.Account.init(rawValue:)) {
+            account = preview
+        }
+        #endif
         if model.account != account { model.account = account }
         let partner = bootstrap?.partnerDisplayName?.nonEmpty ?? "Your partner"
         if model.partnerName != partner { model.partnerName = partner }

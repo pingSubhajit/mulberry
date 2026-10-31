@@ -138,7 +138,7 @@ final class OnboardingFlow: ObservableObject {
         // The lock screen's buttons wait for the swipe, as an iPhone's do until it is unlocked.
         let hint: () -> Void = { [weak lock] in lock?.hintSwipe() }
         lock.actions = LockScreenModel.Actions(quickDraw: hint, openCanvas: hint, openStreak: hint,
-                                               toggleOverlay: hint, openSettings: hint, send: { _ in hint() })
+                                               toggleOverlay: hint, openSettings: hint, send: { _ in hint() }, signIn: hint)
     }
 
     private var bootstrap: BootstrapState? { appStateController.loadState.bootstrap }

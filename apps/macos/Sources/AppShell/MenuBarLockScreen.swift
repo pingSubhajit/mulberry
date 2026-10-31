@@ -18,7 +18,7 @@ import SwiftUI
 /// What the lock screen shows, kept current by the app delegate.
 @MainActor
 final class LockScreenModel: ObservableObject {
-    enum Account: Equatable { case signedOut, unpaired, paired }
+    enum Account: String, Equatable { case signedOut, unpaired, paired }
 
     struct Actions {
         let quickDraw: () -> Void
@@ -27,6 +27,7 @@ final class LockScreenModel: ObservableObject {
         let toggleOverlay: () -> Void
         let openSettings: () -> Void
         let send: (ReactionType) -> Void
+        let signIn: () -> Void
     }
 
     @Published var account = Account.signedOut
@@ -544,6 +545,13 @@ struct LockScreenView: View {
                     Button("Lock Screen") { model.setUnlocked(false) }
                         .keyboardShortcut(.downArrow, modifiers: [])
                 }
+                if model.account == .signedOut {
+                    Button("Continue with Google") { close(); model.actions?.signIn() }
+                        .keyboardShortcut(.return, modifiers: [])
+                } else if model.account == .unpaired, model.inviteCode == nil {
+                    Button("Invite Your Partner") { close(); model.actions?.openCanvas() }
+                        .keyboardShortcut(.return, modifiers: [])
+                }
                 Button("Settings") { close(); model.actions?.openSettings() }
                     .keyboardShortcut(",", modifiers: .command)
             }
@@ -608,8 +616,8 @@ struct LockScreenView: View {
                 switch model.account {
                 case .paired: controls
                 case .unpaired:
-                    if let code = model.inviteCode { inviteCode(code) } else { invitation("Invite Your Partner") }
-                case .signedOut: invitation("Sign In")
+                    if let code = model.inviteCode { inviteCode(code) } else { invitation }
+                case .signedOut: googleSignIn
                 }
                 HStack(alignment: .center) {
                     FootIcon(symbol: "macwindow", help: "Open Mulberry") {
@@ -689,46 +697,112 @@ struct LockScreenView: View {
         .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(duration: 0.35, bounce: 0.3), value: model.railOpen)
     }
 
-    /// Waiting for the partner: the code to give them, opening the window to share it.
+    /// Waiting for the partner: the code to give them, each digit in its own glass, and Share
+    /// beside it.
     private func inviteCode(_ code: String) -> some View {
-        Button {
-            close()
-            model.actions?.openCanvas()
-        } label: {
-            VStack(spacing: 4) {
-                Text("Your invite code")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.7))
-                Text(code)
-                    .font(.system(size: 26, weight: .semibold, design: .monospaced))
-                    .tracking(5)
-                    .foregroundStyle(.white)
+        VStack(spacing: 9) {
+            Text("Your invite code")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.8))
+                .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+            HStack(spacing: 10) {
+                GlassEffectContainer(spacing: 5) {
+                    HStack(spacing: 5) {
+                        ForEach(Array(code.enumerated()), id: \.offset) { _, digit in
+                            Text(String(digit))
+                                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .frame(width: 29, height: 40)
+                                .glassEffect(.regular.tint(.black.opacity(0.18)), in: .rect(cornerRadius: 10, style: .continuous))
+                        }
+                    }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Invite code \(code.map(String.init).joined(separator: " "))")
+                InviteCodeShare(code: code, shared: close)
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 12)
-            .contentShape(.rect(cornerRadius: 20, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20, style: .continuous))
-        .help("Share the code from Mulberry’s window")
-        .accessibilityLabel("Invite code \(code.map(String.init).joined(separator: " "))")
     }
 
-    /// Signed out or unpaired: one way forward, in the canvas window.
-    private func invitation(_ title: String) -> some View {
-        Button {
+    /// Signed out: the sign-in window's Continue with Google, in the lock screen's glass.
+    private var googleSignIn: some View {
+        GlassCapsule(title: "Continue with Google") {
+            close()
+            model.actions?.signIn()
+        } icon: {
+            GoogleMark().frame(width: 15, height: 15)
+        }
+    }
+
+    /// Unpaired, without a code to show yet: one way forward, in the canvas window.
+    private var invitation: some View {
+        GlassCapsule(title: "Invite Your Partner") {
             close()
             model.actions?.openCanvas()
+        } icon: {
+            Image(systemName: "person.badge.plus")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.94))
+                .frame(width: 15, height: 15)
+        }
+    }
+}
+
+/// Share for the lock screen's invite code: a glass circle opening the Mac's share menu with the
+/// code and its link. Choosing a way to share puts the lock screen away, out of its way.
+private struct InviteCodeShare: View {
+    let code: String
+    let shared: () -> Void
+    @State private var anchor = ShareAnchor()
+
+    var body: some View {
+        Button {
+            anchor.share(PartnerInvite.message(code: code), chosen: shared)
         } label: {
-            Text(title)
-                .font(.system(size: 14, weight: .semibold))
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 22)
-                .frame(height: 40)
-                .contentShape(.capsule)
+                .offset(y: -1)
+                .frame(width: 40, height: 40)
+                .contentShape(.circle)
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.tint(mulberryRed.opacity(0.55)).interactive(), in: .capsule)
+        .glassEffect(.regular.tint(.black.opacity(0.18)).interactive(), in: .circle)
+        .background(ShareAnchorView(anchor: anchor))
+        .help("Share invite code")
+        .accessibilityLabel("Share invite code")
+    }
+}
+
+/// The lock screen's one way forward while signed out or unpaired: an icon and a title on dark
+/// glass, with Return's keycap, as the sign-in window's Continue with Google. Return presses it.
+private struct GlassCapsule<Icon: View>: View {
+    let title: String
+    let action: () -> Void
+    @ViewBuilder let icon: Icon
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                icon
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.94))
+                Image(systemName: "return")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 19, height: 17)
+                    .overlay(RoundedRectangle(cornerRadius: 4.5).strokeBorder(.white.opacity(0.28), lineWidth: 1))
+                    .padding(.leading, 3)
+            }
+            .padding(.leading, 16)
+            .padding(.trailing, 10)
+            .frame(height: 38)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.tint(.black.opacity(0.18)).interactive(), in: .capsule)
+        .accessibilityLabel(title)
     }
 }
 
