@@ -1,38 +1,16 @@
-import fs from "node:fs"
-import path from "node:path"
 import type { Metadata } from "next"
 import Image from "next/image"
 import Link from "next/link"
+
+import { readLegalDocument } from "@/lib/legal"
 
 export const metadata: Metadata = {
   title: "Privacy Policy | Mulberry",
   description: "Read the Mulberry Privacy Policy."
 }
 
-type PolicyBlock =
-  | { type: "subheading"; text: string }
-  | { type: "paragraph"; text: string }
-  | { type: "list"; items: string[] }
-
-type PolicySection = {
-  id: string
-  title: string
-  blocks: PolicyBlock[]
-}
-
-type ParsedPolicy = {
-  title: string
-  effectiveDate: string
-  lastUpdated: string
-  operator: string
-  address: string
-  contact: string
-  intro: string[]
-  sections: PolicySection[]
-}
-
 export default function PrivacyPolicyPage() {
-  const policy = parsePolicy(readPolicy())
+  const policy = readLegalDocument("privacy_policy")
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -51,10 +29,10 @@ export default function PrivacyPolicyPage() {
           </p>
 
           <dl className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <PolicyMeta label="Effective date" value={policy.effectiveDate} />
-            <PolicyMeta label="Last updated" value={policy.lastUpdated} />
-            <PolicyMeta label="Operator" value={policy.operator} />
-            <PolicyMeta label="Privacy contact" value={policy.contact} />
+            <PolicyMeta label="Effective date" value={policy.details["Effective date"] ?? ""} />
+            <PolicyMeta label="Last updated" value={policy.details["Last updated"] ?? ""} />
+            <PolicyMeta label="Operator" value={policy.details.Operator ?? ""} />
+            <PolicyMeta label="Privacy contact" value={policy.details["Privacy contact"] ?? ""} />
           </dl>
         </div>
       </section>
@@ -90,7 +68,7 @@ export default function PrivacyPolicyPage() {
             </div>
             <address className="mt-6 not-italic text-sm leading-7 text-muted-foreground">
               <span className="font-medium text-foreground">Address:</span>{" "}
-              {policy.address}
+              {policy.details.Address}
             </address>
           </section>
 
@@ -182,112 +160,4 @@ function PolicyMeta({ label, value }: { label: string; value: string }) {
       <dd className="mt-2 text-sm font-medium leading-6 text-white">{value}</dd>
     </div>
   )
-}
-
-function readPolicy() {
-  const policyPath = path.resolve(
-    process.cwd(),
-    "../mobile/app/src/main/res/raw/privacy_policy.txt"
-  )
-
-  return fs.readFileSync(policyPath, "utf8")
-}
-
-function parsePolicy(source: string): ParsedPolicy {
-  const lines = source.split(/\r?\n/).map((line) => line.trim())
-  const title = lines.find(Boolean) ?? "Mulberry Privacy Policy"
-  const effectiveDate = getValue(lines, "Effective date")
-  const lastUpdated = getValue(lines, "Last updated")
-  const operator = getValue(lines, "Operator")
-  const address = getValue(lines, "Address")
-  const contact = getValue(lines, "Privacy contact")
-  const sections: PolicySection[] = []
-  const intro: string[] = []
-  let currentSection: PolicySection | null = null
-  let listItems: string[] = []
-
-  const flushList = () => {
-    if (listItems.length > 0 && currentSection) {
-      currentSection.blocks.push({ type: "list", items: listItems })
-      listItems = []
-    }
-  }
-
-  for (const line of lines) {
-    if (!line) {
-      flushList()
-      continue
-    }
-
-    if (
-      line === title ||
-      line.startsWith("Effective date:") ||
-      line.startsWith("Last updated:") ||
-      line.startsWith("Operator:") ||
-      line.startsWith("Address:") ||
-      line.startsWith("Privacy contact:")
-    ) {
-      continue
-    }
-
-    if (/^\d+\.\s/.test(line)) {
-      flushList()
-      currentSection = {
-        id: slugify(line),
-        title: line,
-        blocks: []
-      }
-      sections.push(currentSection)
-      continue
-    }
-
-    if (!currentSection) {
-      intro.push(line)
-      continue
-    }
-
-    if (line.startsWith("- ")) {
-      listItems.push(line.slice(2))
-      continue
-    }
-
-    flushList()
-
-    if (/^\d+\.\d+\s/.test(line)) {
-      currentSection.blocks.push({ type: "subheading", text: line })
-      continue
-    }
-
-    currentSection.blocks.push({ type: "paragraph", text: line })
-  }
-
-  flushList()
-
-  return {
-    title,
-    effectiveDate,
-    lastUpdated,
-    operator,
-    address,
-    contact,
-    intro,
-    sections
-  }
-}
-
-function getValue(lines: string[], label: string) {
-  return (
-    lines
-      .find((line) => line.startsWith(`${label}:`))
-      ?.replace(`${label}:`, "")
-      .trim() ?? ""
-  )
-}
-
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/^\d+\.\s*/, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
 }
