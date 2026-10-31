@@ -32,14 +32,14 @@ struct OnboardingView: View {
                     swipePrompt
                         .position(x: center.x, y: center.y + Self.phoneHeight * phoneScale / 2 + 40)
                 }
-                if flow.heartsShown, let hearts = flow.hearts {
-                    Image(nsImage: hearts)
+                if flow.doodleShown, let doodle = flow.doodle {
+                    Image(nsImage: doodle)
                         .resizable()
                         .frame(width: OnboardingFlow.desktopCanvas.width, height: OnboardingFlow.desktopCanvas.height)
-                        .scaleEffect(flow.heartsShrunk ? phoneScale / OnboardingFlow.desktopScale : 1)
+                        .scaleEffect(flow.doodleShrunk ? phoneScale / OnboardingFlow.desktopScale : 1)
                         .position(center)
                         .allowsHitTesting(false)
-                        .accessibilityLabel("Two hearts, drawn on the desktop")
+                        .accessibilityLabel("A heart and a note saying hi, drawn on the desktop")
                 }
                 if flow.scene == .waiting {
                     Text("We’ll let you know when \(flow.partnerDisplayName) joins")

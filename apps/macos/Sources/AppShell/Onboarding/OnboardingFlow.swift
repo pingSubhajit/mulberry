@@ -11,8 +11,9 @@ import UserNotifications
 ///
 /// The screen darkens and blurs; "Subhajit Kundu presents" fades in as the Mulberry mark rises from
 /// the bottom, shrinking and losing its glow, and settles into "Welcome to Mulberry" as the credit
-/// fades. Continue with Google pops up. Once signed in, two hearts draw themselves on the desktop
-/// and an iPhone forms around them: what is drawn on a Mac appears on a phone. It lights up as the
+/// fades. Continue with Google pops up. Once signed in, a heart draws itself on the desktop by two
+/// hands, one starting it and the other finishing it and writing "hi" beside it, and an iPhone
+/// forms around them: what is drawn on a Mac appears on a phone. It lights up as the
 /// menu bar's lock screen and bobs to ask for a swipe. Swiping opens Mulberry on the phone: the
 /// person's details, then joining their partner with a code or inviting them. With the two paired
 /// the phone flies into the menu bar icon, the two photos meet, and Continue opens Quick Draw. A
@@ -22,7 +23,7 @@ import UserNotifications
 ///
 /// An account signed in later that is not ready for Mulberry's window, new, invited, or without
 /// the partner's details a code needs, is set up on the same phone: the window it signed in from
-/// turns into the phone, bare and quiet, without the film, the hearts or the music.
+/// turns into the phone, bare and quiet, without the film, the doodle or the music.
 @MainActor
 final class OnboardingFlow: ObservableObject {
     enum Scene: Equatable { case intro, phone, waiting, welcome }
@@ -61,9 +62,9 @@ final class OnboardingFlow: ObservableObject {
     @Published private(set) var signInShown = false
     @Published private(set) var introShown = true
     @Published private(set) var signInError: String?
-    @Published private(set) var hearts: NSImage?
-    @Published private(set) var heartsShown = false
-    @Published private(set) var heartsShrunk = false
+    @Published private(set) var doodle: NSImage?
+    @Published private(set) var doodleShown = false
+    @Published private(set) var doodleShrunk = false
     @Published private(set) var phoneShown = false
     @Published private(set) var lockShown = false
     @Published private(set) var swipePromptShown = false
@@ -110,7 +111,7 @@ final class OnboardingFlow: ObservableObject {
     /// Whether the details form, the one place that asks about Open at Login, has been shown.
     private var askedOpenAtLogin = false
 
-    /// The lock screen the phone shows: the menu bar's own, with the hearts as its drawing.
+    /// The lock screen the phone shows: the menu bar's own, with the doodle as its drawing.
     let lock = LockScreenModel()
     let presence = LockScreenPresence()
     let reactions: ReactionsModel
@@ -302,23 +303,23 @@ final class OnboardingFlow: ObservableObject {
     private func afterSignIn() async {
         withAnimation(.easeInOut(duration: 0.6)) { introShown = false }
         await pause(0.7)
-        await drawHearts()
+        await drawDoodle()
         await pause(0.5)
-        await showPhone(.aroundHearts)
+        await showPhone(.aroundDoodle)
     }
 
-    /// The hearts draw themselves on the desktop, a point at a time.
-    private func drawHearts() async {
-        heartsShown = true
-        let total = OnboardingHearts.pointCount
-        let duration = reduceMotion ? 0.0 : 2.6
-        let frames = max(1, Int(duration * 40))
-        for frame in 1...frames {
-            let count = Int((Double(frame) / Double(frames)) * Double(total))
-            hearts = OnboardingHearts.image(upTo: count, size: Self.desktopCanvas, scale: 2)
-            await pause(duration / Double(frames))
+    /// The doodle draws itself on the desktop, each point when its hand reaches it.
+    private func drawDoodle() async {
+        doodleShown = true
+        let duration = reduceMotion ? 0 : OnboardingDoodle.duration
+        let start = Date.now
+        while true {
+            let elapsed = Date.now.timeIntervalSince(start)
+            guard elapsed < duration else { break }
+            doodle = OnboardingDoodle.image(at: elapsed, size: Self.desktopCanvas, scale: 2)
+            await pause(1 / 40)
         }
-        hearts = OnboardingHearts.image(size: Self.desktopCanvas, scale: 2)
+        doodle = OnboardingDoodle.image(size: Self.desktopCanvas, scale: 2)
     }
 
     /// The drawing's size on the desktop, larger than on the phone it shrinks into.
@@ -328,15 +329,15 @@ final class OnboardingFlow: ObservableObject {
 
     static let desktopScale: CGFloat = 1.5
 
-    /// How the phone arrives: around the hearts just drawn, fading in, or from the window an
+    /// How the phone arrives: around the doodle just drawn, fading in, or from the window an
     /// account's setup began in.
-    private enum Entrance { case aroundHearts, fadeIn, fromWindow }
+    private enum Entrance { case aroundDoodle, fadeIn, fromWindow }
 
     /// The phone forms, then lights up as a lock screen asking for a swipe.
     private func showPhone(_ entrance: Entrance) async {
         scene = .phone
-        // A later account's phone is bare: the hearts belong to the first run.
-        lock.drawing = settingUp ? nil : OnboardingHearts.image(size: LockScreenView.canvasSize, scale: 4)
+        // A later account's phone is bare: the doodle belongs to the first run.
+        lock.drawing = settingUp ? nil : OnboardingDoodle.image(size: LockScreenView.canvasSize, scale: 4)
         lock.unlocked = false
         lock.swipe = 0
         // Drawn once hidden first, so it forms rather than appearing whole.
@@ -344,13 +345,13 @@ final class OnboardingFlow: ObservableObject {
         switch entrance {
         case .fadeIn:
             withAnimation(.easeOut(duration: 0.8)) { phoneShown = true }
-        case .aroundHearts:
+        case .aroundDoodle:
             withAnimation(.smooth(duration: 1.0)) {
-                heartsShrunk = true
+                doodleShrunk = true
                 phoneShown = true
             }
             await pause(1.0)
-            heartsShown = false
+            doodleShown = false
         case .fromWindow:
             // The desktop darkens as the window draws itself into the phone's shape, then the
             // phone itself comes through it. With Reduce Motion the window fades into the phone.
