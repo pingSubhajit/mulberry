@@ -34,6 +34,11 @@ sourcephase=add('sources',isa='PBXSourcesBuildPhase',buildActionMask='2147483647
 resourcephase=add('resources',isa='PBXResourcesBuildPhase',buildActionMask='2147483647',files=resources,runOnlyForDeploymentPostprocessing='0')
 frameworkphase=add('frameworks',isa='PBXFrameworksBuildPhase',buildActionMask='2147483647',files=[framework],runOnlyForDeploymentPostprocessing='0')
 configphase=add('client-config',isa='PBXShellScriptBuildPhase',buildActionMask='2147483647',files=[],inputPaths=[],outputPaths=[],runOnlyForDeploymentPostprocessing='0',shellPath='/bin/sh',shellScript='python3 "$SRCROOT/Scripts/copy-client-config.py"',alwaysOutOfDate='1',name='Copy selected client configuration')
+# Shares iOS's Release-only Crashlytics symbol upload; runs after the Firebase plist is copied in.
+symbolsphase=add('crashlytics-symbols',isa='PBXShellScriptBuildPhase',buildActionMask='2147483647',files=[],
+    inputPaths=['${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}','${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}',
+        '${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist','$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist','$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)'],
+    outputPaths=[],runOnlyForDeploymentPostprocessing='0',shellPath='/bin/sh',shellScript='/bin/sh "$SRCROOT/../ios/scripts/upload-crashlytics-symbols.sh"',alwaysOutOfDate='1',name='Upload Crashlytics symbols')
 projectconfigs=[]
 targetconfigs=[]
 for name,env,debug in [('Debug','dev',True),('DevRelease','dev',False),('ProdDebug','prod',True),('Release','prod',False)]:
@@ -52,7 +57,7 @@ for name,env,debug in [('Debug','dev',True),('DevRelease','dev',False),('ProdDeb
         'LD_RUNPATH_SEARCH_PATHS':'$(inherited) @executable_path/../Frameworks'}))
 projectlist=add('project-configs',isa='XCConfigurationList',buildConfigurations=projectconfigs,defaultConfigurationIsVisible='0',defaultConfigurationName='Release')
 targetlist=add('target-configs',isa='XCConfigurationList',buildConfigurations=targetconfigs,defaultConfigurationIsVisible='0',defaultConfigurationName='Release')
-target=add('target',isa='PBXNativeTarget',name='Mulberry',productName='Mulberry',productType='com.apple.product-type.application',productReference=product,buildConfigurationList=targetlist,buildPhases=[sourcephase,frameworkphase,resourcephase,configphase],dependencies=[],buildRules=[],packageProductDependencies=[productdep])
+target=add('target',isa='PBXNativeTarget',name='Mulberry',productName='Mulberry',productType='com.apple.product-type.application',productReference=product,buildConfigurationList=targetlist,buildPhases=[sourcephase,frameworkphase,resourcephase,configphase,symbolsphase],dependencies=[],buildRules=[],packageProductDependencies=[productdep])
 project=add('project',isa='PBXProject',attributes={'LastUpgradeCheck':'2720','TargetAttributes':{target:{'SystemCapabilities':{'com.apple.Push':{'enabled':'1'}}}}},buildConfigurationList=projectlist,compatibilityVersion='Xcode 14.0',developmentRegion='en',knownRegions=['en','Base'],mainGroup=main,productRefGroup=products,projectDirPath='',projectRoot='',targets=[target],packageReferences=[package])
 folder=root/'MulberryMac.xcodeproj'
 folder.mkdir(exist_ok=True)

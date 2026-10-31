@@ -39,6 +39,7 @@ xcodebuild archive \
   DEVELOPMENT_TEAM=HMJX9736KN CODE_SIGN_STYLE=Automatic \
   MULBERRY_API_BASE_URL=https://api.mulberry.my/ \
   MULBERRY_ALLOW_LOCAL_SERVER=NO MULBERRY_LOCAL_DEVICE_BUILD=NO \
+  MULBERRY_SOURCE_PACKAGES_DIR="$PWD/apps/ios/.build/device/SourcePackages" \
   APS_ENVIRONMENT=production ONLY_ACTIVE_ARCH=NO
 
 xcodebuild archive \
@@ -52,6 +53,7 @@ xcodebuild archive \
   DEVELOPMENT_TEAM=HMJX9736KN CODE_SIGN_STYLE=Automatic \
   MULBERRY_MAC_API_BASE_URL=https://api.mulberry.my/ \
   MULBERRY_ALLOW_LOCAL_SERVER=NO MULBERRY_MAC_UNSIGNED_BUILD=NO \
+  MULBERRY_SOURCE_PACKAGES_DIR="$PWD/apps/ios/.build/device/SourcePackages" \
   MULBERRY_APNS_ENVIRONMENT=production ONLY_ACTIVE_ARCH=NO
 
 xcodebuild -exportArchive \
@@ -66,6 +68,8 @@ xcodebuild -exportArchive \
   -exportOptionsPlist scripts/apple/ExportOptions.plist \
   -allowProvisioningUpdates
 ```
+
+Both archives upload their dSYMs to Crashlytics as they build. `MULBERRY_SOURCE_PACKAGES_DIR` tells the upload step where the Firebase package was checked out, since `-clonedSourcePackagesDirPath` puts it outside the derived data; without it the archive fails at that step.
 
 The shared export plist selects `app-store-connect` with `destination=export`: it prepares a local distribution package and does not upload it. Xcode may re-sign an automatically signed archive during export. Verify the **exported** app's signature, embedded profiles, production APNs, beta identity, live API, normal icon, Firebase project and bundled widget before upload. Check the Mac exported architecture list and its sandbox entitlements. Do not upload a locally installed development-signed `.app` or use Developer ID distribution for TestFlight.
 

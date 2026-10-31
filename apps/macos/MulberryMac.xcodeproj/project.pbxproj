@@ -216,6 +216,18 @@
 			"alwaysOutOfDate" = "1";
 			"name" = "Copy selected client configuration";
 		};
+		"20C8F087E021DFEB08084B62" = {
+			"isa" = "PBXShellScriptBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ();
+			"inputPaths" = ("${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}", "${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}", "${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist", "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist", "$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)");
+			"outputPaths" = ();
+			"runOnlyForDeploymentPostprocessing" = "0";
+			"shellPath" = "/bin/sh";
+			"shellScript" = "/bin/sh \"$SRCROOT/../ios/scripts/upload-crashlytics-symbols.sh\"";
+			"alwaysOutOfDate" = "1";
+			"name" = "Upload Crashlytics symbols";
+		};
 		"ED8772ADEC3A6C25161BC957" = {
 			"isa" = "XCBuildConfiguration";
 			"name" = "Debug";
@@ -387,7 +399,7 @@
 			"productType" = "com.apple.product-type.application";
 			"productReference" = "38A007151ABE87CC01A5B6E9";
 			"buildConfigurationList" = "976B52545947CA66FD9EF2A4";
-			"buildPhases" = ("BCE16DD0260827ECF338C787", "7561BFB015D8F536760CB671", "0189424A5A60FED329FA868E", "B5E1B03C7A10B5D5640FCB22");
+			"buildPhases" = ("BCE16DD0260827ECF338C787", "7561BFB015D8F536760CB671", "0189424A5A60FED329FA868E", "B5E1B03C7A10B5D5640FCB22", "20C8F087E021DFEB08084B62");
 			"dependencies" = ();
 			"buildRules" = ();
 			"packageProductDependencies" = ("1CC4754E52664BF705F2960E");

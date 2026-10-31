@@ -24,7 +24,7 @@ args=(-project MulberryMac.xcodeproj -scheme 'Mulberry Production' -configuratio
   -destination "platform=macOS,arch=$HOST_ARCH" -derivedDataPath .build/xcode
   ONLY_ACTIVE_ARCH=YES "ARCHS=$HOST_ARCH"
   -clonedSourcePackagesDirPath ../ios/.build/device/SourcePackages
-  MULBERRY_APNS_ENVIRONMENT=development)
+  MULBERRY_APNS_ENVIRONMENT=development MULBERRY_LOCAL_DEVICE_BUILD=YES)
 if [ "$UNSIGNED_BUILD" = YES ]; then
   args+=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM=
     MULBERRY_MAC_UNSIGNED_BUILD=YES)
