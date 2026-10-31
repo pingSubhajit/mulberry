@@ -35,6 +35,21 @@ xcuserdata/
 *.hmap
 *.dSYM/
 *.ipa
+apps/ios/Configuration/Local.xcconfig
+apps/ios/Configuration/*.local.xcconfig
+apps/ios/Configuration/GoogleService-Info*.plist
+apps/macos/Configuration/*.local.xcconfig
+apps/macos/Configuration/GoogleService-Info*.plist
+*.p8
+*.p12
+*.mobileprovision
+*.provisionprofile
+__pycache__/
+*.pyc
+
+# Physical-device evidence can contain personal drawings, photos and notifications.
+apps/ios/docs/evidence/local-beta-*/
+apps/macos/docs/evidence/local-beta-*/
 
 # LaTeX generated intermediates
 *.aux

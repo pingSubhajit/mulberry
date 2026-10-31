@@ -9,6 +9,23 @@ dist
 .turbo
 *.tsbuildinfo
 temp
+secrets
+**/.env
+**/.env.*
+!**/.env.example
+**/.build
+**/.swiftpm
+**/DerivedData
+**/xcuserdata
+**/*.p8
+**/*.p12
+**/*.mobileprovision
+**/*.provisionprofile
+**/GoogleService-Info*.plist
+**/*.local.xcconfig
+apps/ios/Configuration/Local.xcconfig
+apps/ios/docs/evidence
+apps/macos/docs/evidence
 
 apps/mobile/.gradle
 apps/mobile/build
