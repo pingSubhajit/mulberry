@@ -1,10 +1,59 @@
 import ActivityKit
 import UIKit
 
-/// Starts and updates the reactions Live Activity. Until Mulberry is signed with a team that can
-/// receive pushes, only the app can start it; the server will start it by push with the same state.
+/// The reactions Live Activity. The server starts it by push while Mulberry is closed, and updates
+/// it as more reactions arrive, with the same content state the app would show; it ends once the
+/// reactions are seen in the app. The app passes the server the tokens it needs for that.
 @MainActor
 enum ReactionActivities {
+    /// The activities whose tokens are followed, and the last push token each reported.
+    private static var followed: [String: String?] = [:]
+
+    /// Follows the push-to-start token and every activity's push token, from launch, so an activity
+    /// the server starts while Mulberry is in the background reports its token too.
+    static func followTokens() {
+        Task {
+            for await token in Activity<ReactionActivityAttributes>.pushToStartTokenUpdates {
+                PushRegistration.shared.liveActivityTokenChanged(.pushToStart(hex(token)))
+            }
+        }
+        Task {
+            for await activity in Activity<ReactionActivityAttributes>.activityUpdates {
+                follow(activity)
+                // Started while Mulberry is open: the canvas plays these reactions, or already has.
+                if UIApplication.shared.applicationState == .active {
+                    startedWhileOpen = true
+                    NotificationCenter.default.post(name: .mulberryReactionPush, object: nil)
+                }
+            }
+        }
+        let open = Activity<ReactionActivityAttributes>.activities.filter { [.active, .stale].contains($0.activityState) }
+        // One that ended while Mulberry was not running, as after iOS's eight hours, is no longer there to update.
+        if open.isEmpty { PushRegistration.shared.liveActivityTokenChanged(.activity(nil)) }
+        open.forEach(follow)
+    }
+
+    private static func follow(_ activity: Activity<ReactionActivityAttributes>) {
+        guard followed[activity.id] == nil else { return }
+        followed[activity.id] = .some(nil)
+        Task {
+            for await token in activity.pushTokenUpdates {
+                followed[activity.id] = hex(token)
+                PushRegistration.shared.liveActivityTokenChanged(.activity(hex(token)))
+            }
+        }
+        Task {
+            for await state in activity.activityStateUpdates where state == .ended || state == .dismissed {
+                guard followed.removeValue(forKey: activity.id) != nil else { break }
+                // Another still showing keeps its token; with none, the next reactions start one.
+                PushRegistration.shared.liveActivityTokenChanged(.activity(followed.values.compactMap { $0 }.first))
+                break
+            }
+        }
+    }
+
+    private static func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
+
     /// Shows a batch in the Dynamic Island and on the Lock Screen, updating the activity already
     /// there and lighting it up again, or starting one.
     static func show(_ batch: PendingReactionBatch, latest: ReactionType, partnerName: String, partnerPhotoURL: String? = nil) async {
@@ -21,7 +70,11 @@ enum ReactionActivities {
         } else {
             do {
                 let photo = await thumbnail(partnerPhotoURL)
-                _ = try Activity.request(attributes: ReactionActivityAttributes(partnerName: partnerName, partnerPhoto: photo), content: content, pushType: nil)
+                let attributes = ReactionActivityAttributes(partnerName: partnerName, partnerPhoto: photo)
+                // With a push token the server can update it too; a build signed without push cannot have one.
+                let activity = try (try? Activity.request(attributes: attributes, content: content, pushType: .token))
+                    ?? Activity.request(attributes: attributes, content: content, pushType: nil)
+                follow(activity)
                 startedInForeground = true
             }
             catch { log("Could not start the reactions Live Activity: \(error)") }
@@ -29,15 +82,18 @@ enum ReactionActivities {
     }
 
     /// Started by the app while it was open, so it has not been away from the canvas yet. The
-    /// server starts real ones by push while Mulberry is closed.
+    /// server starts the others by push.
     private static var startedInForeground = false
 
+    /// Started by push while Mulberry was open, for reactions the canvas plays itself.
+    private(set) static var startedWhileOpen = false
+
     /// Mulberry went to the background, so whatever the activity shows has not been seen.
-    static func appBackgrounded() { startedInForeground = false }
+    static func appBackgrounded() { startedInForeground = false; startedWhileOpen = false }
 
     /// The reactions the activity shows that the canvas has not played yet, if there is one.
     static var unplayed: PendingReactionBatch? {
-        guard !startedInForeground,
+        guard !startedInForeground, !startedWhileOpen,
               let state = Activity<ReactionActivityAttributes>.activities.first(where: { $0.activityState == .active })?.content.state,
               state.total > 0 else { return nil }
         return PendingReactionBatch(generation: 0, counts: Dictionary(uniqueKeysWithValues: state.kinds.map { ($0.type, $0.count) }))
@@ -79,9 +135,15 @@ enum ReactionActivities {
         #endif
     }
 
-    /// The reactions have been seen in the app, so they leave the island and the Lock Screen.
+    /// The reactions have been seen in the app, so they leave the island and the Lock Screen, and
+    /// the next ones start a new activity.
     static func endAll() async {
-        for activity in Activity<ReactionActivityAttributes>.activities {
+        startedWhileOpen = false
+        let activities = Activity<ReactionActivityAttributes>.activities
+        guard !activities.isEmpty else { return }
+        followed.removeAll()
+        PushRegistration.shared.liveActivityTokenChanged(.activity(nil))
+        for activity in activities {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
     }

@@ -70,6 +70,9 @@ final class ReactionsModel: ObservableObject {
             // Another device already played the batch, or the server had none, but this one still
             // shows reactions in the Dynamic Island: play those, then let the activity go.
             arrival = Arrival(batch: shown, local: true)
+        } else if ReactionActivities.startedWhileOpen, watching, self.user == user, arrival == nil {
+            // Started by push for reactions this canvas has already played.
+            await ReactionActivities.endAll()
         }
     }
 

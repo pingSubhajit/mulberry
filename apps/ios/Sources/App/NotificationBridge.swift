@@ -12,6 +12,7 @@ final class NotificationBridge: NSObject, UIApplicationDelegate, UNUserNotificat
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         PushRegistration.shared.configure()
+        ReactionActivities.followTokens()
         return true
     }
 
@@ -26,8 +27,8 @@ final class NotificationBridge: NSObject, UIApplicationDelegate, UNUserNotificat
     }
 
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
-        // Only the user-enabled Shortcuts automation changes wallpaper. A reaction push only
-        // arrives while Mulberry runs, and asks the canvas to fetch and play it.
+        // Only the user-enabled Shortcuts automation changes wallpaper. A reaction push asks the
+        // canvas to fetch and play it while Mulberry runs; the Live Activity has its own push.
         if userInfo["type"] as? String == "REACTION" { NotificationCenter.default.post(name: .mulberryReactionPush, object: nil) }
         completionHandler(.noData)
     }

@@ -46,11 +46,17 @@ public actor BackendClient {
     private var refreshTask: Task<SessionTokens, Error>?
 
     public init(baseURL: URL, tokenStore: any SessionTokenStore, transport: any BackendTransport = URLSessionTransport(), shortTransport: (any BackendTransport)? = nil) throws {
+        self.init(baseURL: baseURL, tokenStore: tokenStore, session: try tokenStore.load(), transport: transport, shortTransport: shortTransport)
+    }
+
+    /// Starts from `session` rather than reading the store, as when the store cannot be read: sign-in
+    /// and sign-out still save to it.
+    public init(baseURL: URL, tokenStore: any SessionTokenStore, session: SessionTokens?, transport: any BackendTransport = URLSessionTransport(), shortTransport: (any BackendTransport)? = nil) {
         self.baseURL = baseURL
         self.tokenStore = tokenStore
         self.transport = transport
         self.shortTransport = shortTransport ?? transport
-        tokens = try tokenStore.load()
+        tokens = session
     }
 
     public var signedInUserId: String? { tokens?.userId }
@@ -178,6 +184,25 @@ public actor BackendClient {
 
     public func unregisterPushToken(_ token: String) async throws {
         let _: JSONValue = try await json("devices/fcm-token", method: "DELETE", body: ["token": token])
+    }
+
+    /// One of an iPhone's reactions Live Activity tokens: a new one, or `nil` once it is gone.
+    public enum LiveActivityToken: Equatable, Sendable {
+        /// Lets the server start the activity.
+        case pushToStart(String?)
+        /// The activity on screen's own, which lets the server update it.
+        case activity(String?)
+    }
+
+    /// Tells the server where this device's reactions Live Activity can be started or updated by
+    /// push. `pushToken` is the device's registered FCM token.
+    public func updateLiveActivityToken(_ change: LiveActivityToken, pushToken: String) async throws {
+        let (key, value) = switch change {
+        case let .pushToStart(value): ("pushToStartToken", value)
+        case let .activity(value): ("activityPushToken", value)
+        }
+        let body: [String: JSONValue] = ["token": .string(pushToken), key: value.map(JSONValue.string) ?? .null]
+        let _: JSONValue = try await json("devices/live-activity", method: "PUT", body: body)
     }
 
     public func sendReaction(_ type: ReactionType) async throws {

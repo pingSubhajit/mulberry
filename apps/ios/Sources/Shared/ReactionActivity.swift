@@ -2,8 +2,8 @@ import ActivityKit
 import Foundation
 
 /// The partner's reactions on the Lock Screen and in the Dynamic Island. The app and the widget
-/// extension share it: the app starts and updates the activity, the extension draws it. The
-/// server will send the same content-state JSON when it starts the activity by push.
+/// extension share it: the server starts and updates the activity by push, with this type's name
+/// and the same content-state JSON, and the extension draws it.
 struct ReactionActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         /// How many of each reaction arrived, keyed by the server's names, like "HEART".
