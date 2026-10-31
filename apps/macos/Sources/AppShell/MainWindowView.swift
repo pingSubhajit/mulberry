@@ -37,7 +37,7 @@ struct MainWindowView: View {
             .background { WindowGlass() }
             // The traffic lights keep the leading edge; the streak and profile sit at the trailing one.
             .toolbar {
-                if let bootstrap = appStateController.loadState.bootstrap, authController.state.isSignedIn {
+                if let bootstrap = appStateController.loadState.bootstrap, authController.state.isSignedIn, !windowState.showsSignIn {
                     ToolbarSpacer(.flexible)
                     if bootstrap.isPaired {
                         // Reactions stand apart; the streak and profile share one glass group.
@@ -65,6 +65,15 @@ struct MainWindowView: View {
     }
 
     @ViewBuilder private var content: some View {
+        if windowState.showsSignIn {
+            SignInPanel(authController: authController, windowState: windowState)
+                .transition(.opacity)
+        } else {
+            account
+        }
+    }
+
+    @ViewBuilder private var account: some View {
         switch authController.state {
         case .signedIn:
             if let bootstrap = appStateController.loadState.bootstrap {
@@ -92,7 +101,8 @@ struct MainWindowView: View {
         case .refreshing:
             DelayedProgressView()
         case .signedOut, .signingIn, .failed:
-            SignInPanel(authController: authController)
+            // The window turns into the sign-in window a moment later.
+            Color.clear
         }
     }
 
@@ -218,42 +228,6 @@ private final class ProfileAvatar: ObservableObject {
             }
             return true
         }
-    }
-}
-
-private struct SignInPanel: View {
-    @ObservedObject var authController: AuthSessionController
-
-    var body: some View {
-        VStack(spacing: 18) {
-            Spacer()
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 96, height: 96)
-                .accessibilityHidden(true)
-            Text("Mulberry")
-                .font(.largeTitle.weight(.semibold))
-            Button {
-                Task { await authController.signIn() }
-            } label: {
-                Text(authController.state.isBusy ? "Signing In…" : "Sign in with Google")
-                    .frame(maxWidth: 220)
-            }
-            .buttonStyle(.glassProminent)
-            .tint(mulberryRed)
-            .controlSize(.large)
-            .disabled(authController.state.isBusy)
-            if case let .failed(failure) = authController.state {
-                Text(failure.message)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 32)
-            }
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
     }
 }
 

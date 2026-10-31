@@ -855,7 +855,7 @@ enum LegalDocument: String, Identifiable {
     }
 }
 
-private struct LegalDocumentSheet: View {
+struct LegalDocumentSheet: View {
     let document: LegalDocument
     @Environment(\.dismiss) private var dismiss
 

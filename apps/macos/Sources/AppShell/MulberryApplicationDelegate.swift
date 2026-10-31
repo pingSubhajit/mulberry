@@ -137,6 +137,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 }
                 self?.refreshStatusMenu()
                 self?.considerOnboarding()
+                if case let .signedIn(session) = self?.authController.state { LastAccount.remember(session.bootstrap) }
             }
         }
         appStateCancellable = appStateController.objectWillChange.sink { [weak self] _ in
@@ -892,6 +893,9 @@ private struct OverlayPresenceReportSignature: Equatable {
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let onWindowClosed: () -> Void
+    private let windowState: MainWindowState
+    private var shapeCancellable: AnyCancellable?
+    private var turning: Task<Void, Never>?
 
     init(
         windowState: MainWindowState,
@@ -909,6 +913,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         onWindowClosed: @escaping () -> Void
     ) {
         self.onWindowClosed = onWindowClosed
+        self.windowState = windowState
         let view = MainWindowView(
             windowState: windowState,
             authController: authController,
@@ -941,19 +946,127 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Clear, so the frosted glass behind the canvas shows the desktop softly.
         window.isOpaque = false
         window.backgroundColor = .clear
-        // The canvas's own portrait shape, at any size.
-        window.contentAspectRatio = Self.canvasAspect
-        window.contentMinSize = Self.minimumSize
-        window.setContentSize(Self.defaultContentSize())
-        window.center()
         window.isReleasedWhenClosed = false
-        // A portrait panel has no full-screen layout: no green button, and the menu item and
+        // Neither shape has a full-screen layout: no green button, and the menu item and
         // Control-Command-F leave the window as it is.
         window.collectionBehavior.insert(.fullScreenNone)
         window.standardWindowButton(.zoomButton)?.isHidden = true
         super.init(window: window)
         window.delegate = self
+
+        // Wide while signed out; the canvas's portrait once signed in.
+        var signIn = Self.showsSignIn(authController.state)
+        #if DEBUG
+        // `-signInPreview YES` shows the sign-in window without signing out; Continue pretends.
+        // `-signInPreviewAuto YES` presses it a few seconds in.
+        if UserDefaults.standard.bool(forKey: "signInPreview") {
+            signIn = true
+            let previewSignIn = { [unowned self, unowned windowState] in
+                windowState.previewBusy = true
+                Task {
+                    try? await Task.sleep(for: .seconds(1.2))
+                    windowState.previewBusy = false
+                    turn(toSignIn: false)
+                }
+            }
+            windowState.previewSignIn = previewSignIn
+            if UserDefaults.standard.bool(forKey: "signInPreviewAuto") {
+                Task {
+                    try? await Task.sleep(for: .seconds(4))
+                    previewSignIn()
+                }
+            }
+        }
+        #endif
+        windowState.showsSignIn = signIn
+        windowState.signInLeaving = false
+        shape(signIn, animated: false)
+        window.center()
+        // Even in the preview, a real sign-out after the pretend sign-in turns the window back.
+        shapeCancellable = authController.$state
+            .map(Self.showsSignIn)
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] signIn in
+                DispatchQueue.main.async { self?.turn(toSignIn: signIn) }
+            }
     }
+
+    private static func showsSignIn(_ state: AuthSessionState) -> Bool {
+        switch state {
+        case .signedOut, .signingIn, .failed: true
+        case .signedIn, .refreshing: false
+        }
+    }
+
+    /// Signing out covers the canvas, then widens the window; signing in lets the welcome go,
+    /// narrows the window into the canvas's shape, then uncovers the canvas.
+    private func turn(toSignIn signIn: Bool) {
+        turning?.cancel()
+        let animated = window?.isVisible == true && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if signIn {
+            windowState.signInLeaving = false
+            withAnimation(.easeOut(duration: 0.25)) { windowState.showsSignIn = true }
+            shape(true, animated: animated)
+        } else {
+            windowState.signInLeaving = true
+            turning = Task { [weak self] in
+                if animated { try? await Task.sleep(for: .seconds(0.2)) }
+                guard let self, !Task.isCancelled else { return }
+                shape(false, animated: animated)
+                if animated { try? await Task.sleep(for: .seconds(Self.turnDuration)) }
+                guard !Task.isCancelled else { return }
+                // Still leaving as it fades: the welcome stays hidden until the sign-in window
+                // comes back, rather than flashing up in the fading panel.
+                withAnimation(.easeOut(duration: 0.35)) { windowState.showsSignIn = false }
+            }
+        }
+    }
+
+    /// Sizes the window for either shape about its middle, kept on its screen.
+    private func shape(_ signIn: Bool, animated: Bool) {
+        guard let window else { return }
+        let size = signIn ? Self.signInSize : Self.defaultContentSize()
+        if signIn {
+            // Before shrinking: the canvas's minimum is taller than the sign-in window.
+            window.styleMask.remove(.resizable)
+            window.contentMinSize = Self.signInSize
+            window.appearance = NSAppearance(named: .darkAqua)
+        }
+        let current = window.frame
+        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
+        frame.origin = NSPoint(x: current.midX - frame.width / 2, y: current.midY - frame.height / 2)
+        if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
+            frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+            frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+        }
+        guard animated else {
+            window.setFrame(frame, display: true)
+            if !signIn { settleIntoCanvas() }
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.turnDuration
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0.72, 0, 1)
+            window.animator().setFrame(frame, display: true)
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated { if !signIn { self?.settleIntoCanvas() } }
+        }
+    }
+
+    /// The canvas's own portrait shape, at any size, unless signed out again on the way.
+    private func settleIntoCanvas() {
+        guard let window, !windowState.showsSignIn || windowState.signInLeaving else { return }
+        window.styleMask.insert(.resizable)
+        window.contentAspectRatio = Self.canvasAspect
+        window.contentMinSize = Self.minimumSize
+        window.appearance = nil
+    }
+
+    private static let turnDuration = 0.5
+
+    /// Landscape, about the size of a Mac's own welcome windows.
+    private static let signInSize = NSSize(width: 880, height: 550)
 
     required init?(coder: NSCoder) {
         nil
@@ -968,6 +1081,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// Enforces the minimum here too: the hosted SwiftUI view can reset the window's
     /// minimum, and the aspect ratio alone lets the window shrink without limit.
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        guard !windowState.showsSignIn else { return frameSize }
         let width = max(Self.minimumSize.width, frameSize.width)
         // With a full-size content view the frame and the content are the same size.
         return NSSize(width: width, height: width * Self.canvasAspect.height / Self.canvasAspect.width)

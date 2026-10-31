@@ -161,7 +161,7 @@ private struct OnboardingBackdrop: View {
     }
 }
 
-private struct BehindWindowBlur: NSViewRepresentable {
+struct BehindWindowBlur: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = .fullScreenUI
@@ -368,7 +368,7 @@ private struct GoogleButton: View {
 }
 
 /// Google's own G, the same file the iPhone app's sign-in uses.
-private struct GoogleMark: View {
+struct GoogleMark: View {
     private static let image = AppResources.url("Onboarding/GoogleMark.svg").flatMap(NSImage.init(contentsOf:))
 
     var body: some View {
