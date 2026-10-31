@@ -63,6 +63,9 @@ android {
         versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Cleartext (http://) is off unless the dev flavor or the debug build type opts in,
+        // so prodRelease (what ships to Play) never allows it.
+        manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
 
     flavorDimensions += "environment"
@@ -75,6 +78,7 @@ android {
             versionNameSuffix = "-dev"
             buildConfigField("String", "APP_ENVIRONMENT", "\"dev\"")
             buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080/\"")
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
             buildConfigField("boolean", "ENABLE_DEBUG_MENU", "true")
             buildConfigField(
                 "String",
@@ -107,6 +111,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
+        }
         release {
             isMinifyEnabled = false
             isShrinkResources = false
