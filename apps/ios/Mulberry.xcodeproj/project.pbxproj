@@ -957,6 +957,18 @@
 			"alwaysOutOfDate" = "1";
 			"name" = "Copy public Firebase client configuration";
 		};
+		"861B9BFD4DF1AFF0067C9134" = {
+			"isa" = "PBXShellScriptBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ();
+			"inputPaths" = ("$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)");
+			"outputPaths" = ();
+			"runOnlyForDeploymentPostprocessing" = "0";
+			"shellPath" = "/bin/sh";
+			"shellScript" = "python3 \"$SRCROOT/scripts/allow-local-server.py\"";
+			"alwaysOutOfDate" = "1";
+			"name" = "Allow the local development server in Debug";
+		};
 		"38A007151ABE87CC01A5B6E9" = {
 			"isa" = "PBXFileReference";
 			"explicitFileType" = "wrapper.application";
@@ -1202,7 +1214,7 @@
 			"productType" = "com.apple.product-type.application";
 			"productReference" = "38A007151ABE87CC01A5B6E9";
 			"buildConfigurationList" = "976B52545947CA66FD9EF2A4";
-			"buildPhases" = ("F612CD2E22E187AC48B5913C", "69680EDE0CF9B24DB8DBFE04", "86F6FE2DD6E869C1842A14B3", "09116CEAEBB202A6AB99C97F", "0E58D8A63A91798B77524488", "DD17C78D22CE14910EF1013F");
+			"buildPhases" = ("F612CD2E22E187AC48B5913C", "69680EDE0CF9B24DB8DBFE04", "86F6FE2DD6E869C1842A14B3", "09116CEAEBB202A6AB99C97F", "0E58D8A63A91798B77524488", "861B9BFD4DF1AFF0067C9134", "DD17C78D22CE14910EF1013F");
 			"dependencies" = ("A9181351A1FEE60D4A78323F");
 			"buildRules" = ();
 			"packageProductDependencies" = ("F2E404ED01FBAA7F00F90828", "8E2608B89677C6E7F69501BC", "2587D020BEFC96279C957461");

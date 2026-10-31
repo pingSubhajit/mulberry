@@ -81,6 +81,11 @@ crashlytics_phase = add('crashlytics-symbols-phase', isa='PBXShellScriptBuildPha
     outputPaths=[], runOnlyForDeploymentPostprocessing='0', shellPath='/bin/sh',
     shellScript='"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run"', alwaysOutOfDate='1', name='Upload Crashlytics symbols')
 firebase_phase = add('firebase-config-phase', isa='PBXShellScriptBuildPhase', buildActionMask='2147483647', files=[], inputPaths=[], outputPaths=[], runOnlyForDeploymentPostprocessing='0', shellPath='/bin/sh', shellScript='python3 "$SRCROOT/scripts/copy-client-config.py"', alwaysOutOfDate='1', name='Copy public Firebase client configuration')
+# Debug builds reach the development server over plain HTTP; the App Store build keeps ATS on. It runs
+# after the widget is embedded, which Xcode processes Info.plist after.
+local_server_phase = add('local-server-phase', isa='PBXShellScriptBuildPhase', buildActionMask='2147483647', files=[],
+    inputPaths=['$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)'], outputPaths=[], runOnlyForDeploymentPostprocessing='0', shellPath='/bin/sh',
+    shellScript='python3 "$SRCROOT/scripts/allow-local-server.py"', alwaysOutOfDate='1', name='Allow the local development server in Debug')
 product = add('product', isa='PBXFileReference', explicitFileType='wrapper.application', path='Mulberry.app', sourceTree='BUILT_PRODUCTS_DIR')
 widget_product = add('widget-product', isa='PBXFileReference', explicitFileType='wrapper.app-extension', path='MulberryWidgets.appex', sourceTree='BUILT_PRODUCTS_DIR')
 widget_assets_ref = add('widget-assets', isa='PBXFileReference', lastKnownFileType='folder.assetcatalog', path='Resources/WidgetAssets.xcassets', sourceTree='<group>')
@@ -131,7 +136,7 @@ widget_embed_build = add('widget-embed-build', isa='PBXBuildFile', fileRef=widge
 widget_embed = add('widget-embed-phase', isa='PBXCopyFilesBuildPhase', buildActionMask='2147483647', dstPath='', dstSubfolderSpec='13', files=[widget_embed_build], name='Embed Foundation Extensions', runOnlyForDeploymentPostprocessing='0')
 project_list = add('project-configs', isa='XCConfigurationList', buildConfigurations=project_configs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
 target_list = add('target-configs', isa='XCConfigurationList', buildConfigurations=target_configs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
-target = add('app-target', isa='PBXNativeTarget', name='Mulberry', productName='Mulberry', productType='com.apple.product-type.application', productReference=product, buildConfigurationList=target_list, buildPhases=[sources_phase, frameworks_phase, resources_phase, firebase_phase, widget_embed, crashlytics_phase], dependencies=[widget_dependency], buildRules=[], packageProductDependencies=[google_product, firebase_product, crashlytics_product])
+target = add('app-target', isa='PBXNativeTarget', name='Mulberry', productName='Mulberry', productType='com.apple.product-type.application', productReference=product, buildConfigurationList=target_list, buildPhases=[sources_phase, frameworks_phase, resources_phase, firebase_phase, widget_embed, local_server_phase, crashlytics_phase], dependencies=[widget_dependency], buildRules=[], packageProductDependencies=[google_product, firebase_product, crashlytics_product])
 project = add('project', isa='PBXProject', attributes={'LastUpgradeCheck': '2710'}, buildConfigurationList=project_list, compatibilityVersion='Xcode 14.0', developmentRegion='en', knownRegions=['en', 'Base'], mainGroup=main, productRefGroup=products, projectDirPath='', projectRoot='', targets=[target, widget_target], packageReferences=[google_package, firebase_package])
 folder = root / 'Mulberry.xcodeproj'
 folder.mkdir(exist_ok=True)
