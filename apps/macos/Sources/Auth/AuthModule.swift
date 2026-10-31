@@ -45,6 +45,9 @@ public enum AuthSessionState: Sendable {
     case signingIn
     case refreshing
     case signedIn(AuthSession)
+    /// A saved session the server could not be asked about, with no account details saved, as
+    /// when this Mac starts offline: still signed in, and tried again once it can connect.
+    case unreachable(AuthFailure)
     case failed(AuthFailure)
 
     public var isSignedIn: Bool {
@@ -115,9 +118,15 @@ public final class AuthSessionController: ObservableObject {
             if await api.signedInUserId == nil {
                 state = .signedOut
             } else {
-                state = .failed(AuthFailure(message: userFacingMessage(for: error)))
+                state = .unreachable(AuthFailure(message: userFacingMessage(for: error)))
             }
         }
+    }
+
+    /// Tries a saved session that could not be checked again, as when the network returns.
+    public func retryUnreachable() async {
+        guard case .unreachable = state else { return }
+        await restoreSession()
     }
 
     public func signIn() async {
@@ -178,7 +187,11 @@ public final class AuthSessionController: ObservableObject {
             return oauthError.errorDescription ?? "Google Sign-In failed."
         }
         if error is URLError {
+            #if DEBUG
             return "Could not reach Mulberry at \(configuration.normalizedAPIBaseURL.absoluteString). Start the backend and try again."
+            #else
+            return "Mulberry can't connect. Check your internet connection."
+            #endif
         }
         if let localizedError = error as? LocalizedError, let description = localizedError.errorDescription {
             return description

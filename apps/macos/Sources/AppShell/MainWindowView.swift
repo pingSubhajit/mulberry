@@ -100,6 +100,8 @@ struct MainWindowView: View {
             }
         case .refreshing:
             DelayedProgressView()
+        case let .unreachable(failure):
+            UnreachablePanel(message: failure.message) { await authController.retryUnreachable() }
         case .signedOut, .signingIn, .failed:
             // The window turns into the sign-in window a moment later.
             Color.clear
@@ -232,6 +234,29 @@ private final class ProfileAvatar: ObservableObject {
 }
 
 /// Waiting for the partner: the code to give them.
+/// Signed in, but the account could not be loaded. It is tried again as the network returns, too.
+private struct UnreachablePanel: View {
+    let message: String
+    let retry: () async -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(.secondary)
+            Text(message)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Try Again") { Task { await retry() } }
+                .buttonStyle(.glass)
+                .controlSize(.large)
+                .padding(.top, 8)
+        }
+        .padding(.horizontal, 36)
+    }
+}
+
 private struct UnpairedPanel: View {
     @ObservedObject var invite: PartnerInvite
     let partnerName: String

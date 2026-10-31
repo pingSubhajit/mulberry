@@ -62,7 +62,7 @@ public final class AppStateController: ObservableObject {
             lastLoadedUserID = nil
             loadState = .idle
             syncController.reset()
-        case let .failed(failure):
+        case let .failed(failure), let .unreachable(failure):
             loadState = .failed(failure.message)
             syncController.updateSession(userID: nil, pairSessionID: nil, shouldSync: false)
         }

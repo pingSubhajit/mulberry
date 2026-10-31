@@ -135,25 +135,29 @@ public enum MacBackend {
     /// Per build, as the iPhone's development and release builds each keep their own session.
     public static let keychainService = "\(Bundle.main.bundleIdentifier ?? "com.subhajit.mulberry").backend-session"
 
-    /// A saved session that can no longer be read is dropped, so the person signs in again.
-    public static func makeClient(configuration: MacAppConfiguration) throws -> BackendClient {
+    /// A saved session that can no longer be read is dropped, so the person signs in again. If the
+    /// Keychain itself cannot be reached, this launch starts signed out and leaves the saved session
+    /// for the next.
+    public static func makeClient(configuration: MacAppConfiguration) -> BackendClient {
         let quick = URLSessionConfiguration.default
         quick.waitsForConnectivity = false
         quick.timeoutIntervalForRequest = 3
         quick.timeoutIntervalForResource = 3
         let tokens = SessionKeychain(service: keychainService)
-        let make = {
-            try BackendClient(
-                baseURL: configuration.normalizedAPIBaseURL,
-                tokenStore: tokens,
-                shortTransport: URLSessionTransport(session: URLSession(configuration: quick))
-            )
-        }
+        let session: SessionTokens?
         do {
-            return try make()
+            session = try tokens.load()
+        } catch is DecodingError {
+            try? tokens.clear()
+            session = nil
         } catch {
-            try tokens.clear()
-            return try make()
+            session = nil
         }
+        return BackendClient(
+            baseURL: configuration.normalizedAPIBaseURL,
+            tokenStore: tokens,
+            session: session,
+            shortTransport: URLSessionTransport(session: URLSession(configuration: quick))
+        )
     }
 }

@@ -16,13 +16,7 @@ import Sync
 public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private let configuration = MacAppConfiguration.current
     private let store = MacLocalStore()
-    private lazy var api: BackendClient = {
-        do {
-            return try MacBackend.makeClient(configuration: configuration)
-        } catch {
-            fatalError("Unable to open Mulberry's saved session: \(error)")
-        }
-    }()
+    private lazy var api = MacBackend.makeClient(configuration: configuration)
     private lazy var pushRegistration = MacPushRegistration(api: api)
     private let windowState = MainWindowState()
     private var mainMenuController: MainMenuController?
@@ -495,7 +489,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         let signedIn: Bool
         switch authController.state {
         case .signedOut: signedIn = false
-        case .signedIn, .failed: signedIn = true
+        case .signedIn, .unreachable, .failed: signedIn = true
         case .signingIn, .refreshing: return
         }
         onboardingConsidered = true
@@ -1188,7 +1182,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private static func showsSignIn(_ state: AuthSessionState) -> Bool {
         switch state {
         case .signedOut, .signingIn, .failed: true
-        case .signedIn, .refreshing: false
+        case .signedIn, .refreshing, .unreachable: false
         }
     }
 
