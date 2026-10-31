@@ -87,14 +87,22 @@ import Testing
     #expect(CanvasStrokeRenderMode(rawBackendValue: nil) == .dryBrush)
 }
 
-@Test func committedGoldenFixtureMatchesCurrentRendererWhenPresent() throws {
+/// Re-record the golden on purpose with `CANVAS_RECORD_GOLDENS=1 swift test`. A mismatch leaves
+/// the new render in Fixtures/canvas/rendered to compare.
+@Test func committedGoldenFixtureMatchesCurrentRenderer() throws {
     let rendered = try #require(renderGoldenFixture())
-    let goldenURL = fixtureRoot()
-        .appendingPathComponent("goldens/preview-dry-brush.png")
-    guard FileManager.default.fileExists(atPath: goldenURL.path) else {
+    let goldenURL = fixtureRoot().appendingPathComponent("goldens/preview-dry-brush.png")
+    let fileManager = FileManager.default
+    if ProcessInfo.processInfo.environment["CANVAS_RECORD_GOLDENS"] == "1" || !fileManager.fileExists(atPath: goldenURL.path) {
+        try fileManager.createDirectory(at: goldenURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try rendered.data.write(to: goldenURL)
         return
     }
     let golden = try Data(contentsOf: goldenURL)
+    if rendered.data != golden {
+        let renderedURL = fixtureRoot().appendingPathComponent("rendered/preview-dry-brush.png")
+        try? rendered.data.write(to: renderedURL)
+    }
     #expect(rendered.data == golden)
 }
 

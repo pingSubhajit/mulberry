@@ -10,7 +10,6 @@ fi
 swift test
 swift build --product Mulberry
 swift run OverlayRegressionCheck
-swift run CanvasRenderFixtureCheck
 ./Scripts/build-app.sh
 test -x .build/app/Mulberry.app/Contents/MacOS/Mulberry
 plutil -lint .build/app/Mulberry.app/Contents/Info.plist >/dev/null

@@ -27,10 +27,6 @@ let package = Package(
         .executable(
             name: "OverlayRegressionCheck",
             targets: ["OverlayRegressionCheck"]
-        ),
-        .executable(
-            name: "CanvasRenderFixtureCheck",
-            targets: ["CanvasRenderFixtureCheck"]
         )
     ],
     dependencies: [
@@ -75,7 +71,6 @@ let package = Package(
         .target(name: "QuickDraw", dependencies: ["Overlay"]),
         .target(name: "Stickers", dependencies: [.product(name: "ProductCore", package: "apple"), .product(name: "CanvasDrawing", package: "apple"), .product(name: "StickerAssets", package: "apple")]),
         .executableTarget(name: "OverlayRegressionCheck", dependencies: ["Overlay"]),
-        .executableTarget(name: "CanvasRenderFixtureCheck", dependencies: ["CanvasRendering"]),
         .testTarget(
             name: "CanvasRenderingTests",
             dependencies: ["CanvasRendering", .product(name: "ProductCore", package: "apple"), .product(name: "CanvasDrawing", package: "apple")]
