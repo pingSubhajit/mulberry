@@ -155,3 +155,13 @@ private actor TestTransport: BackendTransport {
     #expect(store.load() == session)
     #expect(await client.signedInUserId == savedSession.userId)
 }
+
+@Test func bootstrapWithoutSignInMethodsMeansGoogle() throws {
+    let older = try JSONDecoder().decode(BootstrapState.self, from: fixture("bootstrap"))
+    #expect(older.signsIn(with: .google) && !older.signsIn(with: .apple))
+
+    var object = try #require(try JSONSerialization.jsonObject(with: fixture("bootstrap")) as? [String: Any])
+    object["signInMethods"] = ["apple"]
+    let apple = try JSONDecoder().decode(BootstrapState.self, from: JSONSerialization.data(withJSONObject: object))
+    #expect(apple.signsIn(with: .apple) && !apple.signsIn(with: .google))
+}

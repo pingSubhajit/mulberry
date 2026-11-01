@@ -11,6 +11,28 @@ private final class ContractTokenStore: SessionTokenStore, @unchecked Sendable {
 }
 
 @Test(.enabled(if: ProcessInfo.processInfo.environment["MULBERRY_CONTRACT_SERVER"] != nil), .timeLimit(.minutes(1)))
+func swiftClientSignsInWithAppleAndLinksGoogle() async throws {
+    let url = URL(string: ProcessInfo.processInfo.environment["MULBERRY_CONTRACT_SERVER"]!)!
+    let client = try BackendClient(baseURL: url, tokenStore: ContractTokenStore())
+    let suffix = UUID().uuidString.lowercased()
+    let apple = AppleIDCredential(
+        identityToken: "dev-apple:apple-\(suffix):\(suffix)@privaterelay.appleid.com",
+        authorizationCode: nil, nonce: "contract", displayName: "Riya"
+    )
+    let signedIn = try await client.signIn(apple: apple)
+    #expect(signedIn.signsIn(with: .apple) && !signedIn.signsIn(with: .google))
+    #expect(signedIn.userDisplayName == "Riya")
+
+    let google = "dev-google:linked-\(suffix)@example.invalid:Riya"
+    let linked = try await client.link(googleIDToken: google)
+    #expect(linked.signsIn(with: .google) && linked.signsIn(with: .apple))
+
+    let other = try BackendClient(baseURL: url, tokenStore: ContractTokenStore())
+    let throughGoogle = try await other.signIn(googleIDToken: google)
+    #expect(throughGoogle.userId == signedIn.userId)
+}
+
+@Test(.enabled(if: ProcessInfo.processInfo.environment["MULBERRY_CONTRACT_SERVER"] != nil), .timeLimit(.minutes(1)))
 func swiftClientPairsDrawsAndUnpairsThroughRealBackendRoutes() async throws {
     let url = URL(string: ProcessInfo.processInfo.environment["MULBERRY_CONTRACT_SERVER"]!)!
     #expect(url.host == "127.0.0.1")

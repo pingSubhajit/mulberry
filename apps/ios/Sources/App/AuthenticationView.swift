@@ -1,9 +1,10 @@
 import SwiftUI
 
 struct AuthenticationView: View {
-    let isSigningIn: Bool
+    let busy: Bool
+    let signingInWith: SignInMethod?
     let errorMessage: String?
-    let signIn: () -> Void
+    let signIn: (SignInMethod) -> Void
     @Environment(\.dynamicTypeSize) private var textSize
 
     var body: some View {
@@ -55,25 +56,48 @@ struct AuthenticationView: View {
                         .background(.white, in: RoundedRectangle(cornerRadius: 16))
                         .accessibilityIdentifier("signInError")
                 }
-                Button(action: signIn) {
-                    HStack(spacing: 10) {
-                        if isSigningIn { ProgressView().tint(.black) }
-                        else { Image("GoogleMark").resizable().scaledToFit().frame(width: 22, height: 22).accessibilityHidden(true) }
-                        Text(isSigningIn ? "Signing in…" : "Continue with Google")
-                            .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .callout))
-                    }
-                    .foregroundStyle(.black)
-                    .frame(maxWidth: .infinity, minHeight: 54)
-                    .background(.white.opacity(isSigningIn ? 0.85 : 1), in: RoundedRectangle(cornerRadius: 16))
+                ForEach(SignInMethod.allCases, id: \.self) { method in
+                    SignInButton(method: method, signingIn: signingInWith == method) { signIn(method) }
+                        .disabled(busy)
                 }
-                .buttonStyle(.plain)
-                .disabled(isSigningIn)
-                .accessibilityIdentifier("googleSignIn")
             }
             .readableColumn(480)
             .padding(.horizontal, 20).padding(.bottom, 12)
         }
         // Android's owned landing artwork has one intentional light appearance.
         .preferredColorScheme(.light)
+    }
+}
+
+/// Google's white button, and Apple's black one under it, the same size.
+private struct SignInButton: View {
+    let method: SignInMethod
+    let signingIn: Bool
+    let action: () -> Void
+
+    private var foreground: Color { method == .google ? .black : .white }
+    private var background: Color { method == .google ? .white : .black }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                if signingIn { ProgressView().tint(foreground) }
+                else { mark.frame(width: 22, height: 22).accessibilityHidden(true) }
+                Text(signingIn ? "Signing in…" : method == .google ? "Continue with Google" : "Continue with Apple")
+                    .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .callout))
+            }
+            .foregroundStyle(foreground)
+            .frame(maxWidth: .infinity, minHeight: 54)
+            .background(background.opacity(signingIn ? 0.85 : 1), in: RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(method == .google ? "googleSignIn" : "appleSignIn")
+    }
+
+    @ViewBuilder private var mark: some View {
+        switch method {
+        case .google: Image("GoogleMark").resizable().scaledToFit()
+        case .apple: Image(systemName: "apple.logo").font(.system(size: 19, weight: .medium)).offset(y: -1)
+        }
     }
 }

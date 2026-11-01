@@ -27,7 +27,7 @@ struct MulberryRootView: View {
                 // The launch screen's background carries on while the saved session restores.
                 DelayedProgressView().background(MulberryDesign.background)
             } else if model.bootstrap == nil {
-                AuthenticationView(isSigningIn: model.busy, errorMessage: model.errorMessage) { Task { await model.signIn() } }
+                AuthenticationView(busy: model.busy, signingInWith: model.signingInWith, errorMessage: model.errorMessage) { method in Task { await model.signIn(with: method) } }
             } else if model.bootstrap?.pairingStatus == "INVITE_PENDING_ACCEPTANCE" {
                 NavigationStack { InviteAcceptanceView(model: model) }
             } else if model.bootstrap?.onboardingCompleted != true {

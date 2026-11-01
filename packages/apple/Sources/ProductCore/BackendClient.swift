@@ -62,11 +62,29 @@ public actor BackendClient {
     public var signedInUserId: String? { tokens?.userId }
 
     public func signIn(googleIDToken: String) async throws -> BootstrapState {
+        try await authenticate("auth/google", body: ["idToken": googleIDToken])
+    }
+
+    public func signIn(apple credential: AppleIDCredential) async throws -> BootstrapState {
+        try await authenticate("auth/apple", body: credential)
+    }
+
+    /// Lets the signed-in account sign in with Google too.
+    public func link(googleIDToken: String) async throws -> BootstrapState {
+        try await json("me/sign-in-methods/google", method: "POST", body: ["idToken": googleIDToken])
+    }
+
+    /// Lets the signed-in account sign in with Apple too.
+    public func link(apple credential: AppleIDCredential) async throws -> BootstrapState {
+        try await json("me/sign-in-methods/apple", method: "POST", body: credential)
+    }
+
+    private func authenticate<Body: Encodable>(_ path: String, body: Body) async throws -> BootstrapState {
         generation += 1
         let epoch = generation
         refreshTask?.cancel()
         refreshTask = nil
-        let response: AuthenticationResponse = try await json("auth/google", method: "POST", body: ["idToken": googleIDToken], authenticated: false)
+        let response: AuthenticationResponse = try await json(path, method: "POST", body: body, authenticated: false)
         guard generation == epoch else { throw BackendError.sessionChanged }
         try tokenStore.save(response.tokens)
         tokens = response.tokens

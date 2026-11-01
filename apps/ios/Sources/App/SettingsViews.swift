@@ -535,8 +535,16 @@ struct ProfileSettingsView: View {
                         .textContentType(.nickname).textInputAutocapitalization(.words)
                         .submitLabel(.done)
                 }
-                LabeledContent("Google account") {
+                LabeledContent("Email") {
                     Text(profile?.userEmail ?? "").textSelection(.enabled)
+                }
+            }
+            Section("Sign In") {
+                ForEach(SignInMethod.allCases, id: \.self) { method in
+                    SignInMethodRow(method: method, linked: profile?.signsIn(with: method) == true) {
+                        Task { await model.link(method) }
+                    }
+                    .disabled(model.busy)
                 }
             }
             if let error = photoError ?? model.errorMessage { Section { InlineError(message: error) }.listRowInsets(EdgeInsets()).listRowBackground(Color.clear) }
@@ -563,6 +571,41 @@ struct ProfileSettingsView: View {
                     guard user == model.userId else { return }
                     await model.updatePhoto(jpeg)
                 } catch { photoError = error.localizedDescription }
+            }
+        }
+    }
+}
+
+/// A way into the account: a check once it's linked, or Link, as Anniversary's Add.
+private struct SignInMethodRow: View {
+    let method: SignInMethod
+    let linked: Bool
+    let link: () -> Void
+
+    var body: some View {
+        if linked {
+            row
+        } else {
+            Button(action: link) { row }.foregroundStyle(MulberryDesign.ink)
+        }
+    }
+
+    private var row: some View {
+        LabeledContent {
+            if linked {
+                Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(.secondary)
+                    .accessibilityLabel("Linked")
+            } else {
+                Text("Link").foregroundStyle(MulberryDesign.accent)
+            }
+        } label: {
+            Label {
+                Text(method == .google ? "Google" : "Apple")
+            } icon: {
+                switch method {
+                case .google: Image("GoogleMark").resizable().scaledToFit().frame(width: 20, height: 20)
+                case .apple: Image(systemName: "apple.logo").foregroundStyle(MulberryDesign.ink)
+                }
             }
         }
     }

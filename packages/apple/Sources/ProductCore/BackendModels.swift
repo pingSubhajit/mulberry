@@ -52,6 +52,8 @@ public struct BootstrapState: Codable, Equatable, Sendable {
     public let canvasStrokeRenderMode: String
     public let userId: String?
     public let userEmail: String?
+    /// How the account can sign in. Missing from older servers, when every account used Google.
+    public let signInMethods: [String]?
     public let userPhotoUrl: String?
     public let userDisplayName: String?
     public let partnerPhotoUrl: String?
@@ -70,6 +72,9 @@ public struct BootstrapState: Codable, Equatable, Sendable {
     public let partnerPresence: PresenceSummary
 
     public var isPaired: Bool { pairingStatus == "PAIRED" && pairSessionId != nil }
+    public func signsIn(with method: SignInMethod) -> Bool {
+        (signInMethods ?? [SignInMethod.google.rawValue]).contains(method.rawValue)
+    }
     public var partnerProfileUnlockDate: Date? { partnerProfileNextUpdateAt.flatMap(ServerDate.parse) }
     public func canEditPartner(at date: Date = Date()) -> Bool {
         partnerProfileUnlockDate.map { date >= $0 } ?? true

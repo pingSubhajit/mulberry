@@ -11,6 +11,8 @@ final class MulberryModel: ObservableObject {
     @Published private(set) var bootstrap: BootstrapState?
     @Published private(set) var restoring = true
     @Published private(set) var busy = false
+    /// The sign-in button in progress.
+    @Published private(set) var signingInWith: SignInMethod?
     @Published var errorMessage: String?
     @Published var canvasSaveError: String?
     var retryCanvasSave: (() -> Void)?
@@ -57,11 +59,29 @@ final class MulberryModel: ObservableObject {
         } catch { await handle(error) }
     }
 
-    func signIn() async {
+    func signIn(with method: SignInMethod) async {
+        guard !busy else { return }
+        signingInWith = method
+        defer { signingInWith = nil }
         await perform {
-            let idToken = try await GoogleAuthentication.signIn()
-            let state = try await self.api.signIn(googleIDToken: idToken)
+            let state: BootstrapState
+            switch method {
+            case .google: state = try await self.api.signIn(googleIDToken: try await GoogleAuthentication.signIn())
+            case .apple: state = try await self.api.signIn(apple: try await AppleAuthentication.signIn())
+            }
             self.sessionEpoch += 1
+            await self.apply(state)
+        }
+    }
+
+    /// Lets this account sign in with `method` too.
+    func link(_ method: SignInMethod) async {
+        await perform {
+            let state: BootstrapState
+            switch method {
+            case .google: state = try await self.api.link(googleIDToken: try await GoogleAuthentication.signIn())
+            case .apple: state = try await self.api.link(apple: try await AppleAuthentication.signIn())
+            }
             await self.apply(state)
         }
     }
@@ -315,7 +335,7 @@ final class MulberryModel: ObservableObject {
     }
 
     private func handle(_ error: Error) async {
-        if GoogleAuthentication.isCancellation(error) { return }
+        if GoogleAuthentication.isCancellation(error) || AppleSignIn.isCancellation(error) { return }
         // Leaving the app cancels the 5-second refresh mid-request; that is not a failure to show.
         if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
         if (try? await api.signedInUserId) == nil && bootstrap != nil {
