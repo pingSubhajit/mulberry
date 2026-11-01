@@ -31,7 +31,7 @@ public struct AuthSession: Sendable {
 
 public struct AuthFailure: Sendable {
     public let message: String
-    /// The person closed Google's sign-in themselves: nothing went wrong.
+    /// The person closed Google's or Apple's sign-in themselves: nothing went wrong.
     public let cancelled: Bool
 
     public init(message: String, cancelled: Bool = false) {
@@ -63,11 +63,13 @@ public enum AuthSessionState: Sendable {
     }
 }
 
-/// Signs in with Google, then hands the session to ProductCore's `BackendClient`, which keeps the
-/// tokens in the Keychain and refreshes them for every request.
+/// Signs in with Google or Apple, then hands the session to ProductCore's `BackendClient`, which
+/// keeps the tokens in the Keychain and refreshes them for every request.
 @MainActor
 public final class AuthSessionController: ObservableObject {
     @Published public private(set) var state: AuthSessionState = .signedOut
+    /// The sign-in button in progress.
+    @Published public private(set) var signingInWith: SignInMethod?
     /// Revoke this device's push registration while its account is still authenticated.
     public var beforeSignOut: (() async -> Void)?
 
@@ -75,6 +77,7 @@ public final class AuthSessionController: ObservableObject {
     private let configuration: MacAppConfiguration
     private let store: MacLocalStore
     private let oauthClient: GoogleOAuthClient
+    private let presentationAnchorProvider: @MainActor () -> ASPresentationAnchor?
 
     public init(
         configuration: MacAppConfiguration,
@@ -87,6 +90,7 @@ public final class AuthSessionController: ObservableObject {
         self.configuration = configuration
         self.api = api
         self.store = store
+        self.presentationAnchorProvider = presentationAnchorProvider
         self.oauthClient = GoogleOAuthClient(
             configuration: configuration,
             presentationAnchorProvider: presentationAnchorProvider
@@ -129,21 +133,43 @@ public final class AuthSessionController: ObservableObject {
         await restoreSession()
     }
 
-    public func signIn() async {
-        guard configuration.googleClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+    public func signIn(with method: SignInMethod = .google) async {
+        if method == .google, configuration.googleClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             state = .failed(AuthFailure(message: "Set MULBERRY_MAC_GOOGLE_CLIENT_ID to enable Google Sign-In."))
             return
         }
 
         state = .signingIn
+        signingInWith = method
+        defer { signingInWith = nil }
         do {
-            let idToken = try await oauthClient.signIn()
-            accept(try await api.signIn(googleIDToken: idToken))
+            switch method {
+            case .google: accept(try await api.signIn(googleIDToken: try await oauthClient.signIn()))
+            case .apple: accept(try await api.signIn(apple: try await appleCredential()))
+            }
         } catch {
-            AuthDiagnostics.log("Google sign-in failed: \(diagnosticMessage(for: error))")
-            let cancelled = if case GoogleOAuthError.cancelled = error { true } else { false }
-            state = .failed(AuthFailure(message: userFacingMessage(for: error), cancelled: cancelled))
+            AuthDiagnostics.log("\(method.rawValue) sign-in failed: \(diagnosticMessage(for: error))")
+            state = .failed(AuthFailure(message: userFacingMessage(for: error), cancelled: Self.isCancellation(error)))
         }
+    }
+
+    /// Lets the signed-in account sign in with `method` too, returning its updated details.
+    public func link(_ method: SignInMethod) async throws -> BootstrapState {
+        switch method {
+        case .google: try await api.link(googleIDToken: try await oauthClient.signIn())
+        case .apple: try await api.link(apple: try await appleCredential())
+        }
+    }
+
+    /// The person closed Google's or Apple's sign-in themselves.
+    public nonisolated static func isCancellation(_ error: Error) -> Bool {
+        if case GoogleOAuthError.cancelled = error { return true }
+        return AppleSignIn.isCancellation(error)
+    }
+
+    /// Apple's sheet, over the window asking.
+    private func appleCredential() async throws -> AppleIDCredential {
+        try await AppleSignIn.authorize(over: presentationAnchorProvider() ?? NSWindow())
     }
 
     /// Keeps the session's account details current as the app refreshes them.
@@ -202,9 +228,9 @@ public final class AuthSessionController: ObservableObject {
     private func diagnosticMessage(for error: Error) -> String {
         let nsError = error as NSError
         if nsError.domain != NSCocoaErrorDomain || nsError.code != 0 {
-            return "Google Sign-In failed: \(nsError.domain) \(nsError.code) - \(nsError.localizedDescription)"
+            return "Sign-in failed: \(nsError.domain) \(nsError.code) - \(nsError.localizedDescription)"
         }
-        return "Google Sign-In failed: \(String(reflecting: type(of: error))) - \(String(describing: error))"
+        return "Sign-in failed: \(String(reflecting: type(of: error))) - \(String(describing: error))"
     }
 }
 

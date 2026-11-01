@@ -806,10 +806,10 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             toggleOverlay: { [unowned self] in toggleOverlay() },
             openSettings: { [unowned self] in showSettings(nil) },
             send: { [unowned self] reaction in send(reaction) },
-            // In the sign-in window, which shows Google's progress and carries on from there.
-            signIn: { [unowned self] in
+            // In the sign-in window, which shows the sign-in's progress and carries on from there.
+            signIn: { [unowned self] method in
                 showMainWindow()
-                Task { await authController.signIn() }
+                Task { await authController.signIn(with: method) }
             }
         )
         refreshStatusMenu()

@@ -49,7 +49,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable {
     /// What each pane holds, so searching for a setting finds its pane.
     var keywords: [String] {
         switch self {
-        case .account: ["account", "name", "photo", "email", "google", "log out", "sign out", "sign in"]
+        case .account: ["account", "name", "photo", "email", "google", "apple", "link", "log out", "sign out", "sign in"]
         case .general: ["login", "startup", "menu bar", "dock", "shortcut", "hotkey", "quick draw", "keyboard", "canvas", "brush", "dry", "strokes"]
         case .desktop: ["desktop", "overlay", "display", "screen", "visibility", "opacity", "position", "reset"]
         case .partner: ["partner", "anniversary", "unpair", "pairing", "wallpaper", "streak", "together"]

@@ -1,4 +1,5 @@
 import AppKit
+import Auth
 import ImageIO
 import ProductCore
 import Sync
@@ -36,6 +37,11 @@ final class AccountSettings: ObservableObject {
         await perform { try await $0.setStrokeRenderMode(enabled ? "dry" : "round") }
     }
 
+    /// Lets the account sign in with `method` too.
+    func link(_ method: SignInMethod, through auth: AuthSessionController) async -> Bool {
+        await perform { _ in try await auth.link(method) }
+    }
+
     func unpair() async -> Bool {
         await perform { try await $0.disconnect() }
     }
@@ -67,6 +73,8 @@ final class AccountSettings: ObservableObject {
             apply(try await operation(api()))
             return true
         } catch is CancellationError {
+            return false
+        } catch let error where AuthSessionController.isCancellation(error) {
             return false
         } catch {
             errorMessage = error.localizedDescription

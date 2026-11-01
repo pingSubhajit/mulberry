@@ -1,5 +1,6 @@
 import AppKit
 import Auth
+import ProductCore
 import SwiftUI
 
 /// The whole screen during onboarding: the darkened, blurred desktop and the film over it.
@@ -273,8 +274,13 @@ private struct IntroScene: View {
             .accessibilityAddTraits(.isHeader)
 
             VStack(spacing: 14) {
-                GoogleCapsule(busy: authController.state.isBusy, size: .large) {
-                    Task { await flow.signIn() }
+                VStack(spacing: 10) {
+                    ForEach(SignInMethod.allCases, id: \.self) { method in
+                        SignInCapsule(method: method, busy: authController.state.isBusy,
+                                      waiting: authController.signingInWith == method, size: .large) {
+                            Task { await flow.signIn(with: method) }
+                        }
+                    }
                 }
                 if let error = flow.signInError {
                     Text(error)
@@ -288,7 +294,8 @@ private struct IntroScene: View {
             .scaleEffect(flow.signInShown ? 1 : 0.9)
             .opacity(flow.signInShown ? 1 : 0)
             .allowsHitTesting(flow.signInShown)
-            .position(x: center.x, y: center.y + 144 + lift + (flow.signInError == nil ? 0 : 18))
+            // Lowered by half of Apple's button and its gap, so Google's stays where it was.
+            .position(x: center.x, y: center.y + 144 + 29 + lift + (flow.signInError == nil ? 0 : 18))
         }
         .opacity(flow.introShown ? 1 : 0)
     }

@@ -150,25 +150,29 @@ struct SettingsValue: View {
     }
 }
 
-/// Raycast's neutral filled button: a soft pill that brightens under the pointer.
+/// Raycast's neutral filled button: a soft pill that brightens under the pointer. Prominent is
+/// Mulberry red; Apple's is Sign in with Apple's black, or white in Dark Mode.
 struct SettingsButtonStyle: ButtonStyle {
-    var prominent = false
+    enum Kind { case neutral, prominent, apple }
+
+    var kind = Kind.neutral
     @Environment(\.isEnabled) private var enabled
 
     func makeBody(configuration: Configuration) -> some View {
-        Label(configuration: configuration, prominent: prominent, enabled: enabled)
+        Label(configuration: configuration, kind: kind, enabled: enabled)
     }
 
     private struct Label: View {
         let configuration: ButtonStyleConfiguration
-        let prominent: Bool
+        let kind: Kind
         let enabled: Bool
         @State private var hovered = false
+        @Environment(\.colorScheme) private var colorScheme
 
         var body: some View {
             configuration.label
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(prominent ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                .foregroundStyle(foreground)
                 .padding(.horizontal, 14)
                 .frame(height: 30)
                 .background(fill, in: .rect(cornerRadius: 8, style: .continuous))
@@ -179,18 +183,34 @@ struct SettingsButtonStyle: ButtonStyle {
                 .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
         }
 
-        private var fill: AnyShapeStyle {
-            if prominent {
-                return AnyShapeStyle(mulberryRed.opacity(configuration.isPressed ? 0.8 : hovered ? 0.92 : 1))
+        private var appleInk: Color { colorScheme == .dark ? .white : .black }
+
+        private var foreground: AnyShapeStyle {
+            switch kind {
+            case .neutral: AnyShapeStyle(.primary)
+            case .prominent: AnyShapeStyle(.white)
+            case .apple: AnyShapeStyle(colorScheme == .dark ? Color.black : Color.white)
             }
-            return AnyShapeStyle(.primary.opacity(configuration.isPressed ? 0.16 : hovered && enabled ? 0.13 : 0.09))
+        }
+
+        private var fill: AnyShapeStyle {
+            let pressedOrHovered = configuration.isPressed ? 0.8 : hovered ? 0.92 : 1
+            switch kind {
+            case .neutral:
+                return AnyShapeStyle(.primary.opacity(configuration.isPressed ? 0.16 : hovered && enabled ? 0.13 : 0.09))
+            case .prominent:
+                return AnyShapeStyle(mulberryRed.opacity(pressedOrHovered))
+            case .apple:
+                return AnyShapeStyle(appleInk.opacity(pressedOrHovered))
+            }
         }
     }
 }
 
 extension ButtonStyle where Self == SettingsButtonStyle {
     static var settings: SettingsButtonStyle { SettingsButtonStyle() }
-    static var settingsProminent: SettingsButtonStyle { SettingsButtonStyle(prominent: true) }
+    static var settingsProminent: SettingsButtonStyle { SettingsButtonStyle(kind: .prominent) }
+    static var settingsApple: SettingsButtonStyle { SettingsButtonStyle(kind: .apple) }
 }
 
 /// A choice written as its current value and a chevron, opening a menu of the others.

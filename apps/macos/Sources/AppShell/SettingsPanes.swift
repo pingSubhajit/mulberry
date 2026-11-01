@@ -269,10 +269,27 @@ struct AccountPane: View {
                     }
                 }
 
-                SettingsSection("Google Account") {
+                SettingsSection("Account") {
                     SettingsRow(bootstrap.userEmail ?? "Signed in") {
                         Button("Log Out…") { confirmingLogOut = true }
                             .buttonStyle(.settings)
+                    }
+                }
+
+                SettingsSection("Sign In") {
+                    ForEach(SignInMethod.allCases, id: \.self) { method in
+                        SettingsRow(method == .google ? "Google" : "Apple") {
+                            if bootstrap.signsIn(with: method) {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityLabel("Linked")
+                            } else {
+                                Button("Link") { Task { _ = await account.link(method, through: authController) } }
+                                    .buttonStyle(.settings)
+                                    .disabled(account.busy)
+                            }
+                        }
                     }
                 }
 
@@ -316,11 +333,21 @@ struct AccountPane: View {
             SettingsEmptyState(
                 symbol: "person.crop.circle",
                 title: "Not Signed In",
-                message: "Sign in with Google to draw with your partner."
+                message: "Sign in to draw with your partner."
             ) {
-                Button("Sign In with Google") { Task { await authController.signIn() } }
+                VStack(spacing: 8) {
+                    Button { Task { await authController.signIn(with: .google) } } label: {
+                        Text("Sign In with Google").frame(maxWidth: .infinity)
+                    }
                     .buttonStyle(.settingsProminent)
-                    .disabled(authController.state.isBusy)
+                    Button { Task { await authController.signIn(with: .apple) } } label: {
+                        Label("Sign In with Apple", systemImage: "apple.logo").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.settingsApple)
+                }
+                .disabled(authController.state.isBusy)
+                // As wide as the wider of the two.
+                .fixedSize(horizontal: true, vertical: false)
             }
         }
     }

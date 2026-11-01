@@ -27,7 +27,7 @@ final class LockScreenModel: ObservableObject {
         let toggleOverlay: () -> Void
         let openSettings: () -> Void
         let send: (ReactionType) -> Void
-        let signIn: () -> Void
+        let signIn: (SignInMethod) -> Void
     }
 
     @Published var account = Account.signedOut
@@ -546,8 +546,10 @@ struct LockScreenView: View {
                         .keyboardShortcut(.downArrow, modifiers: [])
                 }
                 if model.account == .signedOut {
-                    Button("Continue with Google") { close(); model.actions?.signIn() }
+                    Button("Continue with Google") { close(); model.actions?.signIn(.google) }
                         .keyboardShortcut(.return, modifiers: [])
+                    Button("Continue with Apple") { close(); model.actions?.signIn(.apple) }
+                        .keyboardShortcut(.return, modifiers: .command)
                 } else if model.account == .unpaired, model.inviteCode == nil {
                     Button("Invite Your Partner") { close(); model.actions?.openCanvas() }
                         .keyboardShortcut(.return, modifiers: [])
@@ -617,7 +619,7 @@ struct LockScreenView: View {
                 case .paired: controls
                 case .unpaired:
                     if let code = model.inviteCode { inviteCode(code) } else { invitation }
-                case .signedOut: googleSignIn
+                case .signedOut: signIn
                 }
                 HStack(alignment: .center) {
                     FootIcon(symbol: "macwindow", help: "Open Mulberry") {
@@ -724,14 +726,28 @@ struct LockScreenView: View {
         }
     }
 
-    /// Signed out: the sign-in window's Continue with Google, in the lock screen's glass.
-    private var googleSignIn: some View {
-        GlassCapsule(title: "Continue with Google") {
-            close()
-            model.actions?.signIn()
-        } icon: {
-            GoogleMark().frame(width: 15, height: 15)
+    /// Signed out: the sign-in window's Continue with Google and Continue with Apple, in the lock
+    /// screen's glass, as wide as each other.
+    private var signIn: some View {
+        VStack(spacing: 10) {
+            GlassCapsule(title: "Continue with Google") {
+                close()
+                model.actions?.signIn(.google)
+            } icon: {
+                GoogleMark().frame(width: 15, height: 15)
+            }
+            GlassCapsule(title: "Continue with Apple", keycaps: SignInMethod.apple.keycaps) {
+                close()
+                model.actions?.signIn(.apple)
+            } icon: {
+                Image(systemName: "apple.logo")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.94))
+                    .frame(width: 15, height: 15)
+                    .offset(y: -1)
+            }
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// Unpaired, without a code to show yet: one way forward, in the canvas window.
@@ -774,10 +790,11 @@ private struct InviteCodeShare: View {
     }
 }
 
-/// The lock screen's one way forward while signed out or unpaired: an icon and a title on dark
-/// glass, with Return's keycap, as the sign-in window's Continue with Google. Return presses it.
+/// The lock screen's way forward while signed out or unpaired: an icon and a title on dark glass,
+/// with its shortcut's keycaps, as the sign-in window's buttons. The shortcut presses it.
 private struct GlassCapsule<Icon: View>: View {
     let title: String
+    var keycaps = ["return"]
     let action: () -> Void
     @ViewBuilder let icon: Icon
 
@@ -788,15 +805,11 @@ private struct GlassCapsule<Icon: View>: View {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white.opacity(0.94))
-                Image(systemName: "return")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .frame(width: 19, height: 17)
-                    .overlay(RoundedRectangle(cornerRadius: 4.5).strokeBorder(.white.opacity(0.28), lineWidth: 1))
-                    .padding(.leading, 3)
+                Keycaps(symbols: keycaps)
             }
             .padding(.leading, 16)
             .padding(.trailing, 10)
+            .frame(maxWidth: .infinity)
             .frame(height: 38)
             .contentShape(.capsule)
         }

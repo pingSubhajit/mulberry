@@ -155,7 +155,7 @@ final class OnboardingFlow: ObservableObject {
         // The lock screen's buttons wait for the swipe, as an iPhone's do until it is unlocked.
         let hint: () -> Void = { [weak lock] in lock?.hintSwipe() }
         lock.actions = LockScreenModel.Actions(quickDraw: hint, openCanvas: hint, openStreak: hint,
-                                               toggleOverlay: hint, openSettings: hint, send: { _ in hint() }, signIn: hint)
+                                               toggleOverlay: hint, openSettings: hint, send: { _ in hint() }, signIn: { _ in hint() })
     }
 
     private var bootstrap: BootstrapState? { appStateController.loadState.bootstrap }
@@ -276,12 +276,12 @@ final class OnboardingFlow: ObservableObject {
         }
     }
 
-    func signIn() async {
+    func signIn(with method: SignInMethod) async {
         guard !authController.state.isBusy else { return }
         signInError = nil
         signingIn(true)
         music.duck(true)
-        await authController.signIn()
+        await authController.signIn(with: method)
         music.duck(false)
         signingIn(false)
         switch authController.state {

@@ -34,8 +34,8 @@ struct LastAccount: Codable, Equatable {
     }
 }
 
-/// The window while signed out: wide and nearly opaque, the mark glowing above a welcome and
-/// Continue with Google.
+/// The window while signed out: wide and nearly opaque, the mark glowing above a welcome,
+/// Continue with Google and Continue with Apple.
 struct SignInPanel: View {
     @ObservedObject var authController: AuthSessionController
     @ObservedObject var windowState: MainWindowState
@@ -87,6 +87,12 @@ struct SignInPanel: View {
         .sheet(item: $document) { LegalDocumentSheet(document: $0) }
     }
 
+    /// The button whose sign-in is under way; the preview's pretend one is Google's.
+    private func waiting(for method: SignInMethod) -> Bool {
+        guard busy else { return false }
+        return (authController.signingInWith ?? .google) == method
+    }
+
     private var mark: some View {
         ZStack {
             GlassMark()
@@ -113,13 +119,19 @@ struct SignInPanel: View {
                 .foregroundStyle(.white.opacity(0.55))
                 .padding(.top, 8)
                 .rising(shown && !leaving, entrance(delay: 0.18), reduceMotion: reduceMotion)
-            GoogleCapsule(busy: busy) {
-                if windowState.previewSignIn != nil {
-                    windowState.previewSignIn?()
-                } else {
-                    Task { await authController.signIn() }
+            VStack(spacing: 10) {
+                ForEach(SignInMethod.allCases, id: \.self) { method in
+                    SignInCapsule(method: method, busy: busy, waiting: waiting(for: method)) {
+                        if windowState.previewSignIn != nil {
+                            windowState.previewSignIn?()
+                        } else {
+                            Task { await authController.signIn(with: method) }
+                        }
+                    }
                 }
             }
+            // As wide as the wider of the two.
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.top, 34)
             .rising(shown && !leaving, entrance(delay: 0.24), reduceMotion: reduceMotion)
             if let account {
@@ -318,9 +330,11 @@ private struct LegalNote: View {
     }
 }
 
-/// Google's G and "Continue with Google" on a translucent capsule, with Return's keycap: Return
-/// signs in. The sign-in window's size, or onboarding's larger one.
-struct GoogleCapsule: View {
+/// A sign-in button on a translucent capsule: Google's G or Apple's logo, and Continue with
+/// Google or Apple, with its shortcut's keycaps: Return signs in with Google, Command-Return with
+/// Apple. The sign-in
+/// window's size, or onboarding's larger one.
+struct SignInCapsule: View {
     enum Size {
         case regular, large
 
@@ -331,34 +345,37 @@ struct GoogleCapsule: View {
         var keycap: CGSize { self == .large ? CGSize(width: 22, height: 20) : CGSize(width: 19, height: 17) }
     }
 
+    let method: SignInMethod
+    /// Any sign-in is under way.
     let busy: Bool
+    /// This button's sign-in is.
+    let waiting: Bool
     var size = Size.regular
     let action: () -> Void
     @State private var hovered = false
 
+    private var name: String { method == .google ? "Google" : "Apple" }
+    private var keycaps: Bool { !busy }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: size == .large ? 10 : 9) {
-                if busy {
+                if waiting {
                     ProgressView().controlSize(.small)
                 } else {
-                    GoogleMark().frame(width: size.mark, height: size.mark)
+                    mark
                 }
-                Text(busy ? "Waiting for Google…" : "Continue with Google")
+                Text(waiting ? "Waiting for \(name)…" : "Continue with \(name)")
                     .font(.system(size: size.font, weight: .medium))
                     .foregroundStyle(.white.opacity(0.94))
-                if !busy {
-                    Image(systemName: "return")
-                        .font(.system(size: size == .large ? 10 : 9, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .frame(width: size.keycap.width, height: size.keycap.height)
-                        .overlay(RoundedRectangle(cornerRadius: 4.5).strokeBorder(.white.opacity(0.28), lineWidth: 1))
-                        .padding(.leading, 3)
+                if keycaps {
+                    Keycaps(symbols: method.keycaps, size: size.keycap, font: size == .large ? 10 : 9)
                 }
             }
             .padding(.leading, size.width == nil ? 16 : 0)
-            .padding(.trailing, size.width == nil ? (busy ? 18 : 10) : 0)
-            .frame(width: size.width, height: size.height)
+            .padding(.trailing, size.width == nil ? (keycaps ? 10 : 18) : 0)
+            .frame(maxWidth: size.width ?? .infinity)
+            .frame(height: size.height)
             .background(.white.opacity(hovered && !busy ? 0.16 : 0.11), in: .capsule)
             .overlay(Capsule().strokeBorder(.white.opacity(0.1), lineWidth: 1))
             .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
@@ -367,10 +384,53 @@ struct GoogleCapsule: View {
         .buttonStyle(PressScale())
         .disabled(busy)
         .onHover { hovered = $0 }
-        .keyboardShortcut(.defaultAction)
+        .keyboardShortcut(method.shortcut)
         .animation(.easeOut(duration: 0.15), value: hovered)
         .animation(.easeOut(duration: 0.2), value: busy)
     }
+
+    @ViewBuilder private var mark: some View {
+        switch method {
+        case .google:
+            GoogleMark().frame(width: size.mark, height: size.mark)
+        case .apple:
+            Image(systemName: "apple.logo")
+                .font(.system(size: size.mark, weight: .medium))
+                .foregroundStyle(.white.opacity(0.94))
+                .frame(width: size.mark, height: size.mark)
+                .offset(y: -1)
+        }
+    }
+}
+
+/// A shortcut's keys, each outlined as a keycap on the dark: ↩, or ⌘ ↩.
+struct Keycaps: View {
+    let symbols: [String]
+    var size = CGSize(width: 19, height: 17)
+    var font: CGFloat = 9
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(symbols, id: \.self) { symbol in
+                Image(systemName: symbol)
+                    .font(.system(size: font, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: size.width, height: size.height)
+                    .overlay(RoundedRectangle(cornerRadius: 4.5).strokeBorder(.white.opacity(0.28), lineWidth: 1))
+            }
+        }
+        .padding(.leading, 3)
+        .accessibilityHidden(true)
+    }
+}
+
+extension SignInMethod {
+    /// Return signs in with Google, Command-Return with Apple.
+    var shortcut: KeyboardShortcut {
+        self == .google ? .defaultAction : KeyboardShortcut(.return, modifiers: .command)
+    }
+
+    var keycaps: [String] { self == .google ? ["return"] : ["command", "return"] }
 }
 
 /// Gives a little under the pointer.
