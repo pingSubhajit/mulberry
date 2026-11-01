@@ -176,3 +176,28 @@ func offlineEditsSurviveRestartAndOnlyUploadToOriginalPair(pairChanged: Bool) as
         #expect(try WallpaperContent.signature(canvas: saved.visible, backgroundID: "another-photo", showDrawings: true, renderMode: "dry") != localSignature)
     }
 }
+
+/// The wallpaper Shortcut saves the partner's strokes while the app is away. Opening the app shows
+/// them straight away, before (or without) the server answering.
+@Test(.timeLimit(.minutes(1)))
+func startingShowsTheSavedCanvasBeforeTheServerAnswers() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let user = "11111111-1111-4111-8111-111111111111"
+    let pair = "22222222-2222-4222-8222-222222222222"
+    let api = try BackendClient(baseURL: URL(string: "https://offline.invalid")!, tokenStore: SyncTokens(), transport: ReconnectTransport())
+    let store = DrawingStore(directory: directory)
+    let sync = DrawingSync(api: api, store: store, userId: user, pairSessionId: pair,
+                           makeSocket: { _ in SimulatedDrawingSocket(server: SimulatedDrawingServer(loseFirstAcknowledgement: false)) })
+    let stroke = DrawingStroke(colorArgb: 0xFF112233, width: 0.02, points: [.init(x: 0.1, y: 0.2)], finished: true)
+    let saved = try await store.enqueue(userId: user, pairSessionId: pair, operations: try DrawingOperation.restore(stroke))
+    let shown = Task {
+        for await event in sync.events { if case .changed(let document) = event { return document } }
+        throw CancellationError()
+    }
+    await sync.start()
+    let document = try await shown.value
+    await sync.stop()
+    #expect(document.version == saved.version)
+    #expect(document.visible.strokes.contains(stroke))
+}

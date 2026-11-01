@@ -102,6 +102,9 @@ public actor DrawingSync {
     }
 
     private func run(epoch: Int) async {
+        // What was saved while the app was away, such as the wallpaper Shortcut's catch-up, shows at
+        // once rather than after the network answers.
+        try? await publishLatest()
         var retrySeconds = 1
         while !Task.isCancelled && generation == epoch {
             continuation.yield(.connection(.connecting))
