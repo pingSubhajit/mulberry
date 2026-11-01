@@ -1,7 +1,7 @@
 Mulberry Terms of Use
 
 Effective date: April 23, 2026
-Last updated: October 31, 2026
+Last updated: November 1, 2026
 Operator: Subhajit Kundu
 Address: ITI Crossing, Kalyani, West Bengal, India, 741235
 Contact: subha60kundu@gmail.com
@@ -32,7 +32,7 @@ Mulberry is not a public social network, publishing platform, marketplace, payme
 
 4. Accounts, sign-in, and security
 
-Mulberry uses Google Sign-In and Mulberry-created session tokens to authenticate users. You are responsible for keeping your Google account, device, passcode, and Mulberry session secure.
+Mulberry uses Google Sign-In, Sign in with Apple on iPhone, iPad, and Mac, and Mulberry-created session tokens to authenticate users. You are responsible for keeping your Google or Apple account, device, passcode, and Mulberry session secure.
 
 - Do not share your account or authentication tokens with anyone.
 - Do not try to access another person's account, device, pair session, invite, or canvas without permission.
@@ -75,7 +75,7 @@ You are responsible for your device settings, lock screen and desktop visibility
 
 9. Third-party services and app store terms
 
-Mulberry depends on third-party services, including Google Sign-In, Android and Apple platform services, Firebase Cloud Messaging, Apple Push Notification service, Firebase Crashlytics, PostHog, Canny, Supabase, Fly.io, and distribution through Google Play and the App Store. Those services may have their own terms and policies.
+Mulberry depends on third-party services, including Google Sign-In, Sign in with Apple, Android and Apple platform services, Firebase Cloud Messaging, Apple Push Notification service, Firebase Crashlytics, PostHog, Canny, Supabase, Fly.io, and distribution through Google Play and the App Store. Those services may have their own terms and policies.
 
 Your use of Google Play, the App Store, Android, iOS, Google accounts, Apple accounts, or other third-party services is governed by the applicable third-party terms. Mulberry is not responsible for third-party service outages, account decisions, platform restrictions, or policy changes.
 

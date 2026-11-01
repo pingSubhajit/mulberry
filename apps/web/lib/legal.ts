@@ -87,7 +87,7 @@ function parseLegalDocument(source: string): LegalDocument {
     }
 
     flushList()
-    if (/^\d+\.\d+\s/.test(line)) {
+    if (/^\d+(?:\.\d+)+\s/.test(line)) {
       currentSection.blocks.push({ type: "subheading", text: line })
     } else {
       currentSection.blocks.push({ type: "paragraph", text: line })
