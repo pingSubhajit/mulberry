@@ -821,37 +821,85 @@ private struct GlassCapsule<Icon: View>: View {
 
 /// The lock screen's time in real Liquid Glass, as iOS 26 draws its clock: clear, neutral glass
 /// in the shape of the numerals themselves, moulded at its edges, lit along the top and shaded
-/// along the bottom, and casting a soft shadow onto the wallpaper.
+/// along the bottom, and casting a soft shadow onto the wallpaper. As the minute turns, only the
+/// numerals that change roll: the old one rises and blurs away as the new one rises into place.
 private struct GlassClock: View {
     let date: Date
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let time = date.formatted(.dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
-        let numerals = GlyphOutline(time)
-        ZStack {
-            // The shadow the glass casts.
-            numerals.fill(.white.opacity(0.04))
-                .shadow(color: .black.opacity(0.28), radius: 9, y: 6)
-            Color.clear.glassEffect(.regular, in: numerals)
-            // The moulded rim: light along the upper edges, shade along the lower, inside the glass.
-            numerals
-                .stroke(LinearGradient(colors: [.white.opacity(0.95), .white.opacity(0.15), .clear],
-                                       startPoint: .top, endPoint: .bottom), lineWidth: 3.2)
-                .clipShape(numerals)
-            numerals
-                .stroke(LinearGradient(colors: [.clear, .black.opacity(0.22)], startPoint: .center, endPoint: .bottom), lineWidth: 4)
-                .clipShape(numerals)
+        let line = GlyphLine(time)
+        ZStack(alignment: .topLeading) {
+            // Counted from the right, so the minutes keep their places when the hour gains a digit.
+            ForEach(line.glyphs) { glyph in
+                GlassNumeral(outline: GlyphOutline(path: glyph.path))
+                    .frame(width: line.size.width, height: line.size.height)
+                    .transition(reduceMotion ? .opacity : .numeralRoll(distance: line.size.height * 0.55))
+            }
         }
-        .frame(width: numerals.size.width, height: numerals.size.height)
+        .frame(width: line.size.width, height: line.size.height)
+        .animation(.spring(duration: 0.55, bounce: 0.12), value: time)
         .accessibilityElement()
         .accessibilityLabel(time)
     }
 }
 
-/// A line of text as a shape: the lock screen clock's face, rounded and bold, set tight, with
-/// figures of one width so the time holds still as it changes.
-private struct GlyphOutline: Shape {
-    let outline: Path
+/// One numeral of the clock in glass, laid where it sits in the whole time.
+private struct GlassNumeral: View {
+    let outline: GlyphOutline
+
+    var body: some View {
+        ZStack {
+            // The shadow the glass casts.
+            outline.fill(.white.opacity(0.04))
+                .shadow(color: .black.opacity(0.28), radius: 9, y: 6)
+            Color.clear.glassEffect(.regular, in: outline)
+            // The moulded rim: light along the upper edges, shade along the lower, inside the glass.
+            outline
+                .stroke(LinearGradient(colors: [.white.opacity(0.95), .white.opacity(0.15), .clear],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 3.2)
+                .clipShape(outline)
+            outline
+                .stroke(LinearGradient(colors: [.clear, .black.opacity(0.22)], startPoint: .center, endPoint: .bottom), lineWidth: 4)
+                .clipShape(outline)
+        }
+    }
+}
+
+private extension AnyTransition {
+    /// The lock screen's numeral roll: in from below and out above, blurred and faded at either end.
+    static func numeralRoll(distance: CGFloat) -> AnyTransition {
+        .asymmetric(insertion: .modifier(active: NumeralRoll(travel: 1, distance: distance), identity: NumeralRoll(travel: 0, distance: distance)),
+                    removal: .modifier(active: NumeralRoll(travel: -1, distance: distance), identity: NumeralRoll(travel: 0, distance: distance)))
+    }
+}
+
+/// How far a numeral has rolled: 0 in place, 1 still below, -1 gone above.
+private struct NumeralRoll: ViewModifier {
+    let travel: CGFloat
+    let distance: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(1 - abs(travel) * 0.12)
+            .offset(y: travel * distance)
+            .blur(radius: abs(travel) * 9)
+            .opacity(1 - abs(travel))
+    }
+}
+
+/// A line of text as glyph shapes: the lock screen clock's face, rounded and bold, set tight, with
+/// figures of one width so the time holds still as it changes. Each glyph keeps its place in the
+/// line, framed tight to the whole.
+private struct GlyphLine {
+    struct Glyph: Identifiable {
+        /// The character and its place counted from the end of the line.
+        let id: String
+        let path: Path
+    }
+
+    let glyphs: [Glyph]
     let size: CGSize
 
     init(_ string: String) {
@@ -864,30 +912,40 @@ private struct GlyphOutline: Shape {
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: string, attributes: [.font: font, .kern: -2.5]))
         var ascent: CGFloat = 0
         _ = CTLineGetTypographicBounds(line, &ascent, nil, nil)
-        let path = CGMutablePath()
+        let characters = Array(string.utf16)
+        var shapes: [(id: String, path: CGPath)] = []
         for run in CTLineGetGlyphRuns(line) as? [CTRun] ?? [] {
             let attributes = CTRunGetAttributes(run) as NSDictionary
             guard let runFont = attributes[kCTFontAttributeName] else { continue }
             let count = CTRunGetGlyphCount(run)
             var glyphs = [CGGlyph](repeating: 0, count: count)
             var positions = [CGPoint](repeating: .zero, count: count)
+            var indices = [CFIndex](repeating: 0, count: count)
             CTRunGetGlyphs(run, CFRange(location: 0, length: count), &glyphs)
             CTRunGetPositions(run, CFRange(location: 0, length: count), &positions)
-            for (glyph, position) in zip(glyphs, positions) {
+            CTRunGetStringIndices(run, CFRange(location: 0, length: count), &indices)
+            for ((glyph, position), index) in zip(zip(glyphs, positions), indices) {
                 // Core Text draws up from the baseline; the shape runs down from its top.
                 var transform = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: position.x, ty: ascent - position.y)
-                if let shape = CTFontCreatePathForGlyph(runFont as! CTFont, glyph, &transform) { path.addPath(shape) }
+                guard let shape = CTFontCreatePathForGlyph(runFont as! CTFont, glyph, &transform) else { continue }
+                let character = index < characters.count ? String(utf16CodeUnits: [characters[index]], count: 1) : ""
+                shapes.append((id: "\(characters.count - index)-\(character)", path: shape))
             }
         }
         // Framed tight to the numerals, so the clock sits by the date as the text one did.
-        let bounds = path.boundingBoxOfPath
-        outline = Path(path).offsetBy(dx: -bounds.minX, dy: -bounds.minY)
+        let whole = CGMutablePath()
+        shapes.forEach { whole.addPath($0.path) }
+        let bounds = whole.boundingBoxOfPath
+        glyphs = shapes.map { Glyph(id: $0.id, path: Path($0.path).offsetBy(dx: -bounds.minX, dy: -bounds.minY)) }
         size = CGSize(width: ceil(bounds.width), height: ceil(bounds.height))
     }
+}
 
-    func path(in rect: CGRect) -> Path {
-        outline.offsetBy(dx: rect.minX + (rect.width - size.width) / 2, dy: rect.minY + (rect.height - size.height) / 2)
-    }
+/// One glyph of a `GlyphLine` as a shape, drawn where it sits in the line's frame.
+private struct GlyphOutline: Shape {
+    let path: Path
+
+    func path(in rect: CGRect) -> Path { path.offsetBy(dx: rect.minX, dy: rect.minY) }
 }
 
 /// The iPhone's status bar, telling the truth about this Mac: on the lock screen a carrier's name
@@ -905,7 +963,12 @@ private struct StatusBar: View {
             Group {
                 if unlocked {
                     TimelineView(.everyMinute) { context in
-                        Text(context.date, format: .dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                        let time = context.date.formatted(.dateTime.hour(.defaultDigits(amPM: .omitted)).minute())
+                        // The changing digits roll, as the iPhone's status bar time does.
+                        Text(time)
+                            .monospacedDigit()
+                            .contentTransition(.numericText(countsDown: false))
+                            .animation(.spring(duration: 0.5, bounce: 0.1), value: time)
                     }
                 } else if named {
                     Text("Mulberry")
