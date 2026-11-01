@@ -1,5 +1,6 @@
 import type { Database } from "../db/database.js"
 import type { DeviceTokenRow } from "../../contracts/dbRecords.js"
+import type { DevicePlatform } from "../../contracts/devices.js"
 import type { ReactionType } from "../../contracts/reactions.js"
 import type { PushRecipients, PushSendResult, PushSender, ReactionActivityContentState } from "./types.js"
 
@@ -690,7 +691,11 @@ export class PushDispatchService {
     }
   }
 
-  private async activePeerTokens(pairSessionId: string, actorUserId: string): Promise<PushRecipients> {
+  private async activePeerTokens(
+    pairSessionId: string,
+    actorUserId: string,
+    excludedPlatforms: DevicePlatform[] = [],
+  ): Promise<PushRecipients> {
     const rows = await this.db.query<DeviceTokenTarget>(
       `
       SELECT dt.token, dt.platform
@@ -706,7 +711,7 @@ export class PushDispatchService {
       `,
       [pairSessionId, actorUserId],
     )
-    return pushRecipients(rows.rows)
+    return pushRecipients(rows.rows.filter((row) => !excludedPlatforms.includes(row.platform)))
   }
 
   private async canvasUpdateTokens(
@@ -803,7 +808,8 @@ export class PushDispatchService {
         const latestRevision = Number(item.latest_revision)
         if (!Number.isFinite(latestRevision) || latestRevision <= 0) continue
 
-        const { tokens, macTokens } = await this.activePeerTokens(pairSessionId, actorUserId)
+        // An iPhone's wallpaper already follows the canvas update push; this later alert added nothing.
+        const { tokens, macTokens } = await this.activePeerTokens(pairSessionId, actorUserId, ["IOS"])
         if (tokens.length === 0) {
           console.info("[push] no active peer tokens for canvas nudge", {
             pairSessionId,

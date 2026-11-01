@@ -108,15 +108,13 @@ export function applePushConfiguration(message: MulberryPushMessage, platform: A
     case "PAIRING_DISCONNECTED":
       alert = { title: "Pairing ended", body: "Open Mulberry to see your pairing status." }
       break
-    case "CANVAS_NUDGE":
-      alert = { title: "A drawing is waiting", body: "Open Mulberry to check your wallpaper setup." }
-      break
     case "DRAW_REMINDER":
       alert = { title: "Draw them something cute", body: "Your shared canvas is waiting." }
       break
     default:
       // Reactions and visibility changes are fetched by the app; an iPhone's reactions also show in
-      // their Live Activity, which is pushed separately.
+      // their Live Activity, which is pushed separately. The canvas nudge is Android's partner-doodle
+      // alert: an iPhone's wallpaper already follows the canvas update push.
       return background
   }
   // Joining and ending a pairing show as banners; the rest arrive quietly in Notification Center.

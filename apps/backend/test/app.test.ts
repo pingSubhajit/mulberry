@@ -2641,6 +2641,26 @@ describe("Mulberry backend", () => {
     dispatch.dispose()
   })
 
+  it("sends the canvas nudge to Android and Macs but not iPhones", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "peer-android", "ANDROID")
+    await registerFcmToken(recipient.accessToken, "peer-phone", "IOS")
+    await registerFcmToken(recipient.accessToken, "peer-mac", "MACOS")
+    const dispatch = new PushDispatchService(db, pushSender, {
+      canvasNudgeDelayMs: 0,
+      canvasNudgePollIntervalMs: 10,
+      drawReminderPollIntervalMs: 1_000_000,
+    })
+
+    dispatch.enqueueCanvasNudge(inviter.pairSessionId, inviter.userId, 3)
+    await eventually(() => pushSender.sentMessages.some((message) => message.data.type === "CANVAS_NUDGE"))
+    dispatch.dispose()
+
+    const nudge = pushSender.sentMessages.find((message) => message.data.type === "CANVAS_NUDGE")
+    expect(nudge?.tokens.sort()).toEqual(["peer-android", "peer-mac"])
+    expect(nudge?.macTokens).toEqual(["peer-mac"])
+  })
+
   it("tracks pair streak days from finished strokes", async () => {
     const { inviter } = await pairUsers()
     const today = offsetDate(0)

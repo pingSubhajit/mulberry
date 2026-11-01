@@ -29,7 +29,7 @@ describe("Apple wallpaper delivery", () => {
     const send = vi.fn().mockResolvedValue({ responses: [{ success: true }, { success: true }] })
     const sender = new FirebaseAdminPushSender({ sendEachForMulticast: send } as unknown as Messaging)
     const levels: Record<string, string> = {}
-    for (const type of ["PAIRING_CONFIRMED", "PAIRING_DISCONNECTED", "CANVAS_NUDGE", "DRAW_REMINDER"] as const) {
+    for (const type of ["PAIRING_CONFIRMED", "PAIRING_DISCONNECTED", "DRAW_REMINDER"] as const) {
       await sender.send({
         tokens: ["fixture-token"],
         data: { type, pairSessionId: "pair-one" },
@@ -41,7 +41,6 @@ describe("Apple wallpaper delivery", () => {
     expect(levels).toEqual({
       PAIRING_CONFIRMED: "active",
       PAIRING_DISCONNECTED: "active",
-      CANVAS_NUDGE: "passive",
       DRAW_REMINDER: "passive",
     })
   })
@@ -64,7 +63,8 @@ describe("Apple wallpaper delivery", () => {
       expect(send).toHaveBeenCalledTimes(2)
       const [phone, mac] = send.mock.calls.map((call) => call[0])
       expect(phone.tokens).toEqual(["phone"])
-      expect(phone.apns.headers["apns-push-type"]).toBe("alert")
+      // The nudge is Android's alert; one reaching an iPhone stays silent.
+      expect(phone.apns.headers["apns-push-type"]).toBe(data.type === "CANVAS_UPDATED" ? "alert" : "background")
       expect(mac.tokens).toEqual(["mac"])
       expect(mac.data).toEqual(data)
       expect(mac.apns.headers).toMatchObject({ "apns-push-type": "background", "apns-priority": "5" })
