@@ -8,6 +8,12 @@ export interface AppConfig {
   googleClientId: string
   googleAllowedClientIds: string[]
   allowDevGoogleTokens: boolean
+  /** The bundle IDs Sign in with Apple identity tokens may be issued to. */
+  appleClientIds?: string[]
+  /** Accepts `dev-apple:` tokens, as `allowDevGoogleTokens` does for Google. */
+  allowDevAppleTokens?: boolean
+  /** A Sign in with Apple key, to revoke Apple's tokens when an account is deleted. */
+  appleSignInKey?: AppleSignInKey
   /** The developer menus' test pushes and streak reset. Off by default in production. */
   enableDebugRoutes: boolean
   firebaseServiceAccountPath?: string
@@ -35,6 +41,16 @@ export interface AppConfig {
   cannySsoPrivateKey?: string
 }
 
+export interface AppleSignInKey {
+  teamId: string
+  keyId: string
+  /** The key's `.p8` contents, in PEM. */
+  privateKey: string
+}
+
+/** Mulberry's production and development bundle IDs, on iPhone, iPad and Mac. */
+const DEFAULT_APPLE_CLIENT_IDS = ["com.subhajit.mulberry.beta", "com.subhajit.mulberry.dev"]
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   env = { ...loadDotenv(), ...env }
   const isProduction = env.NODE_ENV === "production"
@@ -60,6 +76,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     googleClientId,
     googleAllowedClientIds,
     allowDevGoogleTokens: (env.ALLOW_DEV_GOOGLE_TOKENS ?? (isProduction ? "false" : "true")) === "true",
+    appleClientIds: env.APPLE_CLIENT_IDS === undefined ? DEFAULT_APPLE_CLIENT_IDS : parseCsvList(env.APPLE_CLIENT_IDS),
+    allowDevAppleTokens: (env.ALLOW_DEV_APPLE_TOKENS ?? (isProduction ? "false" : "true")) === "true",
+    appleSignInKey: appleSignInKey(env),
     enableDebugRoutes: (env.ENABLE_DEBUG_ROUTES ?? (isProduction ? "false" : "true")) === "true",
     firebaseServiceAccountPath: env.FIREBASE_SERVICE_ACCOUNT_PATH,
     firebaseServiceAccountJson: env.FIREBASE_SERVICE_ACCOUNT_JSON,
@@ -85,6 +104,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     stickerLocalStorageDir: optionalLocalStickerStorageDir(env.STICKER_LOCAL_STORAGE_DIR, isProduction),
     cannySsoPrivateKey: env.CANNY_SSO_PRIVATE_KEY?.trim() ? env.CANNY_SSO_PRIVATE_KEY : undefined,
   }
+}
+
+function appleSignInKey(env: NodeJS.ProcessEnv): AppleSignInKey | undefined {
+  const teamId = env.APPLE_TEAM_ID?.trim()
+  const keyId = env.APPLE_SIGN_IN_KEY_ID?.trim()
+  // Hosts' secret stores often keep a PEM on one line, with its line breaks escaped.
+  const privateKey = env.APPLE_SIGN_IN_PRIVATE_KEY?.trim().replaceAll("\\n", "\n")
+  if (!teamId || !keyId || !privateKey) return undefined
+  return { teamId, keyId, privateKey }
 }
 
 // Local sticker files exist only for development against the local database.

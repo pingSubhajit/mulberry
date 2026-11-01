@@ -1,9 +1,11 @@
 import type { Database } from "../../infra/db/database.js"
+import type { SignInMethod } from "../../contracts/auth.js"
 import type { BootstrapResponse } from "../../contracts/bootstrap.js"
 import type {
   InviteRecord,
   ProfileRecord,
   UserPresenceSurfaceRow,
+  UserRecord,
   UserWallpaperStatusRow,
 } from "../../contracts/dbRecords.js"
 import type { PresenceSummary, PresenceSurfaceStatus } from "../../contracts/presence.js"
@@ -71,6 +73,7 @@ export class BootstrapService {
       canvasStrokeRenderMode: pairSession?.canvas_stroke_render_mode ?? "dry",
       userId,
       userEmail: user?.email ?? null,
+      signInMethods: signInMethods(user),
       userPhotoUrl: this.profilePhotoUrl(profile?.profile_photo_path) ?? user?.google_picture_url ?? null,
       userDisplayName: profile?.display_name ?? null,
       partnerPhotoUrl: pairSession
@@ -279,4 +282,11 @@ function safeJsonParse(value: string): unknown {
   } catch {
     return {}
   }
+}
+
+function signInMethods(user: UserRecord | null): SignInMethod[] {
+  const methods: SignInMethod[] = []
+  if (user?.google_subject) methods.push("google")
+  if (user?.apple_subject) methods.push("apple")
+  return methods
 }

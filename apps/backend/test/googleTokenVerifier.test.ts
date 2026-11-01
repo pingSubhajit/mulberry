@@ -13,6 +13,7 @@ describe("DefaultGoogleTokenVerifier", () => {
             return {
               sub: "google-subject",
               email: "mac@example.test",
+              email_verified: true,
               name: "Mac User",
               picture: "https://example.test/mac.png",
             }
@@ -27,6 +28,7 @@ describe("DefaultGoogleTokenVerifier", () => {
     expect(identity).toEqual({
       subject: "google-subject",
       email: "mac@example.test",
+      emailVerified: true,
       name: "Mac User",
       pictureUrl: "https://example.test/mac.png",
     })

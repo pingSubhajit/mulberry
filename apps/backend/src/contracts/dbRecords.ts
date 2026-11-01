@@ -5,7 +5,8 @@ import type { PresenceSurfaceType } from "./presence.js"
 
 export interface UserRecord {
   id: string
-  google_subject: string
+  google_subject: string | null
+  apple_subject: string | null
   email: string
   google_picture_url: string | null
   first_drew_at: string | Date | null

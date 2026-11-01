@@ -5,6 +5,8 @@ import { HttpError } from "../http/HttpError.js"
 export interface GoogleIdentity {
   subject: string
   email: string
+  /** Whether Google has checked the person owns `email`. Only then can it match another account's. */
+  emailVerified: boolean
   name: string | null
   pictureUrl: string | null
 }
@@ -18,6 +20,7 @@ interface GoogleIdTokenClient {
     getPayload(): {
       sub?: string
       email?: string
+      email_verified?: boolean
       name?: string
       picture?: string
     } | undefined
@@ -44,6 +47,7 @@ export class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
       return {
         subject: email,
         email,
+        emailVerified: true,
         name: name ?? null,
         pictureUrl: pictureUrl.length > 0 ? pictureUrl : null,
       }
@@ -64,6 +68,7 @@ export class DefaultGoogleTokenVerifier implements GoogleTokenVerifier {
     return {
       subject: payload.sub,
       email: payload.email,
+      emailVerified: payload.email_verified === true,
       name: payload.name ?? null,
       pictureUrl: payload.picture ?? null,
     }

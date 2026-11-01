@@ -1,5 +1,6 @@
 import type { Database } from "../../infra/db/database.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
+import type { AppleCredentialClient } from "../../infra/auth/appleCredentialClient.js"
 import type { PairSessionRecord } from "../../contracts/dbRecords.js"
 import type { CanvasSyncHub } from "../canvasSync/hub.js"
 import type { ProfilePhotoStorage } from "../profile/service.js"
@@ -12,6 +13,13 @@ interface DeletedAccount {
   partnerUserId: string | null
   displayName: string
   photoPaths: string[]
+  appleCredential: AppleCredential | null
+}
+
+/** Apple's refresh token for the account, and the app it was issued to. */
+interface AppleCredential {
+  clientId: string
+  refreshToken: string
 }
 
 export class AccountService {
@@ -20,6 +28,7 @@ export class AccountService {
     private readonly pushDispatchService?: PushDispatchService,
     private readonly profilePhotoStorage?: ProfilePhotoStorage,
     private readonly canvasSyncHub?: Pick<CanvasSyncHub, "closePairSession">,
+    private readonly appleCredentials?: AppleCredentialClient,
   ) {}
 
   /**
@@ -44,6 +53,12 @@ export class AccountService {
         partnerProfile?.partner_profile_photo_path,
       ].filter((path): path is string => Boolean(path))
 
+      const apple = await tx.query<{ apple_client_id: string | null; apple_refresh_token: string | null }>(
+        `SELECT apple_client_id, apple_refresh_token FROM users WHERE id = $1`,
+        [userId],
+      )
+      const { apple_client_id: clientId, apple_refresh_token: refreshToken } = apple.rows[0] ?? {}
+
       if (pairSession && partnerUserId) {
         await tx.query(`DELETE FROM pair_sessions WHERE id = $1`, [pairSession.id])
         await clearPartnerMetadata(tx, [partnerUserId])
@@ -55,6 +70,7 @@ export class AccountService {
         partnerUserId,
         displayName: profile?.display_name ?? "Your partner",
         photoPaths: await this.unreferencedPhotoPaths(tx, photoPaths),
+        appleCredential: clientId && refreshToken ? { clientId, refreshToken } : null,
       }
     })
 
@@ -68,6 +84,21 @@ export class AccountService {
       )
     }
     await this.removeProfilePhotos(userId, deleted.photoPaths)
+    await this.revokeApple(userId, deleted.appleCredential)
+  }
+
+  /** Apple asks apps that delete accounts to revoke the person's Sign in with Apple tokens too. */
+  private async revokeApple(userId: string, credential: AppleCredential | null): Promise<void> {
+    if (!this.appleCredentials || !credential) return
+    try {
+      await this.appleCredentials.revoke(credential.refreshToken, credential.clientId)
+    } catch (error) {
+      // As with photos, the account is already gone.
+      console.error("[account] Apple token revocation failed", {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   /** Photo files are shared between partners' rows, so only files no one points at any more can go. */

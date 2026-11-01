@@ -3,6 +3,9 @@ import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import type { PairSessionRecord, SessionRecord, UserRecord } from "../../contracts/dbRecords.js"
 
+/** The columns of a `UserRecord`. */
+export const USER_COLUMNS = "id, google_subject, apple_subject, email, google_picture_url, first_drew_at"
+
 export interface SessionContext {
   session: SessionRecord
   user: UserRecord
@@ -51,7 +54,7 @@ export async function requireSessionContext(db: Pick<Database, "query">, accessT
   }
 
   const userRows = await db.query<UserRecord>(
-    `SELECT id, google_subject, email, google_picture_url, first_drew_at FROM users WHERE id = $1`,
+    `SELECT ${USER_COLUMNS} FROM users WHERE id = $1`,
     [session.user_id],
   )
   const user = userRows.rows[0]
@@ -81,7 +84,7 @@ export async function requireSessionByRefreshToken(
 
 export async function getUserById(db: Pick<Database, "query">, userId: string): Promise<UserRecord | null> {
   const rows = await db.query<UserRecord>(
-    `SELECT id, google_subject, email, google_picture_url, first_drew_at FROM users WHERE id = $1`,
+    `SELECT ${USER_COLUMNS} FROM users WHERE id = $1`,
     [userId],
   )
   return rows.rows[0] ?? null

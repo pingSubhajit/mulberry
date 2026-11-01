@@ -50,6 +50,32 @@ GOOGLE_ALLOWED_CLIENT_IDS=optional-native-or-web-client-id,optional-second-clien
 `GOOGLE_ALLOWED_CLIENT_IDS` is for additional OAuth clients such as the macOS
 native client. The original `GOOGLE_SERVER_CLIENT_ID` remains supported.
 
+## Sign in with Apple
+
+The iPhone, iPad and Mac apps also sign in with Apple through `POST /auth/apple`. The backend
+checks Apple's identity token against Apple's public keys, for the bundle IDs in
+`APPLE_CLIENT_IDS` (by default `com.subhajit.mulberry.beta` and `com.subhajit.mulberry.dev`), and
+checks that the token carries the SHA-256 of the nonce the app sends.
+
+An Apple sign-in whose verified email matches an existing account signs in to that account, and
+Google sign-in does the same for accounts made with Apple. A Hide My Email address never matches;
+people link the other method from Settings (`POST /me/sign-in-methods/google|apple`).
+
+Deleting an account revokes the person's Apple tokens, as Apple requires. That needs the Sign in
+with Apple key, `DH4TWPDF63` on team `HMJX9736KN`, kept in the ignored `secrets/apple/` beside the
+push keys:
+
+```text
+APPLE_TEAM_ID=HMJX9736KN
+APPLE_SIGN_IN_KEY_ID=DH4TWPDF63
+APPLE_SIGN_IN_PRIVATE_KEY=<the .p8 contents; \n escapes for line breaks are fine>
+```
+
+Without them, sign-in still works but nothing is revoked. Locally, `ALLOW_DEV_APPLE_TOKENS`
+accepts `dev-apple:SUBJECT:EMAIL` tokens, as `ALLOW_DEV_GOOGLE_TOKENS` does for Google; it is off
+in production. Development builds of the apps are signed by a free team, which can't use Sign in
+with Apple, so test it with the production identity.
+
 ## Firebase Cloud Messaging
 
 Background canvas catch-up uses FCM only when Firebase Admin credentials are configured.

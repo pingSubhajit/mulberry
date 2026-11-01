@@ -1,4 +1,4 @@
-import type { AuthStatus } from "./auth.js"
+import type { AuthStatus, SignInMethod } from "./auth.js"
 import type { InviteSummary, PairingStatus } from "./pairing.js"
 import type { PresenceSummary } from "./presence.js"
 import type { StreakWeekDay } from "./streak.js"
@@ -19,6 +19,8 @@ export interface BootstrapResponse {
   canvasStrokeRenderMode: string
   userId: string | null
   userEmail: string | null
+  /** How this account can sign in. */
+  signInMethods: SignInMethod[]
   userPhotoUrl: string | null
   userDisplayName: string | null
   partnerPhotoUrl: string | null

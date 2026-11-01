@@ -6,6 +6,8 @@ import type { AppConfig } from "../infra/config/config.js"
 import { loadConfig } from "../infra/config/config.js"
 import { createDatabase, type Database } from "../infra/db/database.js"
 import { DefaultGoogleTokenVerifier, type GoogleTokenVerifier } from "../infra/auth/googleTokenVerifier.js"
+import { DefaultAppleTokenVerifier, type AppleTokenVerifier } from "../infra/auth/appleTokenVerifier.js"
+import { createAppleCredentialClient, type AppleCredentialClient } from "../infra/auth/appleCredentialClient.js"
 import type { AnalyticsClient } from "../infra/analytics/analytics.js"
 import { createAnalyticsClient } from "../infra/analytics/posthogAnalytics.js"
 import {
@@ -55,6 +57,8 @@ export interface CreateAppOptions {
   config?: AppConfig
   db?: Database
   googleVerifier?: GoogleTokenVerifier
+  appleVerifier?: AppleTokenVerifier
+  appleCredentials?: AppleCredentialClient
   analytics?: AnalyticsClient
   pushSender?: PushSender
   pushOptions?: PushDispatchOptions
@@ -66,6 +70,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const config = options.config ?? loadConfig()
   const db = options.db ?? (await createDatabase(config.databaseUrl))
   const googleVerifier = options.googleVerifier ?? new DefaultGoogleTokenVerifier(config)
+  const appleVerifier = options.appleVerifier ?? new DefaultAppleTokenVerifier(config)
+  const appleCredentials = options.appleCredentials ?? createAppleCredentialClient(config.appleSignInKey)
   const analytics = options.analytics ?? createAnalyticsClient(config)
 
   const pushDispatchService = new PushDispatchService(
@@ -106,7 +112,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   const streakService = new StreakService(db)
   const bootstrapService = new BootstrapService(db, streakService, storage)
-  const authService = new AuthService(db, googleVerifier, bootstrapService)
+  const authService = new AuthService(db, googleVerifier, bootstrapService, appleVerifier, appleCredentials)
   const devicesService = new DevicesService(db)
   const profileService = new ProfileService(db, bootstrapService, pushDispatchService, storage)
   const pairingService = new PairingService(db, bootstrapService, pushDispatchService, analytics)
@@ -114,7 +120,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const canvasService = new CanvasService(db, streakService, pushDispatchService, analytics)
   const canvasSyncHub = new CanvasSyncHub(canvasService)
   const feedbackService = new FeedbackService(db, config.cannySsoPrivateKey)
-  const accountService = new AccountService(db, pushDispatchService, storage, canvasSyncHub)
+  const accountService = new AccountService(db, pushDispatchService, storage, canvasSyncHub, appleCredentials)
 
   const app = Fastify({ logger: false })
   await app.register(fastifyCors, {

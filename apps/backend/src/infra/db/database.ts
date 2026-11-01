@@ -339,6 +339,30 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       ran_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    -- Sign in with Apple. An account signs in with Google, Apple or both, so neither subject is
+    -- required. Apple's refresh token is kept only to revoke it when the account is deleted, with
+    -- the app it was issued to. The Google subject's unique constraint is rebuilt as an index,
+    -- which leaves NULLs to Apple-only accounts (pg-mem, in tests, keeps refusing them otherwise).
+    ALTER TABLE users
+      DROP CONSTRAINT IF EXISTS users_google_subject_key;
+
+    ALTER TABLE users
+      ALTER COLUMN google_subject DROP NOT NULL;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS users_google_subject_idx
+      ON users(google_subject);
+
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS apple_subject TEXT;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS users_apple_subject_idx
+      ON users(apple_subject);
+
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS apple_client_id TEXT;
+
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS apple_refresh_token TEXT;
   `)
 
   await runBackfills(db)
