@@ -5,6 +5,14 @@ import type { PushRecipients, PushSendResult, PushSender, ReactionActivityConten
 
 type DeviceTokenTarget = Pick<DeviceTokenRow, "token" | "platform">
 
+type PairDeviceTarget = Pick<DeviceTokenRow, "user_id" | "token" | "platform" | "sign_in_id">
+
+/** Who changed the canvas, and from which signed-in device. */
+export interface CanvasEditor {
+  userId: string
+  signInId: string
+}
+
 type LiveActivityDevice = Pick<DeviceTokenRow, "user_id" | "token" | "live_activity_start_token" | "live_activity_token">
 
 export interface ReactionCounts {
@@ -54,8 +62,24 @@ function pushRecipients(rows: DeviceTokenTarget[]): PushRecipients {
 interface PendingCanvasUpdate {
   pairSessionId: string
   actorUserId: string
+  /** Every device that changed the canvas since the last push, by user: they already have it. */
+  editors: Map<string, Set<string>>
   latestRevision: number
   snapshotRevision: number
+}
+
+/** A canvas change goes to every device in the pair except those that made it. An editor's own
+ * other devices hear of it only if they are Apple devices whose sign-in is known: Android treats any
+ * edit by its own account as one it made itself, and a token not yet registered under a sign-in
+ * may belong to the very device that drew. */
+function canvasUpdateRecipients(rows: PairDeviceTarget[], editors: Map<string, Set<string>>): PushRecipients {
+  return pushRecipients(
+    rows.filter((row) => {
+      const editingDevices = editors.get(row.user_id)
+      if (!editingDevices) return true
+      return row.platform !== "ANDROID" && row.sign_in_id !== null && !editingDevices.has(row.sign_in_id)
+    }),
+  )
 }
 
 export interface PushDispatchOptions {
@@ -137,13 +161,16 @@ export class PushDispatchService {
 
   enqueueCanvasUpdated(
     pairSessionId: string,
-    actorUserId: string,
+    editor: CanvasEditor,
     latestRevision: number,
     snapshotRevision = latestRevision,
   ): void {
+    const editors = this.pendingByPairSession.get(pairSessionId)?.editors ?? new Map<string, Set<string>>()
+    editors.set(editor.userId, (editors.get(editor.userId) ?? new Set<string>()).add(editor.signInId))
     this.pendingByPairSession.set(pairSessionId, {
       pairSessionId,
-      actorUserId,
+      actorUserId: editor.userId,
+      editors,
       latestRevision,
       snapshotRevision,
     })
@@ -274,9 +301,9 @@ export class PushDispatchService {
     }
     this.pendingByPairSession.delete(pairSessionId)
 
-    const { tokens, macTokens } = await this.activePeerTokens(pending.pairSessionId, pending.actorUserId)
+    const { tokens, macTokens } = await this.canvasUpdateTokens(pending.pairSessionId, pending.editors)
     if (tokens.length === 0) {
-      console.info("[push] no active peer tokens", {
+      console.info("[push] no devices to tell of a canvas update", {
         pairSessionId: pending.pairSessionId,
         actorUserId: pending.actorUserId,
         latestRevision: pending.latestRevision,
@@ -296,7 +323,7 @@ export class PushDispatchService {
     try {
       result = await this.sender.send({
         tokens,
-          macTokens,
+        macTokens,
         data: {
           type: "CANVAS_UPDATED",
           pairSessionId: pending.pairSessionId,
@@ -680,6 +707,24 @@ export class PushDispatchService {
       [pairSessionId, actorUserId],
     )
     return pushRecipients(rows.rows)
+  }
+
+  private async canvasUpdateTokens(
+    pairSessionId: string,
+    editors: Map<string, Set<string>>,
+  ): Promise<PushRecipients> {
+    const rows = await this.db.query<PairDeviceTarget>(
+      `
+      SELECT dt.user_id, dt.token, dt.platform, dt.sign_in_id
+      FROM pair_sessions ps
+      JOIN device_tokens dt
+        ON dt.user_id = ps.user_one_id OR dt.user_id = ps.user_two_id
+      WHERE ps.id = $1
+        AND dt.revoked_at IS NULL
+      `,
+      [pairSessionId],
+    )
+    return canvasUpdateRecipients(rows.rows, editors)
   }
 
   private async activeUserTokens(userId: string): Promise<PushRecipients> {

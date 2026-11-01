@@ -25,7 +25,7 @@ export class AuthService {
   async refreshSession(refreshToken: string): Promise<AuthResponse> {
     const session = await requireSessionByRefreshToken(this.db, refreshToken)
     await this.db.query(`UPDATE sessions SET revoked_at = NOW() WHERE id = $1`, [session.id])
-    const nextSession = await createSession(this.db, session.user_id)
+    const nextSession = await createSession(this.db, session.user_id, session.sign_in_id)
     return this.authResponseForSession(nextSession)
   }
 

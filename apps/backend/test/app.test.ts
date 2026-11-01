@@ -4,9 +4,10 @@ import type { FastifyInstance } from "fastify"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createApp } from "../src/app/createApp.js"
 import { runBackfills, runMigrations, type Database } from "../src/infra/db/database.js"
-import { PushDispatchService } from "../src/infra/push/dispatchService.js"
+import { PushDispatchService, type CanvasEditor } from "../src/infra/push/dispatchService.js"
 import type { MulberryPushMessage, PushSender, ReactionLiveActivityMessage } from "../src/infra/push/types.js"
 import type { DevicePlatform } from "../src/contracts/devices.js"
+import type { SessionRecord } from "../src/contracts/dbRecords.js"
 import type {
   ProcessedWallpaperImage,
   WallpaperImageProcessor,
@@ -2577,6 +2578,69 @@ describe("Mulberry backend", () => {
     first.close()
   })
 
+  it("tells the drawer's other Apple devices of a canvas change, but not the device that drew", async () => {
+    const { inviter, recipient } = await pairUsers()
+    const inviterMac = await signIn("subhajit@elaris.dev", "Subhajit")
+    const inviterAndroid = await signIn("subhajit@elaris.dev", "Subhajit")
+    await registerFcmToken(inviter.accessToken, "inviter-phone", "IOS")
+    await registerFcmToken(inviterMac.accessToken, "inviter-mac", "MACOS")
+    await registerFcmToken(inviterAndroid.accessToken, "inviter-android", "ANDROID")
+    await registerFcmToken(recipient.accessToken, "peer-phone", "IOS")
+
+    // A refreshed session is still the same Mac.
+    const refreshed = await app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      payload: { refreshToken: inviterMac.refreshToken },
+    })
+    expect(refreshed.statusCode).toBe(200)
+    const drawStroke = (accessToken: string, id: string) =>
+      app.inject({
+        method: "POST",
+        url: "/canvas/ops/batch",
+        headers: bearer(accessToken),
+        payload: {
+          batchId: `${id}-batch`,
+          clientCreatedAt: new Date().toISOString(),
+          operations: [
+            addStrokeOperation(`${id}-1`, id, 1, 1),
+            appendPointsOperation(`${id}-2`, id, [{ x: 2, y: 2 }]),
+            finishStrokeOperation(`${id}-3`, id),
+          ],
+        },
+      })
+
+    expect((await drawStroke(refreshed.json().accessToken, "mac-stroke")).statusCode).toBe(200)
+    await eventually(() => pushSender.sentMessages.length === 1)
+    expect(pushSender.sentMessages[0].tokens.sort()).toEqual(["inviter-phone", "peer-phone"])
+    expect(pushSender.sentMessages[0].macTokens).toEqual([])
+    expect(pushSender.sentMessages[0].data).toMatchObject({ type: "CANVAS_UPDATED", actorUserId: inviter.userId })
+
+    // A token registered before sign-ins were kept may be the drawer's own device; it is left out.
+    await db.query(`UPDATE device_tokens SET sign_in_id = NULL WHERE token = 'inviter-mac'`)
+    expect((await drawStroke(inviter.accessToken, "phone-stroke")).statusCode).toBe(200)
+    await eventually(() => pushSender.sentMessages.length === 2)
+    expect(pushSender.sentMessages[1].tokens).toEqual(["peer-phone"])
+  })
+
+  it("leaves out every device that drew while a canvas push waited", async () => {
+    const { inviter, recipient } = await pairUsers()
+    const inviterMac = await signIn("subhajit@elaris.dev", "Subhajit")
+    await registerFcmToken(inviter.accessToken, "inviter-phone", "IOS")
+    await registerFcmToken(inviterMac.accessToken, "inviter-mac", "MACOS")
+    await registerFcmToken(recipient.accessToken, "peer-phone", "IOS")
+    const dispatch = new PushDispatchService(db, pushSender, { debounceMs: 60_000 })
+
+    dispatch.enqueueCanvasUpdated(inviter.pairSessionId, await editor(inviter.accessToken), 1)
+    dispatch.enqueueCanvasUpdated(inviter.pairSessionId, await editor(recipient.accessToken), 2)
+    await dispatch.flushPairSession(inviter.pairSessionId)
+
+    expect(pushSender.sentMessages).toHaveLength(1)
+    expect(pushSender.sentMessages[0].tokens).toEqual(["inviter-mac"])
+    expect(pushSender.sentMessages[0].data).toMatchObject({ latestRevision: "2", actorUserId: recipient.userId })
+    dispatch.dispose()
+  })
+
   it("tracks pair streak days from finished strokes", async () => {
     const { inviter } = await pairUsers()
     const today = offsetDate(0)
@@ -2885,6 +2949,14 @@ describe("Mulberry backend", () => {
       inviter: { ...inviter, pairSessionId },
       recipient: { ...recipient, pairSessionId },
     }
+  }
+
+  async function editor(accessToken: string): Promise<CanvasEditor> {
+    const rows = await db.query<Pick<SessionRecord, "user_id" | "sign_in_id">>(
+      `SELECT user_id, sign_in_id FROM sessions WHERE access_token = $1`,
+      [accessToken],
+    )
+    return { userId: rows.rows[0].user_id, signInId: rows.rows[0].sign_in_id }
   }
 
   async function registerFcmToken(accessToken: string, token: string, platform: DevicePlatform = "ANDROID") {

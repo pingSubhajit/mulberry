@@ -81,6 +81,18 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
     ALTER TABLE device_tokens
       ADD COLUMN IF NOT EXISTS live_activity_token TEXT;
 
+    -- One sign-in per device: refreshing a session keeps it, so an edit and a push token can be
+    -- matched to the device they came from. Sessions from before keep their own id.
+    ALTER TABLE sessions
+      ADD COLUMN IF NOT EXISTS sign_in_id TEXT;
+
+    UPDATE sessions
+    SET sign_in_id = id
+    WHERE sign_in_id IS NULL;
+
+    ALTER TABLE device_tokens
+      ADD COLUMN IF NOT EXISTS sign_in_id TEXT;
+
     CREATE INDEX IF NOT EXISTS device_tokens_active_user_idx
       ON device_tokens(user_id)
       WHERE revoked_at IS NULL;
@@ -326,6 +338,7 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       name TEXT PRIMARY KEY,
       ran_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
   `)
 
   await runBackfills(db)

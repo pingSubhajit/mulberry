@@ -12,19 +12,26 @@ export interface CanvasSessionContext extends SessionContext {
   pairSession: PairSessionRecord
 }
 
-export async function createSession(db: Pick<Database, "query">, userId: string): Promise<SessionRecord> {
+/** Starts a new sign-in, or continues `signInId` when a session is refreshed. */
+export async function createSession(
+  db: Pick<Database, "query">,
+  userId: string,
+  signInId?: string,
+): Promise<SessionRecord> {
+  const id = randomUUID()
   const session: SessionRecord = {
-    id: randomUUID(),
+    id,
+    sign_in_id: signInId ?? id,
     user_id: userId,
     access_token: randomBytes(24).toString("hex"),
     refresh_token: randomBytes(24).toString("hex"),
   }
   await db.query(
     `
-      INSERT INTO sessions (id, user_id, access_token, refresh_token)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO sessions (id, sign_in_id, user_id, access_token, refresh_token)
+      VALUES ($1, $2, $3, $4, $5)
       `,
-    [session.id, session.user_id, session.access_token, session.refresh_token],
+    [session.id, session.sign_in_id, session.user_id, session.access_token, session.refresh_token],
   )
   return session
 }
@@ -32,7 +39,7 @@ export async function createSession(db: Pick<Database, "query">, userId: string)
 export async function requireSessionContext(db: Pick<Database, "query">, accessToken: string): Promise<SessionContext> {
   const sessionRows = await db.query<SessionRecord>(
     `
-      SELECT id, user_id, access_token, refresh_token
+      SELECT id, sign_in_id, user_id, access_token, refresh_token
       FROM sessions
       WHERE access_token = $1 AND revoked_at IS NULL
       `,
@@ -60,7 +67,7 @@ export async function requireSessionByRefreshToken(
 ): Promise<SessionRecord> {
   const rows = await db.query<SessionRecord>(
     `
-      SELECT id, user_id, access_token, refresh_token
+      SELECT id, sign_in_id, user_id, access_token, refresh_token
       FROM sessions
       WHERE refresh_token = $1 AND revoked_at IS NULL
       `,

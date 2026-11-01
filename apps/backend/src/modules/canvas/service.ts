@@ -383,7 +383,7 @@ export class CanvasService {
     if (shouldPushCanvasUpdate) {
       this.pushDispatchService?.enqueueCanvasUpdated(
         context.pairSession.id,
-        context.user.id,
+        { userId: context.user.id, signInId: context.session.sign_in_id },
         latestRevision,
         snapshotRevision,
       )

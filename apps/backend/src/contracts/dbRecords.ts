@@ -24,6 +24,9 @@ export interface ProfileRecord {
 
 export interface SessionRecord {
   id: string
+  /** The sign-in a session belongs to. It stays the same across token refreshes, so it identifies
+   * one signed-in device. */
+  sign_in_id: string
   user_id: string
   access_token: string
   refresh_token: string
@@ -67,6 +70,8 @@ export interface DeviceTokenRow {
   app_environment: string
   live_activity_start_token: string | null
   live_activity_token: string | null
+  /** The sign-in that last registered this token, if it has registered since sign-ins were kept. */
+  sign_in_id: string | null
   last_seen_at: Date | string
   revoked_at: Date | string | null
 }

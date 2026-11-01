@@ -34,13 +34,15 @@ export class DevicesService {
         token,
         platform,
         app_environment,
+        sign_in_id,
         last_seen_at,
         revoked_at
-      ) VALUES ($1, $2, $3, $4, $5, NOW(), NULL)
+      ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NULL)
       ON CONFLICT (token) DO UPDATE SET
         user_id = EXCLUDED.user_id,
         platform = EXCLUDED.platform,
         app_environment = EXCLUDED.app_environment,
+        sign_in_id = EXCLUDED.sign_in_id,
         -- An activity on screen belongs to the account that was signed in.
         live_activity_token = CASE
           WHEN device_tokens.user_id = EXCLUDED.user_id THEN device_tokens.live_activity_token
@@ -48,7 +50,7 @@ export class DevicesService {
         last_seen_at = NOW(),
         revoked_at = NULL
       RETURNING id, user_id, token, platform, app_environment, live_activity_start_token,
-        live_activity_token, last_seen_at, revoked_at
+        live_activity_token, sign_in_id, last_seen_at, revoked_at
       `,
       [
         tokenId,
@@ -56,6 +58,7 @@ export class DevicesService {
         request.token.trim(),
         request.platform,
         request.appEnvironment.trim(),
+        context.session.sign_in_id,
       ],
     )
     return deviceTokenToRecord(rows.rows[0])
