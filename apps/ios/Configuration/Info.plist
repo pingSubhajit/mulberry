@@ -32,11 +32,40 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>3</string>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
+	<string>4</string>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
+	<key>FirebaseMessagingAutoInitEnabled</key>
+	<false/>
+	<key>GIDClientID</key>
+	<string>$(GOOGLE_IOS_CLIENT_ID)</string>
+	<key>GIDServerClientID</key>
+	<string>$(GOOGLE_SERVER_CLIENT_ID)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>MulberryAPIBaseURL</key>
+	<string>$(MULBERRY_API_BASE_URL)</string>
+	<key>MulberryAppEnvironment</key>
+	<string>$(MULBERRY_APP_ENVIRONMENT)</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fonts/poppins_bold.ttf</string>
+		<string>Fonts/poppins_medium.ttf</string>
+		<string>Fonts/poppins_regular.ttf</string>
+		<string>Fonts/poppins_semibold.ttf</string>
+		<string>Fonts/virgil_regular.ttf</string>
+		<string>Fonts/dm_sans_regular.ttf</string>
+		<string>Fonts/space_mono_regular.ttf</string>
+		<string>Fonts/playfair_display_regular.ttf</string>
+		<string>Fonts/bangers_regular.ttf</string>
+		<string>Fonts/permanent_marker_regular.ttf</string>
+		<string>Fonts/kalam_regular.ttf</string>
+		<string>Fonts/oswald_regular.ttf</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -62,34 +91,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>GIDClientID</key>
-	<string>$(GOOGLE_IOS_CLIENT_ID)</string>
-	<key>GIDServerClientID</key>
-	<string>$(GOOGLE_SERVER_CLIENT_ID)</string>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
-	<key>MulberryAPIBaseURL</key>
-	<string>$(MULBERRY_API_BASE_URL)</string>
-	<key>MulberryAppEnvironment</key>
-	<string>$(MULBERRY_APP_ENVIRONMENT)</string>
-	<key>UIAppFonts</key>
-	<array>
-		<string>Fonts/poppins_bold.ttf</string>
-		<string>Fonts/poppins_medium.ttf</string>
-		<string>Fonts/poppins_regular.ttf</string>
-		<string>Fonts/poppins_semibold.ttf</string>
-		<string>Fonts/virgil_regular.ttf</string>
-		<string>Fonts/dm_sans_regular.ttf</string>
-		<string>Fonts/space_mono_regular.ttf</string>
-		<string>Fonts/playfair_display_regular.ttf</string>
-		<string>Fonts/bangers_regular.ttf</string>
-		<string>Fonts/permanent_marker_regular.ttf</string>
-		<string>Fonts/kalam_regular.ttf</string>
-		<string>Fonts/oswald_regular.ttf</string>
-	</array>
-	<key>FirebaseAppDelegateProxyEnabled</key>
-	<false/>
-	<key>FirebaseMessagingAutoInitEnabled</key>
-	<false/>
 </dict>
 </plist>

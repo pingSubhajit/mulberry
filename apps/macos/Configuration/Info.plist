@@ -23,7 +23,11 @@
 	<key>CFBundleShortVersionString</key>
 	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>4</string>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
+	<key>FirebaseMessagingAutoInitEnabled</key>
+	<false/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSApplicationCategoryType</key>
@@ -32,19 +36,15 @@
 	<string>26.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>MulberryAPNSEnvironment</key>
+	<string>$(MULBERRY_APNS_ENVIRONMENT)</string>
+	<key>MulberryAppEnvironment</key>
+	<string>$(MULBERRY_APP_ENVIRONMENT)</string>
+	<key>MulberryRemotePushEnabled</key>
+	<string>$(MULBERRY_REMOTE_PUSH_ENABLED)</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Mulberry</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<key>MulberryAppEnvironment</key>
-	<string>$(MULBERRY_APP_ENVIRONMENT)</string>
-	<key>MulberryAPNSEnvironment</key>
-	<string>$(MULBERRY_APNS_ENVIRONMENT)</string>
-	<key>FirebaseAppDelegateProxyEnabled</key>
-	<false/>
-	<key>FirebaseMessagingAutoInitEnabled</key>
-	<false/>
-	<key>MulberryRemotePushEnabled</key>
-	<string>$(MULBERRY_REMOTE_PUSH_ENABLED)</string>
 </dict>
 </plist>
