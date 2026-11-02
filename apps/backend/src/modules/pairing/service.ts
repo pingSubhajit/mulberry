@@ -13,6 +13,9 @@ import type { BootstrapService } from "../bootstrap/service.js"
 import type { AnalyticsClient } from "../../infra/analytics/analytics.js"
 
 const PARTNER_DETAILS_REQUIRED_MESSAGE = "Partner details are required before creating an invite"
+/** Wrong codes an account may try per window, so six-digit codes can't be guessed. */
+const REDEEM_FAILURE_LIMIT = 10
+const REDEEM_FAILURE_WINDOW_MS = 60 * 60 * 1000
 
 export class PairingService {
   constructor(
@@ -90,12 +93,17 @@ export class PairingService {
       throw new HttpError(400, "Already paired")
     }
 
-    const invite = await this.requireInviteByCode(code)
+    await this.requireRedeemAttemptsLeft(context.user.id)
+    const invite = await this.requireInviteByCode(code).catch(async (error: unknown) => {
+      await this.recordRedeemFailure(context.user.id)
+      throw error
+    })
     const inviteStatus = this.normalizeInviteStatus(invite)
     if (inviteStatus === "REDEEMED" && invite.recipient_user_id === context.user.id) {
       return this.redeemInviteResponseFor(context.user.id, invite, "REDEEMED")
     }
     if (inviteStatus !== "PENDING") {
+      await this.recordRedeemFailure(context.user.id)
       throw new HttpError(400, "Invite code is no longer valid")
     }
     if (invite.inviter_user_id === context.user.id) {
@@ -395,7 +403,7 @@ export class PairingService {
     )
     const invite = rows.rows[0]
     if (!invite) {
-      throw new HttpError(404, "Invite not found")
+      throw new HttpError(404, "Invite code not found")
     }
     const status = this.normalizeInviteStatus(invite)
     if (status === "EXPIRED") {
@@ -420,6 +428,44 @@ export class PairingService {
       throw new HttpError(404, "Invite not found")
     }
     return invite
+  }
+
+  private async requireRedeemAttemptsLeft(userId: string): Promise<void> {
+    const failures = await this.currentRedeemFailures(userId)
+    if (failures && failures.count >= REDEEM_FAILURE_LIMIT) {
+      throw new HttpError(429, "Too many invite attempts. Try again later.")
+    }
+  }
+
+  private async recordRedeemFailure(userId: string): Promise<void> {
+    const failures = await this.currentRedeemFailures(userId)
+    if (failures) {
+      await this.db.query(
+        `UPDATE invite_redeem_failures SET failure_count = $2 WHERE user_id = $1`,
+        [userId, failures.count + 1],
+      )
+      return
+    }
+    await this.db.query(
+      `
+      INSERT INTO invite_redeem_failures (user_id, failure_count, window_started_at)
+      VALUES ($1, 1, NOW())
+      ON CONFLICT (user_id) DO UPDATE SET failure_count = 1, window_started_at = NOW()
+      `,
+      [userId],
+    )
+  }
+
+  /** The account's wrong codes in the current window; none once the window has passed. */
+  private async currentRedeemFailures(userId: string): Promise<{ count: number } | null> {
+    const rows = await this.db.query<{ failure_count: number; window_started_at: string | Date }>(
+      `SELECT failure_count, window_started_at FROM invite_redeem_failures WHERE user_id = $1`,
+      [userId],
+    )
+    const row = rows.rows[0]
+    if (!row) return null
+    if (Date.now() - new Date(row.window_started_at).getTime() >= REDEEM_FAILURE_WINDOW_MS) return null
+    return { count: row.failure_count }
   }
 
   private normalizeInviteStatus(invite: InviteRecord): InviteRecord["status"] {

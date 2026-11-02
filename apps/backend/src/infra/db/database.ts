@@ -128,6 +128,12 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
       consumed_at TIMESTAMPTZ
     );
 
+    CREATE TABLE IF NOT EXISTS invite_redeem_failures (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      failure_count INTEGER NOT NULL,
+      window_started_at TIMESTAMPTZ NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS canvas_operations (
       id TEXT PRIMARY KEY,
       pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,

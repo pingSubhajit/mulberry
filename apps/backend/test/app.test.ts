@@ -1810,6 +1810,41 @@ describe("Mulberry backend", () => {
     expect(retry.json().bootstrapState.pairingStatus).toBe("INVITE_PENDING_ACCEPTANCE")
   })
 
+  it("limits how many wrong invite codes an account can try", async () => {
+    const inviter = await signIn("limit-inviter@elaris.dev", "Subhajit")
+    await completeProfile(inviter.accessToken, "Subhajit", "Ankita", "2026-01-01")
+    const invite = (await app.inject({
+      method: "POST",
+      url: "/invites",
+      headers: bearer(inviter.accessToken),
+    })).json()
+    const wrongCode = invite.code === "000000" ? "000001" : "000000"
+
+    const guesser = await signIn("limit-guesser@elaris.dev", "Ankita")
+    const redeem = (code: string) => app.inject({
+      method: "POST",
+      url: "/invites/redeem",
+      headers: bearer(guesser.accessToken),
+      payload: { code },
+    })
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const miss = await redeem(wrongCode)
+      expect(miss.statusCode).toBe(404)
+      expect(miss.json().message).toBe("Invite code not found")
+    }
+
+    const blocked = await redeem(invite.code)
+    expect(blocked.statusCode).toBe(429)
+    expect(blocked.json().message).toBe("Too many invite attempts. Try again later.")
+
+    await db.query(
+      `UPDATE invite_redeem_failures SET window_started_at = NOW() - INTERVAL '2 hours'`,
+    )
+    const afterWindow = await redeem(invite.code)
+    expect(afterWindow.statusCode).toBe(200)
+  })
+
   it("updates an already-onboarded invitee profile from inviter partner details", async () => {
     const inviter = await signIn("subhajit-home-invite@elaris.dev", "Subhajit")
     await completeProfile(inviter.accessToken, "Subhajit", "Old Partner", "2026-01-01")
