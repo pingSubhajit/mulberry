@@ -102,6 +102,21 @@ actor OfflineTransport: BackendTransport {
         check(verdict(nearPencil, at: 201.5) == .palm, "Fingers do not draw while the Pencil is in use")
         let later = PalmRejection.Finger(landed: 200 + PalmRejection.pencilGrace, radius: fingertip.radius)
         check(verdict(later, at: later.landed + PalmRejection.confirmation) == .finger, "Fingers draw again once the Pencil is put down")
+        check(palms.judgesFingers(pencilOnly: false, at: 100_000), "iPad tells every finger from a palm, long after the Pencil")
+        check(PalmRejection().judgesFingers(pencilOnly: false, at: 100), "iPad tells fingers from palms before any Pencil")
+
+        // On iPhone, a flat thumb or finger pad reads as large as an iPad palm.
+        var phone = PalmRejection(alwaysJudgesFingers: false)
+        check(!phone.judgesFingers(pencilOnly: false, at: 100), "On iPhone without the Pencil, a flat thumb draws at once")
+        check(phone.judgesFingers(pencilOnly: true, at: 100), "On iPhone, Only Draw with Apple Pencil still keeps fingers from drawing")
+        phone.notePencil(at: 200)
+        check(phone.judgesFingers(pencilOnly: false, at: 201), "On iPhone, fingers do not draw while the Pencil is in use")
+        let pausedPalm = PalmRejection.Finger(landed: 210, radius: flatFinger.radius + 5.2)
+        check(phone.judgesFingers(pencilOnly: false, at: 210)
+              && phone.classify(pausedPalm, others: 0, pencilOnly: false, at: 210.05) == .palm,
+              "On iPhone, a palm resting while the writer pauses does not draw")
+        check(!phone.judgesFingers(pencilOnly: false, at: 200 + PalmRejection.writingPause),
+              "On iPhone, a flat thumb draws once the Pencil has been put down a while")
 
         // Apple Pencil input.
         final class Touch {}

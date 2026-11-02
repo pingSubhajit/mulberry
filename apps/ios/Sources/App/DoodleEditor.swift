@@ -863,10 +863,10 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
     }
     /// The one touch that draws, erases or picks: the Pencil whenever it is down.
     private weak var trackedTouch: UITouch?
-    /// What palm rejection knows of the finger being followed. Nil for the Pencil, and for tools
-    /// that do not mark the canvas.
+    /// What palm rejection knows of the finger being followed. Nil for the Pencil, for tools that
+    /// do not mark the canvas, and on iPhone while the Pencil is not being written with.
     private var finger: PalmRejection.Finger?
-    private var palms = PalmRejection()
+    private var palms = PalmRejection(alwaysJudgesFingers: UIDevice.current.userInterfaceIdiom == .pad)
     /// The Pencil's touches, turned into what it really drew before the editor hears of them.
     private var pencil = PencilInput()
     /// On iPhone, a finger held still on the canvas opens the reactions, as on Android.
@@ -985,7 +985,8 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             followPencil(predicted: [])
             return
         }
-        if editor?.tool == .brush || editor?.tool == .eraser {
+        if editor?.tool == .brush || editor?.tool == .eraser,
+           palms.judgesFingers(pencilOnly: UIPencilInteraction.prefersPencilOnlyDrawing, at: touch.timestamp) {
             let landing = PalmRejection.Finger(
                 landed: touch.timestamp,
                 radius: PalmRejection.radius(majorRadius: touch.majorRadius, tolerance: touch.majorRadiusTolerance)

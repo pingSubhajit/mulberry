@@ -7,6 +7,10 @@ import Foundation
 /// beside another contact, as a resting hand does. And a finger's stroke stays on this device until
 /// it has proved to be a finger, so a palm that is caught late never reaches the partner.
 ///
+/// On iPhone a palm rests on the glass only to write with the Pencil, and a flat thumb or finger
+/// pad reads as large as an iPad palm, so fingers there are told from palms only while the Pencil
+/// is being written with. Otherwise every finger draws at once.
+///
 /// Times are on the touch clock, `ProcessInfo.systemUptime`, which `UITouch.timestamp` uses.
 struct PalmRejection {
     /// A finger followed on the canvas.
@@ -44,8 +48,17 @@ struct PalmRejection {
     /// How long a finger must stay finger-sized and alone before its stroke is saved. A palm shows
     /// itself well within this as its contact spreads or the rest of the hand lands.
     static let confirmation: TimeInterval = 0.15
+    /// On iPhone, how long after the Pencil last touched or hovered fingers are still told from
+    /// palms, so a hand resting while the writer pauses does not draw.
+    static let writingPause: TimeInterval = 30
 
+    /// iPad tells every finger from a palm; iPhone only while the Pencil is being written with.
+    let alwaysJudgesFingers: Bool
     private var pencilSeen = -TimeInterval.infinity
+
+    init(alwaysJudgesFingers: Bool = true) {
+        self.alwaysJudgesFingers = alwaysJudgesFingers
+    }
 
     static func radius(majorRadius: CGFloat, tolerance: CGFloat) -> CGFloat {
         max(0, majorRadius - tolerance)
@@ -58,6 +71,12 @@ struct PalmRejection {
 
     func pencilInUse(at time: TimeInterval) -> Bool {
         time - pencilSeen < Self.pencilGrace
+    }
+
+    /// Whether a finger landing now could be a palm. When it could not, it draws at once and is
+    /// never classified.
+    func judgesFingers(pencilOnly: Bool, at time: TimeInterval) -> Bool {
+        alwaysJudgesFingers || pencilOnly || time - pencilSeen < Self.writingPause
     }
 
     /// What a finger is now. `others` counts the other fingers and palms on the canvas;
