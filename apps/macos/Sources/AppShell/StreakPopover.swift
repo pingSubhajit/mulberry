@@ -1,25 +1,27 @@
 import AppKit
 import ProductCore
+import ProductUI
 import SwiftUI
 
 /// The iPad's streak sheet as a glass popover from the streak button: the bolt, the week, and
 /// the day's words, in Poppins, over Mulberry red fading down the glass. Clicking away closes it, so it has no close or Continue buttons.
 struct StreakPopover: View {
     @ObservedObject var streaks: StreakModel
+    /// Where the popover reports that the bolt broke on screen.
+    let api: () -> BackendClient?
     let refresh: () async -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @StateObject private var showing = StreakBreakShowing()
+    private var film: URL? { AppResources.url("Streak/streak_bolt_break.mov") }
 
     var body: some View {
         VStack(spacing: 0) {
             if let streak = streaks.streak {
-                if let bolt = StreakArtwork.image(broken: streak.lostRecently) {
-                    Image(nsImage: bolt)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 176)
-                        .padding(.top, 28)
-                        .padding(.bottom, 22)
-                        .accessibilityHidden(true)
-                }
+                hero(streak)
+                    .frame(height: 176)
+                    .padding(.top, 28)
+                    .padding(.bottom, 22)
+                    .accessibilityHidden(true)
                 StreakWeekRow(streak: streak)
                     .padding(.horizontal, 28)
                 VStack(spacing: 10) {
@@ -35,6 +37,8 @@ struct StreakPopover: View {
                 .padding(.horizontal, 28)
                 .padding(.top, 24)
                 .padding(.bottom, streaks.errorMessage == nil ? 28 : 8)
+                // The words follow the shards.
+                .opacity(showing.hidesCopy(streaks, film: film, reduceMotion: reduceMotion) ? 0 : 1)
             } else if streaks.loading {
                 ProgressView()
                     .controlSize(.large)
@@ -69,7 +73,26 @@ struct StreakPopover: View {
             .allowsHitTesting(false)
         }
         .animation(.snappy, value: streaks.streak)
-        .task { await refresh() }
+        .task {
+            await refresh()
+            await showing.decide(streaks, film: film, reduceMotion: reduceMotion, api: api)
+        }
+    }
+
+    /// The film while the bolt breaks; otherwise the artwork, broken as the film ends.
+    @ViewBuilder private func hero(_ streak: StreakResponse) -> some View {
+        if showing.showsFilm(streaks, film: film, reduceMotion: reduceMotion), let film {
+            StreakBoltBreak(url: film, start: showing.phase == .playing, onCrack: Haptics.tap,
+                            onReveal: { withAnimation(.easeOut(duration: 0.45)) { showing.reveal() } },
+                            onFinish: showing.finished)
+                .aspectRatio(540.0 / 840.0, contentMode: .fit)
+                .scaleEffect(StreakBoltBreak.brokenScale)
+        } else if let bolt = StreakArtwork.image(broken: streak.lostRecently) {
+            Image(nsImage: bolt)
+                .resizable()
+                .scaledToFit()
+                .scaleEffect(streak.lostRecently ? StreakBoltBreak.brokenScale : 1)
+        }
     }
 }
 

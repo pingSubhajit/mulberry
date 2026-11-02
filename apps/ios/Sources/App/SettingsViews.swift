@@ -120,7 +120,7 @@ struct SettingsView: View {
             }
         }
         .sheet(isPresented: $streakOpen) {
-            StreakSheet(streaks: model.streaks) {
+            StreakSheet(streaks: model.streaks, api: { try? model.api }) {
                 if let api = try? model.api { await model.streaks.refresh(api: api) }
             }
         }

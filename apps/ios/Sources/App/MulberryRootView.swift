@@ -89,7 +89,7 @@ struct MulberryRootView: View {
             }
         }
         .sheet(isPresented: $model.showStreak) {
-            StreakSheet(streaks: model.streaks) {
+            StreakSheet(streaks: model.streaks, api: { try? model.api }) {
                 if let api = try? model.api { await model.streaks.refresh(api: api) }
             }
         }

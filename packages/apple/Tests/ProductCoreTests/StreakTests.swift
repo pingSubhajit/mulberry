@@ -129,3 +129,87 @@ private actor StreakTransport: BackendTransport {
         #expect(burst.frame(piece, elapsed: 4, width: 402, height: 700, displayScale: 3) == nil)
     }
 }
+
+private final class StreakTokenStore: SessionTokenStore, @unchecked Sendable {
+    func load() -> SessionTokens? { SessionTokens(accessToken: "token", refreshToken: "refresh", userId: "user") }
+    func save(_ tokens: SessionTokens) {}
+    func clear() {}
+}
+
+/// Serves a streak lost two days before today, as unseen, seen, or from a server that doesn't say.
+private actor LostStreakTransport: BackendTransport {
+    var seen: Bool?
+    private(set) var reported: [String] = []
+    init(seen: Bool?) { self.seen = seen }
+    func setSeen(_ value: Bool?) { seen = value }
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let ok = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        if request.url!.path == "/streak/lost-seen" {
+            let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: String]
+            reported.append(body?["day"] ?? "")
+            return (Data(#"{"ok":true}"#.utf8), ok)
+        }
+        let today = ServerDate.localDay()
+        var streak: [String: Any] = ["today": today, "currentStreakDays": 0, "previousStreakDays": 4,
+                                     "hasActivityToday": false, "lastActivityDay": Self.day(-2, from: today), "week": []]
+        if let seen { streak["lostStreakSeen"] = seen }
+        return (try JSONSerialization.data(withJSONObject: streak), ok)
+    }
+    static func day(_ offset: Int, from today: String) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: formatter.calendar.date(byAdding: .day, value: offset, to: formatter.date(from: today)!)!)
+    }
+}
+
+@MainActor @Test func lostStreakBreaksOncePerAccountAndReportsUntilTheServerHears() async throws {
+    let defaults = UserDefaults(suiteName: "streak-break-\(UUID().uuidString)")!
+    let transport = LostStreakTransport(seen: false)
+    let api = try BackendClient(baseURL: URL(string: "https://example.invalid")!, tokenStore: StreakTokenStore(), transport: transport)
+    let lastDay = LostStreakTransport.day(-2, from: ServerDate.localDay())
+
+    let model = StreakModel(defaults: defaults)
+    model.bind(userId: "user", pairSessionId: "pair")
+    #expect(!model.breakPending)
+    await model.refresh(api: api)
+    #expect(model.streak?.lostRecently == true)
+    #expect(model.breakPending)
+
+    model.breakShown(api: api)
+    #expect(!model.breakPending)
+    model.breakShown(api: api)
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(await transport.reported == [lastDay])
+
+    // Relaunched while the server still hasn't heard: no second break, and it hears again.
+    let relaunched = StreakModel(defaults: defaults)
+    relaunched.bind(userId: "user", pairSessionId: "pair")
+    #expect(!relaunched.breakPending)
+    await relaunched.refresh(api: api)
+    #expect(!relaunched.breakPending)
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(await transport.reported == [lastDay, lastDay])
+
+    // Seen on another device.
+    await transport.setSeen(true)
+    let other = StreakModel(defaults: UserDefaults(suiteName: "streak-break-\(UUID().uuidString)")!)
+    other.bind(userId: "user", pairSessionId: "pair")
+    await other.refresh(api: api)
+    #expect(other.streak?.lostRecently == true)
+    #expect(!other.breakPending)
+
+    // A server that doesn't track it yet: each device breaks it once.
+    await transport.setSeen(nil)
+    let older = StreakModel(defaults: UserDefaults(suiteName: "streak-break-\(UUID().uuidString)")!)
+    older.bind(userId: "user", pairSessionId: "pair")
+    await older.refresh(api: api)
+    #expect(older.breakPending)
+}
+
+@Test func streakWithoutLostSeenStillDecodes() throws {
+    let lost = try streak(0, previous: 8, last: "2026-10-25", active: false)
+    #expect(lost.lostStreakSeen == nil)
+}

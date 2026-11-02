@@ -71,9 +71,13 @@ struct StreakCanvasCelebration: View {
 
 struct StreakSheet: View {
     @ObservedObject var streaks: StreakModel
+    /// Where the sheet reports that the bolt broke on screen.
+    let api: () -> BackendClient?
     let refresh: () async -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @StateObject private var showing = StreakBreakShowing()
     private let burgundy = Color(red: 55 / 255, green: 1 / 255, blue: 8 / 255)
     private let lowerBurgundy = Color(red: 82 / 255, green: 2 / 255, blue: 12 / 255)
     /// A form sheet reports a compact width even on iPad, so the iPad sizing checks the device.
@@ -101,8 +105,7 @@ struct StreakSheet: View {
                             .accessibilityLabel("Close streak")
                     }.padding(.horizontal, 20).padding(.top, 24)
                     if let streak = streaks.streak {
-                        Image(streak.lostRecently ? "StreakBrokenBolt" : "StreakBolt")
-                            .resizable().scaledToFit()
+                        hero(streak)
                             .frame(height: typeSize.isAccessibilitySize ? 170 : min(340, geometry.size.width * 0.8))
                             .frame(maxWidth: .infinity).padding(.top, 12).padding(.bottom, 24)
                             .accessibilityHidden(true)
@@ -114,6 +117,8 @@ struct StreakSheet: View {
                                 .foregroundStyle(.white.opacity(0.7))
                         }.multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 40).padding(.top, 32).padding(.bottom, 24)
+                            // The words follow the shards.
+                            .opacity(showing.hidesCopy(streaks, film: StreakBreakFilm.url, reduceMotion: reduceMotion) ? 0 : 1)
                     } else if streaks.loading {
                         ProgressView("Loading your streak…").tint(.white).padding(.vertical, 100)
                     }
@@ -152,8 +157,42 @@ struct StreakSheet: View {
         .foregroundStyle(.white).preferredColorScheme(.dark)
         // A phone's full-height detent would override the iPad's sizing, so each gets its own.
         .modifier(StreakSheetSizing(pad: pad, height: sheetHeight))
-        .task { await refresh() }
+        .sensoryFeedback(.impact(weight: .heavy), trigger: showing.cracks)
+        .task {
+            await refresh()
+            await showing.decide(streaks, film: StreakBreakFilm.url, reduceMotion: reduceMotion, api: api)
+        }
     }
+
+    /// The film while the bolt breaks; otherwise the artwork, broken as the film ends.
+    @ViewBuilder private func hero(_ streak: StreakResponse) -> some View {
+        if showing.showsFilm(streaks, film: StreakBreakFilm.url, reduceMotion: reduceMotion), let film = StreakBreakFilm.url {
+            StreakBoltBreak(url: film, start: showing.phase == .playing, onCrack: showing.cracked,
+                            onReveal: { withAnimation(.easeOut(duration: 0.45)) { showing.reveal() } },
+                            onFinish: showing.finished)
+                .aspectRatio(540.0 / 840.0, contentMode: .fit)
+                .scaleEffect(StreakBoltBreak.brokenScale)
+        } else if streak.lostRecently {
+            Image("StreakBrokenBolt").resizable().scaledToFit().scaleEffect(StreakBoltBreak.brokenScale)
+        } else {
+            Image("StreakBolt").resizable().scaledToFit()
+        }
+    }
+}
+
+/// The breaking bolt's film, written out of the asset catalog once for AVFoundation to open.
+@MainActor
+enum StreakBreakFilm {
+    static let url: URL? = {
+        guard let asset = NSDataAsset(name: "StreakBoltBreak"),
+              let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        // Named by size, so a new film replaces the one an older build left.
+        let url = caches.appendingPathComponent("streak_bolt_break-\(asset.data.count).mov")
+        if !FileManager.default.fileExists(atPath: url.path) {
+            do { try asset.data.write(to: url, options: .atomic) } catch { return nil }
+        }
+        return url
+    }()
 }
 
 private struct StreakWeekRow: View {

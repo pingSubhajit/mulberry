@@ -4,6 +4,10 @@ import Foundation
 /// The pair's streak, saved per account and pair so it opens on the last one loaded. The first
 /// count seen is the baseline; only a later increase the server confirms celebrates, with the
 /// level-up banner and confetti. Repeated refreshes do not.
+///
+/// A lost streak's bolt breaks once per account, on whichever device shows it first: the server
+/// remembers it, and this device remembers it too until the server has heard, so an offline
+/// viewing isn't replayed or forgotten.
 @MainActor
 public final class StreakModel: ObservableObject {
     @Published public private(set) var streak: StreakResponse?
@@ -11,6 +15,8 @@ public final class StreakModel: ObservableObject {
     @Published public private(set) var loading = false
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var confettiToken: UUID?
+    /// The last activity day of the lost streak whose breaking bolt this device has shown.
+    @Published private var lostSeenDay: String?
     private let defaults: UserDefaults
     private var key: String?
     private var generation = 0
@@ -30,6 +36,8 @@ public final class StreakModel: ObservableObject {
         let saved = next.flatMap { defaults.data(forKey: $0) }.flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
         streak = saved?.streak
         progress = saved?.progress ?? StreakProgress()
+        lostSeenDay = Self.debugLostStreak ? nil : saved?.lostSeenDay
+        streak = streak.map(Self.debugLost)
         if saved == nil, next != nil, let baselineDays { progress.observe(days: baselineDays) }
     }
 
@@ -42,8 +50,12 @@ public final class StreakModel: ObservableObject {
         do {
             let result = try await api.streak(today: day)
             guard generation == epoch, !Task.isCancelled, day == ServerDate.localDay() else { return }
-            streak = result
+            streak = Self.debugLost(result)
             errorMessage = nil
+            // Shown here while offline: the server hears now.
+            if let day = result.lastActivityDay, day == lostSeenDay, result.lostStreakSeen == false {
+                Task { try? await api.markLostStreakSeen(day: day) }
+            }
             if progress.observe(days: result.currentStreakDays) {
                 let token = UUID()
                 confettiToken = token
@@ -77,13 +89,54 @@ public final class StreakModel: ObservableObject {
     }
     #endif
 
+    /// Whether the bolt should break on screen: the streak was just lost and this account hasn't
+    /// watched it break, here or on another device.
+    public var breakPending: Bool {
+        guard let streak, streak.lostRecently, let day = streak.lastActivityDay else { return false }
+        return streak.lostStreakSeen != true && lostSeenDay != day
+    }
+
+    /// The bolt broke on screen, or would have but for Reduce Motion: it doesn't break again.
+    public func breakShown(api: BackendClient) {
+        guard let key, let day = streak?.lastActivityDay, lostSeenDay != day else { return }
+        lostSeenDay = day
+        save(key: key)
+        guard !Self.debugLostStreak else { return }
+        Task { try? await api.markLostStreakSeen(day: day) }
+    }
+
+    /// For trying the breaking bolt: launch with `MULBERRY_STREAK_LOST=1` and the streak shows as
+    /// just lost, breaking once each launch.
+    private static var debugLostStreak: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["MULBERRY_STREAK_LOST"] != nil
+        #else
+        false
+        #endif
+    }
+
+    private static func debugLost(_ streak: StreakResponse) -> StreakResponse {
+        guard debugLostStreak else { return streak }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        guard let today = formatter.date(from: streak.today),
+              let earlier = formatter.calendar.date(byAdding: .day, value: -2, to: today) else { return streak }
+        let lastDay = formatter.string(from: earlier)
+        return StreakResponse(today: streak.today, currentStreakDays: 0, previousStreakDays: max(3, streak.previousStreakDays),
+                              hasActivityToday: false, lastActivityDay: lastDay, lostStreakSeen: false,
+                              week: streak.week.map { StreakWeekDay(day: $0.day, hasActivity: $0.day == lastDay || ($0.day < lastDay && $0.hasActivity)) })
+    }
+
     public func dismissBanner() {
         progress.dismissBanner()
         if let key { save(key: key) }
     }
 
     private func save(key: String) {
-        if let data = try? JSONEncoder().encode(Saved(streak: streak, progress: progress)) {
+        if let data = try? JSONEncoder().encode(Saved(streak: streak, progress: progress, lostSeenDay: lostSeenDay)) {
             defaults.set(data, forKey: key)
         }
     }
@@ -91,5 +144,6 @@ public final class StreakModel: ObservableObject {
     private struct Saved: Codable {
         let streak: StreakResponse?
         let progress: StreakProgress
+        let lostSeenDay: String?
     }
 }

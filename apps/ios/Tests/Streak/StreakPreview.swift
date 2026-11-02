@@ -68,7 +68,7 @@ private struct StreakPreviewRoot: View {
         .tint(MulberryDesign.accent)
         .dynamicTypeSize(largeType ? .accessibility3 : .large)
         .sheet(isPresented: $streakOpen) {
-            StreakSheet(streaks: model) { await model.refresh(api: api) }
+            StreakSheet(streaks: model, api: { api }) { await model.refresh(api: api) }
                 .dynamicTypeSize(largeType ? .accessibility3 : .large)
         }
         .sheet(isPresented: $pairingOpen) {

@@ -59,6 +59,15 @@ struct MainWindowView: View {
                       ReviewPrompt.reserve(streakDays: bootstrap?.currentStreakDays ?? 0) else { return }
                 requestReview()
             }
+            #if DEBUG
+            // `MULBERRY_STREAK_LOST=1` shows the streak as just lost; this opens it to watch the bolt break.
+            .task(id: appStateController.loadState.bootstrap?.isPaired) {
+                guard ProcessInfo.processInfo.environment["MULBERRY_STREAK_LOST"] != nil,
+                      appStateController.loadState.bootstrap?.isPaired == true else { return }
+                try? await Task.sleep(for: .seconds(1.5))
+                windowState.showsStreak = true
+            }
+            #endif
             .task(id: appStateController.loadState.bootstrap?.userPhotoUrl) {
                 await avatar.load(appStateController.loadState.bootstrap?.userPhotoUrl)
             }
@@ -127,7 +136,7 @@ struct MainWindowView: View {
         .help("Daily streak")
         .accessibilityLabel("Daily streak: \(days) \(days == 1 ? "day" : "days")")
         .popover(isPresented: $windowState.showsStreak, arrowEdge: .bottom) {
-            StreakPopover(streaks: streaks) {
+            StreakPopover(streaks: streaks, api: { authController.api }) {
                 await streaks.refresh(api: authController.api)
             }
         }

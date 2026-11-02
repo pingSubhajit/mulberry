@@ -11,6 +11,9 @@ public struct StreakResponse: Codable, Equatable, Sendable {
     public let previousStreakDays: Int
     public let hasActivityToday: Bool
     public let lastActivityDay: String?
+    /// Whether this account has watched the bolt break for the streak that ended on
+    /// `lastActivityDay`, on any device. `nil` from a server that doesn't track it yet.
+    public let lostStreakSeen: Bool?
     public let week: [StreakWeekDay]
 
     public var lostRecently: Bool {
