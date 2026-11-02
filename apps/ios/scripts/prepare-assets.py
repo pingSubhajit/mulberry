@@ -12,11 +12,17 @@ assets.mkdir(parents=True, exist_ok=True)
 info = {'info': {'author': 'xcode', 'version': 1}}
 (assets / 'Contents.json').write_text(json.dumps(info, indent=2) + '\n')
 
-def image(name, source):
+def image(name, source, ipad=None):
+    """`ipad` names a larger iOS-only variant already in the image set, kept beside the copy."""
     folder = assets / (name + '.imageset')
     folder.mkdir(exist_ok=True)
     shutil.copy2(source, folder / source.name)
-    (folder / 'Contents.json').write_text(json.dumps({**info, 'images': [{'filename': source.name, 'idiom': 'universal'}]}, indent=2) + '\n')
+    images = [{'filename': source.name, 'idiom': 'universal'}]
+    if ipad:
+        if not (folder / ipad).exists():
+            raise FileNotFoundError(folder / ipad)
+        images.append({'filename': ipad, 'idiom': 'ipad'})
+    (folder / 'Contents.json').write_text(json.dumps({**info, 'images': images}, indent=2) + '\n')
 
 def vector(name, filename):
     source = ET.parse(android / 'drawable' / filename).getroot()
@@ -36,7 +42,7 @@ def vector(name, filename):
     (folder / (name + '.svg')).write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}">' + ''.join(paths) + '</svg>\n')
     (folder / 'Contents.json').write_text(json.dumps({**info, 'images': [{'filename': name + '.svg', 'idiom': 'universal'}], 'properties': {'preserves-vector-representation': True}}, indent=2) + '\n')
 
-image('AuthBackground', android / 'drawable-nodpi/auth_login_bg.jpg')
+image('AuthBackground', android / 'drawable-nodpi/auth_login_bg.jpg', ipad='auth_login_bg_ipad.jpg')
 image('WallpaperDefault', android / 'drawable-nodpi/wallpaper_default_bg.jpg')
 for index in range(1, 5):
     image('WallpaperPreset' + str(index), root.parent / f'mobile/wallpaper_pack/src/main/assets/wallpapers/wallpaper_preset_{index}.jpg')
