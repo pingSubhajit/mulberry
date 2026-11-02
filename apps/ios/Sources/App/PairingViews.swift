@@ -99,7 +99,7 @@ struct InviteShareView: View {
             ScrollView {
                 VStack(spacing: 24) {
                     Image("BrandMark").resizable().scaledToFit().frame(width: 52, height: 52).accessibilityHidden(true)
-                    ScreenHeading(title: "Invite your partner", subtitle: "Share this code with your partner and ask them to enter it after they have signed up for Mulberry.")
+                    ScreenHeading(title: "Invite your partner", subtitle: "Send this to your partner. Their link brings them straight to you.")
                     if let invite = model.createdInvite {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             let expiry = ServerDate.parse(invite.expiresAt) ?? .distantPast
@@ -114,7 +114,9 @@ struct InviteShareView: View {
                                     PrimaryAction(title: "Generate new code", loading: model.busy) { Task { await model.createInvite() } }
                                 } else {
                                     Text("Expires in \(Text(expiry, style: .relative))").font(.callout).foregroundStyle(MulberryDesign.muted)
-                                    ShareLink(item: "Join me on Mulberry: https://mulberry.my/invite?code=\(invite.code)\n\nMy invite code is \(invite.code).") {
+                                    // The link on its own gives Messages a rich preview; the code rides along to type in.
+                                    ShareLink(item: InviteLinks.url(for: invite.code), subject: Text("Join me on Mulberry"),
+                                              message: Text("Join me on Mulberry. My invite code is \(invite.code).")) {
                                         Label("Share invite code", systemImage: "square.and.arrow.up")
                                             .font(MulberryDesign.font(17, weight: "SemiBold")).foregroundStyle(.white)
                                             .frame(maxWidth: .infinity, minHeight: 54)

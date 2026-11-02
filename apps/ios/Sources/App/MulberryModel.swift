@@ -19,6 +19,9 @@ final class MulberryModel: ObservableObject {
     @Published var draft = ProfileDraft()
     @Published var showInviteEntry = false
     @Published var createdInvite: CreatedInvite?
+    /// True while an invite from a link is being used, so onboarding doesn't flash past.
+    @Published private(set) var joiningInvite = false
+    @Published var inviteNotice: InviteNotice?
     @Published var showWallpaperOnboarding = false
     @Published var showSettings = false
     @Published var drawingConnection: DrawingConnection = .connecting
@@ -115,9 +118,53 @@ final class MulberryModel: ObservableObject {
     func redeem(_ code: String) async {
         await perform {
             let response = try await self.api.redeemInvite(code: code)
+            InviteLinks.shared.finish(code)
             self.showInviteEntry = false
             await self.apply(response.bootstrapState)
         }
+    }
+
+    /// Uses an invite that arrived by link once the account can take it: signed in and not paired.
+    /// The partner still confirms on the invite screen.
+    func redeemLinkedInvite() async {
+        let links = InviteLinks.shared
+        guard !restoring, !busy, !joiningInvite, let state = bootstrap, let code = links.pending else { return }
+        switch state.pairingStatus {
+        case "PAIRED":
+            links.finish(code)
+            inviteNotice = .alreadyPaired
+            return
+        case "INVITE_PENDING_ACCEPTANCE":
+            // The invite screen is already showing the invite this account took.
+            links.finish(code)
+            return
+        default: break
+        }
+        if createdInvite?.code == code { links.finish(code); return }
+
+        joiningInvite = true; busy = true; errorMessage = nil
+        defer { joiningInvite = false; busy = false }
+        do {
+            let response = try await api.redeemInvite(code: code)
+            links.finish(code)
+            showInviteEntry = false
+            await apply(response.bootstrapState)
+        } catch BackendError.rejected(_, let message) {
+            links.finish(code)
+            inviteNotice = InviteNotice(serverMessage: message)
+        } catch {
+            // Offline or interrupted: the code waits for the next chance.
+        }
+    }
+
+    /// Text pasted from the invite page or the partner's message.
+    func pasteInvite(_ texts: [String]) async {
+        guard let code = texts.lazy.compactMap(InviteLinks.code(inPasted:)).first else {
+            inviteNotice = .notAnInvite
+            return
+        }
+        InviteLinks.shared.receive(code: code)
+        await redeemLinkedInvite()
     }
 
     func acceptInvite() async {
@@ -350,7 +397,7 @@ final class MulberryModel: ObservableObject {
         switch message {
         case "You cannot redeem your own invite": errorMessage = "That’s your invite code. Share it with your partner."
         case "Invite code has expired", "Invite code is no longer valid": errorMessage = "That invite code has expired. Ask your partner to generate a new one."
-        case "Invite code not found": errorMessage = "That invite code wasn’t found. Double-check the code and try again."
+        case "Invite code not found", "Invite not found": errorMessage = "That invite code wasn’t found. Double-check the code and try again."
         default: errorMessage = message
         }
     }

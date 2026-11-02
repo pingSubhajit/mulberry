@@ -34,4 +34,10 @@ final class QuickActionSceneDelegate: NSObject, UIWindowSceneDelegate {
     func windowScene(_ windowScene: UIWindowScene, performActionFor shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
         completionHandler(HomeQuickActions.shared.receive(shortcutItem))
     }
+
+    /// An invite link opened while Mulberry is running. SwiftUI may deliver it as well.
+    func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+        guard userActivity.activityType == NSUserActivityTypeBrowsingWeb, let url = userActivity.webpageURL else { return }
+        InviteLinks.shared.receive(url)
+    }
 }

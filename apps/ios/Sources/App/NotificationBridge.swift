@@ -4,6 +4,10 @@ import UserNotifications
 final class NotificationBridge: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
         if let item = options.shortcutItem { HomeQuickActions.shared.receive(item) }
+        // An invite link that launched the app. SwiftUI delivers it too; taking it twice is harmless.
+        for activity in options.userActivities where activity.activityType == NSUserActivityTypeBrowsingWeb {
+            if let url = activity.webpageURL { InviteLinks.shared.receive(url) }
+        }
         let configuration = UISceneConfiguration(name: nil, sessionRole: session.role)
         configuration.delegateClass = QuickActionSceneDelegate.self
         return configuration

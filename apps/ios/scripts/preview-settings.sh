@@ -21,7 +21,7 @@ SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 APP_SOURCES=(MulberryDesign ColourNames CanvasViewportStore DoodleWallpaper CanvasEditorChrome CanvasTextEditorView
   CanvasStickerEditorView StickerArtwork CustomColourSheet DoodleEditor MulberryModel StreakViews
   WallpaperLibrary ProductWallpaperService WallpaperNotifications PairingViews OnboardingViews SettingsViews
-  ReactionsModel ReactionActivities PairingHelpView)
+  ReactionsModel ReactionActivities PairingHelpView InviteLinks)
 APP_FILES=(); for name in "${APP_SOURCES[@]}"; do APP_FILES+=("$IOS_ROOT/Sources/App/$name.swift"); done
 xcrun --sdk iphonesimulator swiftc -sdk "$SDK_PATH" -target "$(uname -m)-apple-ios27.0-simulator" -parse-as-library \
   "$IOS_ROOT"/../../packages/apple/Sources/ProductCore/*.swift "$IOS_ROOT"/../../packages/apple/Sources/CanvasDrawing/*.swift \

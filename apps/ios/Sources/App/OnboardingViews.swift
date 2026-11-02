@@ -4,13 +4,16 @@ struct OnboardingNameView: View {
     @ObservedObject var model: MulberryModel
     @State private var details = false
     @State private var privacy = false
+    @State private var invitePaste = false
     @FocusState private var nameFocused: Bool
+    @Environment(\.scenePhase) private var phase
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
                 Image("BrandMark").resizable().scaledToFit().frame(width: 46, height: 46).accessibilityHidden(true)
                 ScreenHeading(title: "Welcome to Mulberry!\nLet’s get you set up")
+                if invitePaste { InvitePasteCard(model: model) }
                 OnboardingField(label: "What is your name?", placeholder: "Enter the name your partner calls you", value: $model.draft.displayName)
                     .focused($nameFocused).submitLabel(.next).onSubmit(continueToDetails)
                 InlineError(message: model.errorMessage)
@@ -33,11 +36,44 @@ struct OnboardingNameView: View {
         .navigationDestination(isPresented: $details) { OnboardingDetailsView(model: model) }
         .sheet(isPresented: $privacy) { LegalDocumentView(document: .privacy) }
         .onChange(of: model.draft) { _, _ in model.saveDraft() }
+        // The invite page copies the partner's link before sending them to the App Store.
+        .task(id: phase) {
+            guard phase == .active else { return }
+            let found = await InviteLinks.clipboardMayHoldInvite()
+            withAnimation(.snappy) { invitePaste = found }
+        }
     }
 
     private func continueToDetails() {
         guard !model.draft.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         nameFocused = false; model.saveDraft(); details = true
+    }
+}
+
+/// One tap to join from the partner's link. Paste reads the clipboard without iOS asking first.
+private struct InvitePasteCard: View {
+    @ObservedObject var model: MulberryModel
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("Invited by your partner?")
+                .font(MulberryDesign.font(16, weight: "Medium"))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if model.joiningInvite {
+                ProgressView().frame(minWidth: 44, minHeight: 44)
+            } else {
+                PasteButton(payloadType: String.self) { texts in
+                    Task { @MainActor in await model.pasteInvite(texts) }
+                }
+                .buttonBorderShape(.capsule)
+                .labelStyle(.titleAndIcon)
+                .tint(MulberryDesign.accent)
+                .disabled(model.busy)
+            }
+        }
+        .padding(.leading, 18).padding(.trailing, 12).padding(.vertical, 12)
+        .background(MulberryDesign.surface, in: RoundedRectangle(cornerRadius: 16))
+        .transition(.opacity)
     }
 }
 

@@ -10,6 +10,7 @@ struct MulberryRootView: View {
     @State private var setupAfterSettings = false
     @ObservedObject private var quickActions = HomeQuickActions.shared
     @ObservedObject private var routes = AppRoutes.shared
+    @ObservedObject private var inviteLinks = InviteLinks.shared
     @Environment(\.requestReview) private var requestReview
     @State private var quickClearConfirmation = false
     @State private var profilePhoto: UIImage?
@@ -30,6 +31,9 @@ struct MulberryRootView: View {
                 AuthenticationView(busy: model.busy, signingInWith: model.signingInWith, errorMessage: model.errorMessage) { method in Task { await model.signIn(with: method) } }
             } else if model.bootstrap?.pairingStatus == "INVITE_PENDING_ACCEPTANCE" {
                 NavigationStack { InviteAcceptanceView(model: model) }
+            } else if (model.joiningInvite || (inviteLinks.pending != nil && model.busy)) && model.bootstrap?.onboardingCompleted != true {
+                // An invite from a link skips onboarding; the invite screen follows in a moment.
+                DelayedProgressView().background(MulberryDesign.background)
             } else if model.bootstrap?.onboardingCompleted != true {
                 NavigationStack { OnboardingNameView(model: model) }
             } else if model.showWallpaperOnboarding {
@@ -50,8 +54,10 @@ struct MulberryRootView: View {
         .onChange(of: quickActions.pending) { _, _ in handleQuickAction() }
         .onChange(of: routes.pending) { _, _ in handleRoute() }
         .onChange(of: model.showWallpaperOnboarding) { _, _ in handleQuickAction(); handleRoute() }
-        .onChange(of: model.restoring) { _, _ in handleQuickAction(); handleRoute() }
-        .onChange(of: model.bootstrap) { _, _ in publishQuickActions(); handleQuickAction(); handleRoute() }
+        .onChange(of: model.restoring) { _, _ in handleQuickAction(); handleRoute(); handleInviteLink() }
+        .onChange(of: model.bootstrap) { _, _ in publishQuickActions(); handleQuickAction(); handleRoute(); handleInviteLink() }
+        .onChange(of: model.busy) { _, busy in if !busy { handleInviteLink() } }
+        .onChange(of: inviteLinks.pending) { _, code in if code != nil { openInviteLink() } }
         // Hidden doodles bring reminders until they are shown again; becoming active tops them up.
         .task(id: "\(model.userId ?? "")|\(wallpapers.showDrawings)|\(model.bootstrap?.isPaired == true)|\(phase == .active)") {
             await DoodlesOffReminders.sync(user: model.userId, hidden: !wallpapers.showDrawings, paired: model.bootstrap?.isPaired == true)
@@ -114,8 +120,19 @@ struct MulberryRootView: View {
                 if setup.health.state == .responded { model.finishWallpaperOnboarding() }
             }
         }
+        .alert(model.inviteNotice?.title ?? "", isPresented: Binding(
+            get: { model.inviteNotice != nil },
+            set: { if !$0 { model.inviteNotice = nil } }
+        ), presenting: model.inviteNotice) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { notice in Text(notice.message) }
+        // Invite links arrive here once Mulberry is installed, and from Safari's app banner.
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = activity.webpageURL { inviteLinks.receive(url) }
+        }
         .onOpenURL { url in
             if GoogleAuthentication.handle(url) { return }
+            if inviteLinks.receive(url) { return }
             guard url.scheme == Bundle.main.bundleIdentifier else { return }
             switch url.host {
             case "wallpaper-return": Task { await setup.refresh() }
@@ -129,6 +146,24 @@ struct MulberryRootView: View {
     private func publishQuickActions() {
         quickActions.publish(signedIn: model.userId != nil, paired: model.bootstrap?.isPaired == true,
                              showDrawings: wallpapers.showDrawings, reaction: model.reactions.lastUsed)
+    }
+
+    /// A new invite link closes what's open over the app, so the invite screen or a notice can show.
+    private func openInviteLink() {
+        guard model.bootstrap != nil else { return }
+        let covered = model.showSettings || model.showStreak || model.showInviteEntry || setupOpen || pairingConfirmationOpen
+        model.showSettings = false; model.showStreak = false; model.showInviteEntry = false
+        setupOpen = false; wallpaperOpen = false; pairingConfirmationOpen = false
+        Task {
+            if covered { try? await Task.sleep(for: .milliseconds(450)) }
+            await model.redeemLinkedInvite()
+        }
+    }
+
+    /// Uses a waiting invite as soon as the account can: after sign-in, or once a request finishes.
+    private func handleInviteLink() {
+        guard inviteLinks.pending != nil else { return }
+        Task { await model.redeemLinkedInvite() }
     }
 
     /// Opens what a tapped notification is about, once the app is past sign-in and onboarding.
