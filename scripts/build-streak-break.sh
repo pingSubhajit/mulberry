@@ -29,9 +29,22 @@ android_res="$root/apps/mobile/app/src/main/res"
 size="$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x "$master")"
 [[ "$size" == "540x840" ]] || { echo "expected a 540x840 master, got $size" >&2; exit 1; }
 
+# The master's glow fills its frame as a tall, even column, so it ends in a line at the frame's
+# edges on the dark screens. The glow alone, the faint pixels, fades out as an oval from the middle,
+# leaving a round halo; the bolt and its shards, which are solid, keep theirs. Then every pixel
+# fades to nothing over the outer 12% of the width and 6% of the height, so nothing meets the edge.
+# All smoothsteps, sized in fractions of the frame, for an upscaled still too.
+oval="st(2,clip((hypot((X-W/2)/(W/2),(Y-H/2)/(H/2))-0.3)/0.75,0,1));st(2,1-ld(2)*ld(2)*(3-2*ld(2)))"
+solid="st(3,clip((alpha(X,Y)-24)/48,0,1));st(3,ld(3)*ld(3)*(3-2*ld(3)))"
+edges="st(0,min(min(X,W-1-X)/(W*0.12),1));st(1,min(min(Y,H-1-Y)/(H*0.06),1))"
+feather="$oval;$solid;$edges;alpha(X,Y)*(ld(2)+(1-ld(2))*ld(3))*ld(0)*ld(0)*(3-2*ld(0))*ld(1)*ld(1)*(3-2*ld(1))"
+fade="format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='$feather'"
+ffmpeg -v error -y -i "$master" -an -vf "$fade" -c:v qtrle -pix_fmt argb "$work/master.mov"
+master="$work/master.mov"
+
 # The static broken bolt: the master's last frame, or the upscaled copy of it.
 if [[ -n "$still" ]]; then
-  cp "$still" "$work/still.png"
+  ffmpeg -v error -y -i "$still" -vf "$fade" -pix_fmt rgba "$work/still.png"
 else
   # Every frame overwrites the last, leaving the final one.
   ffmpeg -v error -y -i "$master" -an -update 1 -pix_fmt rgba "$work/still.png"
