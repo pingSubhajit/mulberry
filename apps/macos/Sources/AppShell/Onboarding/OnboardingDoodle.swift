@@ -4,7 +4,7 @@ import Foundation
 import ProductCore
 
 /// What onboarding draws on the desktop and then shows on a phone, as two people would on one
-/// canvas: one begins a heart in Mulberry red and, as the other finishes it in pink, moves on to
+/// canvas: one begins a heart in off-white and, as the other finishes it in lemon yellow, moves on to
 /// write a note beside it, "hi", a small heart and a stroke, written on an iPad and played back as
 /// it was written. Real Mulberry strokes, drawn by the same renderer as every drawing.
 enum OnboardingDoodle {
@@ -20,10 +20,10 @@ enum OnboardingDoodle {
     /// The iPhone's drawing area, in points, which the doodle is laid out in.
     static let canvas = CGSize(width: 402, height: 752)
 
-    /// Two palette colours, one for each hand: warm and close, yet told apart, and clear on the
-    /// wallpaper's pale sky and on the darkened desktop alike.
-    private static let firstHand: UInt32 = 0xFFB3_1329
-    private static let secondHand: UInt32 = 0xFFE8_5072
+    /// Two light palette colours, one for each hand, told apart, and clear on the wallpaper's pink
+    /// sky and on the darkened desktop alike.
+    private static let firstHand: UInt32 = 0xFFF7_F4EF
+    private static let secondHand: UInt32 = 0xFFFF_E66D
 
     static let strokes: [Stroke] = heart() + note(after: firstHalfDuration + toTheNote)
 
