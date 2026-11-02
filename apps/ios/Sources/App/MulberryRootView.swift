@@ -7,6 +7,9 @@ struct MulberryRootView: View {
     @StateObject private var setup: WallpaperSetupModel
     @Environment(\.scenePhase) private var phase
     @State private var setupOpen = false
+    /// The streak sheet grows out of the toolbar's streak pill and shrinks back into it.
+    @Namespace private var streakZoom
+    @State private var streakClosings = 0
     @State private var setupAfterSettings = false
     @ObservedObject private var quickActions = HomeQuickActions.shared
     @ObservedObject private var routes = AppRoutes.shared
@@ -92,6 +95,10 @@ struct MulberryRootView: View {
             StreakSheet(streaks: model.streaks, api: { try? model.api }) {
                 if let api = try? model.api { await model.streaks.refresh(api: api) }
             }
+            .navigationTransition(.zoom(sourceID: StreakZoomSource.pill, in: streakZoom))
+        }
+        .onChange(of: model.showStreak) { _, open in
+            if !open { streakClosings += 1 }
         }
         .task(id: model.showPairingConfirmation) {
             guard model.showPairingConfirmation else { pairingConfirmationOpen = false; return }
@@ -246,10 +253,12 @@ struct MulberryRootView: View {
     @ToolbarContentBuilder private var header: some ToolbarContent {
         if model.bootstrap?.isPaired == true {
             ToolbarItem(placement: .topBarTrailing) {
-                StreakPill(streaks: model.streaks, fallbackDays: model.bootstrap?.currentStreakDays ?? 0) {
+                StreakPill(streaks: model.streaks, fallbackDays: model.bootstrap?.currentStreakDays ?? 0,
+                           closings: streakClosings) {
                     model.showStreak = true
                 }
             }
+            .matchedTransitionSource(id: StreakZoomSource.pill, in: streakZoom)
             // Its own capsule, apart from the wallpaper and profile pair.
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
         }

@@ -1,9 +1,15 @@
 import SwiftUI
 
+/// Where the streak sheet zooms from. The level-up banner leaves as it is tapped, so the sheet it
+/// opens grows from the pill too, where the streak lives.
+enum StreakZoomSource: Hashable { case pill }
+
 /// A plain toolbar button, so it takes the same Liquid Glass capsule as its neighbours.
 struct StreakPill: View {
     @ObservedObject var streaks: StreakModel
     let fallbackDays: Int
+    /// Counts the streak sheet's closings: the bolt hops as the sheet shrinks back into it.
+    var closings = 0
     let onOpen: () -> Void
     @ScaledMetric(relativeTo: .body) private var bolt: CGFloat = 19
     var body: some View {
@@ -11,6 +17,7 @@ struct StreakPill: View {
         Button(action: onOpen) {
             HStack(spacing: 5) {
                 Image("HomeStreakBolt").resizable().scaledToFit().frame(height: bolt)
+                    .boltBounce(closings, after: 0.3)
                 Text(days, format: .number)
                     .font(.body.weight(.semibold)).monospacedDigit()
                     .contentTransition(.numericText(value: Double(days)))
@@ -78,6 +85,15 @@ struct StreakSheet: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var showing = StreakBreakShowing()
+    /// The sheet's contents have begun settling into place.
+    @State private var arrived = false
+    /// Today's moment has played: until then a rise since the sheet last showed the streak waits,
+    /// the old count and today's open ring standing in for it.
+    @State private var todayPlayed = false
+    @State private var celebrations = 0
+    @State private var ripples = 0
+    @State private var glints = 0
+    @State private var presses = 0
     private let burgundy = Color(red: 55 / 255, green: 1 / 255, blue: 8 / 255)
     private let lowerBurgundy = Color(red: 82 / 255, green: 2 / 255, blue: 12 / 255)
     /// A form sheet reports a compact width even on iPad, so the iPad sizing checks the device.
@@ -105,16 +121,23 @@ struct StreakSheet: View {
                             .accessibilityLabel("Close streak")
                     }.padding(.horizontal, 20).padding(.top, 24)
                     if let streak = streaks.streak {
+                        let tickFrom = todayPlayed ? nil : streaks.celebrationStart
+                        let days = tickFrom ?? streak.currentStreakDays
                         hero(streak)
                             .frame(height: typeSize.isAccessibilitySize ? 170 : min(340, geometry.size.width * 0.8))
                             .frame(maxWidth: .infinity).padding(.top, 12).padding(.bottom, 24)
                             .accessibilityHidden(true)
-                        StreakWeekRow(streak: streak).padding(.horizontal, 40)
+                        StreakWeekRow(streak: streak, arrived: arrived, todayWaits: tickFrom != nil,
+                                      celebrations: celebrations, ripples: ripples)
+                            .padding(.horizontal, 40)
                         VStack(spacing: 16) {
-                            Text(streak.title).font(MulberryDesign.font(24, weight: "SemiBold", relativeTo: .title))
+                            Text(streak.title(days: days)).font(MulberryDesign.font(24, weight: "SemiBold", relativeTo: .title))
+                                .contentTransition(reduceMotion ? .opacity : .numericText(value: Double(days)))
                                 .accessibilityAddTraits(.isHeader)
+                                .streakEntrance(arrived, delay: 0.24, rise: 10, blur: 6)
                             Text(streak.message).font(MulberryDesign.font(14, weight: "Medium", relativeTo: .subheadline))
                                 .foregroundStyle(.white.opacity(0.7))
+                                .streakEntrance(arrived, delay: 0.32, rise: 10, blur: 6)
                         }.multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 40).padding(.top, 32).padding(.bottom, 24)
                             // The words follow the shards.
@@ -151,6 +174,10 @@ struct StreakSheet: View {
                         Path(ellipseIn: CGRect(x: -165 * scale, y: 340 * scale,
                                                width: 733 * scale, height: 635 * scale))
                             .fill(lowerBurgundy)
+                            // Once the sheet has nearly grown into place, the floor swells up from below,
+                            // overshooting a touch, under the bolt.
+                            .streakEntrance(arrived, delay: 0.2, rise: 130 * scale, from: 1.12,
+                                            animation: .spring(duration: 0.42, bounce: 0.2))
                     }.ignoresSafeArea(edges: .bottom)
                 }
         }
@@ -158,24 +185,69 @@ struct StreakSheet: View {
         // A phone's full-height detent would override the iPad's sizing, so each gets its own.
         .modifier(StreakSheetSizing(pad: pad, height: sheetHeight))
         .sensoryFeedback(.impact(weight: .heavy), trigger: showing.cracks)
+        .sensoryFeedback(.success, trigger: celebrations)
+        .sensoryFeedback(.impact(weight: .light), trigger: presses)
+        .onAppear { arrived = true }
         .task {
+            let opened = ContinuousClock.now
             await refresh()
             await showing.decide(streaks, film: StreakBreakFilm.url, reduceMotion: reduceMotion, api: api)
+            try? await Task.sleep(until: opened + StreakMotion.todayMoment)
+            if !Task.isCancelled { playToday() }
+        }
+        .task {
+            try? await Task.sleep(for: StreakMotion.glint)
+            if wholeBolt { glints += 1 }
+        }
+    }
+
+    private var wholeBolt: Bool {
+        guard let streak = streaks.streak else { return false }
+        return !streak.lostRecently && !showing.showsFilm(streaks, film: StreakBreakFilm.url, reduceMotion: reduceMotion)
+    }
+
+    /// Today's moment: a rise since the sheet last showed the streak ticks up and fills today in;
+    /// a day still to do calls with a ripple. A streak done earlier and already seen keeps still.
+    private func playToday() {
+        guard !todayPlayed, let streak = streaks.streak else { return }
+        let rose = streaks.celebrationStart != nil
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.25) : .snappy(duration: 0.4)) { todayPlayed = true }
+        streaks.streakShown()
+        if rose {
+            celebrations += 1
+        } else if !streak.hasActivityToday, !showing.showsFilm(streaks, film: StreakBreakFilm.url, reduceMotion: reduceMotion) {
+            ripples += 1
         }
     }
 
     /// The film while the bolt breaks; otherwise the artwork, broken as the film ends.
     @ViewBuilder private func hero(_ streak: StreakResponse) -> some View {
-        if showing.showsFilm(streaks, film: StreakBreakFilm.url, reduceMotion: reduceMotion), let film = StreakBreakFilm.url {
-            StreakBoltBreak(url: film, start: showing.phase == .playing, onCrack: showing.cracked,
-                            onReveal: { withAnimation(.easeOut(duration: 0.45)) { showing.reveal() } },
-                            onFinish: showing.finished)
-                .aspectRatio(540.0 / 840.0, contentMode: .fit)
-                .scaleEffect(StreakBoltBreak.brokenScale)
-        } else if streak.lostRecently {
-            Image("StreakBrokenBolt").resizable().scaledToFit().scaleEffect(StreakBoltBreak.brokenScale)
-        } else {
-            Image("StreakBolt").resizable().scaledToFit()
+        ZStack {
+            // The bolt's light, wider than its artwork's own halo can reach. Behind the whole bolt,
+            // the breaking one and the broken one alike, so it carries through the break unchanged.
+            BoltGlow(color: Color(red: 1, green: 0.16, blue: 0.27))
+                .scaleEffect(1.25)
+                .streakEntrance(arrived, delay: 0.05, from: 0.6, animation: .smooth(duration: 0.7))
+            if showing.showsFilm(streaks, film: StreakBreakFilm.url, reduceMotion: reduceMotion), let film = StreakBreakFilm.url {
+                StreakBoltBreak(url: film, start: showing.phase == .playing, onCrack: showing.cracked,
+                                onReveal: { withAnimation(.easeOut(duration: 0.45)) { showing.reveal() } },
+                                onFinish: showing.finished)
+                    .aspectRatio(540.0 / 840.0, contentMode: .fit)
+                    .scaleEffect(StreakBoltBreak.brokenScale)
+                    .streakEntrance(arrived)
+            } else {
+                Group {
+                    if streak.lostRecently {
+                        Image("StreakBrokenBolt").resizable().scaledToFit().scaleEffect(StreakBoltBreak.brokenScale)
+                    } else {
+                        Image("StreakBolt").resizable().scaledToFit().boltGlint(glints)
+                    }
+                }
+                .boltSquish(presses)
+                .streakEntrance(arrived, delay: 0.05, from: 0.82, animation: .bouncy(duration: 0.55, extraBounce: 0.12))
+                .contentShape(Rectangle())
+                .onTapGesture { presses += 1 }
+            }
         }
     }
 }
@@ -197,24 +269,38 @@ enum StreakBreakFilm {
 
 private struct StreakWeekRow: View {
     let streak: StreakResponse
+    /// The days settle in, one after another, as the sheet opens.
+    let arrived: Bool
+    /// Today shows as still to do, until its moment fills it in.
+    let todayWaits: Bool
+    let celebrations: Int
+    let ripples: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let labels = ["S", "M", "T", "W", "T", "F", "S"]
     var body: some View {
         HStack(alignment: .top, spacing: 4) {
             ForEach(Array(streak.week.prefix(7).enumerated()), id: \.element.day) { index, day in
                 let past = day.day < streak.today
                 let today = day.day == streak.today
+                let done = day.hasActivity && !(today && todayWaits)
                 VStack(spacing: 9) {
                     Text(labels[index]).font(MulberryDesign.font(14, weight: "Medium", relativeTo: .caption))
-                        .foregroundStyle(past && !day.hasActivity ? .white.opacity(0.4) : .white)
+                        .foregroundStyle(past && !done ? .white.opacity(0.4) : .white)
                     ZStack {
-                        Circle().fill(day.hasActivity ? MulberryDesign.accent : Color(red: 75 / 255, green: 34 / 255, blue: 39 / 255))
-                        if !past && !day.hasActivity { Circle().strokeBorder(MulberryDesign.accent, lineWidth: today ? 3 : 2) }
-                        if day.hasActivity { Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold)) }
-                        else if past { Image(systemName: "xmark").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.4)) }
+                        Circle().fill(done ? MulberryDesign.accent : Color(red: 75 / 255, green: 34 / 255, blue: 39 / 255))
+                        if !past && !done { Circle().strokeBorder(MulberryDesign.accent, lineWidth: today ? 3 : 2) }
+                        if done {
+                            Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold))
+                                .transition(streakCheckTransition(reduceMotion: reduceMotion))
+                        } else if past { Image(systemName: "xmark").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.4)) }
                     }.frame(width: 31, height: 31)
+                        .dayRipple(today ? ripples : 0, color: MulberryDesign.accent)
+                        .dayPop(today ? celebrations : 0)
                 }.frame(maxWidth: .infinity)
+                    .streakEntrance(arrived, delay: 0.14 + Double(index) * StreakMotion.dayStagger, from: 0.6,
+                                    animation: .spring(duration: 0.4, bounce: 0.3))
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(day.day)\(today ? ", today" : ""): \(day.hasActivity ? "Completed" : past ? "No activity" : "Not completed yet")")
+                    .accessibilityLabel("\(day.day)\(today ? ", today" : ""): \(done ? "Completed" : past ? "No activity" : "Not completed yet")")
             }
         }
     }

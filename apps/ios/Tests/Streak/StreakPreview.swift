@@ -39,6 +39,8 @@ private struct StreakPreviewRoot: View {
     @State private var pairingOpen = false
     @State private var largeType = false
     @State private var lastTap = ""
+    @Namespace private var streakZoom
+    @State private var streakClosings = 0
     private let transport = PreviewTransport()
     private var api: BackendClient { try! BackendClient(baseURL: URL(string: "https://preview.invalid")!, tokenStore: PreviewTokens(), transport: transport) }
     var body: some View {
@@ -61,16 +63,21 @@ private struct StreakPreviewRoot: View {
                     .buttonStyle(.borderedProminent)
                 Button("Pairing confirmed") { pairingOpen = true }.buttonStyle(.bordered)
             }.padding()
-                .toolbar { ToolbarItem(placement: .topBarTrailing) {
-                    StreakPill(streaks: model, fallbackDays: 0) { streakOpen = true }
-                } }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        StreakPill(streaks: model, fallbackDays: 0, closings: streakClosings) { streakOpen = true }
+                    }
+                    .matchedTransitionSource(id: StreakZoomSource.pill, in: streakZoom)
+                }
         }
         .tint(MulberryDesign.accent)
         .dynamicTypeSize(largeType ? .accessibility3 : .large)
         .sheet(isPresented: $streakOpen) {
             StreakSheet(streaks: model, api: { api }) { await model.refresh(api: api) }
                 .dynamicTypeSize(largeType ? .accessibility3 : .large)
+                .navigationTransition(.zoom(sourceID: StreakZoomSource.pill, in: streakZoom))
         }
+        .onChange(of: streakOpen) { _, open in if !open { streakClosings += 1 } }
         .sheet(isPresented: $pairingOpen) {
             PairingConfirmedSheet(userName: "Alex", partnerName: "Sam") { pairingOpen = false }
                 }
