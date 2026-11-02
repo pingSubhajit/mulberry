@@ -2893,6 +2893,65 @@ describe("Mulberry backend", () => {
     expect(bootstrap.json().currentStreakDays).toBe(0)
   })
 
+  it("remembers per account, across devices, that a lost streak's bolt was seen", async () => {
+    const { inviter, recipient } = await pairUsers()
+    const today = offsetDate(0)
+    const lastDay = offsetDate(-2)
+    const draw = await app.inject({
+      method: "POST",
+      url: "/canvas/ops/batch",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        batchId: "lost-seen-batch",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [
+          { ...finishStrokeOperation("lost-seen-3", "stroke-a"), clientLocalDate: offsetDate(-3) },
+          { ...finishStrokeOperation("lost-seen-2", "stroke-b"), clientLocalDate: lastDay },
+        ],
+      },
+    })
+    expect(draw.statusCode).toBe(200)
+    const streak = async (accessToken: string) =>
+      (await app.inject({ method: "GET", url: `/streak?today=${today}`, headers: bearer(accessToken) })).json()
+
+    const before = await streak(inviter.accessToken)
+    expect(before.currentStreakDays).toBe(0)
+    expect(before.previousStreakDays).toBe(2)
+    expect(before.lastActivityDay).toBe(lastDay)
+    expect(before.lostStreakSeen).toBe(false)
+
+    const missingDay = await app.inject({
+      method: "POST",
+      url: "/streak/lost-seen",
+      headers: bearer(inviter.accessToken),
+      payload: {},
+    })
+    expect(missingDay.statusCode).toBe(400)
+
+    const seen = await app.inject({
+      method: "POST",
+      url: "/streak/lost-seen",
+      headers: bearer(inviter.accessToken),
+      payload: { day: lastDay },
+    })
+    expect(seen.statusCode).toBe(200)
+    expect((await streak(inviter.accessToken)).lostStreakSeen).toBe(true)
+    // The partner watches it for themselves.
+    expect((await streak(recipient.accessToken)).lostStreakSeen).toBe(false)
+
+    // A later streak that ends again is a new loss.
+    await db.query(`UPDATE users SET streak_loss_seen_day = $2::date WHERE id = $1`, [inviter.userId, offsetDate(-10)])
+    expect((await streak(inviter.accessToken)).lostStreakSeen).toBe(false)
+
+    const reset = await app.inject({
+      method: "POST",
+      url: "/debug/streak/reset-lost-seen",
+      headers: bearer(inviter.accessToken),
+    })
+    expect(reset.statusCode).toBe(200)
+    expect((await streak(inviter.accessToken)).lostStreakSeen).toBe(false)
+  })
+
   it("marks permanently invalid push tokens revoked", async () => {
     const { inviter, recipient } = await pairUsers()
     await registerFcmToken(recipient.accessToken, "invalid-peer-token")

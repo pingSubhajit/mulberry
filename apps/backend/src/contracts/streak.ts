@@ -9,6 +9,11 @@ export interface StreakResponse {
   previousStreakDays: number
   hasActivityToday: boolean
   lastActivityDay: string | null
+  /**
+   * Whether this account has watched the bolt break for the streak that ended on
+   * `lastActivityDay`, on any device. The apps play it once per lost streak.
+   */
+  lostStreakSeen: boolean
   week: StreakWeekDay[]
 }
 

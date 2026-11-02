@@ -23,6 +23,7 @@ export class StreakService {
         previousStreakDays: 0,
         hasActivityToday: false,
         lastActivityDay: null,
+        lostStreakSeen: false,
         week: this.weekDaysFor(today).map((day) => ({ day, hasActivity: false })),
       }
     }
@@ -33,6 +34,7 @@ export class StreakService {
     const currentStreakDays = this.computeCurrentStreakDays(days, today)
     const previousStreakDays = lastActivityDay ? this.computeStreakLengthEndingAt(days, lastActivityDay) : 0
     const week = this.weekDaysFor(today).map((day) => ({ day, hasActivity: days.has(day) }))
+    const seenDay = lastActivityDay ? await this.streakLossSeenDay(context.user.id) : null
 
     return {
       today,
@@ -40,8 +42,35 @@ export class StreakService {
       previousStreakDays,
       hasActivityToday: days.has(today),
       lastActivityDay,
+      lostStreakSeen: lastActivityDay !== null && seenDay === lastActivityDay,
       week,
     }
+  }
+
+  /** Records that the account watched the bolt break for the streak that ended on `day`. */
+  async markLostStreakSeen(accessToken: string, dayInput: string): Promise<{ ok: true }> {
+    const context = await requireSessionContext(this.db, accessToken)
+    const day = dayInput.trim()
+    if (!isLocalDateString(day)) {
+      throw new HttpError(400, "day is required")
+    }
+    await this.db.query(`UPDATE users SET streak_loss_seen_day = $2::date WHERE id = $1`, [context.user.id, day])
+    return { ok: true }
+  }
+
+  async resetLostStreakSeen(accessToken: string): Promise<{ ok: true }> {
+    const context = await requireSessionContext(this.db, accessToken)
+    await this.db.query(`UPDATE users SET streak_loss_seen_day = NULL WHERE id = $1`, [context.user.id])
+    return { ok: true }
+  }
+
+  private async streakLossSeenDay(userId: string): Promise<string | null> {
+    const rows = await this.db.query<{ streak_loss_seen_day: string | Date | null }>(
+      `SELECT streak_loss_seen_day FROM users WHERE id = $1`,
+      [userId],
+    )
+    const day = rows.rows[0]?.streak_loss_seen_day
+    return day ? normalizeDateString(day) : null
   }
 
   async clearActivityDay(accessToken: string, dayInput: string): Promise<{ ok: true }> {

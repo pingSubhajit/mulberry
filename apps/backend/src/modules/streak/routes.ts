@@ -7,4 +7,9 @@ export function registerStreakRoutes(app: FastifyInstance, service: StreakServic
     const query = request.query as { today?: string }
     return service.getStreak(requireBearerToken(request), query.today ?? "")
   })
+
+  app.post("/streak/lost-seen", async (request) => {
+    const body = request.body as { day?: string } | undefined
+    return service.markLostStreakSeen(requireBearerToken(request), body?.day ?? "")
+  })
 }

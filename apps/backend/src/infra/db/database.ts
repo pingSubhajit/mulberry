@@ -23,6 +23,10 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
     ALTER TABLE users
       ADD COLUMN IF NOT EXISTS first_drew_at TIMESTAMPTZ;
 
+    -- The last activity day of the lost streak whose breaking bolt the account has watched.
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS streak_loss_seen_day DATE;
+
     CREATE TABLE IF NOT EXISTS user_profiles (
       user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       display_name TEXT,
