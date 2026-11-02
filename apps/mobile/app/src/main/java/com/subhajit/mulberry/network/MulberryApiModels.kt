@@ -58,7 +58,12 @@ data class StreakResponse(
     val previousStreakDays: Int,
     val hasActivityToday: Boolean,
     val lastActivityDay: String?,
-    val week: List<StreakWeekDayResponse>
+    val week: List<StreakWeekDayResponse>,
+    /**
+     * Whether this account has watched the bolt break for the streak that ended on
+     * [lastActivityDay], on any device. Null from a server that doesn't track it yet.
+     */
+    val lostStreakSeen: Boolean? = null
 )
 
 data class InviteResponse(
@@ -242,6 +247,14 @@ data class DebugActionResponse(
 
 data class ClearStreakActivityDayRequest(
     val day: String
+)
+
+data class LostStreakSeenRequest(
+    val day: String
+)
+
+data class OkResponse(
+    val ok: Boolean
 )
 
 data class WallpaperCatalogResponse(

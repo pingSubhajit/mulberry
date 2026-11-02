@@ -62,7 +62,6 @@ import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.metadata.AppSystemBarStyle
 import com.subhajit.mulberry.network.StreakResponse
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
-import java.time.LocalDate
 import kotlin.math.absoluteValue
 
 private val StreakScreenBackgroundColor = Color(0xFF370108)
@@ -122,13 +121,20 @@ fun StreakRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel) { viewModel.load() }
-    StreakScreen(uiState = uiState, onClose = onClose)
+    StreakScreen(uiState = uiState, onClose = onClose, onBreakShown = viewModel::breakShown)
 }
+
+/** This showing of the bolt: whether it breaks, and how far along it is. */
+private enum class BreakPhase { Undecided, Waiting, Playing, Done }
+
+/** Lets the screen finish entering before the bolt breaks. */
+private const val BreakEntryDelayMs = 350L
 
 @Composable
 private fun StreakScreen(
     uiState: StreakUiState,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onBreakShown: () -> Unit
 ) {
     val streak = uiState.streak
     val content = streak?.toStreakContent()
@@ -157,6 +163,37 @@ private fun StreakScreen(
     var copyEntered by remember { mutableStateOf(!systemAnimationsEnabled) }
     var continueEntered by remember { mutableStateOf(!systemAnimationsEnabled) }
     var backgroundStartNanos by remember { mutableLongStateOf(0L) }
+    var breakPhase by remember { mutableStateOf(BreakPhase.Undecided) }
+    var breakCopyRevealed by remember { mutableStateOf(false) }
+    val showsFilm = streak?.isLostRecently() == true && when (breakPhase) {
+        BreakPhase.Undecided -> uiState.breakPending && systemAnimationsEnabled
+        BreakPhase.Waiting, BreakPhase.Playing -> true
+        BreakPhase.Done -> false
+    }
+    // The words follow the shards.
+    val breakCopyAlpha by animateFloatAsState(
+        targetValue = if (showsFilm && !breakCopyRevealed) 0f else 1f,
+        animationSpec = tween(durationMillis = 450, easing = LinearOutSlowInEasing),
+        label = "streakBreakCopyAlpha"
+    )
+
+    LaunchedEffect(uiState.isLoading, streak) {
+        if (breakPhase != BreakPhase.Undecided || uiState.isLoading || streak == null) return@LaunchedEffect
+        if (!uiState.breakPending) {
+            breakPhase = BreakPhase.Done
+            return@LaunchedEffect
+        }
+        if (!systemAnimationsEnabled) {
+            // The broken bolt, still, counts as seeing it.
+            onBreakShown()
+            breakPhase = BreakPhase.Done
+            return@LaunchedEffect
+        }
+        breakPhase = BreakPhase.Waiting
+        kotlinx.coroutines.delay(BreakEntryDelayMs)
+        onBreakShown()
+        breakPhase = BreakPhase.Playing
+    }
 
     ApplySystemBarStyle(
         style = AppSystemBarStyle(
@@ -300,15 +337,28 @@ private fun StreakScreen(
             val heroBottomTarget = 470.dp * scale - HeroBottomMarginDp.dp * scale
             val heroTop = (heroBottomTarget - heroSize).coerceAtLeast(0.dp)
             val drift = EntryContentStartOffsetDp * scale * heroOffsetFactor
-            StreakHeroImage(
-                hero = content.hero,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset(y = heroTop + drift)
-                    .size(heroSize)
-                    .graphicsLayer { alpha = if (heroEntered) heroAlpha else 0f }
-                    .testTag(TestTags.STREAK_HERO_IMAGE)
-            )
+            val heroModifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = heroTop + drift)
+                .size(heroSize)
+                .graphicsLayer {
+                    alpha = if (heroEntered) heroAlpha else 0f
+                    val brokenScale = if (content.hero == StreakHero.BrokenBolt) StreakBreakBrokenScale else 1f
+                    scaleX = brokenScale
+                    scaleY = brokenScale
+                }
+                .testTag(TestTags.STREAK_HERO_IMAGE)
+            if (showsFilm) {
+                StreakBreakFilm(
+                    start = breakPhase == BreakPhase.Playing,
+                    onCrack = {},
+                    onReveal = { breakCopyRevealed = true },
+                    onFinish = { breakPhase = BreakPhase.Done },
+                    modifier = heroModifier
+                )
+            } else {
+                StreakHeroImage(hero = content.hero, modifier = heroModifier)
+            }
         }
 
         if (content != null) {
@@ -362,7 +412,7 @@ private fun StreakScreen(
                     maxLines = 1,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .graphicsLayer { alpha = if (copyEntered) copyAlpha else 0f }
+                        .graphicsLayer { alpha = (if (copyEntered) copyAlpha else 0f) * breakCopyAlpha }
                 )
                 Spacer(modifier = Modifier.height(16.dp * scale))
                 Text(
@@ -377,7 +427,7 @@ private fun StreakScreen(
                     maxLines = 2,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .graphicsLayer { alpha = if (copyEntered) copyAlpha else 0f }
+                        .graphicsLayer { alpha = (if (copyEntered) copyAlpha else 0f) * breakCopyAlpha }
                 )
             }
         } else if (uiState.errorMessage != null) {
@@ -672,12 +722,7 @@ private data class StreakContent(
 )
 
 private fun StreakResponse.toStreakContent(): StreakContent {
-    val today = LocalDate.parse(today)
-    val lastActivityDay = lastActivityDay?.let(LocalDate::parse)
-    val lostRecently = currentStreakDays == 0 &&
-        lastActivityDay != null &&
-        lastActivityDay == today.minusDays(2) &&
-        previousStreakDays > 0
+    val lostRecently = isLostRecently()
 
     val variant = when {
         lostRecently -> CopyVariant.Lost(previousStreakDays = previousStreakDays)

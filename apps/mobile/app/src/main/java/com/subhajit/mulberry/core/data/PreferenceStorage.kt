@@ -46,6 +46,8 @@ object PreferenceStorage {
     val pendingInboundInviteCode = stringPreferencesKey("pending_inbound_invite_code")
     val pendingInboundInviteReceivedAtMs = longPreferencesKey("pending_inbound_invite_received_at_ms")
     val pendingInboundInviteSource = stringPreferencesKey("pending_inbound_invite_source")
+    /** "userId|day": the lost streak whose bolt this device last showed breaking. */
+    val lostStreakSeen = stringPreferencesKey("lost_streak_seen")
     val pendingInboundInviteDismissedAtMs = longPreferencesKey("pending_inbound_invite_dismissed_at_ms")
     val installReferrerChecked = booleanPreferencesKey("install_referrer_checked")
     val wallpaperConfigured = booleanPreferencesKey("wallpaper_configured")

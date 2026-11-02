@@ -36,6 +36,10 @@ interface MulberryApiService {
     @GET("/streak")
     suspend fun getStreak(@Query("today") today: String): StreakResponse
 
+    /** Records that this account watched the bolt break for the streak that ended on the day. */
+    @POST("/streak/lost-seen")
+    suspend fun markLostStreakSeen(@Body request: LostStreakSeenRequest): OkResponse
+
     @PUT("/me/profile")
     suspend fun updateProfile(@Body request: ProfileRequest): BootstrapResponse
 

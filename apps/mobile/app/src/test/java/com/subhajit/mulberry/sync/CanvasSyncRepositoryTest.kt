@@ -26,7 +26,9 @@ import com.subhajit.mulberry.network.DebugActionResponse
 import com.subhajit.mulberry.network.DeviceTokenResponse
 import com.subhajit.mulberry.network.DisplayNameRequest
 import com.subhajit.mulberry.network.GoogleAuthRequest
+import com.subhajit.mulberry.network.LostStreakSeenRequest
 import com.subhajit.mulberry.network.MulberryApiService
+import com.subhajit.mulberry.network.OkResponse
 import com.subhajit.mulberry.network.PartnerProfileRequest
 import com.subhajit.mulberry.network.ProfileRequest
 import com.subhajit.mulberry.network.RefreshRequest
@@ -619,6 +621,8 @@ private class FakeMulberryApiService : MulberryApiService {
     override suspend fun getBootstrap(): BootstrapResponse = error("unused")
 
     override suspend fun getStreak(today: String): StreakResponse = error("unused")
+
+    override suspend fun markLostStreakSeen(request: LostStreakSeenRequest): OkResponse = error("unused")
 
     override suspend fun updateProfile(request: ProfileRequest): BootstrapResponse = error("unused")
 
