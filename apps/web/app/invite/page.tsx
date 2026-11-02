@@ -1,16 +1,22 @@
 import type { Metadata } from "next"
+import { headers } from "next/headers"
 import Image from "next/image"
 import Link from "next/link"
 import coupleHugImage from "@/public/couple-hug.png"
 
-import { Button } from "@/components/ui/button"
-import { GOOGLE_PLAY_DOWNLOAD_URL } from "@/lib/constants"
+import { APP_STORE_APP_ID } from "@/lib/constants"
+import { inviteUrl, normalizeInviteCode, platformFromUserAgent } from "@/lib/invite"
 
 import InviteCodeCopyButton from "./InviteCodeCopyButton"
+import InviteStoreActions from "./InviteStoreActions"
 
 export const dynamic = "force-dynamic"
 
 type InviteSearchParams = { code?: string | string[] }
+
+function inviteCodeFrom(params: InviteSearchParams): string | null {
+  return normalizeInviteCode(Array.isArray(params.code) ? params.code[0] : params.code)
+}
 
 const notes = [
   {
@@ -33,29 +39,26 @@ const notes = [
   }
 ]
 
-function normalizeInviteCode(raw?: string): string | null {
-  if (!raw) return null
-  const digits = raw.replaceAll(/\D/g, "").slice(0, 6)
-  return digits.length === 6 ? digits : null
-}
-
 export async function generateMetadata({
   searchParams
 }: {
   searchParams: InviteSearchParams | Promise<InviteSearchParams>
 }): Promise<Metadata> {
-  const resolved = await Promise.resolve(searchParams)
-  const raw = Array.isArray(resolved.code) ? resolved.code[0] : resolved.code
-  const code = normalizeInviteCode(raw)
+  const code = inviteCodeFrom(await Promise.resolve(searchParams))
 
   const title = code ? "You're invited to Mulberry" : "Mulberry invite link"
   const description = code
-    ? "Continue setup on Android with your Mulberry invite code."
-    : "Open a Mulberry invite link to continue setup on Android."
+    ? "Join your partner on Mulberry with this invite."
+    : "Open a Mulberry invite link to join your partner."
 
   return {
     title,
     description,
+    // Safari's Smart App Banner: "Open" hands the invite to the installed app.
+    itunes: {
+      appId: APP_STORE_APP_ID,
+      appArgument: code ? inviteUrl(code) : undefined
+    },
     robots: {
       index: false,
       follow: false,
@@ -72,23 +75,13 @@ export async function generateMetadata({
   }
 }
 
-function playStoreUrlForInvite(code: string): string {
-  const referrer = new URLSearchParams({
-    invite_code: code,
-    src: "invite_link"
-  }).toString()
-  return `${GOOGLE_PLAY_DOWNLOAD_URL}&referrer=${encodeURIComponent(referrer)}`
-}
-
 export default async function InvitePage({
   searchParams
 }: {
-  searchParams: Promise<{ code?: string | string[] }>
+  searchParams: Promise<InviteSearchParams>
 }) {
-  // Next.js may pass `searchParams` as an async prop (Promise) in newer App Router versions.
-  const resolved = await searchParams
-  const raw = Array.isArray(resolved.code) ? resolved.code[0] : resolved.code
-  const code = normalizeInviteCode(raw)
+  const code = inviteCodeFrom(await searchParams)
+  const platform = platformFromUserAgent((await headers()).get("user-agent"))
 
   return (
     <main className="h-[100svh] overflow-hidden bg-background text-foreground">
@@ -130,7 +123,7 @@ export default async function InvitePage({
               You&apos;ve been invited to Mulberry
             </h1>
             <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-muted-foreground sm:text-base lg:mx-0">
-              Mulberry is a minimal Android app for couples to share small drawings on each
+              Mulberry is a minimal app for couples to share small drawings on each
               other&apos;s wallpaper.
             </p>
           </div>
@@ -155,33 +148,7 @@ export default async function InvitePage({
                     />
                   </div>
 
-                  <p className="mx-auto mt-5 max-w-xl text-sm leading-6 text-muted-foreground lg:mx-0 text-center lg:text-left">
-                    On Android, install Mulberry from Google Play. After install, opening the app will
-                    continue setup automatically.
-                  </p>
-
-                  <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:items-start lg:justify-start">
-                    <Button
-                        asChild
-                        size="lg"
-                        className="bg-brand text-white shadow-none hover:bg-brand/90 hover:shadow-none"
-                    >
-                      <a
-                        href={playStoreUrlForInvite(code)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Image
-                            src="/brand/google-play.svg"
-                            alt=""
-                            width={26}
-                            height={26}
-                            className="size-6 brightness-0 invert"
-                        />
-                        Get it on Google Play
-                      </a>
-                    </Button>
-                  </div>
+                  <InviteStoreActions code={code} initialPlatform={platform} />
                 </>
             ) : (
                 <>
@@ -193,21 +160,13 @@ export default async function InvitePage({
                     Ask your partner to share the invite link again, or copy the 6-digit code they sent
                     you.
                   </p>
-                  <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:items-start lg:justify-start">
-                    <Button
-                        asChild
-                        size="lg"
-                        className="bg-brand text-white shadow-none hover:bg-brand/90 hover:shadow-none"
-                    >
-                      <a href={GOOGLE_PLAY_DOWNLOAD_URL}>Get it on Google Play</a>
-                    </Button>
-                    <Link
-                        href="/"
-                        className="text-sm font-medium text-muted-foreground underline transition hover:text-foreground"
-                    >
-                      Learn more
-                    </Link>
-                  </div>
+                  <InviteStoreActions code={null} initialPlatform={platform} />
+                  <Link
+                      href="/"
+                      className="mt-5 inline-block text-sm font-medium text-muted-foreground underline transition hover:text-foreground"
+                  >
+                    Learn more
+                  </Link>
                 </>
             )}
           </div>

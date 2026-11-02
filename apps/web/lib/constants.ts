@@ -1,5 +1,10 @@
-export const GOOGLE_PLAY_DOWNLOAD_URL =
-  "https://play.google.com/store/apps/details?id=com.subhajit.mulberry"
+export const GOOGLE_PLAY_PACKAGE = "com.subhajit.mulberry"
+export const GOOGLE_PLAY_DOWNLOAD_URL = `https://play.google.com/store/apps/details?id=${GOOGLE_PLAY_PACKAGE}`
+
+export const APP_STORE_APP_ID = "6829284245"
+export const APP_STORE_DOWNLOAD_URL = `https://apps.apple.com/app/id${APP_STORE_APP_ID}`
+
+export const SITE_URL = "https://mulberry.my"
 
 export const GITHUB_URL = "https://github.com/pingSubhajit/mulberry"
 

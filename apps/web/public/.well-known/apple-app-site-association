@@ -1,0 +1,16 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["HMJX9736KN.com.subhajit.mulberry.beta"],
+        "components": [
+          {
+            "/": "/invite",
+            "?": { "code": "?*" },
+            "comment": "Partner invites open the app, which pairs with the code."
+          }
+        ]
+      }
+    ]
+  }
+}
