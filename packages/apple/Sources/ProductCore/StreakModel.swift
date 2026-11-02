@@ -84,10 +84,26 @@ public final class StreakModel: ObservableObject {
         var celebrated = StreakProgress()
         celebrated.observe(days: days - 1)
         celebrated.observe(days: days)
+        celebrated.shown(days: days - 1)
         progress = celebrated
         confettiToken = UUID()
     }
     #endif
+
+    /// The count to tick up from as the streak screen opens: today's activity has raised the streak
+    /// since the screen last showed it. `nil` before the screen has ever shown one, which is the baseline.
+    public var celebrationStart: Int? {
+        guard let streak, streak.hasActivityToday, !streak.lostRecently, let shown = progress.shownDays,
+              shown < streak.currentStreakDays else { return nil }
+        return shown
+    }
+
+    /// The streak screen has shown today's count, and celebrated any rise to it.
+    public func streakShown() {
+        guard let key, let streak, progress.shownDays != streak.currentStreakDays else { return }
+        progress.shown(days: streak.currentStreakDays)
+        save(key: key)
+    }
 
     /// Whether the bolt should break on screen: the streak was just lost and this account hasn't
     /// watched it break, here or on another device.

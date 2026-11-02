@@ -213,3 +213,38 @@ private actor LostStreakTransport: BackendTransport {
     let lost = try streak(0, previous: 8, last: "2026-10-25", active: false)
     #expect(lost.lostStreakSeen == nil)
 }
+
+private actor RisingStreakTransport: BackendTransport {
+    var days = 1
+    func set(_ value: Int) { days = value }
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        (try JSONEncoder().encode(streak(days, previous: days)),
+         HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
+@MainActor @Test func streakScreenTicksUpOnlyARiseItHasNotShown() async throws {
+    let defaults = try #require(UserDefaults(suiteName: "streak-shown-\(UUID().uuidString)"))
+    let transport = RisingStreakTransport()
+    let api = try BackendClient(baseURL: URL(string: "https://example.invalid")!, tokenStore: StreakTokens(), transport: transport)
+    let model = StreakModel(defaults: defaults)
+    model.bind(userId: "user", pairSessionId: "pair")
+    await model.refresh(api: api)
+    // The first showing is the baseline.
+    #expect(model.celebrationStart == nil)
+    model.streakShown()
+    await transport.set(3)
+    await model.refresh(api: api)
+    #expect(model.celebrationStart == 1)
+    #expect(model.streak?.title(days: 1) == "1 day streak!")
+    model.streakShown()
+    #expect(model.celebrationStart == nil)
+
+    // Shown once, it stays shown after a relaunch.
+    let relaunched = StreakModel(defaults: defaults)
+    relaunched.bind(userId: "user", pairSessionId: "pair")
+    #expect(relaunched.celebrationStart == nil)
+    await transport.set(4)
+    await relaunched.refresh(api: api)
+    #expect(relaunched.celebrationStart == 3)
+}

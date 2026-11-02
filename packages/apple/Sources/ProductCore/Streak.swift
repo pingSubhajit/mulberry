@@ -23,10 +23,13 @@ public struct StreakResponse: Codable, Equatable, Sendable {
         return lastActivityDay == Self.dayFormatter.string(from: twoDaysAgo)
     }
 
-    public var title: String {
+    public var title: String { title(days: currentStreakDays) }
+
+    /// The title as it reads with `days` in the streak, for ticking up from an earlier count.
+    public func title(days: Int) -> String {
         if lostRecently { return "Oops! Streak lost" }
-        if currentStreakDays == 0 { return "Start your streak" }
-        return "\(currentStreakDays) \(currentStreakDays == 1 ? "day" : "days") streak!"
+        if days == 0 { return "Start your streak" }
+        return "\(days) \(days == 1 ? "day" : "days") streak!"
     }
 
     public var message: String {
@@ -87,7 +90,11 @@ public struct StreakResponse: Codable, Equatable, Sendable {
 public struct StreakProgress: Codable, Equatable, Sendable {
     public private(set) var lastObservedDays: Int?
     public private(set) var bannerExpiresAt: Date?
+    /// The count the streak screen last showed, so a rise since then can tick up as it opens.
+    public private(set) var shownDays: Int?
     public init() {}
+
+    public mutating func shown(days: Int) { shownDays = days }
 
     @discardableResult public mutating func observe(days: Int, now: Date = Date()) -> Bool {
         let previous = lastObservedDays
