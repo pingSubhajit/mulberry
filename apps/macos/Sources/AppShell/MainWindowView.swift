@@ -27,6 +27,8 @@ struct MainWindowView: View {
     let openSettings: () -> Void
     @StateObject private var avatar = ProfileAvatar()
     @State private var reactionsOpen = false
+    /// Counts the streak popover's closings: the toolbar bolt hops as it takes the streak back.
+    @State private var streakClosings = 0
     @State private var syncFailed = false
     @Environment(\.requestReview) private var requestReview
     @Environment(\.appearsActive) private var appearsActive
@@ -124,6 +126,7 @@ struct MainWindowView: View {
             HStack(spacing: 5) {
                 if let bolt = ToolbarArtwork.image("streak_bolt.png", height: 17) {
                     Image(nsImage: bolt)
+                        .boltBounce(streakClosings, after: 0.15)
                 }
                 Text(days, format: .number)
                     .font(.body.weight(.semibold))
@@ -139,6 +142,9 @@ struct MainWindowView: View {
             StreakPopover(streaks: streaks, api: { authController.api }) {
                 await streaks.refresh(api: authController.api)
             }
+        }
+        .onChange(of: windowState.showsStreak) { _, open in
+            if !open { streakClosings += 1 }
         }
     }
 
