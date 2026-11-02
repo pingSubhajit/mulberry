@@ -19,6 +19,12 @@
       "skillPath": "skills/productivity/grill-me/SKILL.md",
       "computedHash": "784f0dbb7403b0f00324bce9a112f715342777a0daee7bbb7385f9c6f0a170ea"
     },
+    "huashu-art-motion": {
+      "source": "alchaincyf/huashu-art-motion",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "20d8a2eb51ce6573b6351e6ddb236a15de249e51d1633e82506ebf9aa09f3f69"
+    },
     "improve-codebase-architecture": {
       "source": "mattpocock/skills",
       "sourceType": "github",
