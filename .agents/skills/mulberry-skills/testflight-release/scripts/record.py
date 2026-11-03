@@ -28,13 +28,14 @@ def main() -> None:
 
     release = pathlib.Path(args.release_dir).resolve()
     commit = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"], text=True).strip()
-    first = args.platforms[0]
 
     artifacts = {}
     for platform in args.platforms:
         label, relative = ARTIFACTS[platform]
         data = (release / relative).read_bytes()
         artifacts[label] = {
+            "version": plist_value(SOURCE_PLIST[platform], "CFBundleShortVersionString"),
+            "build": plist_value(SOURCE_PLIST[platform], "CFBundleVersion"),
             "path": str((release / relative).relative_to(ROOT)),
             "sha256": hashlib.sha256(data).hexdigest(),
             "bytes": len(data),
@@ -42,8 +43,6 @@ def main() -> None:
 
     record = {
         "sourceCommit": commit,
-        "version": plist_value(SOURCE_PLIST[first], "CFBundleShortVersionString"),
-        "build": plist_value(SOURCE_PLIST[first], "CFBundleVersion"),
         "platforms": [ARTIFACTS[p][0] for p in args.platforms],
         "bundleId": "com.subhajit.mulberry.beta",
         "appStoreConnectId": "6829284245",
@@ -52,6 +51,11 @@ def main() -> None:
         "status": args.status,
         "artifacts": artifacts,
     }
+    # Keep legacy summary fields only when they describe every artifact.
+    for key in ("version", "build"):
+        values = {artifact[key] for artifact in artifacts.values()}
+        if len(values) == 1:
+            record[key] = values.pop()
     (release / "source.json").write_text(json.dumps(record, indent=2) + "\n")
     print(json.dumps(record, indent=2))
 

@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>XPC!</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>1.0.1</string>
 	<key>CFBundleVersion</key>
-	<string>8</string>
+	<string>9</string>
 	<key>MulberryAPIBaseURL</key>
 	<string>$(MULBERRY_API_BASE_URL)</string>
 	<key>MulberryAppGroup</key>

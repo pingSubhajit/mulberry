@@ -3,8 +3,7 @@
 
 Usage: bump-build.py <ios|macos>... [--build N] [--version X.Y.Z] [--dry-run]
 
-By default the new build is one more than the highest build in any of the
-three plists, so iOS and macOS stay aligned even when only one ships.
+By default each platform advances its own highest app/widget build by one.
 Edits the plist text in place, keeping its formatting. Prints the result as JSON.
 """
 import argparse
@@ -44,20 +43,23 @@ def main() -> None:
     args = parser.parse_args()
 
     current = {str(p.relative_to(ROOT)): read_key(p.read_text(), "CFBundleVersion") for ps in PLISTS.values() for p in ps}
-    highest = max(int(v) for v in current.values())
-    build = args.build if args.build is not None else highest + 1
-    if build <= highest and args.build is None:
-        sys.exit("internal: build did not advance")
+    builds = {}
+    for platform in args.platforms:
+        highest = max(int(current[str(p.relative_to(ROOT))]) for p in PLISTS[platform])
+        build = args.build if args.build is not None else highest + 1
+        if build <= highest:
+            sys.exit(f"{platform}: build {build} must exceed current build {highest}")
+        builds[platform] = str(build)
 
-    targets = [p for platform in args.platforms for p in PLISTS[platform]]
     if not args.dry_run:
-        for path in targets:
-            write_key(path, "CFBundleVersion", str(build))
-            if args.version:
-                write_key(path, "CFBundleShortVersionString", args.version)
+        for platform in args.platforms:
+            for path in PLISTS[platform]:
+                write_key(path, "CFBundleVersion", builds[platform])
+                if args.version:
+                    write_key(path, "CFBundleShortVersionString", args.version)
 
-    versions = {platform: read_key(PLISTS[platform][0].read_text(), "CFBundleShortVersionString") for platform in args.platforms}
-    print(json.dumps({"previous": current, "build": str(build), "versions": versions, "dryRun": args.dry_run}, indent=2))
+    versions = {platform: args.version or read_key(PLISTS[platform][0].read_text(), "CFBundleShortVersionString") for platform in args.platforms}
+    print(json.dumps({"previous": current, "builds": builds, "versions": versions, "dryRun": args.dry_run}, indent=2))
 
 
 if __name__ == "__main__":

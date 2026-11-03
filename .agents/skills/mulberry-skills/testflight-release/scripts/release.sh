@@ -17,7 +17,8 @@ export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 TEAM=HMJX9736KN
 BUNDLE_ID=com.subhajit.mulberry.beta
 API=https://api.mulberry.my/
-SP="$ROOT/apps/ios/.build/device/SourcePackages"
+CACHE_ROOT="${MULBERRY_RELEASE_CACHE_ROOT:-$ROOT}"
+SP="$CACHE_ROOT/apps/ios/.build/device/SourcePackages"
 
 (( $# >= 3 )) || { print -u2 "usage: release.sh archive|verify|upload <release-dir> <ios|macos>..."; exit 2; }
 STEP=$1; R=${2:A}; shift 2
@@ -28,7 +29,7 @@ mkdir -p "$R"
 archive_ios() {
   xcodebuild archive -project apps/ios/Mulberry.xcodeproj -scheme 'Mulberry Production' -configuration Release \
     -destination 'generic/platform=iOS' -archivePath "$R/Mulberry-iOS.xcarchive" \
-    -derivedDataPath "$ROOT/apps/ios/.build/distribution" -clonedSourcePackagesDirPath "$SP" \
+    -derivedDataPath "$CACHE_ROOT/apps/ios/.build/distribution" -clonedSourcePackagesDirPath "$SP" \
     -disableAutomaticPackageResolution -allowProvisioningUpdates \
     DEVELOPMENT_TEAM=$TEAM CODE_SIGN_STYLE=Automatic MULBERRY_API_BASE_URL=$API \
     MULBERRY_ALLOW_LOCAL_SERVER=NO MULBERRY_LOCAL_DEVICE_BUILD=NO MULBERRY_SOURCE_PACKAGES_DIR="$SP" \
@@ -42,7 +43,7 @@ archive_ios() {
 archive_macos() {
   xcodebuild archive -project apps/macos/MulberryMac.xcodeproj -scheme 'Mulberry Production' -configuration Release \
     -destination 'generic/platform=macOS' -archivePath "$R/Mulberry-macOS.xcarchive" \
-    -derivedDataPath "$ROOT/apps/macos/.build/distribution" -clonedSourcePackagesDirPath "$SP" \
+    -derivedDataPath "$CACHE_ROOT/apps/macos/.build/distribution" -clonedSourcePackagesDirPath "$SP" \
     -disableAutomaticPackageResolution -allowProvisioningUpdates \
     DEVELOPMENT_TEAM=$TEAM CODE_SIGN_STYLE=Automatic MULBERRY_MAC_API_BASE_URL=$API \
     MULBERRY_ALLOW_LOCAL_SERVER=NO MULBERRY_MAC_UNSIGNED_BUILD=NO MULBERRY_SOURCE_PACKAGES_DIR="$SP" \
@@ -80,6 +81,7 @@ verify_ios() {
   check "version" "$(plist "$A/Info.plist" CFBundleShortVersionString)" "$(plist "$ROOT/apps/ios/Configuration/Info.plist" CFBundleShortVersionString)"
   check "build" "$(plist "$A/Info.plist" CFBundleVersion)" "$want"
   check "widget build" "$(plist "$W/Info.plist" CFBundleVersion)" "$want"
+  check "widget version" "$(plist "$W/Info.plist" CFBundleShortVersionString)" "$(plist "$A/Info.plist" CFBundleShortVersionString)"
   check "api" "$(plist "$A/Info.plist" MulberryAPIBaseURL)" $API
   check "environment" "$(plist "$A/Info.plist" MulberryAppEnvironment)" prod
   local e; e=$(ents "$A")
@@ -123,6 +125,7 @@ verify_macos() {
   has "app group" "$e" "$TEAM.group.$BUNDLE_ID"
   local W="$M/Contents/PlugIns/MulberryWidgets.appex"
   check "widget build" "$(plist "$W/Contents/Info.plist" CFBundleVersion)" "$(src_build apps/macos/Configuration/Info.plist)"
+  check "widget version" "$(plist "$W/Contents/Info.plist" CFBundleShortVersionString)" "$(plist "$I" CFBundleShortVersionString)"
   check "widget signer" "$(authority "$W")" "Apple Distribution: TECHABOARD DIGI SOLUTIONS PRIVATE LIMITED ($TEAM)"
   local we; we=$(ents "$W")
   has "widget sandbox" "$we" '"com.apple.security.app-sandbox" => true'
