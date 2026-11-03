@@ -2,9 +2,11 @@ import UIKit
 import UserNotifications
 
 enum SetupStep: Int, CaseIterable {
-    case allow = 1, add, choose, automate, run
+    /// Running once comes before Automation: it works with Automation off, confirms the Shortcut
+    /// was added, and gets its permission prompts out of the way before the test.
+    case allow = 1, add, run, automate
     /// Steps iOS cannot confirm, so they are remembered once the user takes them.
-    static let selfReported: [SetupStep] = [.add, .choose, .automate]
+    static let selfReported: [SetupStep] = [.add, .automate]
 }
 
 @MainActor
@@ -16,7 +18,6 @@ final class WallpaperSetupModel: ObservableObject {
     @Published private(set) var remoteDeliveryMessage: String?
     @Published var message: String?
     @Published private(set) var shortcutAdded = false
-    @Published private(set) var shortcutConfigured = false
     @Published private(set) var automationOn = false
     @Published private(set) var shortcutRan = false
     private var refreshing = false
@@ -35,13 +36,20 @@ final class WallpaperSetupModel: ObservableObject {
         #endif
         return "Mulberry Sync"
     }
-    /// An iCloud Shortcut link that opens Add Shortcut directly, skipping the share sheet.
+    /// The server's iCloud link for this build's Shortcut, which opens Shortcuts' Add screen directly.
+    /// Without one, the bundled template goes through the share sheet.
     var shortcutLink: URL? {
         #if DEBUG
-        return Self.launchArgument("shortcutLink").flatMap(URL.init(string:))
-        #else
-        return nil
+        if let link = Self.launchArgument("shortcutLink") { return Self.iCloudShortcut(link) }
         #endif
+        guard let bundle = Bundle.main.bundleIdentifier else { return nil }
+        return model.bootstrap?.wallpaperShortcutLinks?[bundle].flatMap(Self.iCloudShortcut)
+    }
+    /// Only Apple's Shortcut links, so a mistyped setting can't send anyone elsewhere.
+    private static func iCloudShortcut(_ link: String) -> URL? {
+        guard let url = URL(string: link), url.scheme == "https", url.host == "www.icloud.com",
+              url.path.hasPrefix("/shortcuts/") else { return nil }
+        return url
     }
     #if DEBUG
     /// Debug launch arguments such as `shortcutLink=https://www.icloud.com/shortcuts/…`.
@@ -54,7 +62,6 @@ final class WallpaperSetupModel: ObservableObject {
         UserDefaults.standard.set(value, forKey: stepKey(step))
         switch step {
         case .add: shortcutAdded = value
-        case .choose: shortcutConfigured = value
         case .automate: automationOn = value
         case .allow, .run: break
         }
@@ -66,6 +73,31 @@ final class WallpaperSetupModel: ObservableObject {
         guard let shortcutLink else { return }
         awaitingShortcutReturn = .add
         UIApplication.shared.open(shortcutLink)
+        remindToReturn(after: .add)
+    }
+
+    static let returnReminderType = "SETUP_RETURN"
+    private static let returnReminderID = "mulberry-setup-return"
+    /// Shortcuts can't hand the user back after adding a Shortcut or turning Automation on, so a
+    /// banner offers the way back a little later. Coming back sooner cancels it. Its title must
+    /// never match the automation's trigger, "Mulberry canvas updated".
+    func remindToReturn(after step: SetupStep) {
+        let content = UNMutableNotificationContent()
+        if step == .automate {
+            content.title = "Automation on?"
+            content.body = "Tap to test your wallpaper update."
+        } else {
+            content.title = "Shortcut added?"
+            content.body = "Tap to finish setting up your wallpaper."
+        }
+        content.userInfo = ["type": Self.returnReminderType]
+        UNUserNotificationCenter.current().add(.init(identifier: Self.returnReminderID, content: content,
+                                                     trigger: UNTimeIntervalNotificationTrigger(timeInterval: 20, repeats: false)))
+    }
+    private func cancelReturnReminder() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [Self.returnReminderID])
+        center.removeDeliveredNotifications(withIdentifiers: [Self.returnReminderID])
     }
 
     /// Publishes only real changes. The screen polls every two seconds, and an unchanged
@@ -95,15 +127,18 @@ final class WallpaperSetupModel: ObservableObject {
         if access == .allowed && settings.notificationCenterSetting != .enabled && settings.lockScreenSetting != .enabled && settings.alertSetting != .enabled { access = .noPresentation }
         update(\.allowed, access == .allowed)
         let history = await journal.all()
-        // Events before the latest reset belong to an earlier setup run.
-        let events = history.lastIndex { $0.stage == "setup_reset" }.map { Array(history[($0 + 1)...]) } ?? history
+        // Events before the latest reset belong to an earlier setup run. Redoing Automation
+        // resets only the test, since the run before it still stands.
+        let setupRun = history.lastIndex { $0.stage == "setup_reset" }.map { Array(history[($0 + 1)...]) } ?? history
+        let events = setupRun.lastIndex { $0.stage == "test_reset" }.map { Array(setupRun[($0 + 1)...]) } ?? setupRun
         update(\.health, SetupHealth.assess(access: access, events: events))
         // The Shortcut normally removes its trigger notification; after a failed test nothing else will.
         if health.state == .incomplete { await clearTestNotifications() }
-        let ran = events.contains { $0.stage == "shortcut_reported_applied" }
+        // Only a run started here counts, so another copy's automation can't tick this step.
+        let ran = health.state == .responded || setupRun.firstIndex { $0.stage == "manual_shortcut_requested" }
+            .map { setupRun[$0...].contains { $0.stage == "shortcut_reported_applied" } } == true
         update(\.shortcutRan, ran)
         update(\.shortcutAdded, ran || UserDefaults.standard.bool(forKey: stepKey(.add)))
-        update(\.shortcutConfigured, ran || UserDefaults.standard.bool(forKey: stepKey(.choose)))
         // A manual run works with Automation off, so only a passed test proves this step.
         update(\.automationOn, health.state == .responded || UserDefaults.standard.bool(forKey: stepKey(.automate)))
         // A slow or unreachable backend must not hold up the next local refresh.
@@ -152,16 +187,22 @@ final class WallpaperSetupModel: ObservableObject {
         await refresh()
     }
     func startOver() async { await undoSteps(from: .add) }
-    /// Redoing a step invalidates every later step, including the last run and test.
+    /// Redoing a step invalidates every later step and the test. Only Automation follows the run,
+    /// so redoing it keeps the run.
     func undoSteps(from first: SetupStep) async {
         for step in SetupStep.selfReported where step.rawValue >= first.rawValue { mark(step, false) }
-        shortcutRan = false
-        try? await journal?.append(.init(stage: "setup_reset", detail: "User restarted wallpaper setup."))
+        if first == .automate {
+            try? await journal?.append(.init(stage: "test_reset", detail: "User redid the Automation step."))
+        } else {
+            shortcutRan = false
+            try? await journal?.append(.init(stage: "setup_reset", detail: "User restarted wallpaper setup."))
+        }
         message = nil
         await refresh()
     }
     /// Marks a Shortcut editor step only after the user comes back from Shortcuts.
     func returnedToApp() {
+        cancelReturnReminder()
         guard let step = awaitingShortcutReturn else { return }
         awaitingShortcutReturn = nil
         mark(step, true)
@@ -171,6 +212,7 @@ final class WallpaperSetupModel: ObservableObject {
         var url = URLComponents(string: "shortcuts://open-shortcut")!
         url.queryItems = [.init(name: "name", value: shortcutName)]
         UIApplication.shared.open(url.url!)
+        if step == .automate { remindToReturn(after: .automate) }
     }
     private func clearTestNotifications() async {
         let center = UNUserNotificationCenter.current()

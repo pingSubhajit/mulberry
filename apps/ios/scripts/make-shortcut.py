@@ -67,13 +67,16 @@ workflow = {
     'WFWorkflowClientVersion': '2602.0.11',
     'WFWorkflowMinimumClientVersion': 900,
     'WFWorkflowMinimumClientVersionString': '900',
-    'WFWorkflowIcon': {'WFWorkflowIconGlyphNumber': 61440, 'WFWorkflowIconStartColor': 2071128575},
+    # Shortcuts' red, the palette's nearest to Mulberry's, and its cartoon heart.
+    'WFWorkflowIcon': {'WFWorkflowIconGlyphNumber': 61577, 'WFWorkflowIconStartColor': 4282601983},
     'WFWorkflowTypes': [], 'WFWorkflowInputContentItemClasses': [],
     'WFWorkflowOutputContentItemClasses': [], 'WFWorkflowHasOutputFallback': False,
     'WFWorkflowIsDisabledOnLockScreen': False,
-    # iOS 27 can stall on Add Shortcut with a wallpaper import question.
-    # Choose the target in the editor, then do a manual permission run.
-    'WFWorkflowImportQuestions': [],
+    # Asks for the Lock Screen on the Add screen. iOS 27.0.1 once stalled here;
+    # iPadOS 27.2 and an iPhone 17 import it normally, from a file or an iCloud link.
+    'WFWorkflowImportQuestions': [{
+        'ActionIndex': 1, 'Category': 'Parameter', 'ParameterKey': 'WFSelectedPoster',
+        'Text': 'Pick a photo Lock Screen without a Focus. Mulberry replaces its photo with your drawings.'}],
     'WFWorkflowActions': [
         intent('GetLatestWallpaperIntent', fetch_id),
         action('wallpaper.set', UUID=set_id, WFInput=image,
@@ -100,7 +103,7 @@ workflow = {
     ]
 }
 # Captured from Shortcuts on a physical iPhone running iOS 27.0.1.
-# No device wallpaper UUID is bundled; the user selects a local pair in the editor.
+# No device wallpaper UUID is bundled; the user picks a local pair when adding it.
 if not args.manual_only:
     workflow['WFWorkflowClientVersion'] = '5037.111'
     workflow['WFWorkflowTriggers'] = [{

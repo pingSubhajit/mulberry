@@ -10,7 +10,7 @@ enum AppRoute: Equatable {
     init?(notificationType type: String?) {
         switch type {
         case "CANVAS_UPDATED", "PAIRING_CONFIRMED", "PAIRING_DISCONNECTED", "DRAW_REMINDER": self = .canvas
-        case "CANVAS_NUDGE": self = .wallpaperSetup
+        case "CANVAS_NUDGE", WallpaperSetupModel.returnReminderType: self = .wallpaperSetup
         case DoodlesOffReminders.type: self = .settings
         default: return nil
         }

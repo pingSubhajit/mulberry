@@ -13,9 +13,9 @@
 	<key>WFWorkflowIcon</key>
 	<dict>
 		<key>WFWorkflowIconGlyphNumber</key>
-		<integer>61440</integer>
+		<integer>61577</integer>
 		<key>WFWorkflowIconStartColor</key>
-		<integer>2071128575</integer>
+		<integer>4282601983</integer>
 	</dict>
 	<key>WFWorkflowTypes</key>
 	<array/>
@@ -28,7 +28,18 @@
 	<key>WFWorkflowIsDisabledOnLockScreen</key>
 	<false/>
 	<key>WFWorkflowImportQuestions</key>
-	<array/>
+	<array>
+		<dict>
+			<key>ActionIndex</key>
+			<integer>1</integer>
+			<key>Category</key>
+			<string>Parameter</string>
+			<key>ParameterKey</key>
+			<string>WFSelectedPoster</string>
+			<key>Text</key>
+			<string>Pick a photo Lock Screen without a Focus. Mulberry replaces its photo with your drawings.</string>
+		</dict>
+	</array>
 	<key>WFWorkflowActions</key>
 	<array>
 		<dict>

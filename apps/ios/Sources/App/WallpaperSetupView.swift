@@ -116,7 +116,7 @@ struct WallpaperSetupView: View {
             .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 6)
             ForEach(Step.allCases, id: \.self) { step in
                 row(step)
-                if step != .run { Divider() }
+                if step != Step.allCases.last { Divider() }
             }
         }
         .padding(.bottom, 6)
@@ -178,7 +178,7 @@ struct WallpaperSetupView: View {
         if done && (step == .allow || step == .run) {
             // Confirmed by iOS or by the Shortcut itself, so there is nothing to redo here.
             EmptyView()
-        } else if step == .add && setup.template == nil {
+        } else if step == .add && setup.shortcutLink == nil && setup.template == nil {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(MulberryDesign.accent)
                 .accessibilityLabel("Shortcut template missing from this build")
         } else if done {
@@ -310,8 +310,8 @@ struct WallpaperSetupView: View {
         switch step {
         case .allow: Task { await setup.requestPermission() }
         case .add: if setup.shortcutLink != nil { setup.addShortcutFromLink() } else { shareShortcut() }
-        case .choose, .automate: setup.editShortcut(for: step)
         case .run: Task { await setup.runShortcut() }
+        case .automate: setup.editShortcut(for: step)
         }
     }
 
@@ -325,7 +325,7 @@ struct WallpaperSetupView: View {
         let sheet = UIActivityViewController(activityItems: [template], applicationActivities: nil)
         sheet.completionWithItemsHandler = { [setup] activity, completed, _, _ in
             guard completed || activity != nil else { return }
-            Task { @MainActor in setup.markShortcutAdded() }
+            Task { @MainActor in setup.markShortcutAdded(); if activity != nil { setup.remindToReturn(after: .add) } }
         }
         // iPad shows the share sheet as a popover, which UIKit refuses to present without an anchor.
         // Phones present it as a sheet and have no popover controller.
@@ -347,9 +347,8 @@ struct WallpaperSetupView: View {
         switch step {
         case .allow: setup.allowed
         case .add: setup.shortcutAdded
-        case .choose: setup.shortcutConfigured
-        case .automate: setup.automationOn
         case .run: setup.shortcutRan
+        case .automate: setup.automationOn
         }
     }
 
@@ -362,21 +361,19 @@ struct WallpaperSetupView: View {
         switch step {
         case .allow: "Allow notifications"
         case .add: "Add the Shortcut"
-        case .choose: "Pick your wallpaper"
-        case .automate: "Turn Automation on"
         case .run: "Run it once"
+        case .automate: "Turn Automation on"
         }
     }
 
     private func hint(_ step: Step) -> String {
         switch step {
         case .allow: setup.permission == "Off" ? "Turned off in Settings" : "They quietly trigger each update"
-        case .add: "Share sheet → Shortcuts → Add"
-        // On iPad, Shortcuts opens the Shortcut's summary rather than its editor.
-        case .choose: pad ? "Tap Edit, then choose your wallpaper in Set Wallpaper"
-            : "In Set Wallpaper, choose a photo pair with no linked Focus. Mulberry switches to it only when Focus is off."
-        case .automate: pad ? "Tap Edit, then find it in the trigger. Tap ? to see where" : "It’s in the Shortcut’s trigger. Tap ? to see where"
+        // Shortcuts asks for the Lock Screen while adding it, with the template's own instructions.
+        case .add: setup.shortcutLink != nil ? "Pick your Lock Screen, then tap Add Shortcut" : "Share sheet → Shortcuts, then pick your Lock Screen"
         case .run: "Allow access when asked"
+        // On iPad, Shortcuts opens the Shortcut's summary rather than its editor.
+        case .automate: pad ? "Tap Edit, then find it in the trigger. Tap ? to see where" : "It’s in the Shortcut’s trigger. Tap ? to see where"
         }
     }
 
@@ -384,8 +381,8 @@ struct WallpaperSetupView: View {
         switch step {
         case .allow: setup.permission == "Off" ? "Settings" : "Allow"
         case .add: "Add"
-        case .choose, .automate: "Open"
         case .run: "Run"
+        case .automate: "Open"
         }
     }
 

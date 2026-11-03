@@ -70,6 +70,8 @@ public struct BootstrapState: Codable, Equatable, Sendable {
     public let invite: PairInvite?
     public let ownPresence: PresenceSummary
     public let partnerPresence: PresenceSummary
+    /// iCloud links to the wallpaper Shortcut, by app bundle ID. Missing from older servers.
+    public let wallpaperShortcutLinks: [String: String]?
 
     public var isPaired: Bool { pairingStatus == "PAIRED" && pairSessionId != nil }
     public func signsIn(with method: SignInMethod) -> Bool {

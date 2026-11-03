@@ -147,6 +147,10 @@ struct MulberryRootView: View {
             case "wallpaper-return": Task { await setup.refresh() }
             case "shortcut-error": setup.message = "The Shortcut could not finish. Open it to check its actions and permissions."; setupOpen = true
             case "shortcut-cancelled": setup.message = "Setup was cancelled. Run the Shortcut again when ready."; setupOpen = true
+            #if DEBUG
+            // Opens wallpaper setup from a Mac: `devicectl device process launch --payload-url <bundle id>://wallpaper-setup`.
+            case "wallpaper-setup": routes.pending = .wallpaperSetup
+            #endif
             default: break
             }
         }
@@ -177,6 +181,8 @@ struct MulberryRootView: View {
 
     /// Opens what a tapped notification is about, once the app is past sign-in and onboarding.
     private func handleRoute() {
+        // Setup is already showing, as after the reminder to come back from Shortcuts.
+        if routes.pending == .wallpaperSetup && setupOpen { routes.pending = nil; return }
         guard !model.restoring, model.bootstrap?.onboardingCompleted == true,
               !model.showWallpaperOnboarding, let route = routes.pending else { return }
         routes.pending = nil
