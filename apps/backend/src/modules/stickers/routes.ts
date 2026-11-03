@@ -1,3 +1,4 @@
+import { multipartNumber, multipartBoolean, validateMultipartFields } from "../catalog/adminRoutes.js"
 import type { FastifyInstance } from "fastify"
 import { HttpError } from "../../infra/http/HttpError.js"
 import { requireBearerToken } from "../../infra/http/auth.js"
@@ -97,14 +98,15 @@ export function registerStickerRoutes(
       }
     }
 
+    validateMultipartFields(fields, ["packKey", "packVersion", "title", "description", "sortOrder", "featured", "published"])
     if (!uploadedFile) {
       throw new HttpError(400, "cover image is required")
     }
 
-    const published = fields.published === "true"
-    const featured = fields.featured === "true"
-    const sortOrder = Number(fields.sortOrder ?? "0")
-    const packVersion = Number(fields.packVersion ?? "1")
+    const published = multipartBoolean(fields.published)
+    const featured = multipartBoolean(fields.featured)
+    const sortOrder = multipartNumber(fields.sortOrder, 0)
+    const packVersion = multipartNumber(fields.packVersion, 1)
     return stickerCatalogService.createStickerPackVersion({
       adminPassword: readAdminPassword(request) ?? "",
       packKey: fields.packKey ?? "",
@@ -122,7 +124,7 @@ export function registerStickerRoutes(
 
   app.patch("/admin/stickers/packs/:packKey/:packVersion", async (request) => {
     const params = request.params as { packKey?: string; packVersion?: string }
-    const body = request.body as Partial<{
+    const body = (request.body ?? {}) as Partial<{
       title: string
       description: string
       sortOrder: number
@@ -177,11 +179,12 @@ export function registerStickerRoutes(
       }
     }
 
+    validateMultipartFields(fields, ["stickerId", "sortOrder"])
     if (!uploadedFile) {
       throw new HttpError(400, "sticker image is required")
     }
 
-    const sortOrder = Number(fields.sortOrder ?? "0")
+    const sortOrder = multipartNumber(fields.sortOrder, 0)
     const packVersion = Number(params.packVersion ?? "0")
     return stickerCatalogService.uploadSticker({
       adminPassword: readAdminPassword(request) ?? "",
@@ -195,15 +198,46 @@ export function registerStickerRoutes(
     })
   })
 
-  app.delete("/admin/stickers/packs/:packKey/:packVersion", async (request, reply) => {
+  app.delete("/admin/stickers/packs/:packKey/:packVersion", async (request) => {
     const params = request.params as { packKey?: string; packVersion?: string }
     const packVersion = Number(params.packVersion ?? "0")
     await stickerCatalogService.deleteStickerPackVersionForAdmin({
       adminPassword: readAdminPassword(request) ?? "",
       packKey: params.packKey ?? "",
       packVersion: Number.isFinite(packVersion) ? packVersion : 0,
+      confirm: (request.body as { confirm?: boolean } | undefined)?.confirm,
     })
-    reply.code(204).send()
+    return { message: "Pack version deleted. Saved canvases may lose these stickers. Assets retained for recovery." }
   })
+  app.get("/admin/stickers/history", async (request) => {
+    const query = request.query as { limit?: string }
+    return stickerCatalogService.history(readAdminPassword(request) ?? "", query.limit === undefined ? undefined : Number(query.limit))
+  })
+
+  app.post("/admin/stickers/packs/:packKey/:packVersion/copy", async (request) => {
+    const params = request.params as { packKey: string; packVersion: string }
+    const body = (request.body ?? {}) as { newVersion?: number } | undefined
+    return stickerCatalogService.copyStickerPackVersion({ adminPassword: readAdminPassword(request) ?? "",
+      packKey: params.packKey, packVersion: Number(params.packVersion), newVersion: body?.newVersion ?? 0 })
+  })
+
+  app.patch("/admin/stickers/packs/:packKey/:packVersion/stickers/:stickerId", async (request) => {
+    const params = request.params as { packKey: string; packVersion: string; stickerId: string }
+    return stickerCatalogService.editSticker({ ...params, packVersion: Number(params.packVersion),
+      adminPassword: readAdminPassword(request) ?? "", sortOrder: (request.body as { sortOrder?: number } | undefined)?.sortOrder })
+  })
+
+  app.delete("/admin/stickers/packs/:packKey/:packVersion/stickers/:stickerId", async (request) => {
+    const params = request.params as { packKey: string; packVersion: string; stickerId: string }
+    return stickerCatalogService.editSticker({ ...params, packVersion: Number(params.packVersion),
+      adminPassword: readAdminPassword(request) ?? "", delete: true })
+  })
+
+  app.post("/admin/stickers/history/:changeId/restore", async (request) => {
+    const params = request.params as { changeId: string }
+    return stickerCatalogService.restore(readAdminPassword(request) ?? "", params.changeId,
+      (request.body as { confirm?: boolean } | undefined)?.confirm)
+  })
+
 }
 

@@ -24,7 +24,7 @@ while IFS= read -r line; do FILES+=("${line#*$'\t'}"); done < <(
 
 curl -sf -X POST "$API_URL/admin/stickers/packs" -H "x-admin-password: $PASSWORD" \
   -F packKey="$PACK_KEY" -F packVersion="$VERSION" -F title="$TITLE" \
-  -F published=true -F featured=true -F sortOrder=0 \
+  -F published=false -F featured=true -F sortOrder=0 \
   -F "cover=@${FILES[0]};type=image/png" > /dev/null
 echo "Created $PACK_KEY v$VERSION"
 
@@ -35,3 +35,8 @@ for index in "${!FILES[@]}"; do
     -F stickerId="$id" -F sortOrder="$index" -F "image=@$file;type=image/png" > /dev/null
   echo "Uploaded sticker $id"
 done
+
+curl -sf -X PATCH "$API_URL/admin/stickers/packs/$PACK_KEY/$VERSION" \
+  -H "x-admin-password: $PASSWORD" -H "content-type: application/json" \
+  -d '{"published":true}' > /dev/null
+echo "Published $PACK_KEY v$VERSION"

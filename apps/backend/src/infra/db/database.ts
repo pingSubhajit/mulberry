@@ -323,6 +323,29 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
     CREATE INDEX IF NOT EXISTS stickers_pack_sort_idx
       ON stickers(pack_key, pack_version, sort_order ASC, created_at DESC, sticker_id ASC);
 
+    ALTER TABLE sticker_packs ADD COLUMN IF NOT EXISTS content_locked BOOLEAN NOT NULL DEFAULT TRUE;
+    ALTER TABLE sticker_packs ALTER COLUMN content_locked SET DEFAULT FALSE;
+    UPDATE sticker_packs SET content_locked = TRUE WHERE published_at IS NOT NULL;
+
+    CREATE SCHEMA IF NOT EXISTS catalog_admin;
+    CREATE TABLE IF NOT EXISTS catalog_admin.catalog_item_locks (
+      content_type TEXT NOT NULL,
+      content_key TEXT NOT NULL,
+      PRIMARY KEY (content_type, content_key)
+    );
+    CREATE TABLE IF NOT EXISTS catalog_admin.admin_catalog_changes (
+      id TEXT PRIMARY KEY,
+      content_type TEXT NOT NULL,
+      content_key TEXT NOT NULL,
+      action TEXT NOT NULL,
+      actor TEXT NOT NULL DEFAULT 'shared-admin',
+      previous_json JSONB,
+      current_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS admin_catalog_changes_history_idx
+      ON catalog_admin.admin_catalog_changes(content_type, created_at DESC, id DESC);
+
     CREATE TABLE IF NOT EXISTS reaction_inboxes (
       recipient_user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       pair_session_id TEXT REFERENCES pair_sessions(id) ON DELETE CASCADE,

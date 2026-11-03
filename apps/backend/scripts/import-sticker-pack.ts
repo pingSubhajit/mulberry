@@ -27,6 +27,7 @@ async function main() {
       supabaseUrl: config.supabaseUrl,
       supabaseServiceRoleKey: config.supabaseServiceRoleKey,
       supabaseStickerBucket: config.supabaseStickerBucket,
+      stickerLocalStorageDir: config.stickerLocalStorageDir,
     })
     const service = new StickerCatalogService(db, storage, config.adminPassword)
     const entries = (await readdir(dir))
@@ -52,7 +53,7 @@ async function main() {
       description: args.description ?? "",
       sortOrder,
       featured,
-      published,
+      published: false,
       coverFilename: path.basename(coverPath),
       coverContentType: "image/png",
       coverData,
@@ -75,6 +76,7 @@ async function main() {
       })
       process.stdout.write(`uploaded ${stickerId}\n`)
     }
+    if (published) await service.updateStickerPackVersionMetadata({ adminPassword, packKey, packVersion, published: true })
   } finally {
     await db.end()
   }

@@ -1,3 +1,4 @@
+import { registerCatalogAdminHooks } from "../modules/catalog/adminRoutes.js"
 import Fastify, { type FastifyInstance } from "fastify"
 import fastifyCors from "@fastify/cors"
 import fastifyMultipart from "@fastify/multipart"
@@ -158,9 +159,14 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     await db.end()
   })
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof HttpError) {
       void reply.code(error.statusCode).send({ ...error.details, message: error.message })
+      return
+    }
+    const status = (error as { statusCode?: number }).statusCode
+    if (/^\/admin\/(stickers|wallpapers)(\/|$)/.test(request.url) && status && status >= 400 && status < 500) {
+      void reply.code(status).send({ code: "INVALID_CATALOG_INPUT", message: (error as Error).message })
       return
     }
     app.log.error(error)
@@ -175,6 +181,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   registerPairingRoutes(app, pairingService)
   registerReactionRoutes(app, reactionsService)
   registerCanvasRoutes(app, canvasService)
+  registerCatalogAdminHooks(app, config.adminPassword)
   registerWallpaperRoutes(app, wallpaperCatalogService)
   registerStickerRoutes(app, stickerCatalogService, stickerStorage)
   registerCanvasSyncRoutes(app, canvasSyncHub)

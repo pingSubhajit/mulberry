@@ -4,6 +4,7 @@ import sharp from "sharp"
 import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import { requireAdminPassword } from "../../infra/http/adminAuth.js"
+import { catalogMutation, catalogHistory, restoreCatalogChange } from "../catalog/history.js"
 import { LocalStickerStorage } from "./localStorage.js"
 
 export interface StickerCatalogConfig {
@@ -21,6 +22,7 @@ export interface StickerStorage {
 }
 
 export interface StickerPackSummary {
+  message?: string
   packKey: string
   packVersion: number
   title: string
@@ -37,9 +39,11 @@ export interface StickerPackAdminSummary extends StickerPackSummary {
   updatedAt: string
   published: boolean
   stickerCount: number
+  contentLocked: boolean
 }
 
 export interface StickerSummary {
+  message?: string
   stickerId: string
   thumbnailUrl: string
   fullUrl: string
@@ -66,6 +70,7 @@ interface StickerPackRow {
   sort_order: number
   featured: boolean
   published_at: string | null
+  content_locked: boolean
   created_at: string
   updated_at: string
 }
@@ -143,13 +148,14 @@ export class StickerCatalogService {
     private readonly db: Database,
     private readonly storage: StickerStorage | null,
     private readonly adminPassword?: string,
+    private readonly inMutation = false,
   ) {}
 
   async listPublishedStickerPacks(): Promise<{ items: StickerPackSummary[] }> {
     const rows = await this.db.query<StickerPackRow>(
       `
       SELECT pack_key, pack_version, title, description, cover_thumbnail_path, cover_full_path,
-        sort_order, featured, published_at, created_at, updated_at
+        sort_order, featured, published_at, content_locked, created_at, updated_at
       FROM sticker_packs
       WHERE published_at IS NOT NULL
       ORDER BY featured DESC, sort_order ASC, created_at DESC, pack_key ASC, pack_version DESC
@@ -166,7 +172,7 @@ export class StickerCatalogService {
     const packRows = await this.db.query<StickerPackRow>(
       `
       SELECT pack_key, pack_version, title, description, cover_thumbnail_path, cover_full_path,
-        sort_order, featured, published_at, created_at, updated_at
+        sort_order, featured, published_at, content_locked, created_at, updated_at
       FROM sticker_packs
       WHERE pack_key = $1
         AND published_at IS NOT NULL
@@ -236,13 +242,15 @@ export class StickerCatalogService {
     >(
       `
       SELECT pack_key, pack_version, title, description, cover_thumbnail_path, cover_full_path,
-        sort_order, featured, published_at, created_at, updated_at,
-        (SELECT COUNT(*)::int FROM stickers WHERE stickers.pack_key = sticker_packs.pack_key AND stickers.pack_version = sticker_packs.pack_version) as sticker_count
+        sort_order, featured, published_at, content_locked, created_at, updated_at
       FROM sticker_packs
       ORDER BY pack_key ASC, pack_version DESC
       `,
     )
-    const items = await Promise.all(rows.rows.map((row) => this.packRowToAdminSummary(row)))
+    const counts = await this.db.query<{ pack_key: string; pack_version: number; sticker_count: number }>(
+      "SELECT pack_key, pack_version, COUNT(*)::int AS sticker_count FROM stickers GROUP BY pack_key, pack_version")
+    const countByPack = new Map(counts.rows.map((row) => [`${row.pack_key}:${row.pack_version}`, row.sticker_count]))
+    const items = await Promise.all(rows.rows.map((row) => this.packRowToAdminSummary({ ...row, sticker_count: countByPack.get(`${row.pack_key}:${row.pack_version}`) ?? 0 })))
     return { items }
   }
 
@@ -257,7 +265,7 @@ export class StickerCatalogService {
     const packKey = normalizePackKey(options.packKey)
     if (!packKey) throw new HttpError(400, "packKey is required")
     const packVersion = Number(options.packVersion)
-    if (!Number.isFinite(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
+    if (!Number.isInteger(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
 
     const packRows = await this.db.query<
       StickerPackRow & {
@@ -266,8 +274,7 @@ export class StickerCatalogService {
     >(
       `
       SELECT pack_key, pack_version, title, description, cover_thumbnail_path, cover_full_path,
-        sort_order, featured, published_at, created_at, updated_at,
-        (SELECT COUNT(*)::int FROM stickers WHERE stickers.pack_key = sticker_packs.pack_key AND stickers.pack_version = sticker_packs.pack_version) as sticker_count
+        sort_order, featured, published_at, content_locked, created_at, updated_at
       FROM sticker_packs
       WHERE pack_key = $1 AND pack_version = $2
       LIMIT 1
@@ -287,7 +294,7 @@ export class StickerCatalogService {
       [pack.pack_key, pack.pack_version],
     )
 
-    const base = await this.packRowToAdminSummary(pack)
+    const base = await this.packRowToAdminSummary({ ...pack, sticker_count: stickerRows.rows.length })
     const stickers = await Promise.all(stickerRows.rows.map((row) => this.stickerRowToSummary(row)))
     return { ...base, stickers }
   }
@@ -306,14 +313,22 @@ export class StickerCatalogService {
     coverData: Buffer
   }): Promise<StickerPackSummary> {
     this.requireAdmin(options.adminPassword)
+    if (!this.inMutation) {
+      return catalogMutation(this.db, "stickers", normalizePackKey(options.packKey), options.packVersion, "createStickerPackVersion", (db) => new StickerCatalogService(db, this.storage, this.adminPassword, true).createStickerPackVersion(options))
+    }
     if (!this.storage) throw new HttpError(503, "Sticker storage is not configured")
 
     const packKey = normalizePackKey(options.packKey)
     if (!packKey) throw new HttpError(400, "packKey is required")
     const packVersion = Number(options.packVersion)
-    if (!Number.isFinite(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
+    if (!Number.isInteger(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
     const title = (options.title ?? "").trim()
     if (!title) throw new HttpError(400, "title is required")
+
+    const existing = await this.db.query("SELECT pack_key FROM sticker_packs WHERE pack_key = $1 AND pack_version = $2", [packKey, packVersion])
+    if (existing.rows.length) throw new HttpError(409, "Pack version exists. Use PATCH for metadata or copy to a new version.", { code: "PACK_VERSION_EXISTS" })
+
+    await this.requireUnusedVersion(packKey, packVersion)
 
     const { thumbnail, full, width, height, contentType, extension } = await processStickerImage(options.coverData)
     const coverId = randomUUID()
@@ -335,20 +350,12 @@ export class StickerCatalogService {
         sort_order,
         featured,
         published_at,
+        content_locked,
         created_at,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-      ON CONFLICT (pack_key, pack_version) DO UPDATE SET
-        title = EXCLUDED.title,
-        description = EXCLUDED.description,
-        cover_thumbnail_path = EXCLUDED.cover_thumbnail_path,
-        cover_full_path = EXCLUDED.cover_full_path,
-        sort_order = EXCLUDED.sort_order,
-        featured = EXCLUDED.featured,
-        published_at = EXCLUDED.published_at,
-        updated_at = NOW()
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
       RETURNING pack_key, pack_version, title, description, cover_thumbnail_path, cover_full_path,
-        sort_order, featured, published_at, created_at, updated_at
+        sort_order, featured, published_at, content_locked, created_at, updated_at
       `,
       [
         packKey,
@@ -360,6 +367,7 @@ export class StickerCatalogService {
         Number(options.sortOrder ?? 0),
         Boolean(options.featured),
         publishedAt,
+        Boolean(options.published),
       ],
     )
     const row = rows.rows[0]
@@ -377,24 +385,18 @@ export class StickerCatalogService {
     data: Buffer
   }): Promise<StickerSummary> {
     this.requireAdmin(options.adminPassword)
+    if (!this.inMutation) {
+      return catalogMutation(this.db, "stickers", normalizePackKey(options.packKey), options.packVersion, "uploadSticker", (db) => new StickerCatalogService(db, this.storage, this.adminPassword, true).uploadSticker(options))
+    }
     if (!this.storage) throw new HttpError(503, "Sticker storage is not configured")
     const packKey = normalizePackKey(options.packKey)
     if (!packKey) throw new HttpError(400, "packKey is required")
     const packVersion = Number(options.packVersion)
-    if (!Number.isFinite(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
+    if (!Number.isInteger(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
     const stickerId = options.stickerId.trim()
     if (!stickerId) throw new HttpError(400, "stickerId is required")
 
-    const packExists = await this.db.query<{ ok: boolean }>(
-      `
-      SELECT TRUE as ok
-      FROM sticker_packs
-      WHERE pack_key = $1 AND pack_version = $2
-      LIMIT 1
-      `,
-      [packKey, packVersion],
-    )
-    if (!packExists.rows[0]) throw new HttpError(404, "Sticker pack version not found")
+    await this.requireDraft(packKey, packVersion)
 
     const { thumbnail, full, width, height, contentType, extension } = await processStickerImage(options.data)
     const assetId = randomUUID()
@@ -444,14 +446,18 @@ export class StickerCatalogService {
     adminPassword: string
     packKey: string
     packVersion: number
+    confirm?: boolean
   }): Promise<void> {
     this.requireAdmin(options.adminPassword)
+    if (!this.inMutation) {
+      return catalogMutation(this.db, "stickers", normalizePackKey(options.packKey), options.packVersion, "deleteStickerPackVersionForAdmin", (db) => new StickerCatalogService(db, this.storage, this.adminPassword, true).deleteStickerPackVersionForAdmin(options))
+    }
     if (!this.storage) throw new HttpError(503, "Sticker storage is not configured")
 
     const packKey = normalizePackKey(options.packKey)
     if (!packKey) throw new HttpError(400, "packKey is required")
     const packVersion = Number(options.packVersion)
-    if (!Number.isFinite(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
+    if (!Number.isInteger(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
 
     const packRows = await this.db.query<Pick<StickerPackRow, "cover_thumbnail_path" | "cover_full_path">>(
       `
@@ -465,22 +471,10 @@ export class StickerCatalogService {
     const pack = packRows.rows[0]
     if (!pack) throw new HttpError(404, "Sticker pack version not found")
 
-    const stickerRows = await this.db.query<Pick<StickerRow, "thumbnail_path" | "full_path">>(
-      `
-      SELECT thumbnail_path, full_path
-      FROM stickers
-      WHERE pack_key = $1 AND pack_version = $2
-      `,
-      [packKey, packVersion],
-    )
+    if (options.confirm !== true) throw new HttpError(409,
+      "Deleting this version can break saved canvases. Hide it with PATCH published:false instead. To delete, resend with confirm:true after explicit approval.",
+      { code: "CONFIRMATION_REQUIRED", current: { packKey, packVersion }, proposed: null })
 
-    const paths: string[] = [
-      pack.cover_thumbnail_path,
-      pack.cover_full_path,
-      ...stickerRows.rows.flatMap((row) => [row.thumbnail_path, row.full_path]),
-    ].filter(Boolean)
-
-    await this.storage.remove(Array.from(new Set(paths)))
     await this.db.query("DELETE FROM sticker_packs WHERE pack_key = $1 AND pack_version = $2", [packKey, packVersion])
   }
 
@@ -495,12 +489,15 @@ export class StickerCatalogService {
     published?: boolean
   }): Promise<StickerPackSummary> {
     this.requireAdmin(options.adminPassword)
+    if (!this.inMutation) {
+      return catalogMutation(this.db, "stickers", normalizePackKey(options.packKey), options.packVersion, "updateStickerPackVersionMetadata", (db) => new StickerCatalogService(db, this.storage, this.adminPassword, true).updateStickerPackVersionMetadata(options))
+    }
     if (!this.storage) throw new HttpError(503, "Sticker storage is not configured")
 
     const packKey = normalizePackKey(options.packKey)
     if (!packKey) throw new HttpError(400, "packKey is required")
     const packVersion = Number(options.packVersion)
-    if (!Number.isFinite(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
+    if (!Number.isInteger(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
 
     const title = options.title !== undefined ? options.title.trim() : null
     if (title !== null && title.length === 0) throw new HttpError(400, "title must be non-empty when provided")
@@ -516,6 +513,7 @@ export class StickerCatalogService {
         description = COALESCE($4, description),
         sort_order = COALESCE($5, sort_order),
         featured = COALESCE($6, featured),
+        content_locked = content_locked OR COALESCE($7, FALSE),
         published_at = CASE
           WHEN $7::boolean IS NULL THEN published_at
           WHEN $7 THEN NOW()
@@ -524,7 +522,7 @@ export class StickerCatalogService {
         updated_at = NOW()
       WHERE pack_key = $1 AND pack_version = $2
       RETURNING pack_key, pack_version, title, description, cover_thumbnail_path, cover_full_path,
-        sort_order, featured, published_at, created_at, updated_at
+        sort_order, featured, published_at, content_locked, created_at, updated_at
       `,
       [packKey, packVersion, title, description, sortOrder, featured, publishedFlag],
     )
@@ -542,12 +540,17 @@ export class StickerCatalogService {
     data: Buffer
   }): Promise<StickerPackSummary> {
     this.requireAdmin(options.adminPassword)
+    if (!this.inMutation) {
+      return catalogMutation(this.db, "stickers", normalizePackKey(options.packKey), options.packVersion, "updateStickerPackVersionCoverForAdmin", (db) => new StickerCatalogService(db, this.storage, this.adminPassword, true).updateStickerPackVersionCoverForAdmin(options))
+    }
     if (!this.storage) throw new HttpError(503, "Sticker storage is not configured")
 
     const packKey = normalizePackKey(options.packKey)
     if (!packKey) throw new HttpError(400, "packKey is required")
     const packVersion = Number(options.packVersion)
-    if (!Number.isFinite(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
+    if (!Number.isInteger(packVersion) || packVersion <= 0) throw new HttpError(400, "packVersion must be >= 1")
+
+    await this.requireDraft(packKey, packVersion)
 
     const existingRows = await this.db.query<Pick<StickerPackRow, "cover_thumbnail_path" | "cover_full_path">>(
       `
@@ -576,21 +579,75 @@ export class StickerCatalogService {
         updated_at = NOW()
       WHERE pack_key = $1 AND pack_version = $2
       RETURNING pack_key, pack_version, title, description, cover_thumbnail_path, cover_full_path,
-        sort_order, featured, published_at, created_at, updated_at
+        sort_order, featured, published_at, content_locked, created_at, updated_at
       `,
       [packKey, packVersion, coverThumbPath, coverFullPath],
     )
     const row = rows.rows[0]
     if (!row) throw new HttpError(404, "Sticker pack version not found")
 
-    const oldPaths = [existing.cover_thumbnail_path, existing.cover_full_path].filter(Boolean)
-    try {
-      await this.storage.remove(Array.from(new Set(oldPaths)))
-    } catch {
-      // Best-effort cleanup; the DB already points at the new cover paths.
-    }
-
     return this.packRowToSummary(row)
+  }
+
+  async copyStickerPackVersion(options: { adminPassword: string; packKey: string; packVersion: number; newVersion: number }): Promise<StickerPackAdminDetail> {
+    this.requireAdmin(options.adminPassword)
+    const packKey = normalizePackKey(options.packKey)
+    if (!Number.isInteger(options.newVersion) || options.newVersion <= options.packVersion) {
+      throw new HttpError(400, "newVersion must be an integer greater than the source version", { code: "INVALID_CATALOG_INPUT" })
+    }
+    if (!this.inMutation) return catalogMutation(this.db, "stickers", packKey, options.newVersion, "copyStickerPackVersion",
+      (db) => new StickerCatalogService(db, this.storage, this.adminPassword, true).copyStickerPackVersion(options))
+    if (!packKey || !Number.isSafeInteger(options.packVersion) || options.packVersion < 1) throw new HttpError(400, "Supply a pack key and positive source version", { code: "INVALID_CATALOG_INPUT" })
+    await this.requireUnusedVersion(packKey, options.newVersion)
+    const source = await this.db.query<StickerPackRow>("SELECT * FROM sticker_packs WHERE pack_key = $1 AND pack_version = $2 FOR UPDATE", [packKey, options.packVersion])
+    if (!source.rows[0]) throw new HttpError(404, "Source pack version not found", { code: "PACK_NOT_FOUND" })
+    await this.db.query(`INSERT INTO sticker_packs
+      (pack_key, pack_version, title, description, cover_thumbnail_path, cover_full_path, sort_order, featured)
+      SELECT pack_key, $3::integer, title, description, cover_thumbnail_path, cover_full_path, sort_order, featured
+      FROM sticker_packs WHERE pack_key = $1 AND pack_version = $2`, [packKey, options.packVersion, options.newVersion])
+    await this.db.query(`INSERT INTO stickers
+      (pack_key, pack_version, sticker_id, sort_order, thumbnail_path, full_path, width, height)
+      SELECT pack_key, $3::integer, sticker_id, sort_order, thumbnail_path, full_path, width, height
+      FROM stickers WHERE pack_key = $1 AND pack_version = $2`, [packKey, options.packVersion, options.newVersion])
+    return this.getStickerPackDetailForAdmin({ ...options, packVersion: options.newVersion })
+  }
+
+  async editSticker(options: { adminPassword: string; packKey: string; packVersion: number; stickerId: string; sortOrder?: number; delete?: boolean }) {
+    this.requireAdmin(options.adminPassword)
+    const packKey = normalizePackKey(options.packKey)
+    if (!this.inMutation) return catalogMutation(this.db, "stickers", packKey, options.packVersion, options.delete ? "deleteSticker" : "reorderSticker",
+      (db): Promise<{ message: string }> => new StickerCatalogService(db, this.storage, this.adminPassword, true).editSticker(options))
+    await this.requireDraft(packKey, options.packVersion)
+    if (!options.delete && !Number.isInteger(options.sortOrder)) throw new HttpError(400, "sortOrder must be an integer", { code: "INVALID_CATALOG_INPUT" })
+    const result = options.delete
+      ? await this.db.query("DELETE FROM stickers WHERE pack_key = $1 AND pack_version = $2 AND sticker_id = $3 RETURNING sticker_id", [packKey, options.packVersion, options.stickerId])
+      : await this.db.query("UPDATE stickers SET sort_order = $4, updated_at = NOW() WHERE pack_key = $1 AND pack_version = $2 AND sticker_id = $3 RETURNING sticker_id", [packKey, options.packVersion, options.stickerId, options.sortOrder])
+    if (!result.rows.length) throw new HttpError(404, "Sticker not found", { code: "STICKER_NOT_FOUND" })
+    return { message: options.delete ? "Sticker removed from draft. Assets retained for recovery." : "Sticker order updated." }
+  }
+
+  private async requireUnusedVersion(packKey: string, packVersion: number): Promise<void> {
+    const used = await this.db.query("SELECT id FROM catalog_admin.admin_catalog_changes WHERE content_type = 'stickers' AND content_key = $1 LIMIT 1", [`${packKey}:${packVersion}`])
+    if (used.rows.length) throw new HttpError(409, "This version identity was used before. Choose a new version, or restore its deletion from history.", { code: "PACK_VERSION_EXISTS" })
+  }
+
+  private async requireDraft(packKey: string, packVersion: number): Promise<void> {
+    const result = await this.db.query<StickerPackRow>("SELECT * FROM sticker_packs WHERE pack_key = $1 AND pack_version = $2", [packKey, packVersion])
+    const pack = result.rows[0]
+    if (!pack) throw new HttpError(404, "Sticker pack version not found", { code: "PACK_NOT_FOUND" })
+    if (pack.content_locked || pack.published_at) throw new HttpError(409,
+      "This version has been published. Copy it to a new draft version before changing its art or stickers.",
+      { code: "PACK_VERSION_IMMUTABLE", current: { packKey, packVersion }, proposed: "Copy to a new version" })
+  }
+
+  async restore(adminPassword: string, changeId: string, confirm?: boolean) {
+    this.requireAdmin(adminPassword)
+    return restoreCatalogChange(this.db, "stickers", changeId, confirm)
+  }
+
+  async history(adminPassword: string, limit?: number) {
+    this.requireAdmin(adminPassword)
+    return catalogHistory(this.db, "stickers", limit)
   }
 
   private requireAdmin(candidate: string) {
@@ -622,6 +679,7 @@ export class StickerCatalogService {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       published: row.published_at != null,
+      contentLocked: Boolean(row.content_locked || row.published_at),
       stickerCount: Number(row.sticker_count ?? 0),
     }
   }
@@ -656,26 +714,32 @@ async function processStickerImage(input: Buffer): Promise<{
   contentType: string
   extension: string
 }> {
-  const decoded = sharp(input).ensureAlpha()
-  const meta = await decoded.metadata()
-  const width = meta.width ?? 0
-  const height = meta.height ?? 0
-  if (width <= 0 || height <= 0) {
-    throw new HttpError(400, "Invalid sticker image")
-  }
+  if (!input.length || input.length > 20 * 1024 * 1024) throw new HttpError(400, "Sticker image must be between 1 byte and 20 MB", { code: "INVALID_CATALOG_INPUT" })
+  try {
+    const decoded = sharp(input).ensureAlpha()
+    const meta = await decoded.metadata()
+    const width = meta.width ?? 0
+    const height = meta.height ?? 0
+    if (width <= 0 || height <= 0) {
+      throw new HttpError(400, "Invalid sticker image")
+    }
 
-  const full = await decoded.png({ compressionLevel: 9 }).toBuffer()
-  const thumbnail = await decoded
-    .resize({ width: 256, height: 256, fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png({ compressionLevel: 9 })
-    .toBuffer()
+    const full = await decoded.png({ compressionLevel: 9 }).toBuffer()
+    const thumbnail = await decoded
+      .resize({ width: 256, height: 256, fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png({ compressionLevel: 9 })
+      .toBuffer()
 
-  return {
-    thumbnail,
-    full,
-    width,
-    height,
-    contentType: "image/png",
-    extension: "png",
+    return {
+      thumbnail,
+      full,
+      width,
+      height,
+      contentType: "image/png",
+      extension: "png",
+    }
+  } catch (error) {
+    if (error instanceof HttpError) throw error
+    throw new HttpError(400, "Sticker image could not be decoded. Supply a valid image.", { code: "INVALID_CATALOG_INPUT" })
   }
 }

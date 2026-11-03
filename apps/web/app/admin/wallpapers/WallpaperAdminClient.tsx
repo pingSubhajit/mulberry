@@ -129,6 +129,7 @@ export default function WallpaperAdminPage() {
   const onUpload = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (isUploading || deletingId) return
+    if (!window.confirm("Delete this wallpaper? Saved links can stop working. Hide it instead to keep them working.")) return
 
     const form = event.currentTarget
     const data = new FormData(form)
@@ -160,6 +161,7 @@ export default function WallpaperAdminPage() {
 
   const deleteWallpaper = (id: string) => {
     if (isUploading || deletingId) return
+    if (!window.confirm("Delete this wallpaper? Saved links can stop working. Hide it instead to keep them working.")) return
 
     setDeletingId(id)
     void (async () => {
@@ -168,7 +170,8 @@ export default function WallpaperAdminPage() {
       try {
         const response = await fetch(`${API_BASE_URL}/admin/wallpapers/${id}`, {
           method: "DELETE",
-          headers: adminHeaders,
+          headers: { ...adminHeaders, "content-type": "application/json" },
+          body: JSON.stringify({ confirm: true }),
         })
         if (!response.ok) {
           const body = await response.json().catch(() => null)

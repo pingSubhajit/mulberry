@@ -48,6 +48,7 @@ type StickerPackAdminSummary = {
   updatedAt: string
   published: boolean
   stickerCount: number
+  contentLocked: boolean
 }
 
 type StickerSummary = {
@@ -292,7 +293,7 @@ export default function StickerAdminPage() {
           formData.set("description", String(fields.description ?? ""))
           formData.set("sortOrder", String(fields.sortOrder ?? "0"))
           formData.set("featured", String(Boolean(fields.featured)))
-          formData.set("published", String(Boolean(fields.published)))
+          formData.set("published", "false")
           formData.set("cover", resolvedCover, resolvedCover.name)
 
           const response = await fetch(`${API_BASE_URL}/admin/stickers/packs`, { method: "POST", headers: adminHeaders, body: formData })
@@ -319,6 +320,17 @@ export default function StickerAdminPage() {
             if (!uploadResponse.ok) {
               const body = await uploadResponse.json().catch(() => null)
               throw new Error(body?.message ?? `Unable to upload ${stickerId}`)
+            }
+          }
+
+          if (fields.published) {
+            const publish = await fetch(`${API_BASE_URL}/admin/stickers/packs/${created.packKey}/${created.packVersion}`, {
+              method: "PATCH", headers: { ...adminHeaders, "content-type": "application/json" },
+              body: JSON.stringify({ published: true }),
+            })
+            if (!publish.ok) {
+              const body = await publish.json().catch(() => null)
+              throw new Error(body?.message ?? "Pack uploaded as a draft, but could not be published")
             }
           }
 
@@ -498,10 +510,32 @@ export default function StickerAdminPage() {
     })
   }
 
+  const copyOpenPack = () => {
+    if (!openPack || isPending) return
+    startTransition(async () => {
+      setError(null)
+      try {
+        const latest = await fetchAdminPacks()
+        const newVersion = Math.max(openPack.packVersion, ...latest.filter((pack) => pack.packKey === openPack.packKey).map((pack) => pack.packVersion)) + 1
+        const response = await fetch(`${API_BASE_URL}/admin/stickers/packs/${openPack.packKey}/${openPack.packVersion}/copy`, {
+          method: "POST", headers: { ...adminHeaders, "content-type": "application/json" },
+          body: JSON.stringify({ newVersion }),
+        })
+        const body = await response.json()
+        if (!response.ok) throw new Error(body.message ?? "Unable to copy pack")
+        loadAdminCatalog()
+        openPackDialog(body.packKey, body.packVersion)
+        setStatus(`Copied to draft version ${body.packVersion}`)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to copy pack")
+      }
+    })
+  }
+
   const deleteOpenPack = () => {
     if (!openPack || isDeletingPack) return
     const label = openPackDetail?.title?.trim() ? `"${openPackDetail.title}"` : `${openPack.packKey} v${openPack.packVersion}`
-    const ok = window.confirm(`Delete sticker pack ${label}? This removes the pack and all its stickers.`)
+    const ok = window.confirm(`Delete sticker pack ${label}? Saved canvases can lose these stickers. Hide the pack instead to keep them working.`)
     if (!ok) return
 
     setIsDeletingPack(true)
@@ -511,7 +545,7 @@ export default function StickerAdminPage() {
       try {
         const response = await fetch(
           `${API_BASE_URL}/admin/stickers/packs/${openPack.packKey}/${openPack.packVersion}`,
-          { method: "DELETE", headers: adminHeaders },
+          { method: "DELETE", headers: { ...adminHeaders, "content-type": "application/json" }, body: JSON.stringify({ confirm: true }) },
         )
         if (!response.ok) {
           const body = await response.json().catch(() => null)
@@ -706,11 +740,18 @@ export default function StickerAdminPage() {
 
       {messages}
 
+      {selected.contentLocked ? (
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-admin-line px-5 py-4">
+          <p className="text-sm text-admin-fg">This version has been published. Copy it to a draft to edit its art.</p>
+          <AdminButton onClick={copyOpenPack} disabled={isPending}>Copy to draft</AdminButton>
+        </div>
+      ) : null}
+
       {detailTab === "stickers" ? (
         <div className="flex flex-col gap-6">
           <form onSubmit={onUploadStickers} className="flex flex-col gap-2">
             <fieldset
-              disabled={isUploadingStickers || isPending}
+              disabled={selected.contentLocked || isUploadingStickers || isPending}
               className="flex flex-col gap-2 rounded-2xl bg-admin-fill p-2 sm:flex-row sm:items-center"
             >
               <Dropzone
@@ -817,7 +858,7 @@ export default function StickerAdminPage() {
             <SectionLabel>Cover</SectionLabel>
             <form onSubmit={onUpdateCover}>
               <fieldset
-                disabled={isUpdatingCover || isPending}
+                disabled={selected.contentLocked || isUpdatingCover || isPending}
                 className="flex flex-col gap-2 rounded-2xl bg-admin-fill p-2 sm:flex-row sm:items-center"
               >
                 <div className="size-14 shrink-0 rounded-ctl bg-admin-panel p-1.5">

@@ -4,6 +4,7 @@ import sharp from "sharp"
 import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import { requireAdminPassword } from "../../infra/http/adminAuth.js"
+import { catalogMutation, catalogHistory, restoreCatalogChange } from "../catalog/history.js"
 
 export interface WallpaperCatalogConfig {
   supabaseUrl?: string
@@ -34,6 +35,7 @@ export interface WallpaperImageProcessor {
 }
 
 export interface WallpaperCatalogItem {
+  message?: string
   id: string
   title: string
   description: string
@@ -123,46 +125,54 @@ export class SupabaseWallpaperStorage implements WallpaperStorage {
 
 export class SharpWallpaperImageProcessor implements WallpaperImageProcessor {
   async process(input: Buffer): Promise<ProcessedWallpaperImage> {
-    const source = sharp(input, { failOn: "none" }).rotate()
-    const metadata = await source.metadata()
-    if (!metadata.width || !metadata.height) {
-      throw new HttpError(400, "Wallpaper image dimensions could not be read")
-    }
-    if (metadata.width < 800 || metadata.height < 800) {
-      throw new HttpError(400, "Wallpaper image must be at least 800px on both sides")
-    }
+    try {
+      const source = sharp(input).rotate()
+      const metadata = await source.metadata()
+      if (!metadata.format || !["jpeg", "png", "webp"].includes(metadata.format)) {
+        throw new HttpError(400, "Wallpaper image must decode as JPEG, PNG, or WebP", { code: "INVALID_CATALOG_INPUT" })
+      }
+      if (!metadata.width || !metadata.height) {
+        throw new HttpError(400, "Wallpaper image dimensions could not be read")
+      }
+      if (metadata.width < 800 || metadata.height < 800) {
+        throw new HttpError(400, "Wallpaper image must be at least 800px on both sides")
+      }
 
-    const stats = await source.clone().resize(64, 64, { fit: "cover" }).stats()
-    const dominant = stats.dominant
-    const dominantColor = toHexColor(dominant.r, dominant.g, dominant.b)
-    const contentType = "image/webp"
-    const extension = "webp"
+      const stats = await source.clone().resize(64, 64, { fit: "cover" }).stats()
+      const dominant = stats.dominant
+      const dominantColor = toHexColor(dominant.r, dominant.g, dominant.b)
+      const contentType = "image/webp"
+      const extension = "webp"
 
-    const thumbnail = await source
-      .clone()
-      .resize(720, 560, { fit: "cover", withoutEnlargement: true })
-      .webp({ quality: 78 })
-      .toBuffer()
-    const preview = await source
-      .clone()
-      .resize(900, 1650, { fit: "cover", withoutEnlargement: true })
-      .webp({ quality: 82 })
-      .toBuffer()
-    const full = await source
-      .clone()
-      .resize(2160, 3840, { fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 88 })
-      .toBuffer()
+      const thumbnail = await source
+        .clone()
+        .resize(720, 560, { fit: "cover", withoutEnlargement: true })
+        .webp({ quality: 78 })
+        .toBuffer()
+      const preview = await source
+        .clone()
+        .resize(900, 1650, { fit: "cover", withoutEnlargement: true })
+        .webp({ quality: 82 })
+        .toBuffer()
+      const full = await source
+        .clone()
+        .resize(2160, 3840, { fit: "inside", withoutEnlargement: true })
+        .webp({ quality: 88 })
+        .toBuffer()
 
-    return {
-      width: metadata.width,
-      height: metadata.height,
-      dominantColor,
-      thumbnail,
-      preview,
-      full,
-      contentType,
-      extension,
+      return {
+        width: metadata.width,
+        height: metadata.height,
+        dominantColor,
+        thumbnail,
+        preview,
+        full,
+        contentType,
+        extension,
+      }
+    } catch (error) {
+      if (error instanceof HttpError) throw error
+      throw new HttpError(400, "Wallpaper image could not be decoded. Supply a valid JPEG, PNG, or WebP image.", { code: "INVALID_CATALOG_INPUT" })
     }
   }
 }
@@ -173,6 +183,7 @@ export class WallpaperCatalogService {
     private readonly storage: WallpaperStorage | null,
     private readonly imageProcessor: WallpaperImageProcessor,
     private readonly config: WallpaperCatalogConfig,
+    private readonly inMutation = false,
   ) {}
 
   async listPublishedWallpapers(input: {
@@ -230,9 +241,14 @@ export class WallpaperCatalogService {
     published?: boolean
     filename?: string
     contentType?: string
+    id?: string
     data?: Buffer
   }): Promise<WallpaperCatalogItem> {
     this.requireAdmin(input.adminPassword)
+    input = { ...input, id: input.id ?? randomUUID() }
+    if (!this.inMutation) {
+      return catalogMutation(this.db, "wallpapers", input.id!, undefined, "createWallpaper", (db) => new WallpaperCatalogService(db, this.storage, this.imageProcessor, this.config, true).createWallpaper(input))
+    }
     if (!this.storage) {
       throw new HttpError(503, "Wallpaper storage is not configured")
     }
@@ -253,7 +269,7 @@ export class WallpaperCatalogService {
     }
 
     const processed = await this.imageProcessor.process(data)
-    const id = randomUUID()
+    const id = input.id ?? randomUUID()
     const storageBase = `wallpapers/${id}`
     const originalExt = inferExtension(input.filename, input.contentType)
     const originalPath = `${storageBase}/original.${originalExt}`
@@ -327,6 +343,9 @@ export class WallpaperCatalogService {
     published?: boolean
   }): Promise<WallpaperCatalogItem> {
     this.requireAdmin(input.adminPassword)
+    if (!this.inMutation) {
+      return catalogMutation(this.db, "wallpapers", input.id, undefined, "updateWallpaper", (db) => new WallpaperCatalogService(db, this.storage, this.imageProcessor, this.config, true).updateWallpaper(input))
+    }
     const current = await this.getWallpaperRow(input.id)
     const rows = await this.db.query<WallpaperRow>(
       `
@@ -354,17 +373,15 @@ export class WallpaperCatalogService {
     return this.toCatalogItem(rows.rows[0])
   }
 
-  async deleteWallpaper(input: { adminPassword?: string; id: string }): Promise<void> {
+  async deleteWallpaper(input: { adminPassword?: string; id: string; confirm?: boolean }): Promise<void> {
     this.requireAdmin(input.adminPassword)
-    const row = await this.getWallpaperRow(input.id)
-    if (this.storage) {
-      await this.storage.remove([
-        row.storage_path,
-        row.thumbnail_path,
-        row.preview_path,
-        row.full_path,
-      ])
+    if (!this.inMutation) {
+      return catalogMutation(this.db, "wallpapers", input.id, undefined, "deleteWallpaper", (db) => new WallpaperCatalogService(db, this.storage, this.imageProcessor, this.config, true).deleteWallpaper(input))
     }
+    const row = await this.getWallpaperRow(input.id)
+    if (input.confirm !== true) throw new HttpError(409,
+      "Deleting this wallpaper can break saved links. Hide it with PATCH published:false instead. To delete, resend with confirm:true after explicit approval.",
+      { code: "CONFIRMATION_REQUIRED", current: { id: row.id, title: row.title }, proposed: null })
     await this.db.query("DELETE FROM wallpapers WHERE id = $1", [input.id])
   }
 
@@ -375,6 +392,37 @@ export class WallpaperCatalogService {
       throw new HttpError(404, "Wallpaper not found")
     }
     return row
+  }
+
+  async replaceWallpaperImage(input: { adminPassword?: string; id: string; filename: string; contentType: string; data: Buffer }): Promise<WallpaperCatalogItem> {
+    this.requireAdmin(input.adminPassword)
+    if (!this.inMutation) return catalogMutation(this.db, "wallpapers", input.id, undefined, "replaceWallpaperImage",
+      (db) => new WallpaperCatalogService(db, this.storage, this.imageProcessor, this.config, true).replaceWallpaperImage(input))
+    await this.getWallpaperRow(input.id)
+    if (!this.storage) throw new HttpError(503, "Wallpaper storage is not configured")
+    if (!input.data.length || input.data.length > 20 * 1024 * 1024 || !isSupportedImageType(input.contentType)) {
+      throw new HttpError(400, "Supply a JPEG, PNG, or WebP image of at most 20 MB", { code: "INVALID_CATALOG_INPUT" })
+    }
+    const image = await this.imageProcessor.process(input.data)
+    const base = `wallpapers/${input.id}/${randomUUID()}`
+    const paths = [`${base}/original.${inferExtension(input.filename, input.contentType)}`, `${base}/thumbnail.${image.extension}`, `${base}/preview.${image.extension}`, `${base}/full.${image.extension}`]
+    for (const [index, data] of [input.data, image.thumbnail, image.preview, image.full].entries()) {
+      await this.storage.upload(paths[index], data, index === 0 ? input.contentType : image.contentType)
+    }
+    const result = await this.db.query<WallpaperRow>(`UPDATE wallpapers SET storage_path = $2, thumbnail_path = $3,
+      preview_path = $4, full_path = $5, width = $6, height = $7, dominant_color = $8, updated_at = NOW()
+      WHERE id = $1 RETURNING *`, [input.id, ...paths, image.width, image.height, image.dominantColor])
+    return this.toCatalogItem(result.rows[0])
+  }
+
+  async restore(adminPassword: string, changeId: string, confirm?: boolean) {
+    this.requireAdmin(adminPassword)
+    return restoreCatalogChange(this.db, "wallpapers", changeId, confirm)
+  }
+
+  async history(adminPassword: string, limit?: number) {
+    this.requireAdmin(adminPassword)
+    return catalogHistory(this.db, "wallpapers", limit)
   }
 
   private requireAdmin(adminPassword?: string): void {

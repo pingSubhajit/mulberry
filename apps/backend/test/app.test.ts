@@ -886,7 +886,7 @@ describe("Mulberry backend", () => {
     expect(update.json().title).toBe("Published Draft")
   })
 
-  it("deletes a wallpaper and removes its storage assets", async () => {
+  it("requires confirmation to delete a wallpaper and retains its storage assets", async () => {
     await db.query(
       `
         INSERT INTO wallpapers (
@@ -915,17 +915,17 @@ describe("Mulberry backend", () => {
       },
     })
 
-    expect(response.statusCode).toBe(204)
+    expect(response.statusCode).toBe(409)
+    expect(response.json().code).toBe("CONFIRMATION_REQUIRED")
+    expect(wallpaperStorage.removedPaths).toEqual([])
+    const confirmed = await app.inject({ method: "DELETE", url: "/admin/wallpapers/delete-wallpaper",
+      headers: { "x-admin-password": "admin-password" }, payload: { confirm: true } })
+    expect(confirmed.statusCode).toBe(200)
     const rows = await db.query<{ count: string }>(
       "SELECT COUNT(*)::text AS count FROM wallpapers WHERE id = 'delete-wallpaper'",
     )
     expect(rows.rows[0].count).toBe("0")
-    expect(wallpaperStorage.removedPaths).toEqual([
-      "x/original.webp",
-      "x/thumb.webp",
-      "x/preview.webp",
-      "x/full.webp",
-    ])
+    expect(wallpaperStorage.removedPaths).toEqual([])
   })
 
   it("redeems and accepts an invite into a paired session", async () => {
