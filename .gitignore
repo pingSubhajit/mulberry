@@ -68,3 +68,6 @@ secrets/
 # Licensed onboarding music: in-app use only, never redistributed
 apps/macos/Resources/Onboarding/*.m4a
 apps/macos/Resources/Onboarding/*.wav
+
+# Agent worktrees, each a separate checkout
+.claude/worktrees/
