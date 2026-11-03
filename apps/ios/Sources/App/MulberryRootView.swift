@@ -77,9 +77,9 @@ struct MulberryRootView: View {
         }
         .onChange(of: wallpapers.showDrawings) { _, _ in publishQuickActions() }
         .onReceive(model.reactions.$lastUsed.removeDuplicates()) { _ in publishQuickActions() }
-        .confirmationDialog("Clear all doodles?", isPresented: $quickClearConfirmation, titleVisibility: .visible) {
-            Button("Clear doodles", role: .destructive) { Task { await model.clearCanvas() } }
-        } message: { Text("This removes the shared drawing for both of you.") }
+        .confirmationDialog("Clear canvas?", isPresented: $quickClearConfirmation, titleVisibility: .visible) {
+            Button("Clear", role: .destructive) { Task { await model.clearCanvas() } }
+        } message: { Text("This erases everything on it for both of you.") }
         .task(id: phase) {
             if phase == .background { ReactionActivities.appBackgrounded() }
             await model.setActive(phase == .active, updateWallpaper: phase == .background)
@@ -138,7 +138,7 @@ struct MulberryRootView: View {
             guard url.scheme == Bundle.main.bundleIdentifier else { return }
             switch url.host {
             case "wallpaper-return": Task { await setup.refresh() }
-            case "shortcut-error": setup.message = "The Shortcut could not finish. Open it to check its actions and permissions."; showSetup()
+            case "shortcut-error": setup.message = "The Shortcut couldn’t finish. Open it to check its actions and permissions."; showSetup()
             case "shortcut-cancelled": setup.message = "Setup was cancelled. Run the Shortcut again when ready."; showSetup()
             #if DEBUG
             // Opens wallpaper setup from a Mac: `devicectl device process launch --payload-url <bundle id>://wallpaper-setup`.

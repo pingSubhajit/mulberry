@@ -22,7 +22,7 @@ final class HomeQuickActions: ObservableObject {
         guard signedIn else { UIApplication.shared.shortcutItems = []; return }
         var items = [UIApplicationShortcutItem(type: HomeQuickAction.wallpaper.rawValue, localizedTitle: "Change Wallpaper", localizedSubtitle: nil, icon: .init(systemImageName: "photo"))]
         if paired {
-            items.insert(.init(type: HomeQuickAction.clear.rawValue, localizedTitle: "Clear doodles", localizedSubtitle: nil, icon: .init(systemImageName: "trash")), at: 0)
+            items.insert(.init(type: HomeQuickAction.clear.rawValue, localizedTitle: "Clear canvas", localizedSubtitle: nil, icon: .init(systemImageName: "trash")), at: 0)
             items.insert(.init(type: HomeQuickAction.react.rawValue, localizedTitle: reaction.sendLabel, localizedSubtitle: reaction.emoji, icon: .init(systemImageName: "heart")), at: 0)
         }
         items.append(.init(type: HomeQuickAction.toggle.rawValue, localizedTitle: showDrawings ? "Hide doodles" : "Show doodles", localizedSubtitle: "On your wallpaper", icon: .init(systemImageName: showDrawings ? "eye.slash" : "eye")))

@@ -16,7 +16,7 @@ struct GetLatestWallpaperIntent: AppIntent {
 
 struct RecordWallpaperResultIntent: AppIntent {
     static var title: LocalizedStringResource = "Record Mulberry wallpaper result"
-    static var description = IntentDescription("Place AFTER Set Wallpaper. Records its completion, not visual proof.")
+    static var description = IntentDescription("Tells Mulberry your wallpaper changed. Put this after Set Wallpaper.")
     static var openAppWhenRun: Bool = false
     static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
 

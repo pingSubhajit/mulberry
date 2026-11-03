@@ -2,7 +2,7 @@ import Foundation
 
 public enum DeliveryError: Error, LocalizedError {
     case invalidRevision
-    public var errorDescription: String? { "The image is not a Mulberry wallpaper file." }
+    public var errorDescription: String? { "That image isn’t a Mulberry wallpaper." }
 }
 
 public struct DeliveryEvent: Codable, Identifiable, Sendable {

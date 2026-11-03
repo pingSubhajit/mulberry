@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "What happens after I enter the code?", Android's pairing help: what joining does, as a short
+/// "What happens when you join?", Android's pairing help: what joining does, as a short
 /// timeline under the faceted heart, on Mulberry's deep red.
 struct PairingHelpView: View {
     let close: () -> Void
@@ -9,9 +9,9 @@ struct PairingHelpView: View {
 
     private static let ground = Color(red: 0x35 / 255, green: 0, blue: 0x07 / 255)
     private static let steps = [
-        "After you join, you’ll both be connected instantly",
-        "You can start drawing right away, what you send appears on their screen",
-        "This is just between the two of you. No one else can see it",
+        "You’re paired the moment you join",
+        "What you draw shows up on their phone, and theirs on yours",
+        "It’s just the two of you. No one else can see it",
     ]
 
     var body: some View {
@@ -24,7 +24,7 @@ struct PairingHelpView: View {
                 .accessibilityHidden(true)
             ScrollView {
                 VStack(spacing: 16) {
-                    Text("KNOW HOW IT WORKS")
+                    Text("HOW IT WORKS")
                         .font(MulberryDesign.font(11, weight: "SemiBold", relativeTo: .caption))
                         .tracking(1.2)
                         .foregroundStyle(.white)
@@ -32,13 +32,13 @@ struct PairingHelpView: View {
                         .background(Capsule().fill(LinearGradient(colors: [Color(red: 0.63, green: 0.45, blue: 0.05), Color(red: 0.86, green: 0.65, blue: 0.07)],
                                                                   startPoint: .leading, endPoint: .trailing)))
                         .entrance(shown, step: 0, reduceMotion: reduceMotion)
-                    Text("What happens after I enter the code?")
+                    Text("What happens when you join?")
                         .font(MulberryDesign.font(30, weight: "Medium", relativeTo: .largeTitle))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .accessibilityAddTraits(.isHeader)
                         .entrance(shown, step: 1, reduceMotion: reduceMotion)
-                    Text("The code connects you to one person. Once connected, you’ll share a private space where you can send drawings that appear on each other’s screen.")
+                    Text("The code pairs you with the person who sent it.")
                         .font(MulberryDesign.font(15, relativeTo: .body))
                         .foregroundStyle(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
@@ -46,7 +46,7 @@ struct PairingHelpView: View {
                     timeline
                         .padding(.vertical, 4)
                         .entrance(shown, step: 3, reduceMotion: reduceMotion)
-                    Text("You can disconnect any time you want, no question will be asked")
+                    Text("Unpair any time. No questions asked.")
                         .font(MulberryDesign.font(14, weight: "SemiBold", relativeTo: .subheadline))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
@@ -62,7 +62,7 @@ struct PairingHelpView: View {
         }
         .safeAreaInset(edge: .bottom) {
             Button(action: close) {
-                Text("Alright, sounds great")
+                Text("Got it")
                     .font(MulberryDesign.font(17, weight: "SemiBold"))
                     .foregroundStyle(Color(white: 0.35))
                     .frame(maxWidth: .infinity, minHeight: 54)

@@ -141,7 +141,7 @@ struct DoodleCanvasView: View {
             // Between the bars, so the banner stays clear of both.
             StreakCanvasCelebration(streaks: model.streaks, firstDrawing: model.firstDrawing) { model.showStreak = true }
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
-            ReactionStage(reactions: model.reactions)
+            ReactionStage(reactions: model.reactions, partnerName: model.bootstrap?.partnerDisplayName)
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
             // Actions stand apart from the tools: undo and redo on the left, colour and width on the right.
             VStack(spacing: 28) {
@@ -203,7 +203,7 @@ struct DoodleCanvasView: View {
                 CanvasBlankStateGuidance(visible: !editor.hasStrokes && editor.elements.isEmpty && editor.typing == nil)
                     .padding(.bottom, 16)
                 StreakCanvasCelebration(streaks: model.streaks, firstDrawing: model.firstDrawing) { model.showStreak = true }
-                ReactionStage(reactions: model.reactions)
+                ReactionStage(reactions: model.reactions, partnerName: model.bootstrap?.partnerDisplayName)
             }
             .frame(width: size.width, height: max(0, visibleBottom - visibleTop))
             .position(x: center.x, y: (visibleTop + visibleBottom) / 2)
@@ -484,7 +484,7 @@ struct DoodleCanvasView: View {
             .confirmationDialog("Clear canvas?", isPresented: $clearConfirmation, titleVisibility: .visible) {
                 Button("Clear", role: .destructive) { editor.clear() }
                 Button("Cancel", role: .cancel) {}
-            } message: { Text("This removes all strokes from the shared canvas.") }
+            } message: { Text("This erases everything on it for both of you.") }
     }
 
     private func widthButton(edge: Edge, glass: Glass = .regular) -> some View {
@@ -667,7 +667,7 @@ struct UnpairedCanvasView: View {
                 }.padding(.top, sizeClass == .regular ? 0 : 64)
                 Text("\(model.bootstrap?.userDisplayName ?? "You") & who?")
                     .font(MulberryDesign.font(30, weight: "Bold", relativeTo: .largeTitle)).multilineTextAlignment(.center)
-                Text("Invite your partner to Mulberry to unlock the full experience")
+                Text("Invite \(model.bootstrap?.partnerDisplayName?.nonEmpty ?? "your partner") to Mulberry to unlock the full experience")
                     .font(MulberryDesign.font(15)).foregroundStyle(MulberryDesign.muted).multilineTextAlignment(.center)
                 PrimaryAction(title: "Share invite code") { inviteOpen = true }
                 Button("Have a code? Enter code") { model.showInviteEntry = true }.frame(minHeight: 44)
@@ -726,12 +726,13 @@ private struct PencilPalettePopover<Palette: View>: ViewModifier {
 /// The partner's reactions arriving, and the one just sent leaving, over the canvas.
 private struct ReactionStage: View {
     @ObservedObject var reactions: ReactionsModel
+    let partnerName: String?
 
     var body: some View {
         ZStack {
             if let arrival = reactions.arrival {
                 // The caption clears the phone's action buttons at either side.
-                ReactionArrivalView(arrival: arrival, ink: MulberryDesign.ink, captionInset: 72) { Task { await reactions.played(arrival) } }
+                ReactionArrivalView(arrival: arrival, ink: MulberryDesign.ink, captionInset: 72, partnerName: partnerName) { Task { await reactions.played(arrival) } }
                     .id(arrival.id)
             }
             if let sent = reactions.sent {

@@ -24,7 +24,7 @@ struct CanvasBlankStateGuidance: View {
                 Text("Draw them something cute")
                     .font(.custom("Virgil3YOFF", size: pad ? 24 : 20, relativeTo: .title3))
                     .foregroundStyle(MulberryDesign.accent)
-                Text("Whatever you draw will appear at the wallpaper of their phone")
+                Text("Whatever you draw will appear on their wallpaper")
                     .font(.custom("Virgil3YOFF", size: pad ? 17 : 14, relativeTo: .subheadline))
                     .foregroundStyle(MulberryDesign.muted)
                     .lineSpacing(3)

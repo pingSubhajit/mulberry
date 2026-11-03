@@ -412,13 +412,13 @@ struct WallpaperSetupView: View {
         case .blocked: "Notifications are off"
         case .incomplete: "That didn’t go through"
         case .settingsChanged: "Settings changed"
-        default: currentStep == nil ? "Ready to test" : "Drawings on your wallpaper"
+        default: currentStep == nil ? "Ready to test" : "Doodles on your wallpaper"
         }
     }
 
     private var heroSubtitle: String {
         switch setup.health.state {
-        case .responded: "New drawings will appear on their own"
+        case .responded: "New doodles will appear on their own"
         case .waiting: "This takes a few seconds"
         case .blocked: "Turn them on to keep syncing"
         case .incomplete: "It’s usually a quick fix"

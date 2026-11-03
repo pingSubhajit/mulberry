@@ -34,12 +34,12 @@ enum GoogleAuthentication {
     }
 }
 
-private enum GoogleConfigurationError: LocalizedError {
+private enum GoogleConfigurationError: PresentableError {
     case missingClient, noWindow
     var errorDescription: String? {
         switch self {
-        case .missingClient: "Google sign-in is not configured in this build."
-        case .noWindow: "Please return to Mulberry and try signing in again."
+        case .missingClient: "Google sign-in isn’t available in this build."
+        case .noWindow: "Go back to Mulberry and try signing in again."
         }
     }
 }

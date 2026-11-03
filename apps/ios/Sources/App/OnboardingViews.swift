@@ -3,7 +3,7 @@ import SwiftUI
 struct OnboardingNameView: View {
     @ObservedObject var model: MulberryModel
     @State private var details = false
-    @State private var privacy = false
+    @State private var legal: LegalDocument?
     @State private var invitePaste = false
     @FocusState private var nameFocused: Bool
     @Environment(\.scenePhase) private var phase
@@ -29,12 +29,11 @@ struct OnboardingNameView: View {
                     Text("Have a code? \(Text("Enter code").foregroundColor(MulberryDesign.accent))").foregroundStyle(MulberryDesign.muted)
                         .font(MulberryDesign.font(14)).frame(minHeight: 44)
                 }
-                Button("By continuing you agree to our Privacy Policy") { privacy = true }
-                    .font(.footnote).foregroundStyle(MulberryDesign.muted).fixedSize(horizontal: false, vertical: true)
+                LegalConsent { legal = $0 }
             }.readableColumn().padding(.horizontal, 24).padding(.bottom, 12).padding(.top, 12).background(MulberryDesign.background)
         }
         .navigationDestination(isPresented: $details) { OnboardingDetailsView(model: model) }
-        .sheet(isPresented: $privacy) { LegalDocumentView(document: .privacy) }
+        .sheet(item: $legal) { LegalDocumentView(document: $0) }
         .onChange(of: model.draft) { _, _ in model.saveDraft() }
         // The invite page copies the partner's link before sending them to the App Store.
         .task(id: phase) {
@@ -153,6 +152,37 @@ struct AnniversaryField: View {
     }
 }
 
+/// "By continuing you agree to our Terms of Use and Privacy Policy", as the Mac words it, each
+/// link opening its document in a sheet.
+private struct LegalConsent: View {
+    let open: (LegalDocument) -> Void
+
+    var body: some View {
+        Text(text)
+            .font(.footnote).foregroundStyle(MulberryDesign.muted).tint(MulberryDesign.ink)
+            .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            .environment(\.openURL, OpenURLAction { url in
+                open(url.host() == "terms" ? .terms : .privacy)
+                return .handled
+            })
+    }
+
+    private var text: AttributedString {
+        var text = AttributedString("By continuing you agree to our ")
+        text += link("Terms of Use", "terms")
+        text += AttributedString(" and ")
+        text += link("Privacy Policy", "privacy")
+        return text
+    }
+
+    private func link(_ title: String, _ host: String) -> AttributedString {
+        var link = AttributedString(title)
+        link.link = URL(string: "mulberry-legal://\(host)")
+        link.underlineStyle = .single
+        return link
+    }
+}
+
 enum LegalDocument: String, Identifiable {
     case privacy = "privacy_policy", terms = "terms_of_use"
     var id: String { rawValue }
@@ -172,7 +202,7 @@ struct LegalDocumentView: View {
     }
     private var contents: String {
         guard let url = Bundle.main.url(forResource: document.rawValue, withExtension: "txt", subdirectory: "Legal"),
-              let text = try? String(contentsOf: url, encoding: .utf8) else { return "This document could not be loaded. Please visit mulberry.my." }
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return "This document couldn’t load. Read it at mulberry.my." }
         return text
     }
 }

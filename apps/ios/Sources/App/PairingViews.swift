@@ -20,7 +20,7 @@ struct InviteEntryView: View {
                         .background(MulberryDesign.surface, in: RoundedRectangle(cornerRadius: 16))
                         .accessibilityLabel("Six-digit invite code").accessibilityIdentifier("inviteCode")
                         .onChange(of: code) { _, value in code = String(value.filter { $0.isASCII && $0.isNumber }.prefix(6)) }
-                    Button("What is this code?") { focused = false; helpOpen = true }
+                    Button("How does this work?") { focused = false; helpOpen = true }
                         .font(MulberryDesign.font(15, weight: "Medium"))
                         .frame(maxWidth: .infinity, minHeight: 44)
                     InlineError(message: model.errorMessage)
@@ -41,6 +41,11 @@ struct InviteEntryView: View {
 struct InviteAcceptanceView: View {
     @ObservedObject var model: MulberryModel
     @State private var helpOpen = false
+    /// Turns down the invite, naming who sent it when the name is known.
+    private var declineTitle: String {
+        let name = model.bootstrap?.invite?.inviterDisplayName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? "Wrong partner? Decline" : "Not \(name)? Decline"
+    }
     var body: some View {
         ScrollView {
             VStack(spacing: 36) {
@@ -59,13 +64,15 @@ struct InviteAcceptanceView: View {
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 12) {
                     PrimaryAction(title: "Awesome, let’s go", loading: model.busy) { Task { await model.acceptInvite() } }
-                    Button("Wrong partner? Disconnect") { Task { await model.declineInvite() } }
+                    Button(declineTitle) {
+                        Task { await model.declineInvite() }
+                    }
                         .frame(minHeight: 44).disabled(model.busy)
                 }.readableColumn().padding(24).background(MulberryDesign.background)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("What is this code?", systemImage: "questionmark.circle") { helpOpen = true }
+                    Button("How does this work?", systemImage: "questionmark.circle") { helpOpen = true }
                 }
             }
             .fullScreenCover(isPresented: $helpOpen) { PairingHelpView { helpOpen = false } }

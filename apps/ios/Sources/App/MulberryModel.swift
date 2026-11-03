@@ -160,9 +160,9 @@ final class MulberryModel: ObservableObject {
             links.finish(code)
             showInviteEntry = false
             await apply(response.bootstrapState)
-        } catch BackendError.rejected(_, let message) {
+        } catch BackendError.rejected(_, _, let reason) {
             links.finish(code)
-            inviteNotice = InviteNotice(serverMessage: message)
+            inviteNotice = InviteNotice(code: reason)
         } catch {
             // Offline or interrupted: the code waits for the next chance.
         }
@@ -257,7 +257,7 @@ final class MulberryModel: ObservableObject {
         do { try await api.signOut() }
         catch {
             if (try? await api.signedInUserId) != nil {
-                errorMessage = error.localizedDescription
+                errorMessage = UserFacingError.message(for: error, fallback: "Couldn’t sign out. Try again.")
                 if let state = bootstrap { await apply(state) }
                 busy = false
                 return
@@ -337,9 +337,9 @@ final class MulberryModel: ObservableObject {
             sync = nil; canvas.reset()
             if let user = state.userId, let pair = state.pairSessionId, state.isPaired, let api = try? api {
                 do { try await AppRuntime.drawings.finishInterruptedStrokes(userId: user, pairSessionId: pair) }
-                catch { errorMessage = "Your interrupted drawing could not be recovered. \(error.localizedDescription)" }
+                catch { errorMessage = "Your last doodle couldn’t be recovered." }
                 do { try acceptDrawing(await AppRuntime.drawings.load(userId: user, pairSessionId: pair)) }
-                catch { errorMessage = "Your saved drawing could not be opened. \(error.localizedDescription)" }
+                catch { errorMessage = "Your saved doodles couldn’t be opened." }
                 let newSync = DrawingSync(api: api, store: AppRuntime.drawings, userId: user, pairSessionId: pair)
                 sync = newSync
                 syncObserver = Task { [weak self] in
@@ -348,7 +348,7 @@ final class MulberryModel: ObservableObject {
                         switch event {
                         case .changed(let document):
                             do { try self.acceptDrawing(document) }
-                            catch { self.errorMessage = error.localizedDescription }
+                            catch { self.errorMessage = UserFacingError.message(for: error, fallback: "Your canvas couldn’t update. Try again.") }
                         case .connection(let connection):
                             self.drawingConnection = connection
                             if connection == .pairingChanged { await self.refresh() }
@@ -407,12 +407,6 @@ final class MulberryModel: ObservableObject {
             showStreak = false; showPairingConfirmation = false
             bootstrap = nil; canvas.reset()
         }
-        let message = error.localizedDescription
-        switch message {
-        case "You cannot redeem your own invite": errorMessage = "That’s your invite code. Share it with your partner."
-        case "Invite code has expired", "Invite code is no longer valid": errorMessage = "That invite code has expired. Ask your partner to generate a new one."
-        case "Invite code not found", "Invite not found": errorMessage = "That invite code wasn’t found. Double-check the code and try again."
-        default: errorMessage = message
-        }
+        errorMessage = UserFacingError.message(for: error, fallback: "Mulberry couldn’t finish that. Try again.")
     }
 }

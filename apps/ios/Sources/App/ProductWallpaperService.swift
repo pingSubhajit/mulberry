@@ -284,7 +284,7 @@ enum WallpaperRenderSize {
         if let dimensions = UserDefaults.standard.array(forKey: "wallpaperPixelSize") as? [Double], dimensions.count == 2, dimensions.allSatisfy({ $0 > 0 && $0 <= 8192 }) {
             return CGSize(width: dimensions[0], height: dimensions[1])
         }
-        throw BackendError.rejected(0, "Open Mulberry once on this phone, then run the Shortcut again.")
+        throw AppMessage("Open Mulberry once on this phone, then run the Shortcut again.")
     }
 
     static func displayScale() throws -> CGFloat {
@@ -293,7 +293,7 @@ enum WallpaperRenderSize {
         }
         let scale = UserDefaults.standard.double(forKey: "wallpaperDisplayScale")
         guard scale >= 1, scale <= 4 else {
-            throw BackendError.rejected(0, "Open Mulberry once on this phone, then run the Shortcut again.")
+            throw AppMessage("Open Mulberry once on this phone, then run the Shortcut again.")
         }
         return scale
     }

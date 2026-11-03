@@ -38,7 +38,7 @@ struct SettingsView: View {
                 if let error = model.canvasSaveError {
                     Section {
                         Label(error, systemImage: "exclamationmark.icloud").foregroundStyle(MulberryDesign.accent)
-                        Button("Retry saving drawing") { model.retryCanvasSave?() }
+                        Button("Try again") { model.retryCanvasSave?() }
                     }
                 }
 
@@ -87,7 +87,7 @@ struct SettingsView: View {
                 if let error = model.errorMessage { Section { InlineError(message: error) }.listRowInsets(EdgeInsets()).listRowBackground(Color.clear) }
 
                 Section {
-                    Button("Log Out", role: .destructive) { logout = true }
+                    Button("Sign Out", role: .destructive) { logout = true }
                         .frame(maxWidth: .infinity)
                         .disabled(model.busy)
                 } footer: {
@@ -106,8 +106,8 @@ struct SettingsView: View {
             .listStyle(.insetGrouped)
             .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(role: .close) { dismiss() }.tint(.primary) } }
-            .confirmationDialog("Log out of Mulberry?", isPresented: $logout, titleVisibility: .visible) {
-                Button("Log Out", role: .destructive) { Task { await model.signOut() } }
+            .confirmationDialog("Sign out of Mulberry?", isPresented: $logout, titleVisibility: .visible) {
+                Button("Sign Out", role: .destructive) { Task { await model.signOut() } }
             } message: { Text("Your account and pairing stay saved.") }
             .alert("Delete your Mulberry account?", isPresented: $deleteAccount) {
                 Button("Delete Account", role: .destructive) {
@@ -380,9 +380,9 @@ private enum PartnerVisibility {
 
     func title(_ partner: String) -> String {
         switch self {
-        case .syncOff: "\(partner) can’t see your latest drawings"
-        case .wallpaperNotSet: "\(partner) can’t see your drawings"
-        case .fine: "\(partner) can see your latest drawings"
+        case .syncOff: "\(partner) can’t see your latest doodles"
+        case .wallpaperNotSet: "\(partner) can’t see your doodles"
+        case .fine: "\(partner) can see your latest doodles"
         }
     }
 
@@ -390,7 +390,7 @@ private enum PartnerVisibility {
         switch self {
         case .syncOff: "“Show doodles on wallpaper” is off on their phone. Ask \(partner) to turn it on in Settings."
         case .wallpaperNotSet: "Mulberry isn’t their wallpaper yet. Ask \(partner) to finish wallpaper setup."
-        case .fine: "New drawings reach their wallpaper."
+        case .fine: "New doodles reach their wallpaper."
         }
     }
 }
@@ -406,7 +406,7 @@ private struct PartnerVisibilityBanner: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image("PartnerVisibilitySync").resizable().scaledToFit().frame(width: icon, height: icon)
-                Text("Can’t see your latest drawings")
+                Text(label)
                     .font(MulberryDesign.font(16, weight: "SemiBold", relativeTo: .body))
                     .lineLimit(typeSize.isAccessibilitySize ? nil : 1).minimumScaleFactor(0.8)
                     .multilineTextAlignment(.leading)
@@ -469,7 +469,7 @@ private enum AnniversaryDay {
     static func date(_ value: String) -> Date? { formatter.date(from: value) }
 }
 
-private extension String {
+extension String {
     var nonEmpty: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
@@ -570,7 +570,7 @@ struct ProfileSettingsView: View {
                     let jpeg = try await ImagePreparation.profileJPEG(data)
                     guard user == model.userId else { return }
                     await model.updatePhoto(jpeg)
-                } catch { photoError = error.localizedDescription }
+                } catch { photoError = UserFacingError.message(for: error, fallback: "That photo couldn’t be used. Choose another one.") }
             }
         }
     }
@@ -662,7 +662,7 @@ struct PartnerSettingsView: View {
                     if let unlock = profile?.partnerProfileUnlockDate, !editable {
                         Label("You can edit these again \(unlock.formatted(.relative(presentation: .named))).", systemImage: "lock.fill")
                     } else {
-                        Text("Name, photo and anniversary can change once every 72 hours.")
+                        Text("Name, photo and anniversary can change once every 3 days.")
                     }
                 }
                 .disabled(!editable || model.busy)
@@ -672,7 +672,10 @@ struct PartnerSettingsView: View {
                         if let paired = profile?.pairedAt.flatMap(ServerDate.parse) {
                             LabeledContent("Paired") { Text(paired, format: .dateTime.day().month(.abbreviated).year()) }
                         }
-                        LabeledContent("Daily streak") { Text("\(model.streaks.streak?.currentStreakDays ?? profile?.currentStreakDays ?? 0) days") }
+                        LabeledContent("Daily streak") {
+                            let days = model.streaks.streak?.currentStreakDays ?? profile?.currentStreakDays ?? 0
+                            Text("\(days) \(days == 1 ? "day" : "days")")
+                        }
                     }
                     Section {
                         Button("Unpair", role: .destructive) { disconnect = true }
@@ -698,7 +701,7 @@ struct PartnerSettingsView: View {
         .onAppear { name = model.bootstrap?.partnerDisplayName ?? ""; anniversary = model.bootstrap?.anniversaryDate ?? "" }
         .confirmationDialog("Unpair from \(model.bootstrap?.partnerDisplayName?.nonEmpty ?? "your partner")?", isPresented: $disconnect, titleVisibility: .visible) {
             Button("Unpair", role: .destructive) { Task { await model.disconnect(); if model.errorMessage == nil { dismiss() } } }
-        } message: { Text("Your profile stays, but shared drawing stops until you pair again.") }
+        } message: { Text("Your profile stays, but you won’t share doodles until you pair again.") }
         .sheet(isPresented: $invite) { InviteShareView(model: model) }
         .onChange(of: photo) { _, item in
             guard let item else { return }
@@ -708,7 +711,7 @@ struct PartnerSettingsView: View {
                 do {
                     guard let data = try await item.loadTransferable(type: Data.self) else { throw WallpaperImageError.invalidImage }
                     jpeg = try await ImagePreparation.profileJPEG(data)
-                } catch { photoError = error.localizedDescription }
+                } catch { photoError = UserFacingError.message(for: error, fallback: "That photo couldn’t be used. Choose another one.") }
             }
         }
     }
@@ -857,7 +860,7 @@ private struct FeedbackView: View {
             var components = URLComponents(string: "https://webview.canny.io")!
             components.queryItems = [.init(name: "boardToken", value: "6a631c96-1dd3-3c43-0653-b53d1edd0828"), .init(name: "ssoToken", value: token), .init(name: "theme", value: "auto")]
             url = components.url
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = UserFacingError.message(for: error, fallback: "Feedback couldn’t load. Try again.") }
     }
 }
 
@@ -875,7 +878,7 @@ private struct FeedbackWebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate {
         @Binding var error: String?
         init(error: Binding<String?>) { _error = error }
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { self.error = "Feedback could not load. Please try again." }
-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { self.error = "Feedback could not load. Please try again." }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { self.error = "Feedback couldn’t load. Try again." }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { self.error = "Feedback couldn’t load. Try again." }
     }
 }

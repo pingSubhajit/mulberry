@@ -408,7 +408,7 @@ struct StickerPickerPanel: View {
                 HStack(spacing: 10) {
                     Text(error).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                     Spacer(minLength: 0)
-                    Button("Retry") { catalog.load(force: true) }.buttonStyle(.glass).controlSize(.small)
+                    Button("Try again") { catalog.load(force: true) }.buttonStyle(.glass).controlSize(.small)
                 }
             }
             if catalog.packs.count > 1 { packRow }

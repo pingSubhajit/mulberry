@@ -17,7 +17,7 @@ enum AppRuntime {
         if let backend { return backend }
         guard let value = Bundle.main.object(forInfoDictionaryKey: "MulberryAPIBaseURL") as? String,
               let url = URL(string: value), ["https", "http"].contains(url.scheme), url.host != nil else {
-            throw BackendError.rejected(0, "This build is missing its server address.")
+            throw AppMessage("This build of Mulberry can’t connect. Install the latest version.")
         }
         let configuration = URLSessionConfiguration.default
         // The first local-development request may wait for iOS's network prompt.

@@ -15,12 +15,12 @@ struct WallpaperChoice: Codable, Equatable, Identifiable {
     ]
 }
 
-enum WallpaperImageError: LocalizedError {
+enum WallpaperImageError: PresentableError {
     case invalidImage, downloadFailed
     var errorDescription: String? {
         switch self {
-        case .invalidImage: "That photo could not be opened. Please choose another image."
-        case .downloadFailed: "The wallpaper could not be downloaded. Please try again."
+        case .invalidImage: "That photo couldn’t be opened. Choose another one."
+        case .downloadFailed: "The wallpaper couldn’t be downloaded. Try again."
         }
     }
 }
@@ -73,7 +73,7 @@ final class WallpaperLibrary: ObservableObject {
             choice = builtIn; image = cached
         } else if saved.asset == nil, let file = try? Self.photoURL(user: user, choice: saved), let data = try? Data(contentsOf: file), let cached = try? ImagePreparation.image(data) {
             choice = saved; image = cached
-        } else { errorMessage = "Your saved wallpaper could not be opened. Choose it again to restore it." }
+        } else { errorMessage = "Your saved wallpaper couldn’t be opened. Choose it again to restore it." }
     }
 
     func select(_ choice: WallpaperChoice) {
@@ -126,7 +126,7 @@ final class WallpaperLibrary: ObservableObject {
             if previous.asset == nil, let old = try? Self.photoURL(user: user, choice: previous) { try? FileManager.default.removeItem(at: old) }
             return true
         } catch {
-            if epoch == generation { errorMessage = error.localizedDescription }
+            if epoch == generation { errorMessage = UserFacingError.message(for: error, fallback: "That wallpaper couldn’t be saved. Try again.") }
             return false
         }
     }

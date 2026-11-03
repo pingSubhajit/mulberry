@@ -198,7 +198,7 @@ final class DoodleEditor: ObservableObject {
             activeStroke = stroke; emittedPoints = 1; lastAppend = .now
             self.provisional = provisional
             if !provisional {
-                do { queue([try .startStroke(stroke)]) } catch { errorMessage = error.localizedDescription }
+                do { queue([try .startStroke(stroke)]) } catch { errorMessage = UserFacingError.message(for: error, fallback: "That doodle couldn’t be saved. Try again.") }
             }
             publishScene()
         case .eraser: erase(at: point, size: size)
@@ -230,7 +230,7 @@ final class DoodleEditor: ObservableObject {
     func confirmStroke() {
         guard provisional, let stroke = activeStroke else { return }
         provisional = false
-        do { queue([try .startStroke(stroke)]) } catch { errorMessage = error.localizedDescription }
+        do { queue([try .startStroke(stroke)]) } catch { errorMessage = UserFacingError.message(for: error, fallback: "That doodle couldn’t be saved. Try again.") }
         appendPoints()
     }
 
@@ -269,12 +269,12 @@ final class DoodleEditor: ObservableObject {
     func undo() {
         guard canUndo, !drawing else { return }
         do { queue(try history.undo(), preview: true) }
-        catch { errorMessage = error.localizedDescription }
+        catch { errorMessage = UserFacingError.message(for: error, fallback: "Couldn’t undo that. Try again.") }
     }
     func redo() {
         guard canRedo, !drawing else { return }
         do { queue(try history.redo(), preview: true) }
-        catch { errorMessage = error.localizedDescription }
+        catch { errorMessage = UserFacingError.message(for: error, fallback: "Couldn’t redo that. Try again.") }
     }
     func clear() {
         end(); history.reset()
@@ -611,7 +611,7 @@ final class DoodleEditor: ObservableObject {
                 emittedPoints = end
             }
             lastAppend = .now
-        } catch { errorMessage = error.localizedDescription }
+        } catch { errorMessage = UserFacingError.message(for: error, fallback: "That doodle couldn’t be saved. Try again.") }
     }
 
     private func erase(at point: CGPoint, size: CGSize) {
@@ -646,7 +646,7 @@ final class DoodleEditor: ObservableObject {
                 pending.removeFirst(batch.count)
                 settle(batch)
             } catch {
-                errorMessage = "Your last edit could not be saved. \(error.localizedDescription)"
+                errorMessage = "Your last change couldn’t be saved. Try again."
                 return
             }
         }
@@ -720,7 +720,7 @@ struct DoodleSurface: UIViewRepresentable {
     let dry: Bool
     func makeUIView(context: Context) -> DoodleTouchView {
         let view = DoodleTouchView()
-        view.accessibilityLabel = "Shared drawing canvas"
+        view.accessibilityLabel = "Shared canvas"
         view.accessibilityIdentifier = "drawingCanvas"
         return view
     }

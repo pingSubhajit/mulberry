@@ -172,7 +172,7 @@ final class WallpaperSetupModel: ObservableObject {
             if permission == "Off" { openSettings(); return }
             if try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { UIApplication.shared.registerForRemoteNotifications() }
             await refresh()
-        } catch { message = error.localizedDescription }
+        } catch { message = UserFacingError.message(for: error, fallback: "Couldn’t ask for notifications. Turn them on in Settings.") }
     }
 
     func runShortcut() async {
@@ -183,7 +183,7 @@ final class WallpaperSetupModel: ObservableObject {
         var url = URLComponents(string: "shortcuts://x-callback-url/run-shortcut")!
         url.queryItems = [.init(name: "name", value: shortcutName), .init(name: "x-success", value: "\(scheme)://wallpaper-return"),
                           .init(name: "x-error", value: "\(scheme)://shortcut-error"), .init(name: "x-cancel", value: "\(scheme)://shortcut-cancelled")]
-        if !(await UIApplication.shared.open(url.url!)) { message = "Shortcuts could not open. Install Apple’s Shortcuts app, then try again." }
+        if !(await UIApplication.shared.open(url.url!)) { message = "Shortcuts couldn’t open. Install Apple’s Shortcuts app, then try again." }
         await refresh()
     }
     func startOver() async { await undoSteps(from: .add) }
@@ -242,6 +242,6 @@ final class WallpaperSetupModel: ObservableObject {
                                                                   trigger: UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)))
             try await journal.append(.init(stage: "local_notification_scheduled", revision: probe, detail: "Local delivery test. Not a remote push test."))
             await refresh()
-        } catch { message = error.localizedDescription }
+        } catch { message = UserFacingError.message(for: error, fallback: "Couldn’t start the test. Try again.") }
     }
 }

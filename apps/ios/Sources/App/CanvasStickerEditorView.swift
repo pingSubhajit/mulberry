@@ -138,7 +138,7 @@ struct CanvasStickerEditorView: View {
                 HStack(spacing: 10) {
                     Text(error).font(.subheadline).foregroundStyle(.white.opacity(0.75)).lineLimit(2)
                     Spacer(minLength: 0)
-                    Button("Retry") { catalog.load(force: true) }
+                    Button("Try again") { catalog.load(force: true) }
                         .buttonStyle(.glass).controlSize(.small)
                 }
             }

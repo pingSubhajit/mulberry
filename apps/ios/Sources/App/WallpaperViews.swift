@@ -78,7 +78,7 @@ struct WallpaperPickerView: View {
                         guard let data = try await item.loadTransferable(type: Data.self) else { throw WallpaperImageError.invalidImage }
                         guard user == library.userId else { return }
                         _ = await library.importPhoto(data)
-                    } catch { if user == library.userId { library.errorMessage = error.localizedDescription } }
+                    } catch { if user == library.userId { library.errorMessage = UserFacingError.message(for: error, fallback: WallpaperImageError.invalidImage.errorDescription ?? "") } }
                 }
             }
     }
@@ -328,7 +328,7 @@ struct WallpaperGalleryView: View {
             let existing = Set(items.map(\.id))
             items.append(contentsOf: page.items.filter { !existing.contains($0.id) })
             cursor = page.nextCursor; loaded = true
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = UserFacingError.message(for: error, fallback: "Wallpapers couldn’t load. Try again.") }
     }
 }
 

@@ -32,7 +32,7 @@ enum DoodlesOffReminders {
             guard !pending.contains(id) else { continue }
             let content = UNMutableNotificationContent()
             content.title = "Doodles on wallpaper turned off"
-            content.body = "Turn on “Show doodles on wallpaper” to show strokes on your wallpaper."
+            content.body = "Turn on “Show doodles on wallpaper” to see them again."
             content.userInfo = ["type": type]
             content.threadIdentifier = "mulberry-account"
             // Quiet, like the server's reminders: no banner or sound, only Notification Center.

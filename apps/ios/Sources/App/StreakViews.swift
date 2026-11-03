@@ -149,7 +149,7 @@ struct StreakSheet: View {
                         VStack(spacing: 12) {
                             Text(error).font(.callout).multilineTextAlignment(.center)
                             if let streak = streaks.streak, streak.today != ServerDate.localDay() {
-                                Text("Last updated \(streak.today)").font(.caption)
+                                Text("Last updated \(streak.todayDisplay)").font(.caption)
                             }
                             Button("Try again") { Task { await refresh() } }
                                 .buttonStyle(.glass).disabled(streaks.loading)

@@ -106,21 +106,21 @@ struct InviteNotice: Equatable {
     let message: String
 
     static let alreadyPaired = InviteNotice(title: "You’re already paired",
-                                            message: "Disconnect in Settings to join a new invite.")
+                                            message: "Unpair in Settings to join a new invite.")
     static let notAnInvite = InviteNotice(title: "That isn’t an invite",
                                           message: "Copy the link your partner sent you, then tap Paste again.")
 
-    /// The server's reason, in the app's words. Nil when there is nothing to say: opening your own link.
-    init?(serverMessage: String) {
-        switch serverMessage {
-        case "You cannot redeem your own invite": return nil
-        case "Already paired": self = .alreadyPaired
-        case "Invite code has expired", "Invite code is no longer valid":
+    /// The server's reason code, in the app's words. Nil when there is nothing to say: opening your own link.
+    init?(code: String?) {
+        switch code {
+        case "OWN_INVITE": return nil
+        case "ALREADY_PAIRED": self = .alreadyPaired
+        case "INVITE_EXPIRED", "INVITE_NO_LONGER_VALID":
             self.init(title: "This invite has expired", message: "Ask your partner to send you a new one.")
-        case "Invite code not found", "Invite not found":
+        case "INVITE_NOT_FOUND":
             self.init(title: "This invite wasn’t found", message: "Ask your partner to send it again.")
         default:
-            self.init(title: "Couldn’t open the invite", message: serverMessage)
+            self.init(title: "Couldn’t open the invite", message: "Ask your partner to send it again.")
         }
     }
 
