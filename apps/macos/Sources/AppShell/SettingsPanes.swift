@@ -202,7 +202,7 @@ struct DesktopPane: View {
                             .accessibilityHidden(true)
                     }
                 }
-                SettingsRow("Position", detail: "Centre the drawing on its display again.") {
+                SettingsRow("Position", detail: "Centre the canvas on its display again.") {
                     Button("Reset", action: overlayController.resetPosition)
                         .buttonStyle(.settings)
                 }
@@ -271,7 +271,7 @@ struct AccountPane: View {
 
                 SettingsSection("Account") {
                     SettingsRow(bootstrap.userEmail ?? "Signed in") {
-                        Button("Log Out…") { confirmingLogOut = true }
+                        Button("Sign Out…") { confirmingLogOut = true }
                             .buttonStyle(.settings)
                     }
                 }
@@ -313,12 +313,12 @@ struct AccountPane: View {
                     do {
                         _ = await account.updatePhoto(try await ProfilePhoto.jpeg(from: url))
                     } catch {
-                        account.errorMessage = error.localizedDescription
+                        account.errorMessage = UserFacingError.message(for: error, fallback: "That photo couldn’t be used. Choose another one.")
                     }
                 }
             }
-            .confirmationDialog("Log out of Mulberry?", isPresented: $confirmingLogOut) {
-                Button("Log Out", role: .destructive) { Task { await authController.signOut() } }
+            .confirmationDialog("Sign out of Mulberry?", isPresented: $confirmingLogOut) {
+                Button("Sign Out", role: .destructive) { Task { await authController.signOut() } }
             } message: {
                 Text("Your account and pairing stay saved.")
             }
@@ -477,13 +477,15 @@ struct PartnerPane: View {
                 preparingPhoto = true
                 Task {
                     defer { preparingPhoto = false }
-                    do { jpeg = try await ProfilePhoto.jpeg(from: url) } catch { account.errorMessage = error.localizedDescription }
+                    do { jpeg = try await ProfilePhoto.jpeg(from: url) } catch {
+                        account.errorMessage = UserFacingError.message(for: error, fallback: "That photo couldn’t be used. Choose another one.")
+                    }
                 }
             }
             .confirmationDialog("Unpair from \(bootstrap.partnerDisplayName?.nonEmpty ?? "your partner")?", isPresented: $confirmingUnpair) {
                 Button("Unpair", role: .destructive) { Task { _ = await account.unpair() } }
             } message: {
-                Text("Your profile stays, but shared drawing stops until you pair again.")
+                Text("Your profile stays, but you won’t share doodles until you pair again.")
             }
         } else {
             let partner = bootstrap?.partnerDisplayName?.nonEmpty ?? "your partner"
@@ -552,7 +554,8 @@ struct PartnerPane: View {
 
             if let visibility = PartnerVisibility(status: bootstrap.partnerWallpaperStatus) {
                 SettingsSection("Their Wallpaper") {
-                    SettingsRow(visibility.title, detail: visibility.detail(bootstrap.partnerDisplayName?.nonEmpty ?? "Your partner")) {
+                    SettingsRow(visibility.title(bootstrap.partnerDisplayName?.nonEmpty ?? "Your partner"),
+                                detail: visibility.detail(bootstrap.partnerDisplayName?.nonEmpty ?? "Your partner")) {
                         Image(systemName: visibility.symbol)
                             .font(.system(size: 16))
                             .foregroundStyle(visibility.ok ? AnyShapeStyle(.green) : AnyShapeStyle(.yellow))
@@ -561,7 +564,7 @@ struct PartnerPane: View {
             }
 
             SettingsSection("Pairing") {
-                SettingsRow("Unpair", detail: "Shared drawing stops until you pair again.") {
+                SettingsRow("Unpair", detail: "You won’t share doodles until you pair again.") {
                     Button("Unpair…") { confirmingUnpair = true }
                         .buttonStyle(.settings)
                         .disabled(account.busy)
@@ -574,7 +577,7 @@ struct PartnerPane: View {
         if let unlock = bootstrap.partnerProfileUnlockDate, !editable {
             return "You can edit these again \(unlock.formatted(.relative(presentation: .named)))."
         }
-        return "Name, photo and anniversary can change once every 72 hours."
+        return "Name, photo and anniversary can change once every 3 days."
     }
 
     private func load() {
@@ -720,11 +723,12 @@ private enum PartnerVisibility {
 
     var ok: Bool { self == .fine }
 
-    var title: String {
+    /// As the iPhone words it.
+    func title(_ partner: String) -> String {
         switch self {
-        case .syncOff: "Doodles are off on their phone"
-        case .wallpaperNotSet: "Mulberry isn’t their wallpaper yet"
-        case .fine: "Your drawings reach their wallpaper"
+        case .syncOff: "\(partner) can’t see your latest doodles"
+        case .wallpaperNotSet: "\(partner) can’t see your doodles"
+        case .fine: "\(partner) can see your latest doodles"
         }
     }
 
@@ -747,6 +751,8 @@ struct AdvancedPane: View {
     @AppStorage("lastRemotePushRevision") private var lastPushRevision = 0
     @AppStorage("lastRemotePushAppliedRevision") private var lastAppliedPushRevision = 0
     @AppStorage("pushRegistrationError") private var pushError = ""
+    /// Revision and push details for troubleshooting, shown when Option is held as the pane opens.
+    @State private var showsDiagnostics = NSEvent.modifierFlags.contains(.option)
 
     var body: some View {
         SettingsPage {
@@ -757,13 +763,15 @@ struct AdvancedPane: View {
                         SettingsValue(syncController.connectionState.title)
                     }
                 }
-                SettingsRow("Canvas Revision") {
-                    SettingsValue(syncController.status.lastAppliedServerRevision.formatted())
+                if showsDiagnostics {
+                    SettingsRow("Canvas Revision") {
+                        SettingsValue(syncController.status.lastAppliedServerRevision.formatted())
+                    }
                 }
                 SettingsRow("Waiting to Send") {
                     SettingsValue(syncController.status.pendingCount.formatted())
                 }
-                if let recovered = syncController.status.lastSuccessfulRecoveryAt {
+                if showsDiagnostics, let recovered = syncController.status.lastSuccessfulRecoveryAt {
                     SettingsRow("Last Caught Up") {
                         SettingsValue(recovered.formatted(.relative(presentation: .named)))
                     }
@@ -773,11 +781,12 @@ struct AdvancedPane: View {
                 }
             }
             SettingsSection {
-                SettingsRow("Recover Canvas", detail: "Fetch the whole canvas again from the server.") {
-                    Button("Recover", action: syncController.recoverNow)
+                SettingsRow("Reload Canvas", detail: "Download the latest canvas again.") {
+                    Button("Reload", action: syncController.recoverNow)
                         .buttonStyle(.settings)
                 }
             }
+            if showsDiagnostics {
             SettingsSection("Remote Updates") {
                 SettingsRow("Push Connection") {
                     SettingsValue(pushRegistered ? "Connected" : "Waiting")
@@ -789,6 +798,7 @@ struct AdvancedPane: View {
                     SettingsRow("Last Push Applied") { SettingsValue(lastAppliedPushRevision.formatted()) }
                 }
                 if !pushError.isEmpty { SettingsNotice(message: pushError) }
+            }
             }
             #if DEBUG
             // Development builds only: checks that reports reach Crashlytics, as the iPhone's
@@ -910,7 +920,7 @@ enum LegalDocument: String, Identifiable {
     var text: String {
         guard let url = AppResources.url("Legal/\(rawValue).txt"),
               let text = try? String(contentsOf: url, encoding: .utf8) else {
-            return "This document could not be loaded. Please visit mulberry.my."
+            return "This document couldn’t load. Read it at mulberry.my."
         }
         return text
     }

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import ProductCore
 
 public enum SyncModule {
@@ -66,6 +67,7 @@ public struct MacSyncStatusSnapshot: Equatable, Sendable {
 /// They go over the live connection while one is open, and otherwise over HTTP, whatever the demand.
 @MainActor
 public final class CanvasSyncController: ObservableObject {
+    private static let log = Logger(subsystem: "com.subhajit.mulberry", category: "CanvasSync")
     @Published public private(set) var connectionState: MacSyncConnectionState = .signedOut
     @Published public private(set) var demand: CanvasSyncDemand = .idle
     @Published public private(set) var status = MacSyncStatusSnapshot()
@@ -200,7 +202,7 @@ public final class CanvasSyncController: ObservableObject {
                 // Not saved, so not shown either.
                 unsaved.removeAll { ids.contains($0.id) }
                 publishDrawing()
-                recordError("Your drawing could not be saved. \(error.localizedDescription)")
+                recordError("Your last change couldn’t be saved. Try again.", cause: error)
             }
         }
     }
@@ -258,7 +260,7 @@ public final class CanvasSyncController: ObservableObject {
             if live == nil { await sendWaiting(session) }
         } catch {
             guard self.session == session else { return }
-            recordError("Your saved canvas could not be opened. \(error.localizedDescription)")
+            recordError("Your saved doodles couldn’t be opened.", cause: error)
         }
     }
 
@@ -360,7 +362,7 @@ public final class CanvasSyncController: ObservableObject {
             await rebuild(session)
         } catch {
             guard self.session == session, !Task.isCancelled else { return }
-            recordError(error.localizedDescription)
+            recordError(UserFacingError.message(for: error, fallback: "Your canvas couldn’t update. Try again.") ?? "Your canvas couldn’t update. Try again.", cause: error)
         }
     }
 
@@ -382,7 +384,7 @@ public final class CanvasSyncController: ObservableObject {
             onPairingChanged?()
         } catch {
             guard self.session == session, !Task.isCancelled else { return }
-            recordError("The canvas could not be recovered. \(error.localizedDescription)")
+            recordError(UserFacingError.message(for: error, fallback: "Your canvas couldn’t reload. Try again.") ?? "Your canvas couldn’t reload. Try again.", cause: error)
         }
     }
 
@@ -424,7 +426,7 @@ public final class CanvasSyncController: ObservableObject {
             onPairingChanged?()
         } catch {
             guard self.session == session, !Task.isCancelled else { return }
-            recordError("Your drawing will be sent once Mulberry connects. \(error.localizedDescription)")
+            recordError("Your doodles will be sent once Mulberry connects.", cause: error)
             retryWaitingLater(session)
         }
     }
@@ -508,7 +510,12 @@ public final class CanvasSyncController: ObservableObject {
         )
     }
 
-    private func recordError(_ message: String) {
+    /// Shows `message` and logs what actually failed, so support can tell a server rejection
+    /// from a dropped connection. People only ever see `message`.
+    private func recordError(_ message: String, cause: Error? = nil) {
+        if let cause {
+            Self.log.error("\(message, privacy: .public) Cause: \(String(reflecting: cause), privacy: .public)")
+        }
         lastError = message
         connectionState = .error(message)
         refreshStatus(pending: status.pendingCount)

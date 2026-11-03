@@ -82,7 +82,7 @@ public final class AppStateController: ObservableObject {
             if await api.signedInUserId == nil {
                 authController.sessionEnded()
             } else if loadState.bootstrap == nil {
-                loadState = .failed(error.localizedDescription)
+                loadState = .failed(UserFacingError.message(for: error, fallback: "Mulberry couldn’t load. Try again.") ?? "Mulberry couldn’t load. Try again.")
             }
         }
     }

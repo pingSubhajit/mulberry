@@ -59,7 +59,7 @@ final class AccountSettings: ObservableObject {
         } catch is CancellationError {
             return false
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error, fallback: "Couldn’t delete your account. Try again.")
             return false
         }
     }
@@ -77,7 +77,7 @@ final class AccountSettings: ObservableObject {
         } catch let error where AuthSessionController.isCancellation(error) {
             return false
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error, fallback: "Mulberry couldn’t finish that. Try again.")
             return false
         }
     }
@@ -87,7 +87,7 @@ final class AccountSettings: ObservableObject {
 enum ProfilePhoto {
     static let contentTypes: [UTType] = [.image]
 
-    enum Failure: LocalizedError {
+    enum Failure: PresentableError {
         case unreadable
 
         var errorDescription: String? { "That file isn't a photo Mulberry can use." }

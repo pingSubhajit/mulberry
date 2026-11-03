@@ -116,7 +116,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         fileMenu.addItem(reactions)
         fileMenu.addItem(.separator())
 
-        fileMenu.addItem(item("Export Drawing…", key: "e", modifiers: [.command, .shift], enabled: actions.canExportDrawing, action: actions.exportDrawing))
+        fileMenu.addItem(item("Export Canvas…", key: "e", modifiers: [.command, .shift], enabled: actions.canExportDrawing, action: actions.exportDrawing))
         fileMenu.addItem(.separator())
         fileMenu.addItem(NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
     }

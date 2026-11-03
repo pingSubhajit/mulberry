@@ -87,7 +87,7 @@ final class PartnerArrival: NSObject, UNUserNotificationCenterDelegate {
         defaults.set("\(user)|\(pair)", forKey: Self.pendingKey)
         showDot(true)
         let content = UNMutableNotificationContent()
-        content.title = "\(bootstrap.partnerDisplayName?.nonEmpty ?? "Your partner") joined you on Mulberry"
+        content.title = bootstrap.partnerDisplayName?.nonEmpty.map { "You’re paired with \($0)" } ?? "You’re paired"
         content.body = "Draw them something to say hello."
         content.sound = .default
         content.categoryIdentifier = Self.category

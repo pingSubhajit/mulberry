@@ -191,6 +191,11 @@ final class OnboardingFlow: ObservableObject {
     var inviterName: String {
         bootstrap?.invite?.inviterDisplayName.nonEmpty ?? bootstrap?.partnerDisplayName?.nonEmpty ?? "Your partner"
     }
+    /// Turns down the invite, naming who sent it when the name is known.
+    var declineInviteTitle: String {
+        (bootstrap?.invite?.inviterDisplayName.nonEmpty ?? bootstrap?.partnerDisplayName?.nonEmpty)
+            .map { "Not \($0)? Decline" } ?? "Wrong partner? Decline"
+    }
 
     // MARK: The film
 
@@ -560,12 +565,8 @@ final class OnboardingFlow: ObservableObject {
         }
     }
 
-    private static func message(for error: Error) -> String {
-        switch error.localizedDescription {
-        case "You cannot redeem your own invite": "That’s your own code. Share it with your partner."
-        case "Invite code has expired", "Invite code is no longer valid": "That code has expired. Ask your partner for a new one."
-        default: error.localizedDescription
-        }
+    private static func message(for error: Error) -> String? {
+        UserFacingError.message(for: error, fallback: "Mulberry couldn’t finish that. Try again.")
     }
 
     private func apply(_ state: BootstrapState) {

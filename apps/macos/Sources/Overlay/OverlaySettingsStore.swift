@@ -35,7 +35,7 @@ public struct OverlayHotKeyStatus: Equatable, Sendable {
         // eventHotKeyExistsErr: another app registered the same combination first.
         OverlayHotKeyStatus(
             isRegistered: false,
-            problem: code == -9878 ? "Another app already uses \(shortcut)." : "\(shortcut) could not be set up (\(code))."
+            problem: code == -9878 ? "Another app already uses \(shortcut)." : "\(shortcut) couldn’t be set up. Choose a different shortcut."
         )
     }
 }

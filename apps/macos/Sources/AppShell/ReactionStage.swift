@@ -5,11 +5,13 @@ import SwiftUI
 struct ReactionStage: View {
     @ObservedObject var reactions: ReactionsModel
     let surface: ReactionsModel.Surface
+    /// Who sent the reactions, for VoiceOver.
+    var partnerName: String?
 
     var body: some View {
         ZStack {
             if reactions.surface == surface, let arrival = reactions.arrival {
-                ReactionArrivalView(arrival: arrival) { Task { await reactions.played(arrival) } }
+                ReactionArrivalView(arrival: arrival, partnerName: partnerName) { Task { await reactions.played(arrival) } }
                     .id(arrival.id)
             }
             if reactions.surface == surface, let sent = reactions.sent {

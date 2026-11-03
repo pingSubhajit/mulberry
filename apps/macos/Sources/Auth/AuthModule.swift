@@ -140,7 +140,7 @@ public final class AuthSessionController: ObservableObject {
 
     public func signIn(with method: SignInMethod = .google) async {
         if method == .google, configuration.googleClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            state = .failed(AuthFailure(message: "Set MULBERRY_MAC_GOOGLE_CLIENT_ID to enable Google Sign-In."))
+            state = .failed(AuthFailure(message: "Google sign-in isn’t available in this build."))
             return
         }
 
@@ -213,21 +213,16 @@ public final class AuthSessionController: ObservableObject {
         state = .signedOut
     }
 
+    /// Mulberry's own words for a failed sign-in. The details go to `AuthDiagnostics`, never on screen.
     private func userFacingMessage(for error: Error) -> String {
-        if let oauthError = error as? GoogleOAuthError {
-            return oauthError.errorDescription ?? "Google Sign-In failed."
-        }
         if error is URLError {
             #if DEBUG
-            return "Could not reach Mulberry at \(configuration.normalizedAPIBaseURL.absoluteString). Start the backend and try again."
+            return "Couldn’t reach Mulberry at \(configuration.normalizedAPIBaseURL.absoluteString). Start the backend and try again."
             #else
-            return "Mulberry can't connect. Check your internet connection."
+            return UserFacingError.offline
             #endif
         }
-        if let localizedError = error as? LocalizedError, let description = localizedError.errorDescription {
-            return description
-        }
-        return diagnosticMessage(for: error)
+        return UserFacingError.message(for: error, fallback: "Couldn’t sign in. Try again.") ?? "Couldn’t sign in. Try again."
     }
 
     private func diagnosticMessage(for error: Error) -> String {

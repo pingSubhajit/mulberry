@@ -406,7 +406,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     private func exportDrawing() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "Mulberry Drawing \(Date().formatted(.iso8601.year().month().day())).png"
+        panel.nameFieldStringValue = "Mulberry Canvas \(Date().formatted(.iso8601.year().month().day())).png"
         panel.canCreateDirectories = true
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }

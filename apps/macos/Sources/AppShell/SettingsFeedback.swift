@@ -62,7 +62,7 @@ private struct FeedbackView: View {
             ]
             url = components.url
         } catch {
-            self.error = error.localizedDescription
+            self.error = UserFacingError.message(for: error, fallback: "Feedback couldn’t load. Try again.")
         }
     }
 }
@@ -93,11 +93,11 @@ private struct FeedbackWebView: NSViewRepresentable {
         init(error: Binding<String?>) { _error = error }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            self.error = "Feedback could not load. Please try again."
+            self.error = "Feedback couldn’t load. Try again."
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            self.error = "Feedback could not load. Please try again."
+            self.error = "Feedback couldn’t load. Try again."
         }
 
         /// A link meant for a new window leaves the board for the browser.

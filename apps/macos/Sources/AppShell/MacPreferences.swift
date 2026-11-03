@@ -71,7 +71,8 @@ final class LaunchAtLogin: ObservableObject {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = enabled ? "Mulberry couldn’t turn on Open at Login. Try again in System Settings › Login Items."
+                : "Mulberry couldn’t turn off Open at Login. Try again in System Settings › Login Items."
         }
         refresh()
     }

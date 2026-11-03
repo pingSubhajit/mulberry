@@ -41,7 +41,7 @@ final class PartnerInvite: ObservableObject {
             invite = try await api().createInvite()
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error, fallback: "Couldn’t create an invite code. Try again.")
         }
     }
 }

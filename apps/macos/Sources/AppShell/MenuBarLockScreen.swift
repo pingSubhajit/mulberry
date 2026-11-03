@@ -459,7 +459,7 @@ struct LockScreenView: View {
                 Spacer(minLength: 0)
             }
             .opacity(chrome)
-            ReactionStage(reactions: reactions, surface: .menuBar)
+            ReactionStage(reactions: reactions, surface: .menuBar, partnerName: model.partnerName)
         }
         .frame(width: Self.screen.width, height: Self.screen.height)
         .clipShape(.rect(cornerRadius: Self.screenRadius, style: .continuous))
@@ -514,7 +514,7 @@ struct LockScreenView: View {
                 .frame(width: Self.canvasSize.width, height: Self.canvasSize.height)
                 .frame(width: Self.screen.width, height: Self.screen.height)
                 .allowsHitTesting(false)
-                .accessibilityLabel("Your shared drawing")
+                .accessibilityLabel("Your shared canvas")
         }
     }
 
@@ -534,7 +534,7 @@ struct LockScreenView: View {
                     }
                     Button("Quick Draw") { close(); model.actions?.quickDraw() }
                         .keyboardShortcut("d", modifiers: [])
-                    Button("Drawings on the desktop") { model.actions?.toggleOverlay() }
+                    Button("Doodles on Desktop") { model.actions?.toggleOverlay() }
                         .keyboardShortcut(.space, modifiers: [])
                 }
                 Button("Open Mulberry") { close(); model.actions?.openCanvas() }
@@ -679,12 +679,12 @@ struct LockScreenView: View {
                             .font(.system(size: 19, weight: .semibold))
                             .contentTransition(.symbolEffect(.replace))
                     }
-                    GlassRowButton(size: 76, help: model.overlayShown ? "Hide drawings on the desktop" : "Show drawings on the desktop") {
+                    GlassRowButton(size: 76, help: model.overlayShown ? "Hide doodles on the desktop" : "Show doodles on the desktop") {
                         model.actions?.toggleOverlay()
                     } label: {
                         DesktopDrawingsIcon(shown: model.overlayShown)
                     }
-                    .accessibilityLabel("Drawings on the desktop")
+                    .accessibilityLabel("Doodles on the desktop")
                     .accessibilityValue(model.overlayShown ? "On" : "Off")
                     .accessibilityAddTraits(.isToggle)
                     GlassRowButton(size: 54, help: "Quick Draw") {
@@ -1178,6 +1178,11 @@ private struct HomeScreenView: View {
 
     /// The streak and this week, with the bolt standing the widget's full height at its right
     /// edge, running out past it. Opens the streak.
+    private var streakLabel: String {
+        let days = model.streak?.currentStreakDays ?? 0
+        return "Streak: \(days) \(days == 1 ? "day" : "days")"
+    }
+
     private var streakWidget: some View {
         WidgetTile(help: "Streak", inset: 0) {
             close()
@@ -1221,7 +1226,7 @@ private struct HomeScreenView: View {
             .frame(width: 118, height: 118)
             .clipShape(.rect(cornerRadius: 24, style: .continuous))
         }
-        .accessibilityLabel("Streak: \(model.streak?.currentStreakDays ?? 0) days")
+        .accessibilityLabel(streakLabel)
     }
 }
 

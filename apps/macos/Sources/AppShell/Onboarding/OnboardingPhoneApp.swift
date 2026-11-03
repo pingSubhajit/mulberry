@@ -350,7 +350,9 @@ private struct AcceptanceScreen: View {
             PhonePrimaryButton(title: "Awesome, let’s go", busy: flow.busy, enabled: true) {
                 Task { await flow.acceptInvite() }
             }
-            Button("Wrong partner? Disconnect") { Task { await flow.declineInvite() } }
+            Button(flow.declineInviteTitle) {
+                Task { await flow.declineInvite() }
+            }
                 .buttonStyle(.plain)
                 .font(.system(size: 11))
                 .foregroundStyle(.white.opacity(0.55))

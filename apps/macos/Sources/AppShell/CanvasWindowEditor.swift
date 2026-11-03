@@ -159,7 +159,7 @@ struct FullAppCanvasEditor: View {
                 submit(editor.confirmClearCanvas())
             }
         } message: {
-            Text("This removes every stroke, text item, and sticker from the shared canvas.")
+            Text("This erases everything on it for both of you.")
         }
     }
 
@@ -232,7 +232,8 @@ struct FullAppCanvasEditor: View {
             canvasLayers
                 .frame(width: height * 9 / 20, height: height)
                 // The partner's reactions arrive over the drawing, as on the phones.
-                .overlay { ReactionStage(reactions: reactions, surface: layout == .window ? .window : .quickDraw) }
+                .overlay { ReactionStage(reactions: reactions, surface: layout == .window ? .window : .quickDraw,
+                                         partnerName: appStateController.loadState.bootstrap?.partnerDisplayName) }
                 .clipped()
                 .position(x: window.size.width / 2, y: window.size.height / 2)
         }
@@ -446,11 +447,11 @@ struct FullAppCanvasEditor: View {
         case .disabled(.unpaired):
             return "Pair with your partner to draw"
         case .disabled(.missingPairSession):
-            return "Waiting for pair session"
+            return "Connecting…"
         case .disabled(.waitingForCanvasState):
-            return "Loading canvas"
+            return "Loading canvas…"
         case .disabled(.localStateError):
-            return "Local canvas state needs recovery"
+            return "Your canvas needs reloading. Reload it in Settings › Advanced."
         }
     }
 

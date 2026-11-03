@@ -91,7 +91,7 @@ struct QuickDrawPalette: View {
             }
         }
         .help("Move")
-        .accessibilityLabel("Move the drawing")
+        .accessibilityLabel("Move the canvas")
     }
 
     private func doneButton(_ size: CGFloat) -> some View {

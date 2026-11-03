@@ -53,7 +53,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable {
         case .general: ["login", "startup", "menu bar", "dock", "shortcut", "hotkey", "quick draw", "keyboard", "canvas", "brush", "dry", "strokes"]
         case .desktop: ["desktop", "overlay", "display", "screen", "visibility", "opacity", "position", "reset"]
         case .partner: ["partner", "anniversary", "unpair", "pairing", "wallpaper", "streak", "together"]
-        case .advanced: ["sync", "revision", "recover", "offline", "connection"]
+        case .advanced: ["sync", "revision", "reload", "recover", "offline", "connection"]
         case .about: ["about", "version", "build", "feedback", "privacy", "terms", "website", "source"]
         }
     }

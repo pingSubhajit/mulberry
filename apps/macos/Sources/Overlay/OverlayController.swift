@@ -471,8 +471,8 @@ public final class OverlayController: NSObject, ObservableObject {
 
     private func presentFullscreenPrompt() {
         let alert = NSAlert()
-        alert.messageText = "Quick Draw is not available in this Space"
-        alert.informativeText = "Leave fullscreen or open Mulberry from a normal desktop Space to use Quick Draw."
+        alert.messageText = "Quick Draw doesn’t work in full screen"
+        alert.informativeText = "Exit full screen, then try again."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()
