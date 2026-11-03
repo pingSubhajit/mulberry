@@ -12,7 +12,9 @@ struct AuthenticationView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     Image("BrandMark")
+                        .renderingMode(.template)
                         .resizable().scaledToFit()
+                        .foregroundStyle(.white)
                         .frame(width: 40, height: 66)
                         .accessibilityHidden(true)
                         .padding(.top, 24)
@@ -25,7 +27,7 @@ struct AuthenticationView: View {
                         .accessibilityAddTraits(.isHeader)
                     Text("Share a canvas with your partner that lives on your wallpaper")
                         .font(.body)
-                        .foregroundStyle(Color(red: 111 / 255, green: 89 / 255, blue: 97 / 255))
+                        .foregroundStyle(Color(red: 23 / 255, green: 16 / 255, blue: 22 / 255))
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: 320)

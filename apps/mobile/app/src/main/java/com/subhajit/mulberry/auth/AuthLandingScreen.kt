@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.mulberryTapScale
@@ -51,7 +52,6 @@ import com.subhajit.mulberry.core.ui.metadata.AuthProviderId
 import com.subhajit.mulberry.core.ui.metadata.MulberryUiMetadataProvider
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.MulberryInk
-import com.subhajit.mulberry.ui.theme.MulberryMutedInk
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 
 data class AuthLandingUiState(
@@ -131,7 +131,7 @@ private fun AuthLandingScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Image(
-                painter = painterResource(MulberryUiMetadataProvider.brand.iconMarkDrawableRes),
+                painter = painterResource(R.drawable.brand_iconmark_white),
                 contentDescription = stringResource(MulberryUiMetadataProvider.brand.displayNameRes),
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.size(width = 48.dp, height = 72.dp)
@@ -156,7 +156,7 @@ private fun AuthLandingScreen(
                 )
                 Text(
                     text = stringResource(metadata.subtitleRes),
-                    color = MulberryMutedInk,
+                    color = MulberryInk,
                     style = TextStyle(
                         fontFamily = FontFamily.Default,
                         fontWeight = FontWeight.Normal,
