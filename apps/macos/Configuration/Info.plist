@@ -38,6 +38,8 @@
 	<true/>
 	<key>MulberryAPNSEnvironment</key>
 	<string>$(MULBERRY_APNS_ENVIRONMENT)</string>
+	<key>MulberryAppGroup</key>
+	<string>$(MULBERRY_APP_GROUP)</string>
 	<key>MulberryAppEnvironment</key>
 	<string>$(MULBERRY_APP_ENVIRONMENT)</string>
 	<key>MulberryRemotePushEnabled</key>

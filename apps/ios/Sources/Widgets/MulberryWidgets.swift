@@ -6,6 +6,7 @@ import WidgetKit
 struct MulberryWidgets: WidgetBundle {
     var body: some Widget {
         ReactionLiveActivity()
+        TimeTogetherWidget()
     }
 }
 

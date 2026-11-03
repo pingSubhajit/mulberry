@@ -30,10 +30,13 @@ def quote(value, depth=0):
 shared = root.parent.parent / 'packages/apple/Sources'
 product_core = shared / 'ProductCore'
 sources = sorted(root.glob('Sources/**/*.swift')) + [file for target in ['ProductCore', 'CanvasDrawing', 'StickerAssets', 'ProductUI'] for file in sorted((shared / target).glob('*.swift'))]
-# The widget extension draws Live Activities. It shares the activity's attributes and the reaction
-# types with the app, and nothing else.
-widget_only = {s for s in sources if s.is_relative_to(root / 'Sources/Widgets')}
-widget_shared = {s for s in sources if s.is_relative_to(root / 'Sources/Shared')} | {product_core / 'Reactions.swift'}
+# The widget extension draws the reactions Live Activity and the Time together widget. It shares the
+# activity's attributes, the reaction types and the anniversary's arithmetic with the app, and nothing
+# else. The Time together widget's views are shared with the Mac's widget extension.
+time_together = root.parent.parent / 'packages/apple/Widgets/TimeTogether'
+sources += sorted(time_together.glob('*.swift'))
+widget_only = {s for s in sources if s.is_relative_to(root / 'Sources/Widgets') or s.is_relative_to(time_together)}
+widget_shared = {s for s in sources if s.is_relative_to(root / 'Sources/Shared')} | {product_core / 'Reactions.swift', product_core / 'TimeTogether.swift'}
 refs, builds, widget_builds = [], [], []
 for source in sources:
     relative = os.path.relpath(source, root)
@@ -56,6 +59,13 @@ privacy_ref = add('privacy-manifest', isa='PBXFileReference', lastKnownFileType=
 privacy_build = add('privacy-manifest-build', isa='PBXBuildFile', fileRef=privacy_ref)
 widget_privacy_ref = add('widget-privacy-manifest', isa='PBXFileReference', lastKnownFileType='text.xml', path='Resources/Widgets/PrivacyInfo.xcprivacy', sourceTree='<group>')
 widget_privacy_build = add('widget-privacy-manifest-build', isa='PBXBuildFile', fileRef=widget_privacy_ref)
+# The Time together widget's artwork and its Poppins, registered by the extension itself.
+time_together_refs, time_together_builds = [], []
+for path in [time_together / 'TimeTogetherAssets.xcassets'] + sorted((time_together / 'Fonts').glob('*.ttf')):
+    relative = os.path.relpath(path, root)
+    reference = add('time-together:' + relative, isa='PBXFileReference', lastKnownFileType='folder.assetcatalog' if path.suffix == '.xcassets' else 'file', path=relative, sourceTree='<group>')
+    time_together_refs.append(reference)
+    time_together_builds.append(add('time-together-build:' + relative, isa='PBXBuildFile', fileRef=reference))
 icon_refs, icon_builds = [], []
 for icon in ['AppIcon', 'AppIconDev']:
     reference = add(icon, isa='PBXFileReference', lastKnownFileType='folder.iconcomposer.icon', path=f'Resources/{icon}.icon', sourceTree='<group>')
@@ -96,7 +106,7 @@ widget_assets_ref = add('widget-assets', isa='PBXFileReference', lastKnownFileTy
 widget_assets_build = add('widget-assets-build', isa='PBXBuildFile', fileRef=widget_assets_ref)
 widget_plist_ref = add('widget-plist', isa='PBXFileReference', lastKnownFileType='text.plist.xml', path='Configuration/Widgets-Info.plist', sourceTree='<group>')
 products = add('products', isa='PBXGroup', name='Products', children=[product, widget_product], sourceTree='<group>')
-main = add('main', isa='PBXGroup', children=refs + icon_refs + [resources, asset_ref, font_ref, legal_ref, config_ref, debug_config_ref, widget_assets_ref, widget_plist_ref, privacy_ref, widget_privacy_ref, products], sourceTree='<group>')
+main = add('main', isa='PBXGroup', children=refs + icon_refs + [resources, asset_ref, font_ref, legal_ref, config_ref, debug_config_ref, widget_assets_ref, widget_plist_ref, privacy_ref, widget_privacy_ref] + time_together_refs + [products], sourceTree='<group>')
 sources_phase = add('sources-phase', isa='PBXSourcesBuildPhase', buildActionMask='2147483647', files=builds, runOnlyForDeploymentPostprocessing='0')
 resources_phase = add('resources-phase', isa='PBXResourcesBuildPhase', buildActionMask='2147483647', files=[resource_build, asset_build, font_build, legal_build, privacy_build] + icon_builds, runOnlyForDeploymentPostprocessing='0')
 frameworks_phase = add('frameworks-phase', isa='PBXFrameworksBuildPhase', buildActionMask='2147483647', files=[google_build, firebase_build, crashlytics_build, remote_config_build], runOnlyForDeploymentPostprocessing='0')
@@ -127,6 +137,7 @@ for mode, environment, debug in configurations:
         'PRODUCT_NAME': 'MulberryWidgets',
         'PRODUCT_BUNDLE_IDENTIFIER': '$(MULBERRY_BUNDLE_IDENTIFIER).widgets',
         'INFOPLIST_FILE': 'Configuration/Widgets-Info.plist', 'GENERATE_INFOPLIST_FILE': 'NO',
+        'CODE_SIGN_ENTITLEMENTS': 'Configuration/Widgets.entitlements',
         'CODE_SIGN_STYLE': 'Automatic', 'TARGETED_DEVICE_FAMILY': '1,2', 'SUPPORTED_PLATFORMS': 'iphoneos iphonesimulator',
         'SUPPORTS_MACCATALYST': 'NO', 'SKIP_INSTALL': 'YES', 'APPLICATION_EXTENSION_API_ONLY': 'YES',
         'LD_RUNPATH_SEARCH_PATHS': '$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks',
@@ -134,9 +145,13 @@ for mode, environment, debug in configurations:
     }))
 widget_list = add('widget-configs', isa='XCConfigurationList', buildConfigurations=widget_configs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
 widget_sources = add('widget-sources-phase', isa='PBXSourcesBuildPhase', buildActionMask='2147483647', files=widget_builds, runOnlyForDeploymentPostprocessing='0')
-widget_resources = add('widget-resources-phase', isa='PBXResourcesBuildPhase', buildActionMask='2147483647', files=[widget_assets_build, widget_privacy_build], runOnlyForDeploymentPostprocessing='0')
+widget_resources = add('widget-resources-phase', isa='PBXResourcesBuildPhase', buildActionMask='2147483647', files=[widget_assets_build, widget_privacy_build] + time_together_builds, runOnlyForDeploymentPostprocessing='0')
+# The widget fetches what to show from the same server as the app, so it takes the same local-HTTP rule.
+widget_local_server_phase = add('widget-local-server-phase', isa='PBXShellScriptBuildPhase', buildActionMask='2147483647', files=[],
+    inputPaths=['$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)'], outputPaths=[], runOnlyForDeploymentPostprocessing='0', shellPath='/bin/sh',
+    shellScript='python3 "$SRCROOT/scripts/allow-local-server.py"', alwaysOutOfDate='1', name='Configure local backend access')
 widget_frameworks = add('widget-frameworks-phase', isa='PBXFrameworksBuildPhase', buildActionMask='2147483647', files=[], runOnlyForDeploymentPostprocessing='0')
-widget_target = add('widget-target', isa='PBXNativeTarget', name='MulberryWidgets', productName='MulberryWidgets', productType='com.apple.product-type.app-extension', productReference=widget_product, buildConfigurationList=widget_list, buildPhases=[widget_sources, widget_frameworks, widget_resources], dependencies=[], buildRules=[])
+widget_target = add('widget-target', isa='PBXNativeTarget', name='MulberryWidgets', productName='MulberryWidgets', productType='com.apple.product-type.app-extension', productReference=widget_product, buildConfigurationList=widget_list, buildPhases=[widget_sources, widget_frameworks, widget_resources, widget_local_server_phase], dependencies=[], buildRules=[])
 widget_proxy = add('widget-proxy', isa='PBXContainerItemProxy', containerPortal=oid('project'), proxyType='1', remoteGlobalIDString=widget_target, remoteInfo='MulberryWidgets')
 widget_dependency = add('widget-dependency', isa='PBXTargetDependency', target=widget_target, targetProxy=widget_proxy)
 widget_embed_build = add('widget-embed-build', isa='PBXBuildFile', fileRef=widget_product, settings={'ATTRIBUTES': ['RemoveHeadersOnCopy']})

@@ -156,6 +156,112 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = "DEBB5B7D4EADF7F279F2D3FB";
 		};
+		"A16611A0AEFF47E2A9B5EA31" = {
+			"isa" = "PBXFileReference";
+			"path" = "Widgets/MulberryMacWidgets.swift";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"96E0924F2FF24818BF673882" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A16611A0AEFF47E2A9B5EA31";
+		};
+		"CD24E247C09566F51B159FBA" = {
+			"isa" = "PBXFileReference";
+			"path" = "../../packages/apple/Sources/ProductCore/TimeTogether.swift";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"B4732DFE69F7A373C1DA05FF" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "CD24E247C09566F51B159FBA";
+		};
+		"89F1562069C6E322E5E89820" = {
+			"isa" = "PBXFileReference";
+			"path" = "../../packages/apple/Widgets/TimeTogether/TimeTogetherWidget.swift";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"026BBE210E2455321B771707" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "89F1562069C6E322E5E89820";
+		};
+		"889C1E3F895975BC34140EEF" = {
+			"isa" = "PBXFileReference";
+			"path" = "../../packages/apple/Widgets/TimeTogether/TimeTogetherAssets.xcassets";
+			"lastKnownFileType" = "folder.assetcatalog";
+			"sourceTree" = "<group>";
+		};
+		"B55DCC1FB7DF5E9BE16F1FF2" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "889C1E3F895975BC34140EEF";
+		};
+		"4FBC2D81BF9AE3908951C2A5" = {
+			"isa" = "PBXFileReference";
+			"path" = "Widgets/PrivacyInfo.xcprivacy";
+			"lastKnownFileType" = "text.xml";
+			"sourceTree" = "<group>";
+		};
+		"7806898260ADFEE028AB7D5A" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "4FBC2D81BF9AE3908951C2A5";
+		};
+		"F3E3F866CBC9EC3942D35454" = {
+			"isa" = "PBXFileReference";
+			"path" = "../../packages/apple/Widgets/TimeTogether/Fonts/poppins_bold.ttf";
+			"lastKnownFileType" = "file";
+			"sourceTree" = "<group>";
+		};
+		"3E38356B5DB2D250BCA4ACB2" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F3E3F866CBC9EC3942D35454";
+		};
+		"87915FA999FFC4DC0708E21A" = {
+			"isa" = "PBXFileReference";
+			"path" = "../../packages/apple/Widgets/TimeTogether/Fonts/poppins_extrabold.ttf";
+			"lastKnownFileType" = "file";
+			"sourceTree" = "<group>";
+		};
+		"A0DBD8C487D7E88419EC286B" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "87915FA999FFC4DC0708E21A";
+		};
+		"56D34D106AE970D3F2C04EF8" = {
+			"isa" = "PBXFileReference";
+			"path" = "../../packages/apple/Widgets/TimeTogether/Fonts/poppins_medium.ttf";
+			"lastKnownFileType" = "file";
+			"sourceTree" = "<group>";
+		};
+		"0FA679DBF97FE17ED4237D05" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "56D34D106AE970D3F2C04EF8";
+		};
+		"AE2B542EC4C121BEB665F199" = {
+			"isa" = "PBXFileReference";
+			"path" = "Configuration/Widgets-Info.plist";
+			"lastKnownFileType" = "text.plist.xml";
+			"sourceTree" = "<group>";
+		};
+		"03C518651FB921D357121AD4" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "AE2B542EC4C121BEB665F199";
+		};
+		"EEEC4AC6D1276C55C04EF021" = {
+			"isa" = "PBXFileReference";
+			"path" = "Configuration/Widgets.entitlements";
+			"lastKnownFileType" = "text.plist.entitlements";
+			"sourceTree" = "<group>";
+		};
+		"5F68A9916AB1093E7308047D" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "EEEC4AC6D1276C55C04EF021";
+		};
+		"D1FC3980C62A8D20F6C0FFF0" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.app-extension";
+			"path" = "MulberryWidgets.appex";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
 		"582681C2EAE02B3F3D399C0C" = {
 			"isa" = "XCLocalSwiftPackageReference";
 			"relativePath" = ".";
@@ -178,12 +284,12 @@
 		"FBDC4F23F93125BBEEAE800C" = {
 			"isa" = "PBXGroup";
 			"name" = "Products";
-			"children" = ("38A007151ABE87CC01A5B6E9");
+			"children" = ("38A007151ABE87CC01A5B6E9", "D1FC3980C62A8D20F6C0FFF0");
 			"sourceTree" = "<group>";
 		};
 		"B28B7AF69320201D1CF206EB" = {
 			"isa" = "PBXGroup";
-			"children" = ("61C4128C816142244CD9DE5F", "569EDCB79C5997098BB9BC26", "6611F11981A71CB70E7D4F66", "B010BE2DF92CB884AF77C55A", "7EC15512FB367CB0EA9FEEFB", "AD76318742F3600F4B64F3D8", "A34A7057B0A7984A7A36C32E", "2BBA19478F9D88BE14A79ABC", "E3D69686AFC7F07C6E5D7CE2", "44181410BD750F2885F06F16", "4CB5C4344469CC7F15ECFAD3", "E851CAF80F2FBFFCC9EB9A39", "77B3AF83FA600B50522161DE", "99E38A031DA5313CE8FCA26C", "DEBB5B7D4EADF7F279F2D3FB", "FBDC4F23F93125BBEEAE800C");
+			"children" = ("61C4128C816142244CD9DE5F", "569EDCB79C5997098BB9BC26", "6611F11981A71CB70E7D4F66", "B010BE2DF92CB884AF77C55A", "7EC15512FB367CB0EA9FEEFB", "AD76318742F3600F4B64F3D8", "A34A7057B0A7984A7A36C32E", "2BBA19478F9D88BE14A79ABC", "E3D69686AFC7F07C6E5D7CE2", "44181410BD750F2885F06F16", "4CB5C4344469CC7F15ECFAD3", "E851CAF80F2FBFFCC9EB9A39", "77B3AF83FA600B50522161DE", "99E38A031DA5313CE8FCA26C", "DEBB5B7D4EADF7F279F2D3FB", "A16611A0AEFF47E2A9B5EA31", "CD24E247C09566F51B159FBA", "89F1562069C6E322E5E89820", "889C1E3F895975BC34140EEF", "4FBC2D81BF9AE3908951C2A5", "F3E3F866CBC9EC3942D35454", "87915FA999FFC4DC0708E21A", "56D34D106AE970D3F2C04EF8", "AE2B542EC4C121BEB665F199", "EEEC4AC6D1276C55C04EF021", "FBDC4F23F93125BBEEAE800C");
 			"sourceTree" = "<group>";
 		};
 		"BCE16DD0260827ECF338C787" = {
@@ -247,16 +353,16 @@
 			"name" = "Debug";
 			"buildSettings" = {
 				"PRODUCT_NAME" = "Mulberry";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.subhajit.mulberry.dev";
-				"DEVELOPMENT_TEAM" = "YGJRT89MH9";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.subhajit.mulberry.beta.dev";
+				"DEVELOPMENT_TEAM" = "HMJX9736KN";
 				"CODE_SIGN_STYLE" = "Automatic";
-				"CODE_SIGN_ENTITLEMENTS" = "Configuration/Debug.entitlements";
+				"CODE_SIGN_ENTITLEMENTS" = "Configuration/Release.entitlements";
 				"INFOPLIST_FILE" = "Configuration/Info.plist";
 				"GENERATE_INFOPLIST_FILE" = "NO";
 				"SUPPORTED_PLATFORMS" = "macosx";
 				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIconDev";
 				"MULBERRY_APP_ENVIRONMENT" = "dev";
-				"MULBERRY_REMOTE_PUSH_ENABLED" = "NO";
+				"MULBERRY_REMOTE_PUSH_ENABLED" = "YES";
 				"MULBERRY_APNS_ENVIRONMENT" = "development";
 				"ENABLE_APP_SANDBOX" = "YES";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
@@ -264,6 +370,30 @@
 				"OTHER_SWIFT_FLAGS" = "$(inherited) -parse-as-library";
 				"ENABLE_DEBUG_DYLIB" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks";
+				"MULBERRY_APP_GROUP" = "$(DEVELOPMENT_TEAM).group.$(PRODUCT_BUNDLE_IDENTIFIER)";
+			};
+		};
+		"5D347E9C9E7CF37AD766A666" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "MulberryWidgets";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.subhajit.mulberry.beta.dev.widgets";
+				"DEVELOPMENT_TEAM" = "HMJX9736KN";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"CODE_SIGN_ENTITLEMENTS" = "Configuration/Widgets.entitlements";
+				"INFOPLIST_FILE" = "Configuration/Widgets-Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"SUPPORTED_PLATFORMS" = "macosx";
+				"ENABLE_APP_SANDBOX" = "YES";
+				"ENABLE_HARDENED_RUNTIME" = "YES";
+				"SKIP_INSTALL" = "YES";
+				"APPLICATION_EXTENSION_API_ONLY" = "YES";
+				"ENABLE_DEBUG_DYLIB" = "NO";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) WIDGET_EXTENSION";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks";
+				"MULBERRY_APNS_ENVIRONMENT" = "development";
+				"MULBERRY_APP_GROUP" = "$(DEVELOPMENT_TEAM).group.com.subhajit.mulberry.beta.dev";
 			};
 		};
 		"78D7CB57AF24D91AA452EFFB" = {
@@ -285,16 +415,16 @@
 			"name" = "DevRelease";
 			"buildSettings" = {
 				"PRODUCT_NAME" = "Mulberry";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.subhajit.mulberry.dev";
-				"DEVELOPMENT_TEAM" = "YGJRT89MH9";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.subhajit.mulberry.beta.dev";
+				"DEVELOPMENT_TEAM" = "HMJX9736KN";
 				"CODE_SIGN_STYLE" = "Automatic";
-				"CODE_SIGN_ENTITLEMENTS" = "Configuration/Debug.entitlements";
+				"CODE_SIGN_ENTITLEMENTS" = "Configuration/Release.entitlements";
 				"INFOPLIST_FILE" = "Configuration/Info.plist";
 				"GENERATE_INFOPLIST_FILE" = "NO";
 				"SUPPORTED_PLATFORMS" = "macosx";
 				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIconDev";
 				"MULBERRY_APP_ENVIRONMENT" = "dev";
-				"MULBERRY_REMOTE_PUSH_ENABLED" = "NO";
+				"MULBERRY_REMOTE_PUSH_ENABLED" = "YES";
 				"MULBERRY_APNS_ENVIRONMENT" = "development";
 				"ENABLE_APP_SANDBOX" = "YES";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
@@ -302,6 +432,30 @@
 				"OTHER_SWIFT_FLAGS" = "$(inherited) -parse-as-library";
 				"ENABLE_DEBUG_DYLIB" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks";
+				"MULBERRY_APP_GROUP" = "$(DEVELOPMENT_TEAM).group.$(PRODUCT_BUNDLE_IDENTIFIER)";
+			};
+		};
+		"E905B4B8DB3844DCD2D80B61" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "DevRelease";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "MulberryWidgets";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.subhajit.mulberry.beta.dev.widgets";
+				"DEVELOPMENT_TEAM" = "HMJX9736KN";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"CODE_SIGN_ENTITLEMENTS" = "Configuration/Widgets.entitlements";
+				"INFOPLIST_FILE" = "Configuration/Widgets-Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"SUPPORTED_PLATFORMS" = "macosx";
+				"ENABLE_APP_SANDBOX" = "YES";
+				"ENABLE_HARDENED_RUNTIME" = "YES";
+				"SKIP_INSTALL" = "YES";
+				"APPLICATION_EXTENSION_API_ONLY" = "YES";
+				"ENABLE_DEBUG_DYLIB" = "NO";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) WIDGET_EXTENSION";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks";
+				"MULBERRY_APNS_ENVIRONMENT" = "development";
+				"MULBERRY_APP_GROUP" = "$(DEVELOPMENT_TEAM).group.com.subhajit.mulberry.beta.dev";
 			};
 		};
 		"F1986269F21AB0A39C26F267" = {
@@ -340,6 +494,30 @@
 				"OTHER_SWIFT_FLAGS" = "$(inherited) -parse-as-library";
 				"ENABLE_DEBUG_DYLIB" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks";
+				"MULBERRY_APP_GROUP" = "$(DEVELOPMENT_TEAM).group.$(PRODUCT_BUNDLE_IDENTIFIER)";
+			};
+		};
+		"E5FEEE3AB7DFFB7BD0AE1F98" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "ProdDebug";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "MulberryWidgets";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.subhajit.mulberry.beta.widgets";
+				"DEVELOPMENT_TEAM" = "HMJX9736KN";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"CODE_SIGN_ENTITLEMENTS" = "Configuration/Widgets.entitlements";
+				"INFOPLIST_FILE" = "Configuration/Widgets-Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"SUPPORTED_PLATFORMS" = "macosx";
+				"ENABLE_APP_SANDBOX" = "YES";
+				"ENABLE_HARDENED_RUNTIME" = "YES";
+				"SKIP_INSTALL" = "YES";
+				"APPLICATION_EXTENSION_API_ONLY" = "YES";
+				"ENABLE_DEBUG_DYLIB" = "NO";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) WIDGET_EXTENSION";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks";
+				"MULBERRY_APNS_ENVIRONMENT" = "development";
+				"MULBERRY_APP_GROUP" = "$(DEVELOPMENT_TEAM).group.com.subhajit.mulberry.beta";
 			};
 		};
 		"00F209874A1F7309F6DCEAA7" = {
@@ -378,6 +556,30 @@
 				"OTHER_SWIFT_FLAGS" = "$(inherited) -parse-as-library";
 				"ENABLE_DEBUG_DYLIB" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks";
+				"MULBERRY_APP_GROUP" = "$(DEVELOPMENT_TEAM).group.$(PRODUCT_BUNDLE_IDENTIFIER)";
+			};
+		};
+		"261315CCA0B4FA0079C9F97E" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "MulberryWidgets";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.subhajit.mulberry.beta.widgets";
+				"DEVELOPMENT_TEAM" = "HMJX9736KN";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"CODE_SIGN_ENTITLEMENTS" = "Configuration/Widgets.entitlements";
+				"INFOPLIST_FILE" = "Configuration/Widgets-Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"SUPPORTED_PLATFORMS" = "macosx";
+				"ENABLE_APP_SANDBOX" = "YES";
+				"ENABLE_HARDENED_RUNTIME" = "YES";
+				"SKIP_INSTALL" = "YES";
+				"APPLICATION_EXTENSION_API_ONLY" = "YES";
+				"ENABLE_DEBUG_DYLIB" = "NO";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) WIDGET_EXTENSION";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks";
+				"MULBERRY_APNS_ENVIRONMENT" = "production";
+				"MULBERRY_APP_GROUP" = "$(DEVELOPMENT_TEAM).group.com.subhajit.mulberry.beta";
 			};
 		};
 		"640DC9EFD529235A8D9E2727" = {
@@ -392,6 +594,69 @@
 			"defaultConfigurationIsVisible" = "0";
 			"defaultConfigurationName" = "Release";
 		};
+		"7475E6A6368E532E2681E781" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("5D347E9C9E7CF37AD766A666", "E905B4B8DB3844DCD2D80B61", "E5FEEE3AB7DFFB7BD0AE1F98", "261315CCA0B4FA0079C9F97E");
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+		};
+		"82CE34952E166218838BE670" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ("96E0924F2FF24818BF673882", "B4732DFE69F7A373C1DA05FF", "026BBE210E2455321B771707");
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"112482586DC9325ECD958FF1" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"2093904A82FF706A79646301" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ("B55DCC1FB7DF5E9BE16F1FF2", "7806898260ADFEE028AB7D5A", "3E38356B5DB2D250BCA4ACB2", "A0DBD8C487D7E88419EC286B", "0FA679DBF97FE17ED4237D05");
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"FAD79F600E79F84B420BD567" = {
+			"isa" = "PBXNativeTarget";
+			"name" = "MulberryWidgets";
+			"productName" = "MulberryWidgets";
+			"productType" = "com.apple.product-type.app-extension";
+			"productReference" = "D1FC3980C62A8D20F6C0FFF0";
+			"buildConfigurationList" = "7475E6A6368E532E2681E781";
+			"buildPhases" = ("82CE34952E166218838BE670", "112482586DC9325ECD958FF1", "2093904A82FF706A79646301");
+			"dependencies" = ();
+			"buildRules" = ();
+		};
+		"937A01D863611CD7A85B6FE9" = {
+			"isa" = "PBXContainerItemProxy";
+			"containerPortal" = "98F54143AB4E86B28C3AFEE0";
+			"proxyType" = "1";
+			"remoteGlobalIDString" = "FAD79F600E79F84B420BD567";
+			"remoteInfo" = "MulberryWidgets";
+		};
+		"A9181351A1FEE60D4A78323F" = {
+			"isa" = "PBXTargetDependency";
+			"target" = "FAD79F600E79F84B420BD567";
+			"targetProxy" = "937A01D863611CD7A85B6FE9";
+		};
+		"D4FAAAFCC3C6961AB2B22D7E" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "D1FC3980C62A8D20F6C0FFF0";
+			"settings" = {
+				"ATTRIBUTES" = ("RemoveHeadersOnCopy");
+			};
+		};
+		"3C77D87331DA3348D7F7BA96" = {
+			"isa" = "PBXCopyFilesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"dstPath" = "";
+			"dstSubfolderSpec" = "13";
+			"files" = ("D4FAAAFCC3C6961AB2B22D7E");
+			"name" = "Embed Foundation Extensions";
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
 		"0E8A3AD980EC179856012B7E" = {
 			"isa" = "PBXNativeTarget";
 			"name" = "Mulberry";
@@ -399,8 +664,8 @@
 			"productType" = "com.apple.product-type.application";
 			"productReference" = "38A007151ABE87CC01A5B6E9";
 			"buildConfigurationList" = "976B52545947CA66FD9EF2A4";
-			"buildPhases" = ("BCE16DD0260827ECF338C787", "7561BFB015D8F536760CB671", "0189424A5A60FED329FA868E", "B5E1B03C7A10B5D5640FCB22", "20C8F087E021DFEB08084B62");
-			"dependencies" = ();
+			"buildPhases" = ("BCE16DD0260827ECF338C787", "7561BFB015D8F536760CB671", "0189424A5A60FED329FA868E", "B5E1B03C7A10B5D5640FCB22", "3C77D87331DA3348D7F7BA96", "20C8F087E021DFEB08084B62");
+			"dependencies" = ("A9181351A1FEE60D4A78323F");
 			"buildRules" = ();
 			"packageProductDependencies" = ("1CC4754E52664BF705F2960E");
 		};
@@ -426,7 +691,7 @@
 			"productRefGroup" = "FBDC4F23F93125BBEEAE800C";
 			"projectDirPath" = "";
 			"projectRoot" = "";
-			"targets" = ("0E8A3AD980EC179856012B7E");
+			"targets" = ("0E8A3AD980EC179856012B7E", "FAD79F600E79F84B420BD567");
 			"packageReferences" = ("582681C2EAE02B3F3D399C0C");
 		};
 	};

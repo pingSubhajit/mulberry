@@ -109,6 +109,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     }
     public func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
         guard let event = MacPushEvent(userInfo) else { return }
+        // The partner changed the anniversary, or the pair ended: the widget follows before anything else.
+        if authController.state.isSignedIn { TimeTogetherStore.receivePush(userInfo) }
         Task { await receiveRemoteUpdate(event) }
     }
     private func receiveRemoteUpdate(_ event: MacPushEvent) async {
@@ -116,7 +118,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         UserDefaults.standard.set(event.type, forKey: "lastRemotePushType")
         UserDefaults.standard.set(Date(), forKey: "lastRemotePushAt")
         if let revision = event.revision { UserDefaults.standard.set(revision, forKey: "lastRemotePushRevision") }
-        if ["PAIRING_CONFIRMED", "PAIRING_DISCONNECTED", "PARTNER_VISIBILITY_CHANGED"].contains(event.type) {
+        if ["PAIRING_CONFIRMED", "PAIRING_DISCONNECTED", "PARTNER_VISIBILITY_CHANGED", "ANNIVERSARY_CHANGED", "PAIR_ENDED"].contains(event.type) {
             await appStateController.refreshBootstrapAndReportOverlay(overlayController: overlayController, syncController: syncController)
         }
         guard let pair = appStateController.loadState.bootstrap?.pairSessionId, event.pairSessionID == pair else { return }

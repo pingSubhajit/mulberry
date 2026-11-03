@@ -67,7 +67,12 @@ public enum AuthSessionState: Sendable {
 /// keeps the tokens in the Keychain and refreshes them for every request.
 @MainActor
 public final class AuthSessionController: ObservableObject {
-    @Published public private(set) var state: AuthSessionState = .signedOut
+    @Published public private(set) var state: AuthSessionState = .signedOut {
+        didSet {
+            // Signed out, the Time together widget asks for an anniversary again.
+            if oldValue.isSignedIn && !state.isSignedIn { TimeTogetherStore.save(anniversary: nil, pairSessionId: nil) }
+        }
+    }
     /// The sign-in button in progress.
     @Published public private(set) var signingInWith: SignInMethod?
     /// Revoke this device's push registration while its account is still authenticated.

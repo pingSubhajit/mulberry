@@ -20,6 +20,10 @@
 	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>6</string>
+	<key>MulberryAPIBaseURL</key>
+	<string>$(MULBERRY_API_BASE_URL)</string>
+	<key>MulberryAppGroup</key>
+	<string>$(MULBERRY_APP_GROUP)</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>

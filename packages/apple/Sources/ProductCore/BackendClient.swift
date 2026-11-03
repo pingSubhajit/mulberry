@@ -247,6 +247,18 @@ public actor BackendClient {
         let _: JSONValue = try await json("devices/live-activity", method: "PUT", body: body)
     }
 
+    /// Where WidgetKit takes reloads for this device's widgets; `nil` forgets it.
+    public func updateWidgetPushToken(_ widgetToken: String?, registration: String, bundleId: String, apnsEnvironment: String, widgetSecret: String) async throws {
+        let body: [String: JSONValue] = [
+            "token": .string(registration),
+            "widgetPushToken": widgetToken.map(JSONValue.string) ?? .null,
+            "bundleId": .string(bundleId),
+            "apnsEnvironment": .string(apnsEnvironment),
+            "widgetSecret": .string(widgetSecret),
+        ]
+        let _: JSONValue = try await json("devices/widget-push", method: "PUT", body: body)
+    }
+
     public func sendReaction(_ type: ReactionType) async throws {
         let _: JSONValue = try await json("reactions/send", method: "POST", body: ["reactionType": type.rawValue])
     }

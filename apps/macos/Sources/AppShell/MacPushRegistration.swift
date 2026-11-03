@@ -12,7 +12,7 @@ struct MacPushEvent: Sendable {
     init?(_ payload: [AnyHashable: Any]) {
         guard let type = payload["type"] as? String,
               ["CANVAS_UPDATED", "CANVAS_NUDGE", "PAIRING_CONFIRMED", "PAIRING_DISCONNECTED",
-               "PARTNER_VISIBILITY_CHANGED", "REACTION", "DRAW_REMINDER"].contains(type) else { return nil }
+               "PARTNER_VISIBILITY_CHANGED", "REACTION", "DRAW_REMINDER", "ANNIVERSARY_CHANGED", "PAIR_ENDED"].contains(type) else { return nil }
         self.type = type
         pairSessionID = payload["pairSessionId"] as? String
         revision = (payload["latestRevision"] as? String).flatMap(Int64.init)
@@ -58,7 +58,10 @@ final class MacPushRegistration: NSObject, MessagingDelegate {
             if let token { value = token } else { value = try await Messaging.messaging().token(); token = value }
             guard !signingOut, user == (await api.signedInUserId) else { return }
             let key = "\(user):\(value)"
-            guard registered != key else { return }
+            guard registered != key else {
+                await TimeTogetherWidgetPush.report(api: api, registration: value)
+                return
+            }
             let environment = Bundle.main.object(forInfoDictionaryKey: "MulberryAppEnvironment") as? String ?? "prod"
             try await api.registerPushToken(value, environment: environment, platform: .macOS)
             guard !signingOut, user == (await api.signedInUserId) else { return }
@@ -66,6 +69,7 @@ final class MacPushRegistration: NSObject, MessagingDelegate {
             UserDefaults.standard.set(true, forKey: "pushRegistered")
             UserDefaults.standard.set(settings.authorizationStatus.rawValue, forKey: "pushAuthorizationStatus")
             UserDefaults.standard.removeObject(forKey: "pushRegistrationError")
+            await TimeTogetherWidgetPush.report(api: api, registration: value)
         } catch {
             UserDefaults.standard.set("Remote updates could not connect. They will retry when Mulberry opens.", forKey: "pushRegistrationError")
         }
@@ -87,7 +91,7 @@ final class MacPushRegistration: NSObject, MessagingDelegate {
     }
     func signOut() async {
         signingOut = true
-        defer { signingOut = false; registered = nil; token = nil }
+        defer { signingOut = false; registered = nil; token = nil; TimeTogetherWidgetPush.forget() }
         if let token { try? await api.unregisterPushToken(token) }
         if FirebaseApp.app() != nil { try? await Messaging.messaging().deleteToken() }
         UserDefaults.standard.set(false, forKey: "pushRegistered")

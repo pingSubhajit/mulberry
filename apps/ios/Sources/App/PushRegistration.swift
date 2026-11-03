@@ -88,6 +88,7 @@ final class PushRegistration: NSObject, MessagingDelegate {
                 UserDefaults.standard.removeObject(forKey: "pushRegistrationError")
             }
             reportLiveActivityTokens()
+            await TimeTogetherWidgetPush.report(api: api, registration: value)
         } catch {
             UserDefaults.standard.set("Remote updates could not connect. They will retry when Mulberry opens.", forKey: "pushRegistrationError")
         }
@@ -126,7 +127,7 @@ final class PushRegistration: NSObject, MessagingDelegate {
 
     func signOut() async {
         signingOut = true
-        defer { signingOut = false; registered = nil; token = nil; reportedLiveActivity = nil }
+        defer { signingOut = false; registered = nil; token = nil; reportedLiveActivity = nil; TimeTogetherWidgetPush.forget() }
         if let token, let api = try? AppRuntime.api() { try? await api.unregisterPushToken(token) }
         if FirebaseApp.app() != nil { try? await Messaging.messaging().deleteToken() }
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()

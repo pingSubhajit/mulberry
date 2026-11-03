@@ -132,6 +132,7 @@ public final class AppStateController: ObservableObject {
         guard bootstrap.userId == lastLoadedUserID else { return }
         loadState = .loaded(bootstrap)
         authController.accept(bootstrap)
+        TimeTogetherStore.save(anniversary: bootstrap.anniversaryDate, pairSessionId: bootstrap.isPaired ? bootstrap.pairSessionId : nil)
     }
 
     private func updateSyncSession(syncController: CanvasSyncController) {

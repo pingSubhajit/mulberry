@@ -47,6 +47,10 @@
 	<true/>
 	<key>MulberryAPIBaseURL</key>
 	<string>$(MULBERRY_API_BASE_URL)</string>
+	<key>MulberryAPNSEnvironment</key>
+	<string>$(APS_ENVIRONMENT)</string>
+	<key>MulberryAppGroup</key>
+	<string>$(MULBERRY_APP_GROUP)</string>
 	<key>MulberryAppEnvironment</key>
 	<string>$(MULBERRY_APP_ENVIRONMENT)</string>
 	<key>NSSupportsLiveActivities</key>

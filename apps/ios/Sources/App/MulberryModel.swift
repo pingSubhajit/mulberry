@@ -1,5 +1,10 @@
 import SwiftUI
 
+extension Notification.Name {
+    /// The partner changed the anniversary while Mulberry was running.
+    static let mulberryAnniversaryPush = Notification.Name("mulberryAnniversaryPush")
+}
+
 @MainActor
 final class MulberryModel: ObservableObject {
     let streaks = StreakModel()
@@ -34,7 +39,13 @@ final class MulberryModel: ObservableObject {
     private var active = true
     private var backgrounded = false
     private let wallpaperService: ProductWallpaperService
-    init(wallpaperService: ProductWallpaperService? = nil) { self.wallpaperService = wallpaperService ?? .shared }
+    private var anniversaryObserver: NSObjectProtocol?
+    init(wallpaperService: ProductWallpaperService? = nil) {
+        self.wallpaperService = wallpaperService ?? .shared
+        anniversaryObserver = NotificationCenter.default.addObserver(forName: .mulberryAnniversaryPush, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in await self?.refresh() }
+        }
+    }
     private var sessionEpoch = 0
     private var prewarmedElements: [JSONValue] = []
 
@@ -226,6 +237,7 @@ final class MulberryModel: ObservableObject {
         active = value
         backgrounded = updateWallpaper
         if value {
+            TimeTogetherStore.reloadWidget()
             await sync?.start()
             await refresh()
         } else {
@@ -289,6 +301,7 @@ final class MulberryModel: ObservableObject {
         reactions.bind(userId: nil, pairSessionId: nil)
         showStreak = false; showPairingConfirmation = false
         bootstrap = nil; canvas.reset(); draft = ProfileDraft()
+        TimeTogetherStore.save(anniversary: nil, pairSessionId: nil)
         createdInvite = nil; showSettings = false; showInviteEntry = false
         showWallpaperOnboarding = false; errorMessage = nil; busy = false
         canvasSaveError = nil; retryCanvasSave = nil
@@ -318,6 +331,7 @@ final class MulberryModel: ObservableObject {
             showWallpaperOnboarding = state.userId.map { !UserDefaults.standard.bool(forKey: "wallpaperVisited.\($0)") } ?? false
         }
         if let user = state.userId, let data = try? JSONEncoder().encode(state) { UserDefaults.standard.set(data, forKey: "bootstrap.\(user)") }
+        TimeTogetherStore.save(anniversary: state.anniversaryDate, pairSessionId: state.isPaired ? state.pairSessionId : nil)
         if previousUser != state.userId || previousPair != state.pairSessionId || (sync == nil && state.isPaired) {
             await sync?.stop(); syncObserver?.cancel()
             sync = nil; canvas.reset()

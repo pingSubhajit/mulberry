@@ -35,6 +35,13 @@ final class NotificationBridge: NSObject, UIApplicationDelegate, UNUserNotificat
         // Only the user-enabled Shortcuts automation changes wallpaper. A reaction push asks the
         // canvas to fetch and play it while Mulberry runs; the Live Activity has its own push.
         if userInfo["type"] as? String == "REACTION" { NotificationCenter.default.post(name: .mulberryReactionPush, object: nil) }
+        // The partner changed the anniversary, or the pair ended: the widget's store follows, a running
+        // app fetches its account again, and the server's WidgetKit push that follows redraws the widget.
+        if TimeTogetherStore.receivePush(userInfo) {
+            NotificationCenter.default.post(name: .mulberryAnniversaryPush, object: nil)
+            completionHandler(.newData)
+            return
+        }
         completionHandler(.noData)
     }
 

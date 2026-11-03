@@ -9,5 +9,9 @@ GOOGLE_REVERSED_CLIENT_ID =
 GOOGLE_SERVER_CLIENT_ID =
 
 MULBERRY_ENTITLEMENTS_FILE = Configuration/Mulberry.entitlements
+// Debug and Release builds of both apps sign with the paid team.
+DEVELOPMENT_TEAM = HMJX9736KN
+// Where the app leaves the anniversary for the widget extension; one per app identity.
+MULBERRY_APP_GROUP = group.$(MULBERRY_BUNDLE_IDENTIFIER)
 APS_ENVIRONMENT = production
 #include? "Production.local.xcconfig"
