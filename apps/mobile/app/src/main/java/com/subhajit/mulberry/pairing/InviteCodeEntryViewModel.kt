@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.pairing
 
+import com.subhajit.mulberry.core.UserFacingError
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -50,18 +51,10 @@ class InviteCodeEntryViewModel @Inject constructor(
                 .onFailure { error ->
                     _uiState.value = _uiState.value.copy(
                         isSubmitting = false,
-                        errorMessage = friendlyInviteError(error) ?: "Unable to redeem invite"
+                        errorMessage = UserFacingError.message(error, "Couldn’t join with that code. Try again.")
                     )
                 }
         }
     }
 }
 
-private fun friendlyInviteError(error: Throwable): String? = when (error.message) {
-    "You cannot redeem your own invite" -> "That’s your invite code. Share it with your partner."
-    "Invite code has expired" -> "That invite code has expired. Ask your partner to generate a new one."
-    "Invite code is no longer valid" -> "That invite code is no longer valid. Ask your partner to generate a new one."
-    "Invite code not found" -> "That invite code wasn’t found. Double-check the code and try again."
-    "Already paired" -> "You’re already paired. Disconnect first to join a new invite."
-    else -> error.message
-}

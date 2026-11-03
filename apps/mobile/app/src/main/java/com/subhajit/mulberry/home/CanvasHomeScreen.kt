@@ -1010,7 +1010,10 @@ private fun CanvasHomePane(
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = stringResource(R.string.home_unpaired_body),
+                text = stringResource(
+                    R.string.home_unpaired_body,
+                    uiState.bootstrapState.partnerDisplayName?.trim()?.takeIf { it.isNotEmpty() } ?: "your partner"
+                ),
                 color = MaterialTheme.mulberryAppColors.mutedText,
                 fontFamily = PoppinsFontFamily,
                 fontSize = 15.sp,
@@ -3285,14 +3288,18 @@ private fun PairingConfirmedBottomSheet(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = buildAnnotatedString {
-                        append(stringResource(R.string.invite_acceptance_wrong_partner))
+                        append(
+                            partnerName?.takeIf { it.isNotBlank() }
+                                ?.let { stringResource(R.string.invite_acceptance_not_partner, it) }
+                                ?: stringResource(R.string.invite_acceptance_wrong_partner)
+                        )
                         append(" ")
                         withStyle(SpanStyle(color = MulberryPrimary, fontWeight = FontWeight.SemiBold)) {
                             append(
                                 if (confirmation.isDisconnecting) {
                                     stringResource(R.string.home_pairing_disconnect_progress)
                                 } else {
-                                    stringResource(R.string.invite_acceptance_disconnect)
+                                    stringResource(R.string.pairing_confirmed_unpair)
                                 }
                             )
                         }

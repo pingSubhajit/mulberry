@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.settings
 
+import com.subhajit.mulberry.core.UserFacingError
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -60,9 +61,6 @@ import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
-import retrofit2.HttpException
-import java.io.IOException
 import java.time.LocalDate
 
 data class SettingsUiState(
@@ -614,27 +612,9 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private fun Throwable.toUserFacingMessage(): String {
-        return when (this) {
-            is HttpException -> {
-                val statusCode = code()
-                val backendMessage = runCatching {
-                    val raw = response()?.errorBody()?.string()?.trim().orEmpty()
-                    if (raw.isBlank()) return@runCatching null
-                    JSONObject(raw).optString("message").takeIf { it.isNotBlank() }
-                }.getOrNull()
-
-                when {
-                    !backendMessage.isNullOrBlank() -> backendMessage
-                    statusCode == 401 -> "Session expired. Please sign in again."
-                    statusCode in 500..599 -> "Server error. Please try again."
-                    else -> "Request failed (HTTP $statusCode)."
-                }
-            }
-            is IOException -> "Network error. Check your connection and try again."
-            else -> message?.takeIf { it.isNotBlank() } ?: "Something went wrong"
-        }
-    }
+    private fun Throwable.toUserFacingMessage(): String =
+        UserFacingError.message(this, "Mulberry couldn’t finish that. Try again.")
+            ?: "Mulberry couldn’t finish that. Try again."
 
     private fun Uri.toImagePart(): MultipartBody.Part {
         val bytes = appContext.contentResolver.openInputStream(this)?.use { it.readBytes() }

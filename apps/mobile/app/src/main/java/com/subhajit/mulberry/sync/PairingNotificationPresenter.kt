@@ -37,17 +37,18 @@ object PairingNotificationPresenter {
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val title = "${payload.actorDisplayName} joined you on Mulberry"
+        val name = payload.actorDisplayName.trim().takeIf { it.isNotEmpty() && it != "Your partner" }
+        val title = if (name == null) "You’re paired" else "You’re paired with $name"
         val notification = NotificationCompat.Builder(
             context,
             MulberryNotificationChannels.CHANNEL_ID_PAIRING_UPDATES
         )
             .setSmallIcon(R.drawable.brand_iconmark_white)
             .setContentTitle(title)
-            .setContentText("Open Mulberry to start sharing your wallpaper canvas.")
+            .setContentText("Draw them something to say hello.")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("Open Mulberry to start sharing your wallpaper canvas.")
+                    .bigText("Draw them something to say hello.")
             )
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
@@ -78,8 +79,9 @@ object PairingNotificationPresenter {
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val title = "You're no longer paired with ${payload.actorDisplayName}"
-        val message = "Open Mulberry to pair again."
+        val name = payload.actorDisplayName.trim().takeIf { it.isNotEmpty() && it != "Your partner" }
+        val title = if (name == null) "You’re no longer paired" else "You’re no longer paired with $name"
+        val message = "Your canvas is no longer shared."
         val notification = NotificationCompat.Builder(
             context,
             MulberryNotificationChannels.CHANNEL_ID_PAIRING_UPDATES

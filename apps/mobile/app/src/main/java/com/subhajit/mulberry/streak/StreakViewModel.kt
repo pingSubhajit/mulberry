@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.streak
 
+import com.subhajit.mulberry.core.UserFacingError
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.subhajit.mulberry.app.di.ApplicationScope
@@ -77,7 +78,7 @@ class StreakViewModel @Inject constructor(
                     _uiState.value = StreakUiState(
                         isLoading = false,
                         streak = null,
-                        errorMessage = error.message ?: "Could not load streak"
+                        errorMessage = UserFacingError.message(error, "Couldn’t load your streak. Try again.")
                     )
                 }
         }

@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.home
 
+import com.subhajit.mulberry.core.UserFacingError
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.net.Uri
@@ -719,7 +720,7 @@ class CanvasHomeViewModel @Inject constructor(
             }.onFailure { error ->
                 partnerDetailsFormState.value = form.copy(
                     isSaving = false,
-                    errorMessage = error.message ?: "Unable to update partner details"
+                    errorMessage = UserFacingError.message(error, "Couldn’t update partner details. Try again.")
                 )
             }
         }
@@ -757,7 +758,7 @@ class CanvasHomeViewModel @Inject constructor(
             val redeemedInvite = inviteRepository.redeemInvite(code).getOrElse { error ->
                 joinCodeState.value = joinCodeState.value.copy(
                     isSubmitting = false,
-                    errorMessage = friendlyInviteError(error) ?: "Unable to redeem invite code"
+                    errorMessage = UserFacingError.message(error, "Couldn’t join with that code. Try again.")
                 )
                 return@launch
             }
@@ -774,7 +775,7 @@ class CanvasHomeViewModel @Inject constructor(
                 .onFailure { error ->
                     joinCodeState.value = joinCodeState.value.copy(
                         isSubmitting = false,
-                        errorMessage = friendlyInviteError(error) ?: "Unable to accept invite"
+                        errorMessage = UserFacingError.message(error, "Couldn’t accept invite. Try again.")
                     )
                 }
         }
@@ -807,7 +808,7 @@ class CanvasHomeViewModel @Inject constructor(
                 .onFailure { error ->
                     pairingConfirmationState.value = PairingConfirmationUiState(
                         isDisconnecting = false,
-                        errorMessage = error.message ?: "Unable to disconnect partner"
+                        errorMessage = UserFacingError.message(error, "Couldn’t unpair. Try again.")
                     )
                 }
         }
@@ -831,7 +832,7 @@ class CanvasHomeViewModel @Inject constructor(
                 .onFailure { error ->
                     pairingConfirmationState.value = PairingConfirmationUiState(
                         isDisconnecting = false,
-                        errorMessage = error.message ?: "Unable to disconnect partner"
+                        errorMessage = UserFacingError.message(error, "Couldn’t unpair. Try again.")
                     )
                 }
         }
@@ -844,7 +845,7 @@ class CanvasHomeViewModel @Inject constructor(
                 return@launch
             }
             val invite = ensureShareableInvite().getOrElse { error ->
-                inviteErrorState.value = error.message ?: "Unable to create invite"
+                inviteErrorState.value = UserFacingError.message(error, "Couldn’t create invite. Try again.")
                 return@launch
             }
             _effects.emit(CanvasHomeEffect.ShareInvite(invite.toShareMessage()))
@@ -887,7 +888,7 @@ class CanvasHomeViewModel @Inject constructor(
             }
             .onFailure { error ->
                 inviteLoadingState.value = false
-                inviteErrorState.value = error.message ?: "Unable to create invite"
+                inviteErrorState.value = UserFacingError.message(error, "Couldn’t create invite. Try again.")
                 if (uiState.value.bootstrapState.requiresPartnerDetailsForInvite()) {
                     openPartnerDetailsForm()
                 }
@@ -1046,7 +1047,7 @@ class CanvasHomeViewModel @Inject constructor(
                 selectedStickerPackState.value = detail
                 prefetchStickerPickerAssets(userId, detail)
             }.onFailure { error ->
-                stickerCatalogErrorState.value = error.message ?: "Unable to load sticker pack"
+                stickerCatalogErrorState.value = UserFacingError.message(error, "Couldn’t load sticker pack. Try again.")
             }
             stickerCatalogBusyState.value = false
         }
@@ -1134,7 +1135,7 @@ class CanvasHomeViewModel @Inject constructor(
                 .onFailure { error ->
                     stickerPacksLoadedAtMs.value = System.currentTimeMillis()
                     if (shouldShowSpinner) {
-                        stickerCatalogErrorState.value = error.message ?: "Unable to load sticker packs"
+                        stickerCatalogErrorState.value = UserFacingError.message(error, "Couldn’t load sticker packs. Try again.")
                     }
                     scheduleStickerPacksRevalidateRetry()
                 }
@@ -1262,7 +1263,7 @@ class CanvasHomeViewModel @Inject constructor(
             }.onSuccess {
                 _effects.emit(CanvasHomeEffect.OpenWallpaperSetup)
             }.onFailure { error ->
-                wallpaperErrorState.value = error.message ?: "Unable to prepare wallpaper setup"
+                wallpaperErrorState.value = UserFacingError.message(error, "Couldn’t prepare wallpaper setup. Try again.")
             }
             wallpaperBusyState.value = false
         }
@@ -1315,7 +1316,7 @@ class CanvasHomeViewModel @Inject constructor(
             wallpaperCoordinator.ensureSnapshotCurrent()
             wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
         }.onFailure { error ->
-            wallpaperErrorState.value = error.message ?: "Unable to update background"
+            wallpaperErrorState.value = UserFacingError.message(error, "Couldn’t update background. Try again.")
         }
     }
 
@@ -1364,14 +1365,6 @@ private fun CreateInviteResult.toShareMessage(): String =
 private fun SessionBootstrapState.requiresPartnerDetailsForInvite(): Boolean =
     partnerDisplayName.isNullOrBlank() || anniversaryDate.isNullOrBlank()
 
-private fun friendlyInviteError(error: Throwable): String? = when (error.message) {
-    "You cannot redeem your own invite" -> "That’s your invite code. Share it with your partner."
-    "Invite code has expired" -> "That invite code has expired. Ask your partner to generate a new one."
-    "Invite code is no longer valid" -> "That invite code is no longer valid. Ask your partner to generate a new one."
-    "Invite code not found" -> "That invite code wasn’t found. Double-check the code and try again."
-    "Already paired" -> "You’re already paired. Disconnect first to join a new invite."
-    else -> error.message
-}
 
 private const val ANNIVERSARY_DATE_PLACEHOLDER = "DD-MM-YYYY"
 

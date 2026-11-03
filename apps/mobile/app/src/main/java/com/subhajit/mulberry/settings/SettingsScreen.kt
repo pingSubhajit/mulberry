@@ -523,6 +523,13 @@ private fun SettingsRootPage(
                 )
         ) {
             PartnerDrawingVisibilityBanner(
+                label = (partnerName?.takeIf { it.isNotBlank() } ?: "Your partner").let { name ->
+                    if (partnerVisibility == PartnerDrawingVisibility.CannotSeeLatestSyncOff) {
+                        "$name can’t see your latest doodles"
+                    } else {
+                        "$name can’t see your doodles"
+                    }
+                },
                 onClick = { onPartnerVisibilitySheetOpenChanged(true) }
             )
             Spacer(modifier = Modifier.height(20.dp))
@@ -558,9 +565,9 @@ private fun SettingsRootPage(
 
     if (showLogoutConfirmation) {
         ConfirmationDialog(
-            title = "Log out?",
-            body = "This will sign you out on this device. You can sign back in anytime.",
-            confirmText = "Log out",
+            title = "Sign out of Mulberry?",
+            body = "Your account and pairing stay saved.",
+            confirmText = "Sign out",
             onDismiss = { showLogoutConfirmation = false },
             onConfirm = {
                 showLogoutConfirmation = false
@@ -808,7 +815,7 @@ private fun SettingsRootMenu(
         }
         SettingsRootRow(
             icon = SettingsRootIcon.Logout,
-            title = "Log out",
+            title = "Sign out",
             enabled = !uiState.isBusy,
             showChevron = false,
             modifier = Modifier.testTag(TestTags.SETTINGS_LOGOUT_BUTTON),
@@ -893,6 +900,7 @@ private fun resolvePartnerDrawingVisibility(
 
 @Composable
 private fun PartnerDrawingVisibilityBanner(
+    label: String,
     onClick: () -> Unit
 ) {
     Row(
@@ -916,8 +924,10 @@ private fun PartnerDrawingVisibilityBanner(
                 modifier = Modifier.size(21.dp)
             )
             Text(
-                text = "Can’t see your latest drawings",
+                text = label,
                 color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 16.sp,
@@ -940,23 +950,23 @@ private fun PartnerDrawingVisibilitySheetContent(
 ) {
     val title = when (visibility) {
         PartnerDrawingVisibility.Unknown ->
-            "We can’t confirm if $partnerName can see your latest drawings yet"
+            "We can’t confirm if $partnerName can see your latest doodles yet"
         PartnerDrawingVisibility.CannotSeeLatestSyncOff ->
-            "$partnerName can’t see your latest drawings"
+            "$partnerName can’t see your latest doodles"
         PartnerDrawingVisibility.CannotSeeWallpaperNotSet ->
-            "$partnerName can’t see your drawings"
+            "$partnerName can’t see your doodles"
         PartnerDrawingVisibility.CanSee ->
-            "$partnerName can see your latest drawings"
+            "$partnerName can see your latest doodles"
     }
     val body = when (visibility) {
         PartnerDrawingVisibility.Unknown ->
             "Mulberry updates this status when your partner opens the app. If “Show doodles on wallpaper” is enabled on their device, Mulberry also checks periodically in the background."
         PartnerDrawingVisibility.CannotSeeLatestSyncOff ->
-            "“Show doodles on wallpaper” is off on your partner’s device. They may still see an older snapshot, but they won’t see anything new you draw."
+            "“Show doodles on wallpaper” is off on their phone. Ask $partnerName to turn it on in Settings."
         PartnerDrawingVisibility.CannotSeeWallpaperNotSet ->
-            "Mulberry isn’t set as your partner’s wallpaper (lock screen or home screen), so they won’t see your canvas there."
+            "Mulberry isn’t their wallpaper yet. Ask $partnerName to finish wallpaper setup."
         PartnerDrawingVisibility.CanSee ->
-            "Everything looks good — your partner should see new drawings on their device."
+            "New doodles reach their wallpaper."
     }
     val steps = when (visibility) {
         PartnerDrawingVisibility.CannotSeeLatestSyncOff ->
@@ -1692,15 +1702,16 @@ private fun PartnerPane(
         PartnerMetricRow(
             icon = null,
             title = "Daily streak",
-            value = "${uiState.bootstrapState.currentStreakDays} days"
+            value = uiState.bootstrapState.currentStreakDays.let { if (it == 1) "1 day" else "$it days" }
         )
     }
 
     if (showDisconnectConfirmation) {
         ConfirmationDialog(
-            title = "Disconnect partner?",
-            body = "This will remove the pairing on this server session. Your profile stays intact, but shared sync stops until you pair again.",
-            confirmText = "Disconnect",
+            title = uiState.bootstrapState.partnerDisplayName?.takeIf { it.isNotBlank() }
+                ?.let { "Unpair from $it?" } ?: "Unpair from your partner?",
+            body = "Your profile stays, but you won’t share doodles until you pair again.",
+            confirmText = "Unpair",
             onDismiss = { showDisconnectConfirmation = false },
             onConfirm = {
                 showDisconnectConfirmation = false

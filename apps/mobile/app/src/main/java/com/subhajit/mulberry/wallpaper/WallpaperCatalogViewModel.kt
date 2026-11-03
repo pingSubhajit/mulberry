@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.wallpaper
 
+import com.subhajit.mulberry.core.UserFacingError
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -76,7 +77,7 @@ class WallpaperCatalogViewModel @Inject constructor(
                 catalogState.update {
                     it.copy(
                         isInitialLoading = false,
-                        errorMessage = error.message ?: "Unable to load wallpapers"
+                        errorMessage = UserFacingError.message(error, "Couldn’t load wallpapers. Try again.")
                     )
                 }
             }
@@ -106,7 +107,7 @@ class WallpaperCatalogViewModel @Inject constructor(
                 catalogState.update {
                     it.copy(
                         isPageLoading = false,
-                        errorMessage = error.message ?: "Unable to load more wallpapers"
+                        errorMessage = UserFacingError.message(error, "Couldn’t load more wallpapers. Try again.")
                     )
                 }
             }
@@ -136,7 +137,7 @@ class WallpaperCatalogViewModel @Inject constructor(
                 catalogState.update {
                     it.copy(
                         applyingWallpaperId = null,
-                        errorMessage = error.message ?: "Unable to update wallpaper"
+                        errorMessage = UserFacingError.message(error, "Couldn’t update wallpaper. Try again.")
                     )
                 }
             }

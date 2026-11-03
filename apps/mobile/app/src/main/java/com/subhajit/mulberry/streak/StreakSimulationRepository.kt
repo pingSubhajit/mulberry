@@ -19,19 +19,19 @@ enum class StreakSimulationPreset(
         description = "No activity this week."
     ),
     ACTIVE_3_PENDING(
-        title = "3 day streak, today pending",
+        title = "3-day streak, today pending",
         description = "Three consecutive days done, today still open."
     ),
     ACTIVE_4_DONE(
-        title = "4 day streak, today done",
+        title = "4-day streak, today done",
         description = "Today is already counted in the streak."
     ),
     LOST_3_DAY_STREAK(
-        title = "Lost 3 day streak",
+        title = "Lost 3-day streak",
         description = "Missed yesterday, so the streak is now lost."
     ),
     ACTIVE_7_DONE(
-        title = "7 day streak, today done",
+        title = "7-day streak, today done",
         description = "A full week of consecutive activity."
     )
 }

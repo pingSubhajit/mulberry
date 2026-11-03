@@ -153,6 +153,7 @@ private fun InviteAcceptanceScreen(
                 isEnabled = invite != null && !uiState.isLoading,
                 isLoading = uiState.isLoading,
                 errorMessage = uiState.errorMessage,
+                inviterName = invite?.inviterDisplayName?.takeIf { it.isNotBlank() },
                 onAccept = onAccept,
                 onDecline = onDecline
             )
@@ -305,6 +306,7 @@ private fun InviteAcceptanceActions(
     isEnabled: Boolean,
     isLoading: Boolean,
     errorMessage: String?,
+    inviterName: String?,
     onAccept: () -> Unit,
     onDecline: () -> Unit
 ) {
@@ -347,10 +349,13 @@ private fun InviteAcceptanceActions(
 
         Text(
             text = buildAnnotatedString {
-                append(stringResource(R.string.invite_acceptance_wrong_partner))
+                append(
+                    inviterName?.let { stringResource(R.string.invite_acceptance_not_partner, it) }
+                        ?: stringResource(R.string.invite_acceptance_wrong_partner)
+                )
                 append(" ")
                 withStyle(SpanStyle(color = MulberryPrimary, fontWeight = FontWeight.SemiBold)) {
-                    append(stringResource(R.string.invite_acceptance_disconnect))
+                    append(stringResource(R.string.invite_acceptance_decline))
                 }
             },
             color = appColors.subtleText,

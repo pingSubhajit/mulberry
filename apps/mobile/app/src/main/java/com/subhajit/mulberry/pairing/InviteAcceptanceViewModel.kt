@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.pairing
 
+import com.subhajit.mulberry.core.UserFacingError
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
@@ -51,7 +52,7 @@ class InviteAcceptanceViewModel @Inject constructor(
                 }
                 .onFailure { error ->
                     loadingState.value = false
-                    errorState.value = error.message ?: "Unable to accept invite"
+                    errorState.value = UserFacingError.message(error, "Couldn’t accept invite. Try again.")
                 }
         }
     }
@@ -68,7 +69,7 @@ class InviteAcceptanceViewModel @Inject constructor(
                 }
                 .onFailure { error ->
                     loadingState.value = false
-                    errorState.value = error.message ?: "Unable to decline invite"
+                    errorState.value = UserFacingError.message(error, "Couldn’t decline invite. Try again.")
                 }
         }
     }

@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.onboarding
 
+import com.subhajit.mulberry.core.UserFacingError
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -69,7 +70,7 @@ class OnboardingDetailsViewModel @Inject constructor(
                 }
                 .onFailure { error ->
                     submitState.value = false
-                    errorState.value = error.message ?: "Unable to complete onboarding"
+                    errorState.value = UserFacingError.message(error, "Couldn’t complete onboarding. Try again.")
                     publishState()
                 }
         }

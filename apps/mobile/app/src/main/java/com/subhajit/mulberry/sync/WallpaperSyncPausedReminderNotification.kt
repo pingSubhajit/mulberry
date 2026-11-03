@@ -33,10 +33,10 @@ object WallpaperSyncPausedReminderNotification {
         )
             .setSmallIcon(R.drawable.brand_iconmark_white)
             .setContentTitle("Doodles on wallpaper turned off")
-            .setContentText("Turn on “Show doodles on wallpaper” to show strokes on your wallpaper.")
+            .setContentText("Turn on “Show doodles on wallpaper” to see them again.")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("Turn on “Show doodles on wallpaper” to show strokes on your wallpaper.")
+                    .bigText("Turn on “Show doodles on wallpaper” to see them again.")
             )
             .setContentIntent(createLaunchIntent(context))
             .setAutoCancel(true)

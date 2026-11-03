@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.sync
 
+import com.subhajit.mulberry.core.UserFacingError
 import android.util.Log
 import com.subhajit.mulberry.bootstrap.BootstrapRepository
 import com.subhajit.mulberry.canvas.CanvasRuntime
@@ -395,7 +396,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
             canvasRuntime.setSyncState(SyncState.Connected)
             syncMetadataRepository.setLastError(null)
         }.onFailure { error ->
-            val message = error.message ?: "Unable to recover canvas sync"
+            val message = UserFacingError.message(error, "Your canvas couldn’t reload. Try again.") ?: "Your canvas couldn’t reload. Try again."
             syncMetadataRepository.setLastError(message)
             _syncState.value = SyncState.Error(message)
             canvasRuntime.setSyncState(SyncState.Error(message))

@@ -35,22 +35,22 @@
     <string name="onboarding_wallpaper_setup_button">Set up lock screen</string>
     <string name="wallpaper_setup_set_both_lock_home">Set up both lock &amp; home screen</string>
     <string name="wallpaper_help_why_link">Why do i do this?</string>
-    <string name="wallpaper_help_pill">KNOW HOW IT WORKS</string>
+    <string name="wallpaper_help_pill">HOW IT WORKS</string>
     <string name="wallpaper_help_title">Why do we need to set up as wallpaper?</string>
     <string name="wallpaper_help_body">To stay on your screen, without opening anything, this needs to live in your wallpaper. Mulberry does that by becoming your live wallpaper of choice</string>
     <string name="wallpaper_help_bullet_one">Your background stays yours, your partner’s theirs</string>
-    <string name="wallpaper_help_bullet_two">Mulberry shows you your partner’s drawing as part of your live wallpaper</string>
+    <string name="wallpaper_help_bullet_two">Mulberry shows your partner’s doodles as part of your live wallpaper</string>
     <string name="wallpaper_help_bullet_three">You see it the moment you wake your phone without opening the app</string>
     <string name="wallpaper_help_note">You can set your existing wallpaper by simply choosing a custom background</string>
     <string name="wallpaper_help_cta">Set up as wallpaper</string>
     <string name="wallpaper_help_close">Close</string>
-    <string name="pairing_help_title">What happens after i enter the code?</string>
-    <string name="pairing_help_body">The code connects you to one person. Once connected, you’ll share a private space where you can send drawings that appear on each other’s screen.</string>
-    <string name="pairing_help_bullet_one">After you join, you’ll both be connected instantly</string>
-    <string name="pairing_help_bullet_two">You can start drawing right away, what you send appears on their screen</string>
-    <string name="pairing_help_bullet_three">This is just between the two of you. No one else can see it</string>
-    <string name="pairing_help_note">You can disconnect any time you want, no question will be asked</string>
-    <string name="pairing_help_cta">Alright, sounds great</string>
+    <string name="pairing_help_title">What happens when you join?</string>
+    <string name="pairing_help_body">The code pairs you with the person who sent it.</string>
+    <string name="pairing_help_bullet_one">You’re paired the moment you join</string>
+    <string name="pairing_help_bullet_two">What you draw shows up on their phone, and theirs on yours</string>
+    <string name="pairing_help_bullet_three">It’s just the two of you. No one else can see it</string>
+    <string name="pairing_help_note">Unpair any time. No questions asked.</string>
+    <string name="pairing_help_cta">Got it</string>
     <string name="wallpaper_setup_status_none">Not set up yet</string>
     <string name="wallpaper_setup_status_home">Set on home screen</string>
     <string name="wallpaper_setup_status_lock">Set on lock screen</string>
@@ -66,12 +66,12 @@
     <string name="wallpaper_catalog_title">Choose your background</string>
     <string name="wallpaper_catalog_empty">No more wallpapers are available yet.</string>
     <string name="wallpaper_catalog_error">Unable to load wallpapers.</string>
-    <string name="wallpaper_catalog_retry">Retry</string>
+    <string name="wallpaper_catalog_retry">Try again</string>
     <string name="onboarding_wallpaper_ready">Mulberry is set as your wallpaper.</string>
     <string name="onboarding_wallpaper_done">All done</string>
     <string name="onboarding_wallpaper_skip_without_setup">Skip without setup</string>
     <string name="invite_code_title">Let’s get you set up</string>
-    <string name="invite_code_help">What is this code?</string>
+    <string name="invite_code_help">How does this work?</string>
     <string name="invite_code_continue">Let’s get going</string>
     <string name="invite_code_back_content_description">Go back</string>
     <string name="invite_acceptance_welcome">Welcome %1$s</string>
@@ -79,9 +79,13 @@
     <string name="invite_acceptance_continue">Awesome, let’s go</string>
     <string name="invite_acceptance_connecting">Connecting...</string>
     <string name="invite_acceptance_wrong_partner">Wrong partner?</string>
-    <string name="invite_acceptance_disconnect">Disconnect</string>
+    <string name="invite_acceptance_not_partner">Not %1$s?</string>
+    <string name="invite_acceptance_decline">Decline</string>
+    <string name="pairing_confirmed_unpair">Unpair</string>
     <string name="privacy_policy_agreement">By continuing you agree to our</string>
     <string name="privacy_policy">Privacy Policy</string>
+    <string name="terms_of_use">Terms of Use</string>
+    <string name="legal_and">and</string>
     <string name="privacy_policy_sheet_title">Privacy Policy</string>
     <string name="privacy_policy_sheet_updated">Last updated at: 1st November 2026</string>
     <string name="privacy_policy_sheet_close">Close</string>
@@ -96,7 +100,7 @@
     <string name="home_lockscreen_title">Set your lock screen</string>
     <string name="home_profile_photo_content_description">Profile photo</string>
     <string name="home_unpaired_pair_title">%1$s &amp; who?</string>
-    <string name="home_unpaired_body">Invite your partner to Mulberry to unlock the full experience</string>
+    <string name="home_unpaired_body">Invite %1$s to Mulberry to unlock the full experience</string>
     <string name="home_invite_button">Share invite code</string>
     <string name="home_enter_code_prompt">Have a code?</string>
     <string name="home_enter_code_action">Enter code</string>
@@ -106,19 +110,19 @@
     <string name="home_open_lockscreen">Open lock screen</string>
     <string name="home_canvas_paired_body">Local strokes: %1$d</string>
     <string name="home_paired_canvas_guidance_title">Draw them something cute</string>
-    <string name="home_paired_canvas_guidance_body">Whatever you draw will appear at the wallpaper of their phone</string>
+    <string name="home_paired_canvas_guidance_body">Whatever you draw will appear on their wallpaper</string>
     <string name="home_canvas_undo_content_description">Undo</string>
     <string name="home_canvas_redo_content_description">Redo</string>
     <string name="home_canvas_brush_content_description">Brush</string>
     <string name="home_canvas_eyedropper_content_description">Pick color</string>
     <string name="home_canvas_brush_tool_guide_tooltip">Select the brush tool to start</string>
     <string name="home_canvas_streak_level_up_banner">Your streak just got a level up</string>
-    <string name="home_canvas_erase_content_description">Erase strokes</string>
+    <string name="home_canvas_erase_content_description">Eraser</string>
     <string name="home_canvas_text_content_description">Text</string>
     <string name="home_canvas_sticker_content_description">Stickers</string>
     <string name="home_canvas_clear_content_description">Clear canvas</string>
     <string name="home_clear_canvas_title">Clear canvas?</string>
-    <string name="home_clear_canvas_body">This removes all strokes from the shared canvas.</string>
+    <string name="home_clear_canvas_body">This erases everything on it for both of you.</string>
     <string name="home_clear_canvas_confirm">Clear</string>
     <string name="home_clear_canvas_cancel">Cancel</string>
     <string name="home_lockscreen_selected_body">Mulberry is set as your wallpaper.</string>
@@ -131,14 +135,14 @@
     <string name="home_join_sheet_title">Enter invite code</string>
     <string name="home_join_sheet_cta">Join</string>
     <string name="home_pairing_confirmed_title">You and %1$s are paired on Mulberry</string>
-    <string name="home_pairing_disconnect_progress">Disconnecting...</string>
+    <string name="home_pairing_disconnect_progress">Unpairing…</string>
     <string name="home_inbound_invite_paired_title">Already paired</string>
-    <string name="home_inbound_invite_paired_body_no_partner">You’re already paired on Mulberry. To join a new invite, disconnect first.</string>
-    <string name="home_inbound_invite_paired_body_with_partner">You’re already paired with %1$s. To join a new invite, disconnect first.</string>
-    <string name="home_inbound_invite_disconnect_switch">Disconnect &amp; switch</string>
+    <string name="home_inbound_invite_paired_body_no_partner">You’re already paired on Mulberry. To join a new invite, unpair first.</string>
+    <string name="home_inbound_invite_paired_body_with_partner">You’re already paired with %1$s. To join a new invite, unpair first.</string>
+    <string name="home_inbound_invite_disconnect_switch">Unpair &amp; switch</string>
     <string name="home_inbound_invite_keep_pairing">Keep current pairing</string>
-    <string name="shortcut_clear_doodles_short_label">Clear doodles</string>
-    <string name="shortcut_clear_doodles_long_label">Clear doodles</string>
+    <string name="shortcut_clear_doodles_short_label">Clear canvas</string>
+    <string name="shortcut_clear_doodles_long_label">Clear canvas</string>
     <string name="shortcut_change_wallpaper_short_label">Change Wallpaper</string>
     <string name="shortcut_change_wallpaper_long_label">Change Wallpaper</string>
     <string name="shortcut_toggle_wallpaper_doodles_short_label">Show/hide doodles on wallpaper</string>
@@ -150,19 +154,19 @@
     <string name="notification_group_sync">Sync</string>
 
     <string name="notification_channel_pairing_updates_name">Pairing</string>
-    <string name="notification_channel_pairing_updates_description">When you connect or disconnect with your partner.</string>
+    <string name="notification_channel_pairing_updates_description">When you pair or unpair with your partner.</string>
 
     <string name="notification_channel_partner_doodles_name">New doodles</string>
     <string name="notification_channel_partner_doodles_description">When your partner adds a doodle that isn’t on your wallpaper yet.</string>
 
     <string name="notification_channel_partner_visibility_name">Partner visibility</string>
-    <string name="notification_channel_partner_visibility_description">When your partner can or can’t see your latest drawings.</string>
+    <string name="notification_channel_partner_visibility_description">When your partner can or can’t see your latest doodles.</string>
 
     <string name="notification_channel_draw_reminders_name">Draw reminders</string>
     <string name="notification_channel_draw_reminders_description">Gentle reminders to draw something for your partner.</string>
 
     <string name="notification_channel_wallpaper_sync_name">Doodles on wallpaper</string>
-    <string name="notification_channel_wallpaper_sync_description">Reminders to turn on doodles on wallpaper so drawings show on your wallpaper.</string>
+    <string name="notification_channel_wallpaper_sync_description">When doodles on your wallpaper are turned off.</string>
 
     <string name="notification_channel_canvas_sync_name">Wallpaper doodles syncing</string>
     <string name="notification_channel_canvas_sync_description">Persistent notification while Mulberry updates your wallpaper doodles.</string>

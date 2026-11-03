@@ -329,13 +329,13 @@ class CredentialManagerAuthRepository @Inject constructor(
 
         if (isAccountReauthFailure(exception) && recoverySummary == "cleared") {
             throw IllegalStateException(
-                "Unable to sign in with Google. Please try again.",
+                "Couldn’t sign in with Google. Try again.",
                 exception
             )
         }
 
         throw IllegalStateException(
-            "Unable to sign in with Google. Please try again.",
+            "Couldn’t sign in with Google. Try again.",
             exception
         )
     }
@@ -388,7 +388,7 @@ class CredentialManagerAuthRepository @Inject constructor(
             exception
         )
         return IllegalStateException(
-            "Unable to sign in with Google. Please try again.",
+            "Couldn’t sign in with Google. Try again.",
             exception
         )
     }

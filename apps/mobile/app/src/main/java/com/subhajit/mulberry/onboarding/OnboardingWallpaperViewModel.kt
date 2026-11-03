@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.onboarding
 
+import com.subhajit.mulberry.core.UserFacingError
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -147,7 +148,7 @@ class OnboardingWallpaperViewModel @Inject constructor(
             }.onSuccess {
                 _effects.emit(OnboardingWallpaperEffect.OpenWallpaperSetup)
             }.onFailure { error ->
-                errorState.value = error.message ?: "Unable to prepare wallpaper setup"
+                errorState.value = UserFacingError.message(error, "Couldn’t prepare wallpaper setup. Try again.")
             }
             busyState.value = false
         }
@@ -184,7 +185,7 @@ class OnboardingWallpaperViewModel @Inject constructor(
             wallpaperCoordinator.ensureSnapshotCurrent()
             wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
         }.onFailure { error ->
-            errorState.value = error.message ?: "Unable to update background"
+            errorState.value = UserFacingError.message(error, "Couldn’t update background. Try again.")
         }
     }
 

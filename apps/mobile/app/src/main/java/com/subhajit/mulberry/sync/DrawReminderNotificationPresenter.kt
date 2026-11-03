@@ -28,17 +28,17 @@ object DrawReminderNotificationPresenter {
 
         MulberryNotificationChannels.registerAll(context)
 
-        val partnerName = payload.partnerDisplayName.takeIf { it.isNotBlank() } ?: "Your partner"
+        val partnerName = payload.partnerDisplayName.trim().takeIf { it.isNotEmpty() && it != "Your partner" } ?: "them"
         val notification = NotificationCompat.Builder(
             context,
             MulberryNotificationChannels.CHANNEL_ID_DRAW_REMINDERS
         )
             .setSmallIcon(R.drawable.brand_iconmark_white)
-            .setContentTitle("Draw something for $partnerName")
-            .setContentText("It’s been a while. Tap to open your canvas.")
+            .setContentTitle("Draw $partnerName something cute")
+            .setContentText("They’ll see it next time they look at their phone.")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("It’s been a while. Tap to open your canvas.")
+                    .bigText("They’ll see it next time they look at their phone.")
             )
             .setContentIntent(createLaunchIntent(context))
             .setAutoCancel(true)

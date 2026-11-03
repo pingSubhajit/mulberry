@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.pairing
 
+import com.subhajit.mulberry.core.UserFacingError
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -45,7 +46,7 @@ class PairingHubViewModel @Inject constructor(
                 .onSuccess { loadingState.value = false }
                 .onFailure { error ->
                     loadingState.value = false
-                    errorState.value = error.message ?: "Unable to create invite"
+                    errorState.value = UserFacingError.message(error, "Couldn’t create invite. Try again.")
                 }
         }
     }

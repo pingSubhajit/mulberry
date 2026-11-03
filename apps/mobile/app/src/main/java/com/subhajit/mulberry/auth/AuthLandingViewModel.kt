@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.auth
 
+import com.subhajit.mulberry.core.UserFacingError
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -78,16 +79,17 @@ class AuthLandingViewModel @Inject constructor(
         val message = message?.trim()
         return when {
             this is GetCredentialCancellationException -> null
-            message.isNullOrBlank() -> "Unable to sign in with Google. Please try again."
+            this is java.io.IOException -> UserFacingError.OFFLINE
+            message.isNullOrBlank() -> "Couldn’t sign in with Google. Try again."
             message.contains("Google Play services is missing or out of date", ignoreCase = true) ->
                 "Google Play services is missing or out of date on this device. Update it and try again."
             message.contains("no provider dependencies found", ignoreCase = true) ->
                 "Google Play services is missing or out of date on this device. Update it and try again."
             message.contains("Google server client id is not configured", ignoreCase = true) ->
-                "Google sign-in is not configured for this build."
+                "Google sign-in isn’t available in this build."
             message.contains("Unable to parse Google credential", ignoreCase = true) ->
-                "Google sign-in returned an invalid credential. Please try again."
-            else -> "Unable to sign in with Google. Please try again."
+                "Couldn’t sign in with Google. Try again."
+            else -> "Couldn’t sign in with Google. Try again."
         }
     }
 
@@ -112,14 +114,8 @@ class AuthLandingViewModel @Inject constructor(
             }
     }
 
-    private fun Throwable.toInviteUserMessage(): String? = when (message?.trim()) {
-        "You cannot redeem your own invite" -> "That’s your invite code. Share it with your partner."
-        "Invite code has expired" -> "That invite code has expired. Ask your partner to generate a new one."
-        "Invite code is no longer valid" -> "That invite code is no longer valid. Ask your partner to generate a new one."
-        "Invite code not found" -> "That invite code wasn’t found. Double-check the code and try again."
-        "Already paired" -> "You’re already paired. Disconnect first to join a new invite."
-        else -> message?.takeIf { it.isNotBlank() }
-    }
+    private fun Throwable.toInviteUserMessage(): String? =
+        UserFacingError.message(this, "Couldn’t open the invite. Try again.")
 
     private companion object {
         const val INBOUND_INVITE_TTL_MS = 24 * 60 * 60 * 1000L

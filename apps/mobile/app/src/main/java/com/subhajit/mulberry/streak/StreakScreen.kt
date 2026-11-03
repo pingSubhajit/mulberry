@@ -754,7 +754,7 @@ private sealed interface CopyVariant {
         val hasActivityToday: Boolean
     ) : CopyVariant {
         override fun build(seed: Int): Copy {
-            val title = if (currentStreakDays == 1) "1 day streak!" else "$currentStreakDays days streak!"
+            val title = "$currentStreakDays-day streak!"
             val options = if (hasActivityToday) {
                 listOf(
                     "Beautiful work today. Keep connecting with your partner and watch the streak grow",
@@ -780,10 +780,10 @@ private sealed interface CopyVariant {
         override fun build(seed: Int): Copy {
             val title = "Oops! Streak lost"
             val options = listOf(
-                "You had a $previousStreakDays day streak. Start again today and it will grow in no time",
-                "That was a $previousStreakDays day streak. Take a breath and begin again today",
-                "You built a $previousStreakDays day streak. A fresh start today is all you need",
-                "Your $previousStreakDays day streak was a great run. Let today be day one again",
+                "You had a $previousStreakDays-day streak. Start again today and it will grow in no time",
+                "That was a $previousStreakDays-day streak. Take a breath and begin again today",
+                "You built a $previousStreakDays-day streak. A fresh start today is all you need",
+                "Your $previousStreakDays-day streak was a great run. Let today be day one again",
                 "You were consistent for $previousStreakDays days. Restart today and build it back"
             )
             return Copy(title = title, body = options[seed % options.size])
