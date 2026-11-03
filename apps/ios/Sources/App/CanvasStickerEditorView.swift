@@ -170,7 +170,9 @@ struct CanvasStickerEditorView: View {
                 }
             }
         }
-        .scrollClipDisabled()
+        // Scroll edge to edge of the glass panel (clipped by it) while resting aligned with the title.
+        .contentMargins(.horizontal, 14, for: .scrollContent)
+        .padding(.horizontal, -14)
     }
 
     @ViewBuilder private var stickerGrid: some View {
