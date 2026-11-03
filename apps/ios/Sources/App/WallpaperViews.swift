@@ -10,6 +10,7 @@ struct WallpaperPickerView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var photo: PhotosPickerItem?
     @State private var gallery = false
+    @State private var catalogPreview: CatalogWallpaper?
     @State private var loadingPhoto = false
     @State private var hasChanges = true
     /// A wide window puts the preview beside the choices instead of above them.
@@ -63,6 +64,10 @@ struct WallpaperPickerView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $gallery) { WallpaperGalleryView(library: library) }
+            .sheet(item: $catalogPreview) { item in
+                WallpaperGalleryPreview(item: item, library: library) { catalogPreview = nil }
+            }
+            .task { await library.loadFeatured() }
             // Recheck whenever the background changes or the user returns from the Shortcut.
             .task(id: "\(library.choice.id)-\(library.showDrawings)-\(phase == .active)") {
                 guard !onboarding, phase == .active else { return }
@@ -106,6 +111,7 @@ struct WallpaperPickerView: View {
     private var presets: some View {
         VStack(spacing: 20) {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20)], spacing: 20) {
+                ForEach(library.featured) { item in catalogCard(item) }
                 ForEach(WallpaperChoice.builtIns) { choice in presetCard(choice) }
             }
             Button { gallery = true } label: {
@@ -200,14 +206,28 @@ struct WallpaperPickerView: View {
     }
 
     private func presetCard(_ choice: WallpaperChoice) -> some View {
-        let selected = library.choice.id == choice.id
-        return Button { library.select(choice) } label: {
+        wallpaperCard(title: choice.title, selected: library.choice.id == choice.id) { library.select(choice) } image: {
+            WallpaperThumbnail(key: "asset-\(choice.asset!)", placeholder: MulberryDesign.softAlt) {
+                UIImage(named: choice.asset!)
+            }
+        }
+    }
+
+    /// A catalog wallpaper opens its preview first, since choosing it downloads the full image.
+    private func catalogCard(_ item: CatalogWallpaper) -> some View {
+        wallpaperCard(title: item.title, selected: library.choice.catalogId == item.id) { catalogPreview = item } image: {
+            AsyncImage(url: item.thumbnailUrl) { phase in
+                if let image = phase.image { image.resizable().scaledToFill() } else { MulberryDesign.softAlt }
+            }
+        }
+    }
+
+    private func wallpaperCard(title: String, selected: Bool, action: @escaping () -> Void,
+                               @ViewBuilder image: () -> some View) -> some View {
+        let image = image()
+        return Button(action: action) {
             Color.clear.aspectRatio(171 / 133, contentMode: .fit)
-                .overlay {
-                    WallpaperThumbnail(key: "asset-\(choice.asset!)", placeholder: MulberryDesign.softAlt) {
-                        UIImage(named: choice.asset!)
-                    }
-                }
+                .overlay { image }
                 .overlay {
                     if selected {
                         ZStack {
@@ -219,7 +239,7 @@ struct WallpaperPickerView: View {
                 .clipShape(RoundedRectangle(cornerRadius: radius))
         }
         .buttonStyle(.plain).disabled(busy)
-        .accessibilityLabel(choice.title).accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityLabel(title).accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

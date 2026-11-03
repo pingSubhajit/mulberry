@@ -5,6 +5,15 @@ struct WallpaperChoice: Codable, Equatable, Identifiable {
     let id: String
     let title: String
     let asset: String?
+    /// The catalog wallpaper this was downloaded from, so the picker can show it as chosen.
+    let catalogId: String?
+
+    init(id: String, title: String, asset: String?, catalogId: String? = nil) {
+        self.id = id
+        self.title = title
+        self.asset = asset
+        self.catalogId = catalogId
+    }
 
     static let builtIns: [WallpaperChoice] = [
         .init(id: "default", title: "Mulberry", asset: "WallpaperDefault"),
@@ -57,6 +66,8 @@ final class WallpaperLibrary: ObservableObject {
     @Published private(set) var working = false
     @Published var errorMessage: String?
     @Published private(set) var showDrawings = true
+    /// The catalog's newest few, shown beside the presets. The same for every account.
+    @Published private(set) var featured: [CatalogWallpaper] = []
     private(set) var userId: String?
     private var generation = 0
 
@@ -87,13 +98,19 @@ final class WallpaperLibrary: ObservableObject {
     }
 
     func download(_ wallpaper: CatalogWallpaper) async -> Bool {
-        await saveImage(.init(id: UUID().uuidString, title: wallpaper.title, asset: nil)) {
+        await saveImage(.init(id: UUID().uuidString, title: wallpaper.title, asset: nil, catalogId: wallpaper.id)) {
             var request = URLRequest(url: wallpaper.fullImageUrl)
             request.timeoutInterval = 45
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let response = response as? HTTPURLResponse, response.statusCode == 200 else { throw WallpaperImageError.downloadFailed }
             return data
         }
+    }
+
+    /// Refreshes the featured wallpapers, keeping the last ones shown if the catalog can't be reached.
+    func loadFeatured() async {
+        guard let page = try? await AppRuntime.api().wallpapers(limit: 4) else { return }
+        featured = page.items
     }
 
     func setShowDrawings(_ enabled: Bool) {
