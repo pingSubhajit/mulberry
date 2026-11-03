@@ -393,11 +393,12 @@ struct StickerPickerPanel: View {
     /// The sticker being replaced, ringed in the grid.
     var current: StickerReference?
     let pick: (StickerReference) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Text(catalog.selected?.title ?? "Stickers")
+                Text(catalog.selectedTitle ?? "Stickers")
                     .font(MulberryDesign.font(17, weight: "SemiBold"))
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -422,10 +423,10 @@ struct StickerPickerPanel: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(catalog.packs) { pack in
-                    let selected = catalog.selected?.id == pack.id
+                    let selected = catalog.selectedPackID == pack.id
                     Button { catalog.select(pack) } label: {
                         StickerArtwork(sticker: .init(packKey: pack.packKey, packVersion: pack.packVersion, stickerId: StickerAssetStore.coverID),
-                                       user: catalog.user, hint: pack.coverThumbnailUrl, maxPixelSize: 168)
+                                       user: catalog.user, hint: pack.coverThumbnailUrl, maxPixelSize: StickerAssetStore.coverPixels)
                             .padding(6)
                             .frame(width: 52, height: 52)
                             .background(.primary.opacity(selected ? 0.12 : 0.04), in: .rect(cornerRadius: 14))
@@ -441,39 +442,55 @@ struct StickerPickerPanel: View {
         .scrollClipDisabled()
     }
 
-    @ViewBuilder private var grid: some View {
-        if let pack = catalog.selected {
-            ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                    let stickers = pack.stickers.sorted { $0.sortOrder < $1.sortOrder }
-                    ForEach(Array(stickers.enumerated()), id: \.element.id) { index, sticker in
-                        let reference = StickerReference(packKey: pack.packKey, packVersion: pack.packVersion, stickerId: sticker.stickerId)
-                        let selected = current == reference
-                        Button { pick(reference) } label: {
-                            StickerArtwork(sticker: reference, user: catalog.user, hint: sticker.thumbnailUrl, maxPixelSize: 256)
-                                .padding(6)
-                                .aspectRatio(1, contentMode: .fit)
-                                .background(.primary.opacity(selected ? 0.14 : 0.04), in: .rect(cornerRadius: 14))
-                                .overlay { if selected { RoundedRectangle(cornerRadius: 14).strokeBorder(MulberryDesign.accent, lineWidth: 2) } }
-                                .contentShape(.rect(cornerRadius: 14))
+    private static let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
+
+    /// The open pack's stickers. A tapped pack shows placeholder tiles until its stickers
+    /// arrive, then fades in, starting from the top.
+    private var grid: some View {
+        ZStack {
+            if let pack = catalog.selected {
+                let stickers = catalog.selectedStickers
+                ScrollView {
+                    LazyVGrid(columns: Self.gridColumns, spacing: 8) {
+                        ForEach(Array(stickers.enumerated()), id: \.element.id) { index, sticker in
+                            let reference = StickerReference(packKey: pack.packKey, packVersion: pack.packVersion, stickerId: sticker.stickerId)
+                            let selected = current == reference
+                            Button { pick(reference) } label: {
+                                StickerArtwork(sticker: reference, user: catalog.user, hint: sticker.thumbnailUrl)
+                                    .padding(6)
+                                    .aspectRatio(1, contentMode: .fit)
+                                    .background(.primary.opacity(selected ? 0.14 : 0.04), in: .rect(cornerRadius: 14))
+                                    .overlay { if selected { RoundedRectangle(cornerRadius: 14).strokeBorder(MulberryDesign.accent, lineWidth: 2) } }
+                                    .contentShape(.rect(cornerRadius: 14))
+                            }
+                            .buttonStyle(.plain)
+                            .draggable(reference.dragString) {
+                                StickerArtwork(sticker: reference, user: catalog.user, hint: sticker.thumbnailUrl)
+                                    .frame(width: 96, height: 96)
+                            }
+                            // Stickers have no names, so VoiceOver reads the pack and the place in it.
+                            .accessibilityLabel("\(pack.title), sticker \(index + 1) of \(stickers.count)")
+                            .accessibilityAddTraits(selected ? .isSelected : [])
                         }
-                        .buttonStyle(.plain)
-                        .draggable(reference.dragString) {
-                            StickerArtwork(sticker: reference, user: catalog.user, hint: sticker.thumbnailUrl, maxPixelSize: 256)
-                                .frame(width: 96, height: 96)
-                        }
-                        // Stickers have no names, so VoiceOver reads the pack and the place in it.
-                        .accessibilityLabel("\(pack.title), sticker \(index + 1) of \(stickers.count)")
-                        .accessibilityAddTraits(selected ? .isSelected : [])
                     }
                 }
+                .scrollIndicators(.hidden)
+                .id(pack.id)
+                .transition(.opacity)
+            } else if catalog.awaitingPack {
+                LazyVGrid(columns: Self.gridColumns, spacing: 8) {
+                    ForEach(0..<16, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: 14).fill(.primary.opacity(0.04)).aspectRatio(1, contentMode: .fit)
+                    }
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
+                .clipped()
+                .transition(.opacity)
+                .accessibilityHidden(true)
             }
-            .frame(height: 300)
-            .scrollIndicators(.hidden)
-        } else {
-            Color.clear.frame(height: 300)
-                .overlay { if catalog.loading { ProgressView() } }
         }
+        .frame(height: 300)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: catalog.selected?.id)
     }
 }
 

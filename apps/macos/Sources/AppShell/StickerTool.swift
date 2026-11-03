@@ -19,11 +19,12 @@ struct StickerPickerPanel: View {
     /// The sticker being replaced, ringed in the grid.
     var current: StickerReference?
     let onPick: (StickerReference) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Text(catalog.selected?.title ?? "Stickers")
+                Text(catalog.selectedTitle ?? "Stickers")
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -48,11 +49,11 @@ struct StickerPickerPanel: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(catalog.packs) { pack in
-                    let selected = catalog.selected?.id == pack.id
+                    let selected = catalog.selectedPackID == pack.id
                     Button { catalog.select(pack) } label: {
                         StickerThumbnail(
                             sticker: StickerReference(packKey: pack.packKey, packVersion: pack.packVersion, stickerId: StickerAssetStore.coverID),
-                            user: user, store: store, hint: pack.coverThumbnailUrl, maxPixelSize: 168
+                            user: user, store: store, hint: pack.coverThumbnailUrl, maxPixelSize: StickerAssetStore.coverPixels
                         )
                         .padding(5)
                         .frame(width: 40, height: 40)
@@ -72,27 +73,43 @@ struct StickerPickerPanel: View {
         }
     }
 
-    @ViewBuilder private var grid: some View {
-        if let pack = catalog.selected {
-            ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-                    let stickers = pack.stickers.sorted { $0.sortOrder < $1.sortOrder }
-                    ForEach(Array(stickers.enumerated()), id: \.element.id) { index, sticker in
-                        let reference = StickerReference(packKey: pack.packKey, packVersion: pack.packVersion, stickerId: sticker.stickerId)
-                        StickerCell(
-                            reference: reference, user: user, store: store, hint: sticker.thumbnailUrl,
-                            current: current == reference
-                        ) { onPick(reference) }
-                        // Stickers have no names, so VoiceOver reads the pack and the place in it.
-                        .accessibilityLabel("\(pack.title), sticker \(index + 1) of \(stickers.count)")
+    private static let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
+
+    /// The open pack's stickers. A chosen pack shows placeholder tiles until its stickers
+    /// arrive, then fades in, starting from the top.
+    private var grid: some View {
+        ZStack {
+            if let pack = catalog.selected {
+                let stickers = catalog.selectedStickers
+                ScrollView {
+                    LazyVGrid(columns: Self.gridColumns, spacing: 6) {
+                        ForEach(Array(stickers.enumerated()), id: \.element.id) { index, sticker in
+                            let reference = StickerReference(packKey: pack.packKey, packVersion: pack.packVersion, stickerId: sticker.stickerId)
+                            StickerCell(
+                                reference: reference, user: user, store: store, hint: sticker.thumbnailUrl,
+                                current: current == reference
+                            ) { onPick(reference) }
+                            // Stickers have no names, so VoiceOver reads the pack and the place in it.
+                            .accessibilityLabel("\(pack.title), sticker \(index + 1) of \(stickers.count)")
+                        }
                     }
                 }
+                .id(pack.id)
+                .transition(.opacity)
+            } else if catalog.awaitingPack {
+                LazyVGrid(columns: Self.gridColumns, spacing: 6) {
+                    ForEach(0..<16, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.primary.opacity(0.03)).aspectRatio(1, contentMode: .fit)
+                    }
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
+                .clipped()
+                .transition(.opacity)
+                .accessibilityHidden(true)
             }
-            .frame(height: 260)
-        } else {
-            Color.clear.frame(height: 260)
-                .overlay { if catalog.loading { ProgressView() } }
         }
+        .frame(height: 260)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: catalog.selected?.id)
     }
 }
 
