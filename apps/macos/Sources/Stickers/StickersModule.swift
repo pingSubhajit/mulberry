@@ -22,14 +22,12 @@ public final class StickerImageLoader: ObservableObject {
     private var ticker: Timer?
 
     public let store: StickerAssetStore
-    private let api: StickerBackend
     private var user: String?
     private var loading: Set<StickerReference> = []
     private var unavailable: Set<StickerReference> = []
     private var catalogs: [String: StickerCatalog] = [:]
 
     public init(api: @escaping StickerBackend) {
-        self.api = api
         store = StickerAssetStore(api: api)
     }
 
@@ -38,7 +36,7 @@ public final class StickerImageLoader: ObservableObject {
         if let existing = catalogs[user] { return existing }
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Mulberry/StickerCatalog", isDirectory: true)
-        let catalog = StickerCatalog(user: user, api: api, store: store, directory: directory)
+        let catalog = StickerCatalog(user: user, store: store, directory: directory)
         catalogs[user] = catalog
         return catalog
     }
@@ -105,23 +103,26 @@ public final class StickerImageLoader: ObservableObject {
     }
 }
 
-/// A sticker or pack cover from the store, with a quiet placeholder while it loads.
+/// A sticker or pack cover from the store, with a quiet placeholder while it loads. Artwork
+/// already in memory shows in the first frame, so revisiting a pack never flashes.
 public struct StickerThumbnail: View {
     let sticker: StickerReference
     let user: String
     let store: StickerAssetStore
-    var variant: StickerAssetVariant = .thumbnail
-    var hint: String?
-    var maxPixelSize = 256
+    let variant: StickerAssetVariant
+    let hint: String?
+    let maxPixelSize: Int
     @State private var image: NSImage?
 
-    public init(sticker: StickerReference, user: String, store: StickerAssetStore, variant: StickerAssetVariant = .thumbnail, hint: String? = nil, maxPixelSize: Int = 256) {
+    public init(sticker: StickerReference, user: String, store: StickerAssetStore, variant: StickerAssetVariant = .thumbnail, hint: String? = nil,
+                maxPixelSize: Int = StickerAssetStore.thumbnailPixels) {
         self.sticker = sticker
         self.user = user
         self.store = store
         self.variant = variant
         self.hint = hint
         self.maxPixelSize = maxPixelSize
+        _image = State(initialValue: store.cachedImage(sticker, variant: variant, user: user, maxPixelSize: maxPixelSize))
     }
 
     public var body: some View {
@@ -133,6 +134,10 @@ public struct StickerThumbnail: View {
             }
         }
         .task(id: sticker) {
+            if let cached = store.cachedImage(sticker, variant: variant, user: user, maxPixelSize: maxPixelSize) {
+                image = cached
+                return
+            }
             let loaded = await store.image(sticker, variant: variant, user: user, hint: hint, maxPixelSize: maxPixelSize)
             withAnimation(.easeOut(duration: 0.15)) { image = loaded }
         }

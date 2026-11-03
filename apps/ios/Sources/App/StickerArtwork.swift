@@ -10,19 +10,26 @@ extension StickerAssetStore {
 
 extension StickerCatalog {
     convenience init(user: String?) {
-        self.init(user: user, api: { try await MainActor.run { try AppRuntime.api() } }, store: .shared,
+        self.init(user: user, store: .shared,
                   directory: AppRuntime.directory.appendingPathComponent("StickerCatalog", isDirectory: true))
     }
 }
 
-/// A sticker or pack cover loaded from the asset store, with a quiet placeholder.
+/// A sticker or pack cover loaded from the asset store, with a quiet placeholder. Artwork
+/// already in memory shows in the first frame, so revisiting a pack never flashes.
 struct StickerArtwork: View {
     let sticker: StickerReference
     let user: String?
-    var variant: StickerAssetVariant = .thumbnail
-    var hint: String?
-    var maxPixelSize = 384
+    let variant: StickerAssetVariant
+    let hint: String?
+    let maxPixelSize: Int
     @State private var image: UIImage?
+
+    init(sticker: StickerReference, user: String?, variant: StickerAssetVariant = .thumbnail, hint: String? = nil,
+         maxPixelSize: Int = StickerAssetStore.thumbnailPixels) {
+        self.sticker = sticker; self.user = user; self.variant = variant; self.hint = hint; self.maxPixelSize = maxPixelSize
+        _image = State(initialValue: Self.cached(sticker, user: user, variant: variant, maxPixelSize: maxPixelSize))
+    }
 
     var body: some View {
         Group {
@@ -33,9 +40,18 @@ struct StickerArtwork: View {
             }
         }
         .task(id: sticker) {
+            if let cached = Self.cached(sticker, user: user, variant: variant, maxPixelSize: maxPixelSize) {
+                image = cached
+                return
+            }
             guard let user else { return }
             let loaded = await StickerAssetStore.shared.image(sticker, variant: variant, user: user, hint: hint, maxPixelSize: maxPixelSize)
             withAnimation(.easeOut(duration: 0.15)) { image = loaded }
         }
+    }
+
+    private static func cached(_ sticker: StickerReference, user: String?, variant: StickerAssetVariant, maxPixelSize: Int) -> UIImage? {
+        guard let user else { return nil }
+        return StickerAssetStore.shared.cachedImage(sticker, variant: variant, user: user, maxPixelSize: maxPixelSize)
     }
 }
