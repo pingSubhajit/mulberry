@@ -33,6 +33,7 @@ import com.subhajit.mulberry.drawing.data.local.DrawingOperationsDao
 import com.subhajit.mulberry.navigation.BootstrapRouteResolver
 import com.subhajit.mulberry.network.AuthHeaderInterceptor
 import com.subhajit.mulberry.network.AppBuildHeaderInterceptor
+import com.subhajit.mulberry.network.TimeZoneHeaderInterceptor
 import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.onboarding.BackendProfileRepository
 import com.subhajit.mulberry.onboarding.DataStoreOnboardingDraftRepository
@@ -436,10 +437,12 @@ object AppProvidesModule {
     fun provideOkHttpClient(
         authHeaderInterceptor: AuthHeaderInterceptor,
         appBuildHeaderInterceptor: AppBuildHeaderInterceptor,
+        timeZoneHeaderInterceptor: TimeZoneHeaderInterceptor,
         loggingInterceptor: HttpLoggingInterceptor
     ): OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(authHeaderInterceptor)
         .addInterceptor(appBuildHeaderInterceptor)
+        .addInterceptor(timeZoneHeaderInterceptor)
         .addInterceptor(loggingInterceptor)
         .build()
 
