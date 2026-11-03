@@ -1,5 +1,7 @@
 package com.subhajit.mulberry.sync
 
+import java.time.LocalDate
+
 data class BackgroundCanvasSyncPayload(
     val pairSessionId: String?,
     val latestRevision: Long?
@@ -38,6 +40,17 @@ data class PartnerVisibilityChangedPushPayload(
     val wallpaperSyncEnabled: Boolean,
     val wallpaperSelectedOnHome: Boolean,
     val wallpaperSelectedOnLock: Boolean
+)
+
+/** The pair ended; devices that still show it, like the relationship widget, forget it. */
+data class PairEndedPushPayload(
+    val pairSessionId: String
+)
+
+data class AnniversaryChangedPushPayload(
+    val pairSessionId: String?,
+    /** The pair's new relationship anniversary, as `yyyy-MM-dd`. */
+    val anniversaryDate: String
 )
 
 data class ReactionPushPayload(
@@ -154,5 +167,30 @@ object ReactionPushPayloadParser {
             laughCount = data["laughCount"]?.toIntOrNull() ?: 0,
             sparkleCount = data["sparkleCount"]?.toIntOrNull() ?: 0
         )
+    }
+}
+
+object AnniversaryChangedPushPayloadParser {
+    private const val TYPE_ANNIVERSARY_CHANGED = "ANNIVERSARY_CHANGED"
+
+    fun parse(data: Map<String, String>): AnniversaryChangedPushPayload? {
+        if (data["type"] != TYPE_ANNIVERSARY_CHANGED) return null
+        val anniversaryDate = data["anniversaryDate"]?.trim()
+            ?.takeIf { it.isNotEmpty() && runCatching { LocalDate.parse(it) }.isSuccess }
+            ?: return null
+        return AnniversaryChangedPushPayload(
+            pairSessionId = data["pairSessionId"]?.takeIf { it.isNotBlank() },
+            anniversaryDate = anniversaryDate
+        )
+    }
+}
+
+object PairEndedPushPayloadParser {
+    private const val TYPE_PAIR_ENDED = "PAIR_ENDED"
+
+    fun parse(data: Map<String, String>): PairEndedPushPayload? {
+        if (data["type"] != TYPE_PAIR_ENDED) return null
+        val pairSessionId = data["pairSessionId"]?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return PairEndedPushPayload(pairSessionId = pairSessionId)
     }
 }

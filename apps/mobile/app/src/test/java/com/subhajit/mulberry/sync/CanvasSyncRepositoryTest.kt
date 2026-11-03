@@ -527,6 +527,18 @@ private class FakeSessionBootstrapRepository : SessionBootstrapRepository {
         state.update { it.copy(partnerWallpaperStatus = status) }
     }
 
+    override suspend fun setAnniversaryDate(pairSessionId: String, anniversaryDate: String): Boolean {
+        if (state.value.pairSessionId != pairSessionId) return false
+        state.update { it.copy(anniversaryDate = anniversaryDate) }
+        return true
+    }
+
+    override suspend fun endPair(pairSessionId: String): Boolean {
+        if (state.value.pairSessionId != pairSessionId) return false
+        state.update { it.copy(pairSessionId = null, anniversaryDate = null) }
+        return true
+    }
+
     override suspend fun hasShownBrushToolGuide(userId: String): Boolean = false
 
     override suspend fun markBrushToolGuideShown(userId: String) = Unit

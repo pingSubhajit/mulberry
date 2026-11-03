@@ -225,6 +225,8 @@ class DefaultCanvasSnapshotRendererTest {
 
         override suspend fun setWallpaperConfigured(configured: Boolean) = Unit
         override suspend fun setPartnerWallpaperStatus(status: com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus?) = Unit
+        override suspend fun setAnniversaryDate(pairSessionId: String, anniversaryDate: String) = false
+        override suspend fun endPair(pairSessionId: String) = false
         override suspend fun seedDemoSession() = Unit
 
         override suspend fun reset() {

@@ -232,6 +232,27 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
         }
     }
 
+    override suspend fun setAnniversaryDate(pairSessionId: String, anniversaryDate: String): Boolean {
+        var applied = false
+        dataStore.edit { preferences ->
+            if (preferences[PreferenceStorage.pairSessionId] != pairSessionId) return@edit
+            preferences[PreferenceStorage.anniversaryDate] = anniversaryDate
+            applied = true
+        }
+        return applied
+    }
+
+    override suspend fun endPair(pairSessionId: String): Boolean {
+        var applied = false
+        dataStore.edit { preferences ->
+            if (preferences[PreferenceStorage.pairSessionId] != pairSessionId) return@edit
+            preferences.remove(PreferenceStorage.pairSessionId)
+            preferences.remove(PreferenceStorage.anniversaryDate)
+            applied = true
+        }
+        return applied
+    }
+
     override suspend fun hasShownBrushToolGuide(userId: String): Boolean {
         val shownUserIds =
             dataStore.data.first()[PreferenceStorage.brushToolGuideShownUserIds].orEmpty()

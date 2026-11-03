@@ -8,6 +8,7 @@ import com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.reactions.PendingReactionStore
 import com.subhajit.mulberry.wallpaper.WallpaperRenderBus
+import com.subhajit.mulberry.widget.relationship.RelationshipWidgetUpdateRequester
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -99,6 +100,41 @@ class MulberryFirebaseMessagingService : FirebaseMessagingService() {
                 }
             }.onFailure { error ->
                 Log.w(TAG, "Failed to persist partner wallpaper status", error)
+            }
+            return
+        }
+
+        val anniversaryPayload = AnniversaryChangedPushPayloadParser.parse(message.data)
+        if (anniversaryPayload != null) {
+            Log.i(TAG, "Received anniversary change push pairSessionId=${anniversaryPayload.pairSessionId}")
+            val pairSessionId = anniversaryPayload.pairSessionId ?: return
+            // Persist synchronously so this survives the FCM service being torn down immediately,
+            // then redraw the widgets even when the app's own observer isn't running.
+            runCatching {
+                val applied = runBlocking(Dispatchers.IO) {
+                    sessionBootstrapRepository.setAnniversaryDate(
+                        pairSessionId = pairSessionId,
+                        anniversaryDate = anniversaryPayload.anniversaryDate
+                    )
+                }
+                if (applied) RelationshipWidgetUpdateRequester.requestUpdate(this)
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to persist anniversary change", error)
+            }
+            return
+        }
+
+        val pairEndedPayload = PairEndedPushPayloadParser.parse(message.data)
+        if (pairEndedPayload != null) {
+            Log.i(TAG, "Received pair ended push pairSessionId=${pairEndedPayload.pairSessionId}")
+            // Persist synchronously, as above, so the widget stops counting a pair that has ended.
+            runCatching {
+                val applied = runBlocking(Dispatchers.IO) {
+                    sessionBootstrapRepository.endPair(pairEndedPayload.pairSessionId)
+                }
+                if (applied) RelationshipWidgetUpdateRequester.requestUpdate(this)
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to persist pair end", error)
             }
             return
         }

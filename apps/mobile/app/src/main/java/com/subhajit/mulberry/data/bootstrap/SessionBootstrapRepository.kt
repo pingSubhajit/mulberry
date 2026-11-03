@@ -13,6 +13,13 @@ interface SessionBootstrapRepository {
     suspend fun setWallpaperConfigured(configured: Boolean)
     suspend fun setPartnerWallpaperStatus(status: PartnerWallpaperStatus?)
 
+    /** Stores the pair's new anniversary if this device is still in [pairSessionId]; returns
+     * whether it did. */
+    suspend fun setAnniversaryDate(pairSessionId: String, anniversaryDate: String): Boolean
+
+    /** Forgets the pair and its anniversary if `pairSessionId` is still this device's pair. */
+    suspend fun endPair(pairSessionId: String): Boolean
+
     suspend fun hasShownBrushToolGuide(userId: String): Boolean
     suspend fun markBrushToolGuideShown(userId: String)
 

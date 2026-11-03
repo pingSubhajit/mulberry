@@ -72,4 +72,54 @@ class BackgroundCanvasSyncPayloadParserTest {
 
         assertNull(payload)
     }
+
+    @Test
+    fun parsesPairEndedPayload() {
+        assertEquals(
+            PairEndedPushPayload(pairSessionId = "pair-1"),
+            PairEndedPushPayloadParser.parse(mapOf("type" to "PAIR_ENDED", "pairSessionId" to "pair-1"))
+        )
+        assertNull(PairEndedPushPayloadParser.parse(mapOf("type" to "PAIR_ENDED")))
+        assertNull(PairEndedPushPayloadParser.parse(mapOf("type" to "REACTION", "pairSessionId" to "pair-1")))
+    }
+
+    @Test
+    fun parsesAnniversaryChangedPayload() {
+        val payload = AnniversaryChangedPushPayloadParser.parse(
+            mapOf(
+                "type" to "ANNIVERSARY_CHANGED",
+                "pairSessionId" to "pair-1",
+                "actorUserId" to "user-1",
+                "anniversaryDate" to "2026-02-14"
+            )
+        )
+
+        assertEquals("pair-1", payload?.pairSessionId)
+        assertEquals("2026-02-14", payload?.anniversaryDate)
+    }
+
+    @Test
+    fun ignoresAnniversaryChangedPayloadWithoutAValidDate() {
+        for (date in listOf(null, "", "  ", "2026-02-30", "14/02/2026")) {
+            val data = buildMap {
+                put("type", "ANNIVERSARY_CHANGED")
+                put("pairSessionId", "pair-1")
+                if (date != null) put("anniversaryDate", date)
+            }
+            assertNull(date, AnniversaryChangedPushPayloadParser.parse(data))
+        }
+    }
+
+    @Test
+    fun ignoresOtherPayloadsAsAnniversaryChanges() {
+        val payload = AnniversaryChangedPushPayloadParser.parse(
+            mapOf(
+                "type" to "CANVAS_UPDATED",
+                "pairSessionId" to "pair-1",
+                "anniversaryDate" to "2026-02-14"
+            )
+        )
+
+        assertNull(payload)
+    }
 }

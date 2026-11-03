@@ -116,6 +116,7 @@ open class RelationshipTrackerWidgetProvider : AppWidgetProvider() {
         val model = RelationshipWidgetModelFactory.create(
             context = context,
             anniversaryStorageDate = anniversaryString,
+            isPaired = simulationPreset != null || preferences[PreferenceStorage.pairSessionId] != null,
             clock = Clock.systemDefaultZone()
         )
 
@@ -368,6 +369,7 @@ internal object RelationshipWidgetModelFactory {
     fun create(
         context: Context,
         anniversaryStorageDate: String?,
+        isPaired: Boolean,
         clock: Clock
     ): RelationshipWidgetModel {
         val today = LocalDate.now(clock)
@@ -377,7 +379,9 @@ internal object RelationshipWidgetModelFactory {
             return RelationshipWidgetModel(
                 primaryText = context.getString(R.string.widget_relationship_name),
                 secondaryText = null,
-                captionText = context.getString(R.string.widget_relationship_missing_date),
+                captionText = context.getString(
+                    if (isPaired) R.string.widget_relationship_missing_date else R.string.widget_relationship_unpaired
+                ),
                 isCelebratory = false,
                 primaryUsesGradient = false,
                 anniversaryProgressFraction = 0f
