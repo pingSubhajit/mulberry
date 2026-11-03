@@ -16,7 +16,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[5]
 PLISTS = {
     "ios": [ROOT / "apps/ios/Configuration/Info.plist", ROOT / "apps/ios/Configuration/Widgets-Info.plist"],
-    "macos": [ROOT / "apps/macos/Configuration/Info.plist"],
+    "macos": [ROOT / "apps/macos/Configuration/Info.plist", ROOT / "apps/macos/Configuration/Widgets-Info.plist"],
 }
 
 

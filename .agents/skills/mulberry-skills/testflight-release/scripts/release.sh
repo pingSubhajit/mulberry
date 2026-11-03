@@ -91,6 +91,9 @@ verify_ios() {
   has "profile grants associated domains" "$(security cms -D -i "$A/embedded.mobileprovision" 2>/dev/null)" 'com.apple.developer.associated-domains'
   check "app signer" "$(authority "$A")" "Apple Distribution: TECHABOARD DIGI SOLUTIONS PRIVATE LIMITED ($TEAM)"
   check "widget signer" "$(authority "$W")" "Apple Distribution: TECHABOARD DIGI SOLUTIONS PRIVATE LIMITED ($TEAM)"
+  has "app group" "$e" "group.$BUNDLE_ID"
+  has "widget app group" "$(ents "$W")" "group.$BUNDLE_ID"
+  has "widget aps-environment production" "$(ents "$W")" '"aps-environment" => "production"'
   same_file "privacy policy" "$A/Legal/privacy_policy.txt" "$POLICY"
   same_file "terms of use" "$A/Legal/terms_of_use.txt" "$TERMS"
 }
@@ -117,6 +120,17 @@ verify_macos() {
   local archs; archs=$(lipo -archs "$M/Contents/MacOS/Mulberry")
   has "universal arm64" "$archs" arm64
   has "universal x86_64" "$archs" x86_64
+  has "app group" "$e" "$TEAM.group.$BUNDLE_ID"
+  local W="$M/Contents/PlugIns/MulberryWidgets.appex"
+  check "widget build" "$(plist "$W/Contents/Info.plist" CFBundleVersion)" "$(src_build apps/macos/Configuration/Info.plist)"
+  check "widget signer" "$(authority "$W")" "Apple Distribution: TECHABOARD DIGI SOLUTIONS PRIVATE LIMITED ($TEAM)"
+  local we; we=$(ents "$W")
+  has "widget sandbox" "$we" '"com.apple.security.app-sandbox" => true'
+  has "widget app group" "$we" "$TEAM.group.$BUNDLE_ID"
+  has "widget aps-environment production" "$we" '"com.apple.developer.aps-environment" => "production"'
+  local warchs; warchs=$(lipo -archs "$W/Contents/MacOS/MulberryWidgets" 2>/dev/null)
+  has "widget universal arm64" "$warchs" arm64
+  has "widget universal x86_64" "$warchs" x86_64
   has "installer signature" "$(pkgutil --check-signature "$R/macOS/Mulberry.pkg")" "3rd Party Mac Developer Installer: TECHABOARD DIGI SOLUTIONS PRIVATE LIMITED ($TEAM)"
   same_file "privacy policy" "$M/Contents/Resources/Legal/privacy_policy.txt" "$POLICY"
   same_file "terms of use" "$M/Contents/Resources/Legal/terms_of_use.txt" "$TERMS"

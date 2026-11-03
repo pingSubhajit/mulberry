@@ -16,7 +16,7 @@ Only Apple Development identities were present locally at this checkpoint. Distr
 
 Create one app record in Techaboard for `com.subhajit.mulberry.beta`, with iOS and macOS platforms under that record. Do not create two separate records. This is the intended universal purchase arrangement; each platform still has its own archive, build processing and TestFlight build assignment. No record exists at this checkpoint. Firebase remains in the owner's account.
 
-Read the current source version and build from each platform's Info.plist before creating its version/build. At this checkpoint iOS and its widget use version `0.1`, build `1`; macOS uses version `0.1.0`, build `1`. Different platform versions are allowed. For subsequent uploads, increment the relevant source build number, keeping the iOS app and widget aligned; the values are currently literal plist strings, not CURRENT_PROJECT_VERSION substitutions.
+Read the current source version and build from each platform's Info.plist before creating its version/build. At this checkpoint iOS and its widget use version `0.1`, build `1`; macOS uses version `0.1.0`, build `1`. Different platform versions are allowed. For subsequent uploads, increment the relevant source build number, keeping each app aligned with its widget (`Widgets-Info.plist` on both platforms); the values are currently literal plist strings, not CURRENT_PROJECT_VERSION substitutions.
 
 Provide beta test information, feedback/review contact details and the export-compliance answers. Create tester groups and assign each platform's processed build. Begin with internal testing; external testers require Apple's beta review. Full public App Store release is a separate action.
 

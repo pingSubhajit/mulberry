@@ -14,7 +14,7 @@ This is the process used for builds 2–6. Everything runs from the repository r
 | App Store Connect record | one record, ID `6829284245`, bundle `com.subhajit.mulberry.beta`, covering iOS and macOS (universal purchase) |
 | Team | Techaboard `HMJX9736KN`, automatic signing, Apple Distribution certificate, Mac installer certificate "3rd Party Mac Developer Installer" |
 | Scheme | `Mulberry Production`, Release configuration, live API `https://api.mulberry.my/`, production APNs |
-| Build numbers | literal `CFBundleVersion` strings in `apps/ios/Configuration/Info.plist`, `apps/ios/Configuration/Widgets-Info.plist` and `apps/macos/Configuration/Info.plist`. The iOS app and widget must always match. |
+| Build numbers | literal `CFBundleVersion` strings in `apps/ios/Configuration/Info.plist`, `apps/ios/Configuration/Widgets-Info.plist`, `apps/macos/Configuration/Info.plist` and `apps/macos/Configuration/Widgets-Info.plist`. Each app and its widget must always match. |
 | Artifacts | ignored `temp/apple-release/<YYYY-MM-DD>-build-<N>/`: archives, `iOS/Mulberry.ipa`, `macOS/Mulberry.pkg`, `*-archive/export/upload.log`, `source.json` |
 | Background | `docs/apple/testflight-release.md` |
 
@@ -51,7 +51,7 @@ $S/bump-build.py <platforms>             # edits the plists
 - Commit only the plist changes and push. The user's request for a build authorizes this commit and push to `origin/main`; it's how every earlier build was done.
 
 ```sh
-git add apps/ios/Configuration/Info.plist apps/ios/Configuration/Widgets-Info.plist apps/macos/Configuration/Info.plist
+git add apps/ios/Configuration/Info.plist apps/ios/Configuration/Widgets-Info.plist apps/macos/Configuration/Info.plist apps/macos/Configuration/Widgets-Info.plist
 git commit -m "chore(apple): prepare version <version> build <N>" -m "Co-Authored-By: <attribution from the current system reminder>"
 git push origin main
 ```
