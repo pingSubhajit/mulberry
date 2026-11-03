@@ -7,8 +7,9 @@ struct MulberryRootView: View {
     @StateObject private var setup: WallpaperSetupModel
     @Environment(\.scenePhase) private var phase
     @State private var setupOpen = false
-    /// The streak sheet grows out of the toolbar's streak pill and shrinks back into it.
-    @Namespace private var streakZoom
+    /// What the toolbar's buttons open grows out of them and shrinks back in: the streak sheet,
+    /// the wallpapers and Settings.
+    @Namespace private var toolbarZoom
     @State private var streakClosings = 0
     @State private var setupAfterSettings = false
     @ObservedObject private var quickActions = HomeQuickActions.shared
@@ -95,7 +96,7 @@ struct MulberryRootView: View {
             StreakSheet(streaks: model.streaks, api: { try? model.api }) {
                 if let api = try? model.api { await model.streaks.refresh(api: api) }
             }
-            .navigationTransition(.zoom(sourceID: StreakZoomSource.pill, in: streakZoom))
+            .navigationTransition(.zoom(sourceID: StreakZoomSource.pill, in: toolbarZoom))
         }
         .onChange(of: model.showStreak) { _, open in
             if !open { streakClosings += 1 }
@@ -120,6 +121,7 @@ struct MulberryRootView: View {
             SettingsView(model: model, library: wallpapers) {
                 setupAfterSettings = true; model.showSettings = false
             }
+            .navigationTransition(.zoom(sourceID: ToolbarZoomSource.settings, in: toolbarZoom))
         }
         .sheet(isPresented: $setupOpen) {
             WallpaperSetupView(setup: setup) {
@@ -227,6 +229,7 @@ struct MulberryRootView: View {
                     if UserDefaults.standard.object(forKey: key) != nil { Task { await setup.runShortcut() } }
                     else { setupOpen = true }
                 }).navigationTitle("Wallpapers").navigationBarTitleDisplayMode(.inline)
+                    .navigationTransition(.zoom(sourceID: ToolbarZoomSource.wallpaper, in: toolbarZoom))
             }
         }
     }
@@ -258,7 +261,7 @@ struct MulberryRootView: View {
                     model.showStreak = true
                 }
             }
-            .matchedTransitionSource(id: StreakZoomSource.pill, in: streakZoom)
+            .matchedTransitionSource(id: StreakZoomSource.pill, in: toolbarZoom)
             // Its own capsule, apart from the wallpaper and profile pair.
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
         }
@@ -269,6 +272,7 @@ struct MulberryRootView: View {
                     .foregroundStyle(MulberryDesign.ink)
             }.accessibilityLabel("Wallpaper")
         }
+        .matchedTransitionSource(id: ToolbarZoomSource.wallpaper, in: toolbarZoom)
         ToolbarItem(placement: .topBarTrailing) {
             Button { model.showSettings = true } label: {
                 Group {
@@ -281,5 +285,9 @@ struct MulberryRootView: View {
                     .foregroundStyle(MulberryDesign.ink)
             }.accessibilityLabel("Profile")
         }
+        .matchedTransitionSource(id: ToolbarZoomSource.settings, in: toolbarZoom)
     }
 }
+
+/// Besides the streak pill, the toolbar buttons whose screens zoom out of them.
+private enum ToolbarZoomSource: Hashable { case wallpaper, settings }
