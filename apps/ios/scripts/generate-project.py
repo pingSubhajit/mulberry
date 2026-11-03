@@ -71,6 +71,8 @@ firebase_product = add('firebase-product', isa='XCSwiftPackageProductDependency'
 firebase_build = add('firebase-build', isa='PBXBuildFile', productRef=firebase_product)
 crashlytics_product = add('crashlytics-product', isa='XCSwiftPackageProductDependency', package=firebase_package, productName='FirebaseCrashlytics')
 crashlytics_build = add('crashlytics-build', isa='PBXBuildFile', productRef=crashlytics_product)
+remote_config_product = add('remote-config-product', isa='XCSwiftPackageProductDependency', package=firebase_package, productName='FirebaseRemoteConfig')
+remote_config_build = add('remote-config-build', isa='PBXBuildFile', productRef=remote_config_product)
 # Uploads the app's symbols so Crashlytics reports read as source, after the Firebase config is copied in.
 crashlytics_phase = add('crashlytics-symbols-phase', isa='PBXShellScriptBuildPhase', buildActionMask='2147483647', files=[],
     inputPaths=['${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}',
@@ -97,7 +99,7 @@ products = add('products', isa='PBXGroup', name='Products', children=[product, w
 main = add('main', isa='PBXGroup', children=refs + icon_refs + [resources, asset_ref, font_ref, legal_ref, config_ref, debug_config_ref, widget_assets_ref, widget_plist_ref, privacy_ref, widget_privacy_ref, products], sourceTree='<group>')
 sources_phase = add('sources-phase', isa='PBXSourcesBuildPhase', buildActionMask='2147483647', files=builds, runOnlyForDeploymentPostprocessing='0')
 resources_phase = add('resources-phase', isa='PBXResourcesBuildPhase', buildActionMask='2147483647', files=[resource_build, asset_build, font_build, legal_build, privacy_build] + icon_builds, runOnlyForDeploymentPostprocessing='0')
-frameworks_phase = add('frameworks-phase', isa='PBXFrameworksBuildPhase', buildActionMask='2147483647', files=[google_build, firebase_build, crashlytics_build], runOnlyForDeploymentPostprocessing='0')
+frameworks_phase = add('frameworks-phase', isa='PBXFrameworksBuildPhase', buildActionMask='2147483647', files=[google_build, firebase_build, crashlytics_build, remote_config_build], runOnlyForDeploymentPostprocessing='0')
 project_configs, target_configs = [], []
 # Two environments crossed with two compilation modes, as Android's dev/prod flavours are.
 configurations = [('Debug', 'dev', True), ('DevRelease', 'dev', False),
@@ -141,7 +143,7 @@ widget_embed_build = add('widget-embed-build', isa='PBXBuildFile', fileRef=widge
 widget_embed = add('widget-embed-phase', isa='PBXCopyFilesBuildPhase', buildActionMask='2147483647', dstPath='', dstSubfolderSpec='13', files=[widget_embed_build], name='Embed Foundation Extensions', runOnlyForDeploymentPostprocessing='0')
 project_list = add('project-configs', isa='XCConfigurationList', buildConfigurations=project_configs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
 target_list = add('target-configs', isa='XCConfigurationList', buildConfigurations=target_configs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
-target = add('app-target', isa='PBXNativeTarget', name='Mulberry', productName='Mulberry', productType='com.apple.product-type.application', productReference=product, buildConfigurationList=target_list, buildPhases=[shortcut_phase, sources_phase, frameworks_phase, resources_phase, firebase_phase, widget_embed, local_server_phase, crashlytics_phase], dependencies=[widget_dependency], buildRules=[], packageProductDependencies=[google_product, firebase_product, crashlytics_product])
+target = add('app-target', isa='PBXNativeTarget', name='Mulberry', productName='Mulberry', productType='com.apple.product-type.application', productReference=product, buildConfigurationList=target_list, buildPhases=[shortcut_phase, sources_phase, frameworks_phase, resources_phase, firebase_phase, widget_embed, local_server_phase, crashlytics_phase], dependencies=[widget_dependency], buildRules=[], packageProductDependencies=[google_product, firebase_product, crashlytics_product, remote_config_product])
 project = add('project', isa='PBXProject', attributes={'LastUpgradeCheck': '2710'}, buildConfigurationList=project_list, compatibilityVersion='Xcode 14.0', developmentRegion='en', knownRegions=['en', 'Base'], mainGroup=main, productRefGroup=products, projectDirPath='', projectRoot='', targets=[target, widget_target], packageReferences=[google_package, firebase_package])
 folder = root / 'Mulberry.xcodeproj'
 folder.mkdir(exist_ok=True)

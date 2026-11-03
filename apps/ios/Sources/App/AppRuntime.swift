@@ -5,6 +5,14 @@ enum AppRuntime {
     static let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Mulberry", isDirectory: true)
     static let drawings = DrawingStore(directory: directory.appendingPathComponent("Drawings", isDirectory: true))
     private static var backend: BackendClient?
+    /// Debug builds don't name their build, so the server never turns them away.
+    private static var clientBuild: ClientBuild? {
+        #if DEBUG
+        nil
+        #else
+        ClientBuild(platform: "ios", number: AppUpdateGate.build)
+        #endif
+    }
     static func api() throws -> BackendClient {
         if let backend { return backend }
         guard let value = Bundle.main.object(forInfoDictionaryKey: "MulberryAPIBaseURL") as? String,
@@ -20,7 +28,8 @@ enum AppRuntime {
         shortConfiguration.timeoutIntervalForRequest = 3
         shortConfiguration.timeoutIntervalForResource = 3
         let client = try BackendClient(baseURL: url, tokenStore: SessionKeychain(service: (Bundle.main.bundleIdentifier ?? "com.subhajit.mulberry") + ".session"), transport: URLSessionTransport(session: URLSession(configuration: configuration)),
-                                       shortTransport: URLSessionTransport(session: URLSession(configuration: shortConfiguration)))
+                                       shortTransport: URLSessionTransport(session: URLSession(configuration: shortConfiguration)),
+                                       clientBuild: clientBuild)
         backend = client
         return client
     }

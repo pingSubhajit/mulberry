@@ -165,3 +165,36 @@ private actor TestTransport: BackendTransport {
     let apple = try JSONDecoder().decode(BootstrapState.self, from: JSONSerialization.data(withJSONObject: object))
     #expect(apple.signsIn(with: .apple) && !apple.signsIn(with: .google))
 }
+
+/// Answers every request with 426, as the server does for a build below its minimum.
+private actor UpgradeRequiredTransport: BackendTransport {
+    var requests: [URLRequest] = []
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        let body = Data(#"{"message":"Update Mulberry to keep going.","code":"UPDATE_REQUIRED"}"#.utf8)
+        return (body, HTTPURLResponse(url: request.url!, statusCode: 426, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
+@Test func aTurnedAwayBuildReportsThatItMustUpdate() async throws {
+    let transport = UpgradeRequiredTransport()
+    let client = BackendClient(baseURL: URL(string: "https://example.invalid")!, tokenStore: TestTokenStore(nil), session: nil,
+                               transport: transport, clientBuild: ClientBuild(platform: "ios", number: 6))
+    let posted = NotificationCenter.default.notifications(named: BackendClient.updateRequired)
+
+    await #expect(throws: BackendError.updateRequired) { _ = try await client.wallpapers() }
+
+    let request = try #require(await transport.requests.first)
+    #expect(request.value(forHTTPHeaderField: "X-App-Platform") == "ios")
+    #expect(request.value(forHTTPHeaderField: "X-App-Build") == "6")
+    var notifications = posted.makeAsyncIterator()
+    #expect(await notifications.next() != nil)
+}
+
+@Test func aClientWithoutABuildSendsNoBuildHeaders() async throws {
+    let transport = try TestTransport()
+    let client = BackendClient(baseURL: URL(string: "https://example.invalid")!, tokenStore: TestTokenStore(nil), session: nil, transport: transport)
+    _ = try await client.wallpapers()
+    let request = try #require(await transport.requests.first)
+    #expect(request.value(forHTTPHeaderField: "X-App-Build") == nil)
+}

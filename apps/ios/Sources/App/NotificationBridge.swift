@@ -16,6 +16,7 @@ final class NotificationBridge: NSObject, UIApplicationDelegate, UNUserNotificat
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         PushRegistration.shared.configure()
+        AppUpdateGate.shared.start()
         ReactionActivities.followTokens()
         return true
     }

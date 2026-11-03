@@ -22,6 +22,8 @@ public struct URLSessionTransport: BackendTransport {
 
 public enum BackendError: Error, LocalizedError, Equatable, Sendable {
     case signedOut, sessionChanged, invalidResponse
+    /// The server no longer accepts this build. `BackendClient.updateRequired` is posted with it.
+    case updateRequired
     case rejected(Int, String)
 
     public var errorDescription: String? {
@@ -29,15 +31,32 @@ public enum BackendError: Error, LocalizedError, Equatable, Sendable {
         case .signedOut: "Please sign in again."
         case .sessionChanged: "Your account changed. Please try again."
         case .invalidResponse: "Mulberry could not read the server's reply. Please try again."
+        case .updateRequired: "Update Mulberry to keep going."
         case .rejected(_, let message): message
         }
+    }
+}
+
+/// The app's platform and build number. Sent with every request, so the server can turn away
+/// builds it no longer supports.
+public struct ClientBuild: Sendable, Equatable {
+    public let platform: String
+    public let number: Int
+
+    public init(platform: String, number: Int) {
+        self.platform = platform
+        self.number = number
     }
 }
 
 /// Serializes token rotation. Concurrent requests share one refresh, and an old request
 /// can never restore a session after sign-out or account switching.
 public actor BackendClient {
+    /// Posted, on any thread, when the server turns this build away.
+    public static let updateRequired = Notification.Name("MulberryBackendUpdateRequired")
+
     public let baseURL: URL
+    private let clientBuild: ClientBuild?
     private let transport: any BackendTransport
     private let shortTransport: any BackendTransport
     private let tokenStore: any SessionTokenStore
@@ -45,14 +64,15 @@ public actor BackendClient {
     private var generation = 0
     private var refreshTask: Task<SessionTokens, Error>?
 
-    public init(baseURL: URL, tokenStore: any SessionTokenStore, transport: any BackendTransport = URLSessionTransport(), shortTransport: (any BackendTransport)? = nil) throws {
-        self.init(baseURL: baseURL, tokenStore: tokenStore, session: try tokenStore.load(), transport: transport, shortTransport: shortTransport)
+    public init(baseURL: URL, tokenStore: any SessionTokenStore, transport: any BackendTransport = URLSessionTransport(), shortTransport: (any BackendTransport)? = nil, clientBuild: ClientBuild? = nil) throws {
+        self.init(baseURL: baseURL, tokenStore: tokenStore, session: try tokenStore.load(), transport: transport, shortTransport: shortTransport, clientBuild: clientBuild)
     }
 
     /// Starts from `session` rather than reading the store, as when the store cannot be read: sign-in
     /// and sign-out still save to it.
-    public init(baseURL: URL, tokenStore: any SessionTokenStore, session: SessionTokens?, transport: any BackendTransport = URLSessionTransport(), shortTransport: (any BackendTransport)? = nil) {
+    public init(baseURL: URL, tokenStore: any SessionTokenStore, session: SessionTokens?, transport: any BackendTransport = URLSessionTransport(), shortTransport: (any BackendTransport)? = nil, clientBuild: ClientBuild? = nil) {
         self.baseURL = baseURL
+        self.clientBuild = clientBuild
         self.tokenStore = tokenStore
         self.transport = transport
         self.shortTransport = shortTransport ?? transport
@@ -344,6 +364,10 @@ public actor BackendClient {
         request.httpMethod = method
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let clientBuild {
+            request.setValue(clientBuild.platform, forHTTPHeaderField: "X-App-Platform")
+            request.setValue(String(clientBuild.number), forHTTPHeaderField: "X-App-Build")
+        }
         return request
     }
     private func pathID(_ id: String) throws -> String {
@@ -351,6 +375,10 @@ public actor BackendClient {
         return id
     }
     private nonisolated static func validate(_ data: Data, _ response: HTTPURLResponse) throws {
+        if response.statusCode == 426 {
+            NotificationCenter.default.post(name: updateRequired, object: nil)
+            throw BackendError.updateRequired
+        }
         guard (200..<300).contains(response.statusCode) else {
             struct Failure: Decodable { let message: String?; let error: String? }
             let failure = try? JSONDecoder().decode(Failure.self, from: data)
