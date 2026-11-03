@@ -44,6 +44,7 @@ describe("agent catalog operations", () => {
       upload: async (path, data) => { assets.set(path, data) },
       remove: async (paths) => { for (const path of paths) assets.delete(path) },
       signedUrl: async (path) => `https://assets.test/${path}?signed=yes`,
+      signedUrls: async (paths) => paths.map((path) => `https://assets.test/${path}?signed=yes`),
       publicUrl: (path) => `https://assets.test/${path}`,
     }
     png = await sharp({ create: { width: 800, height: 900, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 0.5 } } }).png().toBuffer()

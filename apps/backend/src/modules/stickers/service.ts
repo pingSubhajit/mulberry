@@ -19,7 +19,12 @@ export interface StickerStorage {
   upload(path: string, data: Buffer, contentType: string): Promise<void>
   remove(paths: string[]): Promise<void>
   signedUrl(path: string, expiresInSeconds: number): Promise<string>
+  /** Signs every path in one round trip, in the order given. */
+  signedUrls(paths: string[], expiresInSeconds: number): Promise<string[]>
 }
+
+/** Published pack versions never change, so their asset links can outlive a picker session. */
+const SIGNED_URL_TTL_SECONDS = 24 * 60 * 60
 
 export interface StickerPackSummary {
   message?: string
@@ -131,6 +136,22 @@ export class SupabaseStickerStorage implements StickerStorage {
     }
     return data.signedUrl
   }
+
+  async signedUrls(paths: string[], expiresInSeconds: number): Promise<string[]> {
+    if (paths.length === 0) return []
+    const { data, error } = await this.client.storage
+      .from(this.bucket)
+      .createSignedUrls(paths, expiresInSeconds)
+    if (error || !data) {
+      throw new HttpError(502, `Unable to create signed sticker URLs: ${error?.message ?? "unknown error"}`)
+    }
+    const byPath = new Map(data.map((item) => [item.path, item.signedUrl]))
+    return paths.map((path, index) => {
+      const url = byPath.get(path) ?? data[index]?.signedUrl
+      if (!url) throw new HttpError(502, `Unable to create signed sticker URL for ${path}`)
+      return url
+    })
+  }
 }
 
 export function createStickerStorage(config: StickerCatalogConfig): StickerStorage | null {
@@ -161,7 +182,8 @@ export class StickerCatalogService {
       ORDER BY featured DESC, sort_order ASC, created_at DESC, pack_key ASC, pack_version DESC
       `,
     )
-    const items = await Promise.all(rows.rows.map((row) => this.packRowToSummary(row)))
+    const urls = await this.signAll(rows.rows.flatMap(packPaths))
+    const items = await Promise.all(rows.rows.map((row) => this.packRowToSummary(row, urls)))
     return { items }
   }
 
@@ -195,8 +217,9 @@ export class StickerCatalogService {
       [pack.pack_key, pack.pack_version],
     )
 
-    const base = await this.packRowToSummary(pack)
-    const stickers = await Promise.all(stickerRows.rows.map((row) => this.stickerRowToSummary(row)))
+    const urls = await this.signAll([...packPaths(pack), ...stickerRows.rows.flatMap(stickerPaths)])
+    const base = await this.packRowToSummary(pack, urls)
+    const stickers = await Promise.all(stickerRows.rows.map((row) => this.stickerRowToSummary(row, urls)))
     return { ...base, stickers }
   }
 
@@ -227,8 +250,7 @@ export class StickerCatalogService {
     const row = rows.rows[0]
     if (!row) throw new HttpError(404, "Sticker not found")
     const path = options.variant === "thumbnail" ? row.thumbnail_path : row.full_path
-    const expiresInSeconds = 10 * 60
-    return { url: await this.storage.signedUrl(path, expiresInSeconds), expiresInSeconds }
+    return { url: await this.storage.signedUrl(path, SIGNED_URL_TTL_SECONDS), expiresInSeconds: SIGNED_URL_TTL_SECONDS }
   }
 
   async listStickerPacksForAdmin(
@@ -250,7 +272,8 @@ export class StickerCatalogService {
     const counts = await this.db.query<{ pack_key: string; pack_version: number; sticker_count: number }>(
       "SELECT pack_key, pack_version, COUNT(*)::int AS sticker_count FROM stickers GROUP BY pack_key, pack_version")
     const countByPack = new Map(counts.rows.map((row) => [`${row.pack_key}:${row.pack_version}`, row.sticker_count]))
-    const items = await Promise.all(rows.rows.map((row) => this.packRowToAdminSummary({ ...row, sticker_count: countByPack.get(`${row.pack_key}:${row.pack_version}`) ?? 0 })))
+    const urls = await this.signAll(rows.rows.flatMap(packPaths))
+    const items = await Promise.all(rows.rows.map((row) => this.packRowToAdminSummary({ ...row, sticker_count: countByPack.get(`${row.pack_key}:${row.pack_version}`) ?? 0 }, urls)))
     return { items }
   }
 
@@ -294,8 +317,9 @@ export class StickerCatalogService {
       [pack.pack_key, pack.pack_version],
     )
 
-    const base = await this.packRowToAdminSummary({ ...pack, sticker_count: stickerRows.rows.length })
-    const stickers = await Promise.all(stickerRows.rows.map((row) => this.stickerRowToSummary(row)))
+    const urls = await this.signAll([...packPaths(pack), ...stickerRows.rows.flatMap(stickerPaths)])
+    const base = await this.packRowToAdminSummary({ ...pack, sticker_count: stickerRows.rows.length }, urls)
+    const stickers = await Promise.all(stickerRows.rows.map((row) => this.stickerRowToSummary(row, urls)))
     return { ...base, stickers }
   }
 
@@ -654,16 +678,23 @@ export class StickerCatalogService {
     requireAdminPassword(this.adminPassword, candidate)
   }
 
-  private async packRowToSummary(row: StickerPackRow): Promise<StickerPackSummary> {
+  /** Signs every asset path in one storage call, keyed by path. */
+  private async signAll(paths: string[]): Promise<Map<string, string>> {
     if (!this.storage) throw new HttpError(503, "Sticker storage is not configured")
-    const expiresInSeconds = 10 * 60
+    const unique = [...new Set(paths)]
+    const urls = await this.storage.signedUrls(unique, SIGNED_URL_TTL_SECONDS)
+    return new Map(unique.map((path, index) => [path, urls[index]]))
+  }
+
+  private async packRowToSummary(row: StickerPackRow, signed?: Map<string, string>): Promise<StickerPackSummary> {
+    const urls = signed ?? await this.signAll(packPaths(row))
     return {
       packKey: row.pack_key,
       packVersion: Number(row.pack_version),
       title: row.title,
       description: row.description,
-      coverThumbnailUrl: await this.storage.signedUrl(row.cover_thumbnail_path, expiresInSeconds),
-      coverFullUrl: await this.storage.signedUrl(row.cover_full_path, expiresInSeconds),
+      coverThumbnailUrl: signedUrlFor(urls, row.cover_thumbnail_path),
+      coverFullUrl: signedUrlFor(urls, row.cover_full_path),
       sortOrder: Number(row.sort_order),
       featured: Boolean(row.featured),
     }
@@ -671,8 +702,9 @@ export class StickerCatalogService {
 
   private async packRowToAdminSummary(
     row: StickerPackRow & { sticker_count?: number },
+    signed?: Map<string, string>,
   ): Promise<StickerPackAdminSummary> {
-    const base = await this.packRowToSummary(row)
+    const base = await this.packRowToSummary(row, signed)
     return {
       ...base,
       publishedAt: row.published_at,
@@ -684,13 +716,12 @@ export class StickerCatalogService {
     }
   }
 
-  private async stickerRowToSummary(row: StickerRow): Promise<StickerSummary> {
-    if (!this.storage) throw new HttpError(503, "Sticker storage is not configured")
-    const expiresInSeconds = 10 * 60
+  private async stickerRowToSummary(row: StickerRow, signed?: Map<string, string>): Promise<StickerSummary> {
+    const urls = signed ?? await this.signAll(stickerPaths(row))
     return {
       stickerId: row.sticker_id,
-      thumbnailUrl: await this.storage.signedUrl(row.thumbnail_path, expiresInSeconds),
-      fullUrl: await this.storage.signedUrl(row.full_path, expiresInSeconds),
+      thumbnailUrl: signedUrlFor(urls, row.thumbnail_path),
+      fullUrl: signedUrlFor(urls, row.full_path),
       width: Number(row.width),
       height: Number(row.height),
       sortOrder: Number(row.sort_order),
@@ -742,4 +773,18 @@ async function processStickerImage(input: Buffer): Promise<{
     if (error instanceof HttpError) throw error
     throw new HttpError(400, "Sticker image could not be decoded. Supply a valid image.", { code: "INVALID_CATALOG_INPUT" })
   }
+}
+
+function packPaths(row: Pick<StickerPackRow, "cover_thumbnail_path" | "cover_full_path">): string[] {
+  return [row.cover_thumbnail_path, row.cover_full_path]
+}
+
+function stickerPaths(row: Pick<StickerRow, "thumbnail_path" | "full_path">): string[] {
+  return [row.thumbnail_path, row.full_path]
+}
+
+function signedUrlFor(urls: Map<string, string>, path: string): string {
+  const url = urls.get(path)
+  if (!url) throw new HttpError(502, `Unable to create signed sticker URL for ${path}`)
+  return url
 }

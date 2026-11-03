@@ -35,6 +35,10 @@ export class LocalStickerStorage implements StickerStorage {
     return `${LOCAL_STICKER_ASSET_PREFIX}${encoded}?expires=${expires}&sig=${this.sign(assetPath, expires)}`
   }
 
+  async signedUrls(assetPaths: string[], expiresInSeconds: number): Promise<string[]> {
+    return Promise.all(assetPaths.map((assetPath) => this.signedUrl(assetPath, expiresInSeconds)))
+  }
+
   async read(assetPath: string, expires: number, signature: string): Promise<Buffer> {
     if (!Number.isFinite(expires) || expires < Date.now() / 1000) throw new HttpError(403, "Sticker URL expired")
     const expected = Buffer.from(this.sign(assetPath, expires))
