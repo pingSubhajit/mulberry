@@ -1,17 +1,19 @@
 "use client"
 
-import { ImagePlus, Plus, Sticker, Upload } from "lucide-react"
+import { Eye, EyeOff, ImagePlus, Pencil, Plus, Star, Sticker, Trash2, Upload } from "lucide-react"
 import { FormEvent, useEffect, useRef, useState, useTransition } from "react"
 
 import { API_BASE_URL } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 
 import { useAdmin } from "../AdminShell"
+import { ActionMenu, HIDE_IN_GROUP, REVEAL_IN_GROUP, Sheet, type MenuAction } from "../overlays"
 import {
   AdminButton,
   Dropzone,
   EmptyState,
   fieldClass,
+  IconButton,
   LiveDot,
   numberFieldClass,
   PropertyRow,
@@ -68,6 +70,22 @@ type AdminListResponse = {
   items: StickerPackAdminSummary[]
 }
 
+type PackRef = Pick<StickerPackAdminSummary, "packKey" | "packVersion" | "title">
+
+type PackChanges = Partial<Pick<StickerPackAdminSummary, "title" | "description" | "sortOrder" | "featured" | "published">>
+
+const isSamePack = (a: Pick<PackRef, "packKey" | "packVersion"> | null, b: Pick<PackRef, "packKey" | "packVersion">) =>
+  a !== null && a.packKey === b.packKey && a.packVersion === b.packVersion
+
+const packUrl = (pack: Pick<PackRef, "packKey" | "packVersion">) =>
+  `${API_BASE_URL}/admin/stickers/packs/${encodeURIComponent(pack.packKey)}/${pack.packVersion}`
+
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  const body: unknown = await response.json().catch(() => null)
+  if (body && typeof body === "object" && "message" in body && typeof body.message === "string") return body.message
+  return fallback
+}
+
 export default function StickerAdminPage() {
   const { adminHeaders } = useAdmin()
   const [packs, setPacks] = useState<StickerPackAdminSummary[]>([])
@@ -92,7 +110,15 @@ export default function StickerAdminPage() {
   const [isUpdatingCover, setIsUpdatingCover] = useState(false)
   const [coverUpdateFileName, setCoverUpdateFileName] = useState<string | null>(null)
   const coverUpdateInputRef = useRef<HTMLInputElement | null>(null)
-  const [isDeletingPack, setIsDeletingPack] = useState(false)
+  const [isPackActionPending, setIsPackActionPending] = useState(false)
+  const [sheetSticker, setSheetSticker] = useState<StickerSummary | null>(null)
+  const [isStickerSheetOpen, setIsStickerSheetOpen] = useState(false)
+  const [stickerSortOrderDraft, setStickerSortOrderDraft] = useState("")
+  const [stickerReplaceFileName, setStickerReplaceFileName] = useState<string | null>(null)
+  const [isSavingSticker, setIsSavingSticker] = useState(false)
+  const [stickerSheetError, setStickerSheetError] = useState<string | null>(null)
+  const [stickerSheetStatus, setStickerSheetStatus] = useState<string | null>(null)
+  const stickerReplaceInputRef = useRef<HTMLInputElement | null>(null)
   const [isCreatingView, setIsCreatingView] = useState(false)
   const [detailTab, setDetailTab] = useState<DetailTab>("stickers")
   const hasAutoOpenedRef = useRef(false)
@@ -175,7 +201,8 @@ export default function StickerAdminPage() {
     setIsUploadingStickers(false)
     setCoverUpdateFileName(null)
     setIsUpdatingCover(false)
-    setIsDeletingPack(false)
+    setIsPackActionPending(false)
+    setIsStickerSheetOpen(false)
     if (stickerUploadInputRef.current) stickerUploadInputRef.current.value = ""
     if (coverUpdateInputRef.current) coverUpdateInputRef.current.value = ""
   }
@@ -357,12 +384,10 @@ export default function StickerAdminPage() {
 
     const form = event.currentTarget
     const body = Object.fromEntries(new FormData(form).entries())
-    const payload = {
+    const payload: PackChanges = {
       title: String(body.title ?? ""),
       description: String(body.description ?? ""),
       sortOrder: Number(body.sortOrder ?? 0),
-      featured: Boolean(body.featured),
-      published: Boolean(body.published),
     }
 
     startTransition(() => {
@@ -532,32 +557,179 @@ export default function StickerAdminPage() {
     })
   }
 
-  const deleteOpenPack = () => {
-    if (!openPack || isDeletingPack) return
-    const label = openPackDetail?.title?.trim() ? `"${openPackDetail.title}"` : `${openPack.packKey} v${openPack.packVersion}`
-    const ok = window.confirm(`Delete sticker pack ${label}? Saved canvases can lose these stickers. Hide the pack instead to keep them working.`)
-    if (!ok) return
+  const patchPack = async (pack: PackRef, changes: PackChanges): Promise<void> => {
+    const response = await fetch(packUrl(pack), {
+      method: "PATCH",
+      headers: { ...adminHeaders, "content-type": "application/json" },
+      body: JSON.stringify(changes),
+    })
+    if (!response.ok) throw new Error(await readErrorMessage(response, "Unable to update sticker pack"))
+  }
 
-    setIsDeletingPack(true)
+  const packLabel = (pack: PackRef) => (pack.title.trim() ? `"${pack.title}"` : `${pack.packKey} v${pack.packVersion}`)
+
+  const editPack = (pack: PackRef) => {
+    if (isCreatingView || !isSamePack(openPack, pack)) {
+      setStickerUploadSelection(null)
+      openPackDialog(pack.packKey, pack.packVersion)
+    }
+    setDetailTab("details")
+  }
+
+  const toggleFeatured = (pack: StickerPackAdminSummary) => {
+    const featured = !pack.featured
+    const apply = (value: boolean) => {
+      setPacks((list) => list.map((item) => (isSamePack(item, pack) ? { ...item, featured: value } : item)))
+      setOpenPackDetail((detail) => (detail && isSamePack(detail, pack) ? { ...detail, featured: value } : detail))
+    }
+    apply(featured)
+    setError(null)
+    setStatus(null)
+    patchPack(pack, { featured }).catch((err: unknown) => {
+      apply(!featured)
+      setError(err instanceof Error ? err.message : "Unable to update sticker pack")
+    })
+  }
+
+  const setPackPublished = (pack: PackRef, published: boolean) => {
+    if (isPackActionPending) return
+    if (published && !window.confirm(`Publish ${packLabel(pack)}? Couples will see it, and its stickers can't change after this.`)) return
+
+    setIsPackActionPending(true)
     setError(null)
     setStatus(null)
     void (async () => {
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/admin/stickers/packs/${openPack.packKey}/${openPack.packVersion}`,
-          { method: "DELETE", headers: { ...adminHeaders, "content-type": "application/json" }, body: JSON.stringify({ confirm: true }) },
-        )
-        if (!response.ok) {
-          const body = await response.json().catch(() => null)
-          throw new Error(body?.message ?? "Unable to delete sticker pack")
-        }
-        closePackDialog()
+        await patchPack(pack, { published })
+        setStatus(published ? "Pack published" : "Pack unpublished")
+        loadAdminCatalog()
+        if (isSamePack(openPack, pack)) openPackDialog(pack.packKey, pack.packVersion)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to update sticker pack")
+      } finally {
+        setIsPackActionPending(false)
+      }
+    })()
+  }
+
+  const deletePack = (pack: PackRef) => {
+    if (isPackActionPending) return
+    const ok = window.confirm(`Delete sticker pack ${packLabel(pack)}? Saved canvases can lose these stickers. Unpublish the pack instead to keep them working.`)
+    if (!ok) return
+
+    setIsPackActionPending(true)
+    setError(null)
+    setStatus(null)
+    void (async () => {
+      try {
+        const response = await fetch(packUrl(pack), {
+          method: "DELETE",
+          headers: { ...adminHeaders, "content-type": "application/json" },
+          body: JSON.stringify({ confirm: true }),
+        })
+        if (!response.ok) throw new Error(await readErrorMessage(response, "Unable to delete sticker pack"))
+        if (isSamePack(openPack, pack)) closePackDialog()
         setStatus("Pack deleted")
         loadAdminCatalog()
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to delete sticker pack")
       } finally {
-        setIsDeletingPack(false)
+        setIsPackActionPending(false)
+      }
+    })()
+  }
+
+  const packActions = (pack: StickerPackAdminSummary): MenuAction[] => [
+    { label: "Edit", icon: Pencil, onSelect: () => editPack(pack) },
+    pack.published
+      ? { label: "Unpublish", icon: EyeOff, disabled: isPackActionPending, onSelect: () => setPackPublished(pack, false) }
+      : { label: "Publish", icon: Eye, disabled: isPackActionPending, onSelect: () => setPackPublished(pack, true) },
+    { label: "Delete", icon: Trash2, tone: "danger", disabled: isPackActionPending, onSelect: () => deletePack(pack) },
+  ]
+
+  const openStickerSheet = (sticker: StickerSummary) => {
+    setSheetSticker(sticker)
+    setStickerSortOrderDraft(String(sticker.sortOrder))
+    setStickerReplaceFileName(null)
+    setStickerSheetError(null)
+    setStickerSheetStatus(null)
+    if (stickerReplaceInputRef.current) stickerReplaceInputRef.current.value = ""
+    setIsStickerSheetOpen(true)
+  }
+
+  const onSaveSticker = (event: FormEvent<HTMLFormElement>, sticker: StickerSummary) => {
+    event.preventDefault()
+    if (!openPack || isSavingSticker) return
+    const pack = openPack
+
+    const sortOrder = Number(stickerSortOrderDraft)
+    if (!stickerSortOrderDraft.trim() || !Number.isSafeInteger(sortOrder)) {
+      setStickerSheetError("Sort order must be a whole number")
+      return
+    }
+    const file = stickerReplaceInputRef.current?.files?.[0] ?? null
+    if (file && file.type && !ACCEPTED_IMAGE_MIME_TYPES.has(file.type)) {
+      setStickerSheetError("Stickers must be PNG files")
+      return
+    }
+
+    setIsSavingSticker(true)
+    setStickerSheetError(null)
+    setStickerSheetStatus(null)
+    void (async () => {
+      try {
+        const stickerUrl = `${packUrl(pack)}/stickers`
+        let response: Response
+        if (file) {
+          // Uploading under the same ID replaces the art and keeps the sticker's identity.
+          const formData = new FormData()
+          formData.set("stickerId", sticker.stickerId)
+          formData.set("sortOrder", String(sortOrder))
+          formData.set("image", file, file.name)
+          response = await fetch(stickerUrl, { method: "POST", headers: adminHeaders, body: formData })
+        } else {
+          response = await fetch(`${stickerUrl}/${encodeURIComponent(sticker.stickerId)}`, {
+            method: "PATCH",
+            headers: { ...adminHeaders, "content-type": "application/json" },
+            body: JSON.stringify({ sortOrder }),
+          })
+        }
+        if (!response.ok) throw new Error(await readErrorMessage(response, `Unable to save ${sticker.stickerId}`))
+        if (stickerReplaceInputRef.current) stickerReplaceInputRef.current.value = ""
+        setStickerReplaceFileName(null)
+        setStickerSheetStatus("Saved")
+        openPackDialog(pack.packKey, pack.packVersion)
+      } catch (err) {
+        setStickerSheetError(err instanceof Error ? err.message : `Unable to save ${sticker.stickerId}`)
+      } finally {
+        setIsSavingSticker(false)
+      }
+    })()
+  }
+
+  const deleteSticker = (sticker: StickerSummary) => {
+    if (!openPack || isSavingSticker) return
+    const pack = openPack
+    if (!window.confirm(`Delete ${sticker.stickerId} from this draft?`)) return
+
+    setIsSavingSticker(true)
+    setStickerSheetError(null)
+    setStickerSheetStatus(null)
+    void (async () => {
+      try {
+        const response = await fetch(`${packUrl(pack)}/stickers/${encodeURIComponent(sticker.stickerId)}`, {
+          method: "DELETE",
+          headers: adminHeaders,
+        })
+        if (!response.ok) throw new Error(await readErrorMessage(response, `Unable to delete ${sticker.stickerId}`))
+        setIsStickerSheetOpen(false)
+        setStatus(`Deleted ${sticker.stickerId}`)
+        openPackDialog(pack.packKey, pack.packVersion)
+        loadAdminCatalog()
+      } catch (err) {
+        setStickerSheetError(err instanceof Error ? err.message : `Unable to delete ${sticker.stickerId}`)
+      } finally {
+        setIsSavingSticker(false)
       }
     })()
   }
@@ -570,6 +742,13 @@ export default function StickerAdminPage() {
       ? openPackDetail
       : null
   const defaultStartSortOrder = selected?.stickers?.length ?? 0
+  // Keep showing the clicked sticker while its pack refetches, and follow it into a copied draft.
+  const shownSticker =
+    (sheetSticker && selected?.stickers.find((sticker) => sticker.stickerId === sheetSticker.stickerId)) ?? sheetSticker
+  const isSheetLocked = selected?.contentLocked ?? true
+  const isStickerDirty =
+    shownSticker !== null &&
+    (stickerReplaceFileName !== null || stickerSortOrderDraft.trim() !== String(shownSticker.sortOrder))
   const totalStickers = packs.reduce((sum, pack) => sum + pack.stickerCount, 0)
 
   const startCreating = () => {
@@ -729,10 +908,19 @@ export default function StickerAdminPage() {
             {selected.packKey} · v{selected.packVersion} · {stickerCountLabel(selected.stickers?.length ?? 0)}
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          {isPending ? <Spinner className="text-admin-muted" /> : null}
-          {selected.featured ? <span className="text-xs text-admin-fg-2">Featured</span> : null}
+        <div className="flex items-center gap-1">
+          {isPending || isPackActionPending ? <Spinner className="mr-2 text-admin-muted" /> : null}
           <PublishState published={selected.published} />
+          <IconButton
+            aria-label={selected.featured ? "Unfeature pack" : "Feature pack"}
+            aria-pressed={selected.featured}
+            title={selected.featured ? "Featured" : "Feature"}
+            onClick={() => toggleFeatured(selected)}
+            className={cn("ml-2", selected.featured && "text-admin-fg")}
+          >
+            <Star className={cn(selected.featured && "fill-current")} />
+          </IconButton>
+          <ActionMenu label={`${selected.title} actions`} actions={packActions(selected)} />
         </div>
       </header>
 
@@ -794,17 +982,26 @@ export default function StickerAdminPage() {
           {selected.stickers?.length ? (
             <ul className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-x-3 gap-y-4">
               {selected.stickers.map((sticker) => (
-                <li key={sticker.stickerId} className="min-w-0" title={sticker.stickerId}>
-                  <div className="aspect-square rounded-xl bg-admin-fill p-3 transition-[background-color] duration-150 ease-admin hover:bg-admin-fill-2">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={sticker.thumbnailUrl}
-                      alt={sticker.stickerId}
-                      className="h-full w-full object-contain"
-                      loading="lazy"
-                    />
-                  </div>
-                  <p className="mt-2 truncate px-0.5 font-mono text-xs text-admin-muted">{sticker.stickerId}</p>
+                <li key={sticker.stickerId} className="min-w-0">
+                  <button
+                    type="button"
+                    title={sticker.stickerId}
+                    onClick={() => openStickerSheet(sticker)}
+                    className="group block w-full min-w-0 rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-admin-fg/20"
+                  >
+                    <span className="block aspect-square rounded-xl bg-admin-fill p-3 transition-[background-color] duration-150 ease-admin group-hover:bg-admin-fill-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={sticker.thumbnailUrl}
+                        alt={sticker.stickerId}
+                        className="h-full w-full object-contain"
+                        loading="lazy"
+                      />
+                    </span>
+                    <span className="mt-2 block truncate px-0.5 font-mono text-xs text-admin-muted group-hover:text-admin-fg-2">
+                      {sticker.stickerId}
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -838,12 +1035,6 @@ export default function StickerAdminPage() {
                     defaultValue={selected.sortOrder ?? 0}
                     className={cn(numberFieldClass, "w-28")}
                   />
-                </PropertyRow>
-                <PropertyRow label="Featured" htmlFor="pack-featured">
-                  <Switch id="pack-featured" name="featured" defaultChecked={Boolean(selected.featured)} />
-                </PropertyRow>
-                <PropertyRow label="Published" htmlFor="pack-published">
-                  <Switch id="pack-published" name="published" defaultChecked={Boolean(selected.published)} />
                 </PropertyRow>
               </div>
               <div className="flex justify-end">
@@ -885,13 +1076,6 @@ export default function StickerAdminPage() {
               </fieldset>
             </form>
           </section>
-
-          <section className="flex items-center justify-between gap-4 rounded-xl border border-admin-line px-5 py-4">
-            <p className="text-sm text-admin-fg">Delete this pack and its stickers</p>
-            <AdminButton variant="danger" onClick={deleteOpenPack} disabled={isDeletingPack || isPending}>
-              {isDeletingPack ? <Spinner /> : "Delete"}
-            </AdminButton>
-          </section>
         </div>
       )}
     </div>
@@ -929,7 +1113,7 @@ export default function StickerAdminPage() {
                   openPack?.packKey === pack.packKey &&
                   openPack.packVersion === pack.packVersion
                 return (
-                  <li key={`${pack.packKey}:${pack.packVersion}`}>
+                  <li key={`${pack.packKey}:${pack.packVersion}`} className="group relative">
                     <button
                       type="button"
                       aria-current={isActive ? "true" : undefined}
@@ -939,7 +1123,7 @@ export default function StickerAdminPage() {
                         openPackDialog(pack.packKey, pack.packVersion)
                       }}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-xl p-1.5 pr-3 text-left outline-none",
+                        "flex w-full items-center gap-3 rounded-xl p-1.5 text-left outline-none",
                         "transition-[background-color] duration-150 ease-admin focus-visible:ring-2 focus-visible:ring-admin-fg/20",
                         isActive ? "bg-admin-fill-2" : "hover:bg-admin-fill"
                       )}
@@ -956,9 +1140,24 @@ export default function StickerAdminPage() {
                       </span>
                       <span className="flex shrink-0 items-center gap-2 font-mono text-xs tabular-nums text-admin-muted">
                         {pack.stickerCount}
-                        {pack.published ? <LiveDot /> : null}
+                        <span
+                          className={cn(
+                            "flex w-7 justify-center transition-opacity duration-150 ease-admin",
+                            HIDE_IN_GROUP
+                          )}
+                        >
+                          {pack.published ? <LiveDot /> : null}
+                        </span>
                       </span>
                     </button>
+                    <ActionMenu
+                      label={`${pack.title} actions`}
+                      actions={packActions(pack)}
+                      className={cn(
+                        "absolute right-1.5 top-1/2 size-7 -translate-y-1/2 opacity-0 transition-[opacity,background-color,color,scale]",
+                        REVEAL_IN_GROUP
+                      )}
+                    />
                   </li>
                 )
               })}
@@ -983,6 +1182,79 @@ export default function StickerAdminPage() {
           )}
         </section>
       </div>
+
+      <Sheet
+        open={isStickerSheetOpen}
+        onClose={() => setIsStickerSheetOpen(false)}
+        title={<span className="font-mono">{shownSticker?.stickerId}</span>}
+        footer={
+          shownSticker && !isSheetLocked ? (
+            <>
+              <AdminButton variant="danger" onClick={() => deleteSticker(shownSticker)} disabled={isSavingSticker}>
+                Delete
+              </AdminButton>
+              <AdminButton type="submit" form="sticker-sheet-form" className="min-w-20" disabled={!isStickerDirty || isSavingSticker}>
+                {isSavingSticker ? <Spinner /> : "Save"}
+              </AdminButton>
+            </>
+          ) : null
+        }
+      >
+        {shownSticker ? (
+          <div className="flex flex-col gap-6 p-5">
+            <figure className="flex flex-col gap-2">
+              <div className="aspect-square rounded-xl bg-admin-fill p-8">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={shownSticker.fullUrl} alt={shownSticker.stickerId} className="h-full w-full object-contain" />
+              </div>
+              <figcaption className="font-mono text-xs tabular-nums text-admin-muted">
+                {shownSticker.width} × {shownSticker.height}
+              </figcaption>
+            </figure>
+
+            {isSheetLocked ? (
+              <div className="flex items-center justify-between gap-4 rounded-xl border border-admin-line px-4 py-3">
+                <p className="text-[13px] text-admin-fg">Published. Copy to a draft to edit.</p>
+                <AdminButton onClick={copyOpenPack} disabled={isPending || !selected}>
+                  Copy to draft
+                </AdminButton>
+              </div>
+            ) : null}
+
+            <form id="sticker-sheet-form" onSubmit={(event) => onSaveSticker(event, shownSticker)}>
+              <fieldset disabled={isSheetLocked || isSavingSticker} className="flex flex-col gap-3">
+                <div className="divide-y divide-admin-line rounded-xl bg-admin-fill px-4 py-1">
+                  <PropertyRow label="Sort order" htmlFor="sticker-sort">
+                    <input
+                      id="sticker-sort"
+                      type="number"
+                      value={stickerSortOrderDraft}
+                      onChange={(event) => setStickerSortOrderDraft(event.target.value)}
+                      className={cn(numberFieldClass, "w-28")}
+                    />
+                  </PropertyRow>
+                </div>
+                <Dropzone icon={ImagePlus} title={stickerReplaceFileName ?? "Replace image"} hint="PNG">
+                  <input
+                    ref={stickerReplaceInputRef}
+                    type="file"
+                    accept="image/png"
+                    className="sr-only"
+                    onChange={(event) => setStickerReplaceFileName(event.target.files?.[0]?.name ?? null)}
+                  />
+                </Dropzone>
+              </fieldset>
+            </form>
+
+            {stickerSheetStatus || stickerSheetError ? (
+              <div className="flex flex-col gap-1">
+                {stickerSheetStatus ? <StatusLine tone="neutral">{stickerSheetStatus}</StatusLine> : null}
+                {stickerSheetError ? <StatusLine tone="error">{stickerSheetError}</StatusLine> : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </Sheet>
     </>
   )
 }
