@@ -39,6 +39,11 @@ export interface AppConfig {
   adminPassword?: string
   stickerLocalStorageDir?: string
   cannySsoPrivateKey?: string
+  /**
+   * iCloud links to the iOS wallpaper Shortcut, by app bundle ID. Each build's Shortcut calls
+   * that build's own App Intents, so dev and production need their own link.
+   */
+  wallpaperShortcutLinks?: Record<string, string>
 }
 
 export interface AppleSignInKey {
@@ -102,6 +107,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     adminPassword: env.ADMIN_PASSWORD?.trim() ? env.ADMIN_PASSWORD.trim() : undefined,
     stickerLocalStorageDir: optionalLocalStickerStorageDir(env.STICKER_LOCAL_STORAGE_DIR, isProduction),
     cannySsoPrivateKey: env.CANNY_SSO_PRIVATE_KEY?.trim() ? env.CANNY_SSO_PRIVATE_KEY : undefined,
+    wallpaperShortcutLinks: wallpaperShortcutLinks(env.WALLPAPER_SHORTCUT_LINKS),
   }
 }
 
@@ -112,6 +118,23 @@ function appleSignInKey(env: NodeJS.ProcessEnv): AppleSignInKey | undefined {
   const privateKey = env.APPLE_SIGN_IN_PRIVATE_KEY?.trim().replaceAll("\\n", "\n")
   if (!teamId || !keyId || !privateKey) return undefined
   return { teamId, keyId, privateKey }
+}
+
+const SHORTCUT_LINK_PREFIX = "https://www.icloud.com/shortcuts/"
+
+/** `bundle.id=https://www.icloud.com/shortcuts/…` pairs, comma separated. A malformed entry stops startup. */
+export function wallpaperShortcutLinks(value: string | undefined): Record<string, string> {
+  const links: Record<string, string> = {}
+  for (const entry of parseCsvList(value)) {
+    const separator = entry.indexOf("=")
+    const bundleId = separator > 0 ? entry.slice(0, separator).trim() : ""
+    const link = separator > 0 ? entry.slice(separator + 1).trim() : ""
+    if (!bundleId || !link.startsWith(SHORTCUT_LINK_PREFIX) || link.length === SHORTCUT_LINK_PREFIX.length) {
+      throw new Error(`WALLPAPER_SHORTCUT_LINKS needs bundle.id=${SHORTCUT_LINK_PREFIX}… pairs, got "${entry}"`)
+    }
+    links[bundleId] = link
+  }
+  return links
 }
 
 // Local sticker files exist only for development against the local database.

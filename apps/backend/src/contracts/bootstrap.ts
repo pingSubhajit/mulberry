@@ -37,6 +37,8 @@ export interface BootstrapResponse {
   invite: InviteSummary | null
   ownPresence: PresenceSummary
   partnerPresence: PresenceSummary
+  /** iCloud links to the iOS wallpaper Shortcut, by app bundle ID. */
+  wallpaperShortcutLinks: Record<string, string>
 }
 
 export interface StreakResponseWithWeek {

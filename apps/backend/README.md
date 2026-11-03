@@ -139,6 +139,16 @@ npx tsx scripts/import-sticker-pack.ts \
   --sort-order 0
 ```
 
+## iOS Wallpaper Shortcut Link
+
+The iOS app opens its wallpaper Shortcut from an iCloud link, which goes straight to Shortcuts' Add screen. Bootstrap returns the links in `wallpaperShortcutLinks`, keyed by bundle ID, because each build's Shortcut calls that build's own App Intents:
+
+```text
+WALLPAPER_SHORTCUT_LINKS=com.subhajit.mulberry.beta=https://www.icloud.com/shortcuts/…,com.subhajit.mulberry.dev=https://www.icloud.com/shortcuts/…
+```
+
+Without a link for its bundle ID, the app falls back to sharing its bundled template. To make a link, build the template for that bundle ID (`apps/ios/scripts/make-shortcut.py`), add it on a device, then choose Share → Copy iCloud Link in Shortcuts. The shared copy must be named exactly "Mulberry Sync".
+
 ## Production Deployment On Fly.io
 
 The checked-in production deployment config lives at:

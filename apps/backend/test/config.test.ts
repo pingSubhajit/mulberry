@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { loadConfig } from "../src/infra/config/config.js"
+import { loadConfig, wallpaperShortcutLinks } from "../src/infra/config/config.js"
 
 describe("loadConfig", () => {
   it("turns the debug routes off by default in production and on in development", () => {
@@ -17,6 +17,19 @@ describe("loadConfig", () => {
     expect(loadConfig({ ...production, ENABLE_DEBUG_ROUTES: "true" }).enableDebugRoutes).toBe(true)
     expect(loadConfig({ NODE_ENV: "development" }).enableDebugRoutes).toBe(true)
     expect(loadConfig({ NODE_ENV: "development", ENABLE_DEBUG_ROUTES: "false" }).enableDebugRoutes).toBe(false)
+  })
+
+  it("reads the wallpaper Shortcut links by bundle ID and rejects anything but an iCloud Shortcut link", () => {
+    expect(wallpaperShortcutLinks(undefined)).toEqual({})
+    expect(wallpaperShortcutLinks(
+      "com.subhajit.mulberry.beta=https://www.icloud.com/shortcuts/abc, com.subhajit.mulberry.dev=https://www.icloud.com/shortcuts/def",
+    )).toEqual({
+      "com.subhajit.mulberry.beta": "https://www.icloud.com/shortcuts/abc",
+      "com.subhajit.mulberry.dev": "https://www.icloud.com/shortcuts/def",
+    })
+    expect(() => wallpaperShortcutLinks("https://www.icloud.com/shortcuts/abc")).toThrow(/WALLPAPER_SHORTCUT_LINKS/)
+    expect(() => wallpaperShortcutLinks("com.subhajit.mulberry.beta=https://example.com/shortcuts/abc")).toThrow()
+    expect(() => wallpaperShortcutLinks("com.subhajit.mulberry.beta=https://www.icloud.com/shortcuts/")).toThrow()
   })
 
   it("loads root .env values when the process starts from a child directory", () => {

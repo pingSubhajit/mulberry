@@ -25,6 +25,7 @@ export class BootstrapService {
     private readonly db: Database,
     private readonly streakService: StreakService,
     private readonly profilePhotoStorage?: ProfilePhotoStorage,
+    private readonly wallpaperShortcutLinks: Record<string, string> = {},
   ) {}
 
   async getBootstrap(accessToken: string): Promise<BootstrapResponse> {
@@ -113,6 +114,7 @@ export class BootstrapService {
         : null,
       ownPresence,
       partnerPresence,
+      wallpaperShortcutLinks: this.wallpaperShortcutLinks,
     }
   }
 

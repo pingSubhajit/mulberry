@@ -66,6 +66,7 @@ describe("Mulberry backend", () => {
         enableDebugRoutes: true,
         adminPassword: "admin-password",
         cannySsoPrivateKey: "test-canny-secret",
+        wallpaperShortcutLinks: { "com.subhajit.mulberry.dev": "https://www.icloud.com/shortcuts/dev-link" },
       },
     })
     await app.ready()
@@ -209,6 +210,9 @@ describe("Mulberry backend", () => {
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().pairedAt).toBeTruthy()
     expect(bootstrap.json().currentStreakDays).toBe(0)
+    expect(bootstrap.json().wallpaperShortcutLinks).toEqual({
+      "com.subhajit.mulberry.dev": "https://www.icloud.com/shortcuts/dev-link",
+    })
   })
 
   it("sends reaction pushes and coalesces counts per recipient", async () => {

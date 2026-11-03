@@ -120,7 +120,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   void appVersionsService.refreshMinimums()
 
   const streakService = new StreakService(db)
-  const bootstrapService = new BootstrapService(db, streakService, storage)
+  const bootstrapService = new BootstrapService(db, streakService, storage, config.wallpaperShortcutLinks)
   const authService = new AuthService(db, googleVerifier, bootstrapService, appleVerifier, appleCredentials)
   const devicesService = new DevicesService(db)
   const profileService = new ProfileService(db, bootstrapService, pushDispatchService, storage)
