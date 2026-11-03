@@ -7,8 +7,8 @@ struct MulberryRootView: View {
     @StateObject private var setup: WallpaperSetupModel
     @Environment(\.scenePhase) private var phase
     @State private var setupOpen = false
-    /// What the toolbar's buttons open grows out of them and shrinks back in: the streak sheet,
-    /// the wallpapers and Settings.
+    /// The sheets the toolbar's buttons open grow out of them and shrink back in: the streak sheet
+    /// and Settings. The wallpapers are a step deeper, so they slide in as pushes do.
     @Namespace private var toolbarZoom
     @State private var streakClosings = 0
     @State private var setupAfterSettings = false
@@ -235,7 +235,6 @@ struct MulberryRootView: View {
                     if UserDefaults.standard.object(forKey: key) != nil { Task { await setup.runShortcut() } }
                     else { setupOpen = true }
                 }).navigationTitle("Wallpapers").navigationBarTitleDisplayMode(.inline)
-                    .navigationTransition(.zoom(sourceID: ToolbarZoomSource.wallpaper, in: toolbarZoom))
             }
         }
     }
@@ -278,7 +277,6 @@ struct MulberryRootView: View {
                     .foregroundStyle(MulberryDesign.ink)
             }.accessibilityLabel("Wallpaper")
         }
-        .matchedTransitionSource(id: ToolbarZoomSource.wallpaper, in: toolbarZoom)
         ToolbarItem(placement: .topBarTrailing) {
             Button { model.showSettings = true } label: {
                 Group {
@@ -295,5 +293,5 @@ struct MulberryRootView: View {
     }
 }
 
-/// Besides the streak pill, the toolbar buttons whose screens zoom out of them.
-private enum ToolbarZoomSource: Hashable { case wallpaper, settings }
+/// Besides the streak pill, the toolbar buttons whose sheets zoom out of them.
+private enum ToolbarZoomSource: Hashable { case settings }
