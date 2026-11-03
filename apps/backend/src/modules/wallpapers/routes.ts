@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify"
 import { HttpError } from "../../infra/http/HttpError.js"
-import { readWallpaperAdminPassword } from "../../infra/http/adminHeaders.js"
+import { readAdminPassword } from "../../infra/http/adminAuth.js"
 import type { WallpaperCatalogService } from "./service.js"
 
 export function registerWallpaperRoutes(app: FastifyInstance, wallpaperCatalogService: WallpaperCatalogService): void {
@@ -15,7 +15,7 @@ export function registerWallpaperRoutes(app: FastifyInstance, wallpaperCatalogSe
 
   app.get("/admin/wallpapers", async (request) => {
     return wallpaperCatalogService.listWallpapersForAdmin({
-      adminPassword: readWallpaperAdminPassword(request),
+      adminPassword: readAdminPassword(request),
     })
   })
 
@@ -45,7 +45,7 @@ export function registerWallpaperRoutes(app: FastifyInstance, wallpaperCatalogSe
     const published = fields.published === "true"
     const sortOrder = Number(fields.sortOrder ?? "0")
     return wallpaperCatalogService.createWallpaper({
-      adminPassword: readWallpaperAdminPassword(request),
+      adminPassword: readAdminPassword(request),
       title: fields.title,
       description: fields.description,
       sortOrder: Number.isFinite(sortOrder) ? sortOrder : 0,
@@ -65,7 +65,7 @@ export function registerWallpaperRoutes(app: FastifyInstance, wallpaperCatalogSe
       published?: boolean
     }
     return wallpaperCatalogService.updateWallpaper({
-      adminPassword: readWallpaperAdminPassword(request),
+      adminPassword: readAdminPassword(request),
       id: params.wallpaperId ?? "",
       title: body.title,
       description: body.description,
@@ -77,7 +77,7 @@ export function registerWallpaperRoutes(app: FastifyInstance, wallpaperCatalogSe
   app.delete("/admin/wallpapers/:wallpaperId", async (request, reply) => {
     const params = request.params as { wallpaperId?: string }
     await wallpaperCatalogService.deleteWallpaper({
-      adminPassword: readWallpaperAdminPassword(request),
+      adminPassword: readAdminPassword(request),
       id: params.wallpaperId ?? "",
     })
     reply.code(204).send()

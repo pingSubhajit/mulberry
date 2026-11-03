@@ -10,10 +10,9 @@ import { DefaultAppleTokenVerifier, type AppleTokenVerifier } from "../infra/aut
 import { createAppleCredentialClient, type AppleCredentialClient } from "../infra/auth/appleCredentialClient.js"
 import type { AnalyticsClient } from "../infra/analytics/analytics.js"
 import { createAnalyticsClient } from "../infra/analytics/posthogAnalytics.js"
-import {
-  createPushSender,
-  type FirebasePushSenderOptions,
-} from "../infra/push/sender.js"
+import { getRemoteConfig } from "firebase-admin/remote-config"
+import { firebaseApp, type FirebaseCredentials } from "../infra/firebase/app.js"
+import { createPushSender } from "../infra/push/sender.js"
 import { PushDispatchService, type PushDispatchOptions } from "../infra/push/dispatchService.js"
 import type { PushSender } from "../infra/push/types.js"
 import { HttpError } from "../infra/http/HttpError.js"
@@ -52,6 +51,11 @@ import { registerFeedbackRoutes } from "../modules/feedback/routes.js"
 import { registerDebugRoutes } from "../modules/debug/routes.js"
 import { AccountService } from "../modules/account/service.js"
 import { registerAccountRoutes } from "../modules/account/routes.js"
+import { registerAdminRoutes } from "../modules/admin/routes.js"
+import { AppVersionsService, type RemoteConfigClient } from "../modules/appVersions/service.js"
+import { registerAppVersionRoutes } from "../modules/appVersions/routes.js"
+import { registerUpdateGate } from "../modules/appVersions/updateGate.js"
+import { ADMIN_PASSWORD_HEADER } from "../infra/http/adminAuth.js"
 
 export interface CreateAppOptions {
   config?: AppConfig
@@ -64,6 +68,8 @@ export interface CreateAppOptions {
   pushOptions?: PushDispatchOptions
   wallpaperStorage?: WallpaperStorage
   wallpaperImageProcessor?: WallpaperImageProcessor
+  /** Stands in for Firebase Remote Config; null leaves it unconfigured. */
+  remoteConfig?: RemoteConfigClient | null
 }
 
 export async function createApp(options: CreateAppOptions = {}): Promise<FastifyInstance> {
@@ -74,12 +80,13 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const appleCredentials = options.appleCredentials ?? createAppleCredentialClient(config.appleSignInKey)
   const analytics = options.analytics ?? createAnalyticsClient(config)
 
+  const firebaseCredentials: FirebaseCredentials = {
+    serviceAccountPath: config.firebaseServiceAccountPath,
+    serviceAccountJson: config.firebaseServiceAccountJson,
+  }
   const pushDispatchService = new PushDispatchService(
     db,
-    options.pushSender ?? createPushSender({
-      serviceAccountPath: config.firebaseServiceAccountPath,
-      serviceAccountJson: config.firebaseServiceAccountJson,
-    } satisfies FirebasePushSenderOptions),
+    options.pushSender ?? createPushSender(firebaseCredentials),
     {
       canvasUpdateTtlMs: config.canvasUpdatePushTtlMs,
       pairingConfirmationTtlMs: config.pairingConfirmationTtlMs,
@@ -105,10 +112,12 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     supabaseUrl: config.supabaseUrl,
     supabaseServiceRoleKey: config.supabaseServiceRoleKey,
     supabaseStickerBucket: config.supabaseStickerBucket,
-    stickerAdminPassword: config.stickerAdminPassword,
     stickerLocalStorageDir: config.stickerLocalStorageDir,
   })
-  const stickerCatalogService = new StickerCatalogService(db, stickerStorage, config.stickerAdminPassword)
+  const stickerCatalogService = new StickerCatalogService(db, stickerStorage, config.adminPassword)
+  const remoteConfig = options.remoteConfig !== undefined ? options.remoteConfig : remoteConfigFor(firebaseCredentials)
+  const appVersionsService = new AppVersionsService(remoteConfig, config.adminPassword)
+  void appVersionsService.refreshMinimums()
 
   const streakService = new StreakService(db)
   const bootstrapService = new BootstrapService(db, streakService, storage)
@@ -126,7 +135,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   await app.register(fastifyCors, {
     origin: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["authorization", "content-type", "x-wallpaper-admin-password", "x-sticker-admin-password"],
+    allowedHeaders: ["authorization", "content-type", ADMIN_PASSWORD_HEADER],
   })
   await app.register(fastifyMultipart, {
     limits: {
@@ -135,6 +144,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     },
   })
   await app.register(fastifyWebsocket)
+
+  registerUpdateGate(app, appVersionsService)
 
   registerWhatsNewRoutes(app)
 
@@ -146,7 +157,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof HttpError) {
-      void reply.code(error.statusCode).send({ message: error.message })
+      void reply.code(error.statusCode).send({ ...error.details, message: error.message })
       return
     }
     app.log.error(error)
@@ -166,10 +177,17 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   registerCanvasSyncRoutes(app, canvasSyncHub)
   registerFeedbackRoutes(app, feedbackService)
   registerAccountRoutes(app, accountService)
+  registerAdminRoutes(app, config.adminPassword)
+  registerAppVersionRoutes(app, appVersionsService)
   if (config.enableDebugRoutes) {
     registerDebugRoutes(app, pairingService, streakService)
   }
   registerHealthRoutes(app)
 
   return app
+}
+
+function remoteConfigFor(credentials: FirebaseCredentials): RemoteConfigClient | null {
+  const firebase = firebaseApp(credentials)
+  return firebase ? getRemoteConfig(firebase) : null
 }

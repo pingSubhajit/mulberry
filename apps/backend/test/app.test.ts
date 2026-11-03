@@ -8,6 +8,8 @@ import { PushDispatchService, type CanvasEditor } from "../src/infra/push/dispat
 import type { MulberryPushMessage, PushSender, ReactionLiveActivityMessage } from "../src/infra/push/types.js"
 import type { DevicePlatform } from "../src/contracts/devices.js"
 import type { SessionRecord } from "../src/contracts/dbRecords.js"
+import type { RemoteConfigTemplate, Version } from "firebase-admin/remote-config"
+import type { RemoteConfigClient } from "../src/modules/appVersions/service.js"
 import type {
   ProcessedWallpaperImage,
   WallpaperImageProcessor,
@@ -19,6 +21,7 @@ describe("Mulberry backend", () => {
   let db: Database
   let pushSender: RecordingPushSender
   let wallpaperStorage: RecordingWallpaperStorage
+  let remoteConfig: FakeRemoteConfig
 
   beforeEach(async () => {
     const memoryDb = newDb({
@@ -46,7 +49,9 @@ describe("Mulberry backend", () => {
     }
     pushSender = new RecordingPushSender()
     wallpaperStorage = new RecordingWallpaperStorage()
+    remoteConfig = new FakeRemoteConfig()
     app = await createApp({
+      remoteConfig,
       db,
       pushSender,
       pushOptions: { debounceMs: 20 },
@@ -59,7 +64,7 @@ describe("Mulberry backend", () => {
         googleAllowedClientIds: [],
         allowDevGoogleTokens: true,
         enableDebugRoutes: true,
-        wallpaperAdminPassword: "admin-password",
+        adminPassword: "admin-password",
         cannySsoPrivateKey: "test-canny-secret",
       },
     })
@@ -657,6 +662,132 @@ describe("Mulberry backend", () => {
     expect(secondPage.json().nextCursor).toBeNull()
   })
 
+  it("checks the admin password for the admin site", async () => {
+    const wrong = await app.inject({ method: "GET", url: "/admin/session", headers: { "x-admin-password": "nope" } })
+    expect(wrong.statusCode).toBe(401)
+
+    const right = await app.inject({ method: "GET", url: "/admin/session", headers: adminHeaders })
+    expect(right.statusCode).toBe(204)
+  })
+
+  it("publishes app version thresholds to Remote Config", async () => {
+    const initial = await app.inject({ method: "GET", url: "/admin/app-versions", headers: adminHeaders })
+    expect(initial.statusCode).toBe(200)
+    expect(initial.json().policies.android).toEqual({ liveBuild: 0, recommendedBuild: 0, minimumBuild: 0 })
+    expect(initial.json().message).toBe(
+      "iOS: live 0, recommended 0, minimum 0. Android: live 0, recommended 0, minimum 0.",
+    )
+
+    const response = await patchVersions("android", { liveBuild: 6, recommendedBuild: 6, minimumBuild: 4, confirm: true })
+
+    expect(response.statusCode).toBe(200)
+    const body = response.json()
+    expect(body.policies.android).toEqual({ liveBuild: 6, recommendedBuild: 6, minimumBuild: 4 })
+    expect(body.policies.ios).toEqual({ liveBuild: 0, recommendedBuild: 0, minimumBuild: 0 })
+    expect(body.changed).toEqual(["liveBuild", "recommendedBuild", "minimumBuild"])
+    expect(body.message).toContain("Updated Android: live 0 → 6, recommended 0 → 6, minimum 0 → 4.")
+    expect(body.message).toContain("Android builds below 4 must update")
+    expect(body.history.map((change: { description: string }) => change.description)).toEqual([
+      "Android live 0 → 6, recommended 0 → 6, minimum 0 → 4",
+    ])
+    expect(remoteConfig.template.parameterGroups["App versions"].parameters.min_build_android).toMatchObject({
+      defaultValue: { value: "4" },
+      valueType: "NUMBER",
+    })
+  })
+
+  it("changes only the app version values sent", async () => {
+    await patchVersions("ios", { liveBuild: 6, recommendedBuild: 5 })
+
+    const response = await patchVersions("ios", { recommendedBuild: "6" })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().policy).toEqual({ liveBuild: 6, recommendedBuild: 6, minimumBuild: 0 })
+    expect(response.json().changed).toEqual(["recommendedBuild"])
+    expect(response.json().message).toContain("iOS builds below 6 are asked to update.")
+
+    const again = await patchVersions("ios", { recommendedBuild: 6 })
+    expect(again.json().message).toBe("Nothing changed: iOS is already live 6, recommended 6, minimum 0.")
+    expect(remoteConfig.versions).toHaveLength(2)
+  })
+
+  it("asks for confirmation before raising a minimum", async () => {
+    await patchVersions("android", { liveBuild: 6, recommendedBuild: 6 })
+
+    const unconfirmed = await patchVersions("android", { minimumBuild: 5 })
+
+    expect(unconfirmed.statusCode).toBe(409)
+    expect(unconfirmed.json()).toMatchObject({
+      code: "CONFIRMATION_REQUIRED",
+      current: { minimumBuild: 0 },
+      proposed: { minimumBuild: 5 },
+    })
+    expect(unconfirmed.json().message).toContain('resend with "confirm": true')
+    expect(remoteConfig.template.parameterGroups["App versions"].parameters.min_build_android).toBeUndefined()
+
+    expect((await patchVersions("android", { minimumBuild: 5, confirm: true })).statusCode).toBe(200)
+    // Lowering a minimum unblocks builds, so it needs no confirmation.
+    expect((await patchVersions("android", { minimumBuild: 2 })).statusCode).toBe(200)
+  })
+
+  it("updates an app version parameter where the console left it", async () => {
+    remoteConfig.template = {
+      ...remoteConfig.template,
+      parameters: { min_build_ios: { defaultValue: { value: "2" }, valueType: "NUMBER" } },
+    }
+
+    const response = await patchVersions("ios", { liveBuild: 6, recommendedBuild: 5, minimumBuild: 3, confirm: true })
+
+    expect(response.statusCode).toBe(200)
+    expect(remoteConfig.template.parameters.min_build_ios.defaultValue).toEqual({ value: "3" })
+    expect(remoteConfig.template.parameterGroups["App versions"].parameters.min_build_ios).toBeUndefined()
+  })
+
+  it("turns away app builds below their platform's minimum", async () => {
+    await patchVersions("android", { liveBuild: 6, recommendedBuild: 6, minimumBuild: 5, confirm: true })
+    const health = (headers: Record<string, string>) => app.inject({ method: "GET", url: "/health", headers })
+
+    const old = await health({ "x-app-platform": "android", "x-app-build": "4" })
+    expect(old.statusCode).toBe(426)
+    expect(old.json()).toMatchObject({ code: "UPDATE_REQUIRED" })
+
+    expect((await health({ "x-app-platform": "android", "x-app-build": "5" })).statusCode).toBe(200)
+    expect((await health({ "x-app-platform": "ios", "x-app-build": "4" })).statusCode).toBe(200)
+    expect((await health({ "x-app-platform": "macos", "x-app-build": "1" })).statusCode).toBe(200)
+    expect((await health({})).statusCode).toBe(200)
+  })
+
+  it("explains rejected app version changes", async () => {
+    const aboveLive = await patchVersions("android", { liveBuild: 6, recommendedBuild: 60 })
+    expect(aboveLive.statusCode).toBe(400)
+    expect(aboveLive.json()).toMatchObject({ code: "INVALID_APP_VERSIONS", proposed: { recommendedBuild: 60 } })
+    expect(aboveLive.json().message).toContain("can't be above the live build (6)")
+
+    const misspelt = await patchVersions("android", { minBuild: 5 })
+    expect(misspelt.statusCode).toBe(400)
+    expect(misspelt.json().message).toBe('Unknown field "minBuild". Use liveBuild, recommendedBuild, minimumBuild, confirm.')
+
+    const notANumber = await patchVersions("android", { liveBuild: "six" })
+    expect(notANumber.json().message).toBe('"liveBuild" must be a whole number from 0 to 2100000000, not "six".')
+
+    const empty = await patchVersions("android", {})
+    expect(empty.json().message).toContain("Nothing to change.")
+
+    const platform = await patchVersions("mac", { liveBuild: 1 })
+    expect(platform.statusCode).toBe(404)
+    expect(platform.json().message).toBe('Unknown platform "mac". Use one of: ios, android.')
+
+    const noPassword = await app.inject({ method: "GET", url: "/admin/app-versions" })
+    expect(noPassword.statusCode).toBe(401)
+    expect(noPassword.json().message).toBe("Send the admin password in the x-admin-password header")
+
+    expect(remoteConfig.versions).toHaveLength(0)
+  })
+
+  function patchVersions(platform: string, payload: Record<string, unknown>) {
+    return app.inject({ method: "PATCH", url: `/admin/app-versions/${platform}`, headers: adminHeaders, payload })
+  }
+
   it("requires the admin password for wallpaper admin routes", async () => {
     const response = await app.inject({
       method: "PATCH",
@@ -684,7 +815,7 @@ describe("Mulberry backend", () => {
       method: "POST",
       url: "/admin/wallpapers",
       headers: {
-        "x-wallpaper-admin-password": "admin-password",
+        "x-admin-password": "admin-password",
         "content-type": multipart.contentType,
       },
       payload: multipart.body,
@@ -724,7 +855,7 @@ describe("Mulberry backend", () => {
       method: "GET",
       url: "/admin/wallpapers",
       headers: {
-        "x-wallpaper-admin-password": "admin-password",
+        "x-admin-password": "admin-password",
       },
     })
 
@@ -735,7 +866,7 @@ describe("Mulberry backend", () => {
       method: "PATCH",
       url: "/admin/wallpapers/draft-wallpaper",
       headers: {
-        "x-wallpaper-admin-password": "admin-password",
+        "x-admin-password": "admin-password",
       },
       payload: {
         title: "Published Draft",
@@ -772,7 +903,7 @@ describe("Mulberry backend", () => {
       method: "DELETE",
       url: "/admin/wallpapers/delete-wallpaper",
       headers: {
-        "x-wallpaper-admin-password": "admin-password",
+        "x-admin-password": "admin-password",
       },
     })
 
@@ -3431,6 +3562,28 @@ class RecordingPushSender implements PushSender {
     return {
       invalidTokens: message.tokens.filter((token) => this.invalidTokens.has(token)),
     }
+  }
+}
+
+const adminHeaders = { "x-admin-password": "admin-password" }
+
+class FakeRemoteConfig implements RemoteConfigClient {
+  template: RemoteConfigTemplate = { conditions: [], parameters: {}, parameterGroups: {}, etag: "etag-0" }
+  versions: Version[] = []
+
+  async getTemplate(): Promise<RemoteConfigTemplate> {
+    return structuredClone(this.template)
+  }
+
+  async publishTemplate(template: RemoteConfigTemplate): Promise<RemoteConfigTemplate> {
+    const versionNumber = String(this.versions.length + 1)
+    this.versions.unshift({ versionNumber, updateTime: new Date().toUTCString(), description: template.version?.description })
+    this.template = { ...structuredClone(template), etag: `etag-${versionNumber}` }
+    return this.template
+  }
+
+  async listVersions(): Promise<{ versions: Version[] }> {
+    return { versions: this.versions }
   }
 }
 

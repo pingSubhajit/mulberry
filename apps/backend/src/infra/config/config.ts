@@ -34,9 +34,9 @@ export interface AppConfig {
   supabaseUrl?: string
   supabaseServiceRoleKey?: string
   supabaseWallpaperBucket?: string
-  wallpaperAdminPassword?: string
   supabaseStickerBucket?: string
-  stickerAdminPassword?: string
+  /** Unlocks every admin route: wallpapers, stickers and app versions. */
+  adminPassword?: string
   stickerLocalStorageDir?: string
   cannySsoPrivateKey?: string
 }
@@ -98,9 +98,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     supabaseUrl: env.SUPABASE_URL,
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
     supabaseWallpaperBucket: env.SUPABASE_WALLPAPER_BUCKET,
-    wallpaperAdminPassword: env.WALLPAPER_ADMIN_PASSWORD,
     supabaseStickerBucket: env.SUPABASE_STICKER_BUCKET ?? env.SUPABASE_WALLPAPER_BUCKET,
-    stickerAdminPassword: env.STICKER_ADMIN_PASSWORD ?? env.WALLPAPER_ADMIN_PASSWORD,
+    adminPassword: env.ADMIN_PASSWORD?.trim() ? env.ADMIN_PASSWORD.trim() : undefined,
     stickerLocalStorageDir: optionalLocalStickerStorageDir(env.STICKER_LOCAL_STORAGE_DIR, isProduction),
     cannySsoPrivateKey: env.CANNY_SSO_PRIVATE_KEY?.trim() ? env.CANNY_SSO_PRIVATE_KEY : undefined,
   }

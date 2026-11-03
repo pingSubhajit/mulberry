@@ -3,13 +3,13 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import sharp from "sharp"
 import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
+import { requireAdminPassword } from "../../infra/http/adminAuth.js"
 import { LocalStickerStorage } from "./localStorage.js"
 
 export interface StickerCatalogConfig {
   supabaseUrl?: string
   supabaseServiceRoleKey?: string
   supabaseStickerBucket?: string
-  stickerAdminPassword?: string
   /** Development only: keep sticker assets on local disk instead of Supabase. */
   stickerLocalStorageDir?: string
 }
@@ -594,9 +594,7 @@ export class StickerCatalogService {
   }
 
   private requireAdmin(candidate: string) {
-    if (!this.adminPassword || candidate !== this.adminPassword) {
-      throw new HttpError(401, "Invalid admin password")
-    }
+    requireAdminPassword(this.adminPassword, candidate)
   }
 
   private async packRowToSummary(row: StickerPackRow): Promise<StickerPackSummary> {

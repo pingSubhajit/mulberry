@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { HttpError } from "../../infra/http/HttpError.js"
 import { requireBearerToken } from "../../infra/http/auth.js"
-import { readStickerAdminPassword } from "../../infra/http/adminHeaders.js"
+import { readAdminPassword } from "../../infra/http/adminAuth.js"
 import { readRequiredImageUpload } from "../../infra/http/uploads.js"
 import type { StickerCatalogService, StickerStorage } from "./service.js"
 import { absolutizeLocalStickerUrls, LOCAL_STICKER_ASSET_PREFIX, LocalStickerStorage } from "./localStorage.js"
@@ -63,7 +63,7 @@ export function registerStickerRoutes(
 
   app.get("/admin/stickers/packs", async (request) => {
     return stickerCatalogService.listStickerPacksForAdmin({
-      adminPassword: readStickerAdminPassword(request) ?? "",
+      adminPassword: readAdminPassword(request) ?? "",
     })
   })
 
@@ -71,7 +71,7 @@ export function registerStickerRoutes(
     const params = request.params as { packKey?: string; packVersion?: string }
     const packVersion = Number(params.packVersion ?? "0")
     return stickerCatalogService.getStickerPackDetailForAdmin({
-      adminPassword: readStickerAdminPassword(request) ?? "",
+      adminPassword: readAdminPassword(request) ?? "",
       packKey: params.packKey ?? "",
       packVersion: Number.isFinite(packVersion) ? packVersion : 0,
     })
@@ -106,7 +106,7 @@ export function registerStickerRoutes(
     const sortOrder = Number(fields.sortOrder ?? "0")
     const packVersion = Number(fields.packVersion ?? "1")
     return stickerCatalogService.createStickerPackVersion({
-      adminPassword: readStickerAdminPassword(request) ?? "",
+      adminPassword: readAdminPassword(request) ?? "",
       packKey: fields.packKey ?? "",
       packVersion: Number.isFinite(packVersion) ? packVersion : 1,
       title: fields.title ?? "",
@@ -131,7 +131,7 @@ export function registerStickerRoutes(
     }>
     const packVersion = Number(params.packVersion ?? "0")
     return stickerCatalogService.updateStickerPackVersionMetadata({
-      adminPassword: readStickerAdminPassword(request) ?? "",
+      adminPassword: readAdminPassword(request) ?? "",
       packKey: params.packKey ?? "",
       packVersion: Number.isFinite(packVersion) ? packVersion : 0,
       title: body.title,
@@ -147,7 +147,7 @@ export function registerStickerRoutes(
     const upload = await readRequiredImageUpload(request)
     const packVersion = Number(params.packVersion ?? "0")
     return stickerCatalogService.updateStickerPackVersionCoverForAdmin({
-      adminPassword: readStickerAdminPassword(request) ?? "",
+      adminPassword: readAdminPassword(request) ?? "",
       packKey: params.packKey ?? "",
       packVersion: Number.isFinite(packVersion) ? packVersion : 0,
       filename: upload.filename,
@@ -184,7 +184,7 @@ export function registerStickerRoutes(
     const sortOrder = Number(fields.sortOrder ?? "0")
     const packVersion = Number(params.packVersion ?? "0")
     return stickerCatalogService.uploadSticker({
-      adminPassword: readStickerAdminPassword(request) ?? "",
+      adminPassword: readAdminPassword(request) ?? "",
       packKey: params.packKey ?? "",
       packVersion: Number.isFinite(packVersion) ? packVersion : 0,
       stickerId: fields.stickerId ?? "",
@@ -199,7 +199,7 @@ export function registerStickerRoutes(
     const params = request.params as { packKey?: string; packVersion?: string }
     const packVersion = Number(params.packVersion ?? "0")
     await stickerCatalogService.deleteStickerPackVersionForAdmin({
-      adminPassword: readStickerAdminPassword(request) ?? "",
+      adminPassword: readAdminPassword(request) ?? "",
       packKey: params.packKey ?? "",
       packVersion: Number.isFinite(packVersion) ? packVersion : 0,
     })

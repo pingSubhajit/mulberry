@@ -9,9 +9,9 @@ async function main() {
   await loadDockerComposeEnvIfPresent()
   const args = parseArgs(process.argv.slice(2))
   const config = loadConfig()
-  const adminPassword = args.adminPassword ?? config.stickerAdminPassword ?? config.wallpaperAdminPassword
+  const adminPassword = args.adminPassword ?? config.adminPassword
   if (!adminPassword) {
-    throw new Error("STICKER_ADMIN_PASSWORD (or WALLPAPER_ADMIN_PASSWORD) is required (or pass --admin-password)")
+    throw new Error("ADMIN_PASSWORD is required (or pass --admin-password)")
   }
   const packKey = args.packKey
   const title = args.title
@@ -27,9 +27,8 @@ async function main() {
       supabaseUrl: config.supabaseUrl,
       supabaseServiceRoleKey: config.supabaseServiceRoleKey,
       supabaseStickerBucket: config.supabaseStickerBucket,
-      stickerAdminPassword: config.stickerAdminPassword,
     })
-    const service = new StickerCatalogService(db, storage, config.stickerAdminPassword)
+    const service = new StickerCatalogService(db, storage, config.adminPassword)
     const entries = (await readdir(dir))
       .filter((name) => name.toLowerCase().endsWith(".png"))
       .sort((a, b) => {

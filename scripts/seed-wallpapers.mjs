@@ -16,7 +16,7 @@ function usage() {
     "  batchSize  Number of wallpapers to seed in this run.",
     "",
     "Env:",
-    "  MULBERRY_WALLPAPER_ADMIN_PASSWORD  Required; sent as x-wallpaper-admin-password.",
+    "  MULBERRY_ADMIN_PASSWORD  Required; sent as x-admin-password.",
   ].join("\n")
 }
 
@@ -64,9 +64,9 @@ if (!hostnameArg || cursorArg == null || batchArg == null) {
   process.exit(2)
 }
 
-const adminPassword = process.env.MULBERRY_WALLPAPER_ADMIN_PASSWORD?.trim()
+const adminPassword = process.env.MULBERRY_ADMIN_PASSWORD?.trim()
 if (!adminPassword) {
-  console.error("Missing env var: MULBERRY_WALLPAPER_ADMIN_PASSWORD")
+  console.error("Missing env var: MULBERRY_ADMIN_PASSWORD")
   process.exit(2)
 }
 
@@ -121,7 +121,7 @@ for (let index = 0; index < batch.length; index += 1) {
     const createResponse = await fetch(endpoint, {
       method: "POST",
       headers: {
-        "x-wallpaper-admin-password": adminPassword,
+        "x-admin-password": adminPassword,
       },
       body: form,
     })

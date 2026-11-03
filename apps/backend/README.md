@@ -118,17 +118,12 @@ Sticker packs are stored in Supabase Storage (separate from the app bundle). The
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_STICKER_BUCKET=
-STICKER_ADMIN_PASSWORD=
+ADMIN_PASSWORD=
 ```
 
-For local dev, you can reuse the wallpaper bucket + password:
+`SUPABASE_STICKER_BUCKET` falls back to `SUPABASE_WALLPAPER_BUCKET` when unset.
 
-```text
-SUPABASE_STICKER_BUCKET=SUPABASE_WALLPAPER_BUCKET
-STICKER_ADMIN_PASSWORD=WALLPAPER_ADMIN_PASSWORD
-```
-
-Admin endpoints use the `x-sticker-admin-password` header.
+Admin endpoints use the `x-admin-password` header.
 
 To import a local folder of `.png` stickers as a pack version (example uses the repo-root `temp/` folder):
 

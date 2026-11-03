@@ -3,12 +3,13 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import sharp from "sharp"
 import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
+import { requireAdminPassword } from "../../infra/http/adminAuth.js"
 
 export interface WallpaperCatalogConfig {
   supabaseUrl?: string
   supabaseServiceRoleKey?: string
   supabaseWallpaperBucket?: string
-  wallpaperAdminPassword?: string
+  adminPassword?: string
 }
 
 export interface WallpaperStorage {
@@ -377,13 +378,7 @@ export class WallpaperCatalogService {
   }
 
   private requireAdmin(adminPassword?: string): void {
-    const configuredPassword = this.config.wallpaperAdminPassword?.trim()
-    if (!configuredPassword) {
-      throw new HttpError(503, "Wallpaper admin is not configured")
-    }
-    if (!adminPassword || adminPassword !== configuredPassword) {
-      throw new HttpError(401, "Invalid wallpaper admin password")
-    }
+    requireAdminPassword(this.config.adminPassword, adminPassword)
   }
 
   private toCatalogItem(row: WallpaperRow): WallpaperCatalogItem {

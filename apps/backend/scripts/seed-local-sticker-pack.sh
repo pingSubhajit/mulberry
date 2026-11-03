@@ -11,8 +11,8 @@ set -euo pipefail
 DIR="${1:?folder of PNG stickers}"; PACK_KEY="${2:?pack key}"; TITLE="${3:?title}"; VERSION="${4:-1}"
 API_URL="${API_URL:-http://localhost:8080}"
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-PASSWORD="${STICKER_ADMIN_PASSWORD:-$(grep -E '^(STICKER|WALLPAPER)_ADMIN_PASSWORD=' "$ROOT/.env" | head -1 | cut -d= -f2- | tr -d "'\"")}"
-[ -n "$PASSWORD" ] || { echo "Set STICKER_ADMIN_PASSWORD" >&2; exit 1; }
+PASSWORD="${ADMIN_PASSWORD:-$(grep -E '^ADMIN_PASSWORD=' "$ROOT/.env" | head -1 | cut -d= -f2- | tr -d "'\"")}"
+[ -n "$PASSWORD" ] || { echo "Set ADMIN_PASSWORD" >&2; exit 1; }
 
 FILES=()
 while IFS= read -r line; do FILES+=("${line#*$'\t'}"); done < <(
@@ -22,7 +22,7 @@ while IFS= read -r line; do FILES+=("${line#*$'\t'}"); done < <(
   done | sort -n -k1,1)
 [ "${#FILES[@]}" -gt 0 ] || { echo "No PNG files in $DIR" >&2; exit 1; }
 
-curl -sf -X POST "$API_URL/admin/stickers/packs" -H "x-sticker-admin-password: $PASSWORD" \
+curl -sf -X POST "$API_URL/admin/stickers/packs" -H "x-admin-password: $PASSWORD" \
   -F packKey="$PACK_KEY" -F packVersion="$VERSION" -F title="$TITLE" \
   -F published=true -F featured=true -F sortOrder=0 \
   -F "cover=@${FILES[0]};type=image/png" > /dev/null
@@ -31,7 +31,7 @@ echo "Created $PACK_KEY v$VERSION"
 for index in "${!FILES[@]}"; do
   file="${FILES[$index]}"; name="$(basename "$file" .png)"
   id="$(echo "$name" | grep -oE '[0-9]+' | tail -1 || true)"; id="${id:-$name}"
-  curl -sf -X POST "$API_URL/admin/stickers/packs/$PACK_KEY/$VERSION/stickers" -H "x-sticker-admin-password: $PASSWORD" \
+  curl -sf -X POST "$API_URL/admin/stickers/packs/$PACK_KEY/$VERSION/stickers" -H "x-admin-password: $PASSWORD" \
     -F stickerId="$id" -F sortOrder="$index" -F "image=@$file;type=image/png" > /dev/null
   echo "Uploaded sticker $id"
 done

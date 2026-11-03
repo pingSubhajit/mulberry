@@ -142,7 +142,7 @@ The backend reads configuration from environment variables:
 | `SUPABASE_URL` | For wallpaper storage | Supabase project URL for wallpaper admin and catalog storage access. |
 | `SUPABASE_SERVICE_ROLE_KEY` | For wallpaper storage | Supabase service-role key used by the backend for wallpaper management. |
 | `SUPABASE_WALLPAPER_BUCKET` | For wallpaper storage | Bucket name used to store wallpaper assets. |
-| `WALLPAPER_ADMIN_PASSWORD` | For wallpaper admin | Admin header secret required by the wallpaper management routes. |
+| `ADMIN_PASSWORD` | For the admin site | Unlocks `/admin` on the web and the backend's admin routes (wallpapers, stickers, app versions). Sent as the `x-admin-password` header. |
 | `CANNY_SSO_PRIVATE_KEY` | For in-app feedback | Private Canny SSO key used by the backend to sign widget users. |
 
 For real Google Sign-In, update `.env`:

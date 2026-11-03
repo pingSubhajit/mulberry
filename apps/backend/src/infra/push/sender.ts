@@ -1,7 +1,6 @@
-import { readFileSync } from "node:fs"
-import { cert, getApps, initializeApp } from "firebase-admin/app"
 import { getMessaging, type Messaging, type ApnsConfig, type ApsAlert } from "firebase-admin/messaging"
 import type { DevicePlatform } from "../../contracts/devices.js"
+import { firebaseApp, type FirebaseCredentials } from "../firebase/app.js"
 import type { MulberryPushMessage, PushSendResult, PushSender, ReactionLiveActivityMessage } from "./types.js"
 
 export class NoopPushSender implements PushSender {
@@ -21,22 +20,9 @@ export class NoopPushSender implements PushSender {
 
 type ApplePlatform = Exclude<DevicePlatform, "ANDROID">
 
-export interface FirebasePushSenderOptions {
-  serviceAccountPath?: string
-  serviceAccountJson?: string
-}
-
-export function createPushSender(options: FirebasePushSenderOptions): PushSender {
-  if (!options.serviceAccountPath && !options.serviceAccountJson) {
-    return new NoopPushSender()
-  }
-  const serviceAccount = options.serviceAccountJson
-    ? JSON.parse(options.serviceAccountJson)
-    : JSON.parse(readFileSync(options.serviceAccountPath ?? "", "utf8"))
-  const app = getApps()[0] ?? initializeApp({
-    credential: cert(serviceAccount),
-  })
-  return new FirebaseAdminPushSender(getMessaging(app))
+export function createPushSender(credentials: FirebaseCredentials): PushSender {
+  const app = firebaseApp(credentials)
+  return app ? new FirebaseAdminPushSender(getMessaging(app)) : new NoopPushSender()
 }
 
 export class FirebaseAdminPushSender implements PushSender {
