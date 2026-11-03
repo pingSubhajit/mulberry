@@ -30,6 +30,7 @@ firebaseMessaging = "24.0.3"
 googleServices = "4.4.4"
 crashlyticsGradle = "3.0.7"
 firebaseCrashlytics = "20.0.5"
+firebaseConfig = "23.1.0"
 coil = "2.7.0"
 ink = "1.0.0"
 konfetti = "2.0.5"
@@ -83,6 +84,7 @@ googleid = { group = "com.google.android.libraries.identity.googleid", name = "g
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging", version.ref = "firebaseMessaging" }
 firebase-crashlytics = { group = "com.google.firebase", name = "firebase-crashlytics", version.ref = "firebaseCrashlytics" }
+firebase-config = { group = "com.google.firebase", name = "firebase-config", version.ref = "firebaseConfig" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 androidx-ink-strokes = { group = "androidx.ink", name = "ink-strokes", version.ref = "ink" }
 androidx-ink-brush = { group = "androidx.ink", name = "ink-brush", version.ref = "ink" }

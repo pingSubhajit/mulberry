@@ -192,6 +192,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.messaging)
+    implementation(libs.firebase.config)
     implementation(libs.play.installreferrer)
     implementation(libs.play.app.update)
     implementation(libs.play.app.update.ktx)

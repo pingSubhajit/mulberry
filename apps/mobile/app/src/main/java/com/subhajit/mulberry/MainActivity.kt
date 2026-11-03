@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -13,6 +14,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -20,6 +23,7 @@ import androidx.lifecycle.lifecycleScope
 import com.subhajit.mulberry.app.AppForegroundState
 import com.subhajit.mulberry.app.MulberryApp
 import com.subhajit.mulberry.app.bootstrap.AppStartupGate
+import com.subhajit.mulberry.app.bootstrap.ReleaseStartupGateAfterFirstFrame
 import com.subhajit.mulberry.app.shortcut.AppShortcutActionController
 import com.subhajit.mulberry.app.snackbar.MulberrySnackbarController
 import com.subhajit.mulberry.app.snackbar.MulberrySnackbarRequest
@@ -34,6 +38,9 @@ import com.subhajit.mulberry.sync.CanvasSyncRepository
 import com.subhajit.mulberry.sync.FcmTokenRepository
 import com.subhajit.mulberry.sync.PartnerWallpaperStatusReportCoordinator
 import com.subhajit.mulberry.ui.theme.MulberryTheme
+import com.subhajit.mulberry.update.AppUpdateGate
+import com.subhajit.mulberry.update.AppUpdateRequiredScreen
+import com.subhajit.mulberry.update.AppUpdateStatus
 import com.subhajit.mulberry.update.InAppUpdatePromptCoordinator
 import com.subhajit.mulberry.whatsnew.WhatsNewPrompter
 import com.subhajit.mulberry.navigation.AppRoute
@@ -48,6 +55,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 
@@ -61,6 +69,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var sessionBootstrapRepository: SessionBootstrapRepository
     @Inject lateinit var appUpdateManager: AppUpdateManager
     @Inject lateinit var inAppUpdatePromptCoordinator: InAppUpdatePromptCoordinator
+    @Inject lateinit var appUpdateGate: AppUpdateGate
     @Inject lateinit var partnerWallpaperStatusReportCoordinator: PartnerWallpaperStatusReportCoordinator
     @Inject lateinit var whatsNewPrompter: WhatsNewPrompter
 
@@ -83,6 +92,8 @@ class MainActivity : ComponentActivity() {
         AppShortcutActionController.dispatch(intent)
         handleInviteLink(intent)
         AppStartupGate.armTimeout(lifecycleScope)
+        appUpdateGate.start()
+        applyDebugUpdateStatus(intent)
         requestNotificationPermissionIfNeeded()
         enableEdgeToEdge()
 
@@ -121,15 +132,31 @@ class MainActivity : ComponentActivity() {
                 }
         }
 
+        // Values arriving after the canvas opened can make an update recommended.
+        lifecycleScope.launch {
+            appUpdateGate.status
+                .map { status -> status == AppUpdateStatus.RECOMMENDED }
+                .distinctUntilChanged()
+                .filter { recommended -> recommended }
+                .collect { maybeStartFlexibleUpdatePrompt(isManual = false) }
+        }
+
         appUpdateManager.registerListener(flexibleUpdateListener)
 
         setContent {
+            val updateStatus by appUpdateGate.status.collectAsState()
             MulberryTheme {
-                MulberryApp(
-                    onRouteChanged = { route ->
-                        currentRoute.value = route
-                    }
-                )
+                // Below the minimum build, nothing else opens.
+                if (updateStatus == AppUpdateStatus.REQUIRED) {
+                    ReleaseStartupGateAfterFirstFrame()
+                    AppUpdateRequiredScreen(onUpdate = ::startRequiredUpdate)
+                } else {
+                    MulberryApp(
+                        onRouteChanged = { route ->
+                            currentRoute.value = route
+                        }
+                    )
+                }
             }
         }
     }
@@ -144,6 +171,7 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         AppShortcutActionController.dispatch(intent)
         handleInviteLink(intent)
+        applyDebugUpdateStatus(intent)
     }
 
     fun triggerInAppUpdateManual() {
@@ -153,6 +181,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         AppForegroundState.setForeground(true)
+        appUpdateGate.refresh()
         canvasSyncRepository.start()
         lifecycleScope.launch {
             fcmTokenRepository.syncTokenWithBackend()
@@ -248,6 +277,11 @@ class MainActivity : ComponentActivity() {
 
     private fun maybeStartFlexibleUpdatePrompt(isManual: Boolean) {
         if (!isMainAppRoute(currentRoute.value)) return
+        // Unasked, only builds below the admin site's recommended build are nudged.
+        if (!isManual && appUpdateGate.status.value != AppUpdateStatus.RECOMMENDED) {
+            maybeStartWhatsNewAutoPrompt()
+            return
+        }
         // Implementation continues below using Play callbacks (kept outside coroutine for Task API).
         if (!shouldAttemptPlayUpdateFlow()) {
             maybeStartWhatsNewAutoPrompt()
@@ -301,6 +335,52 @@ class MainActivity : ComponentActivity() {
                     Log.w(TAG, "Unable to check app update availability message=${error.message}", error)
                     maybeStartWhatsNewAutoPrompt()
                 }
+        }
+    }
+
+    /** Play's immediate update where Play installed the app and offers one; otherwise the store listing. */
+    private fun startRequiredUpdate() {
+        if (!shouldAttemptPlayUpdateFlow()) {
+            openStoreListing()
+            return
+        }
+        appUpdateManager
+            .appUpdateInfo
+            .addOnSuccessListener { appUpdateInfo ->
+                val available = appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE ||
+                    appUpdateInfo.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS
+                if (available && appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)) {
+                    appUpdateManager.startUpdateFlowForResult(
+                        appUpdateInfo,
+                        updateFlowResultLauncher,
+                        AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build()
+                    )
+                } else {
+                    openStoreListing()
+                }
+            }
+            .addOnFailureListener { error ->
+                Log.w(TAG, "Unable to start the required update message=${error.message}", error)
+                openStoreListing()
+            }
+    }
+
+    private fun openStoreListing() {
+        val market = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName"))
+        val web = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName"))
+        runCatching { startActivity(market) }.onFailure { runCatching { startActivity(web) } }
+    }
+
+    /**
+     * Debug builds show either update state on request:
+     * `adb shell am start -n com.subhajit.mulberry.dev/com.subhajit.mulberry.MainActivity --es appUpdate required`
+     * (or `recommended`).
+     */
+    private fun applyDebugUpdateStatus(intent: Intent?) {
+        if (!BuildConfig.DEBUG) return
+        when (intent?.getStringExtra("appUpdate")) {
+            "required" -> appUpdateGate.forceForDebug(AppUpdateStatus.REQUIRED)
+            "recommended" -> appUpdateGate.forceForDebug(AppUpdateStatus.RECOMMENDED)
         }
     }
 
