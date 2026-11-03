@@ -25,3 +25,10 @@ jobs:
       - name: Run macOS smoke target
         run: ./Scripts/smoke-test.sh
         working-directory: apps/macos
+      - name: Keep the canvas render that missed its golden
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canvas-render
+          path: apps/macos/Tests/Fixtures/canvas/rendered/preview-dry-brush.png
+          if-no-files-found: ignore
