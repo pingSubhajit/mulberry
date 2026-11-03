@@ -406,6 +406,48 @@ describe("Mulberry backend", () => {
     })
     expect(limited.statusCode).toBe(429)
     expect(limited.json().message).toMatch(/too many reactions/i)
+
+    const logged = await db.query<{ count: string }>(`SELECT COUNT(*) AS count FROM reaction_events`)
+    expect(Number(logged.rows[0].count)).toBe(6)
+  })
+
+  it("logs each reaction with its sender, and keeps the log after the batch plays", async () => {
+    const { inviter, recipient } = await pairUsers()
+
+    for (const [sender, reactionType] of [
+      [inviter, "HEART"],
+      [inviter, "hug"],
+      [recipient, "KISS"],
+    ] as const) {
+      const sent = await app.inject({
+        method: "POST",
+        url: "/reactions/send",
+        headers: bearer(sender.accessToken),
+        payload: { reactionType },
+      })
+      expect(sent.statusCode).toBe(200)
+    }
+
+    const playback = { generation: 1, deviceId: "recipient-phone" }
+    for (const step of ["lease", "confirm"]) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/reactions/${step}`,
+        headers: bearer(recipient.accessToken),
+        payload: playback,
+      })
+      expect(response.statusCode).toBe(200)
+    }
+
+    const events = await db.query<{ pair_session_id: string; sender_user_id: string; reaction_type: string; sent_at: Date }>(
+      `SELECT pair_session_id, sender_user_id, reaction_type, sent_at FROM reaction_events ORDER BY sent_at, reaction_type`,
+    )
+    expect(events.rows.map((row) => [row.sender_user_id, row.reaction_type])).toEqual([
+      [inviter.userId, "HEART"],
+      [inviter.userId, "HUG"],
+      [recipient.userId, "KISS"],
+    ])
+    expect(events.rows.every((row) => row.pair_session_id === inviter.pairSessionId && row.sent_at)).toBe(true)
   })
 
   it("leases and confirms reaction playback exactly once across devices", async () => {

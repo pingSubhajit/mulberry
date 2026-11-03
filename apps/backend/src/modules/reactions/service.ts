@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
@@ -61,6 +62,13 @@ export class ReactionsService {
         actorUserId: context.user.id,
         pairSessionId: pairSession.id,
       })
+      await tx.query(
+        `
+        INSERT INTO reaction_events (id, pair_session_id, sender_user_id, reaction_type)
+        VALUES ($1, $2, $3, $4)
+        `,
+        [randomUUID(), pairSession.id, context.user.id, normalizedType],
+      )
       return this.appendReactionForRecipient(tx, {
         pairSessionId: pairSession.id,
         recipientUserId,

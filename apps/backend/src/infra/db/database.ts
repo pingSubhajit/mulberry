@@ -412,6 +412,20 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
 
     ALTER TABLE users
       ADD COLUMN IF NOT EXISTS apple_refresh_token TEXT;
+
+    -- Every reaction a person sends, kept with the pair. reaction_inboxes holds only the batch
+    -- waiting to play and resets once it has, so this is the lasting record of who sent what.
+    CREATE TABLE IF NOT EXISTS reaction_events (
+      id TEXT PRIMARY KEY,
+      pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      sender_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      reaction_type TEXT NOT NULL,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS reaction_events_pair_sent_idx
+      ON reaction_events(pair_session_id, sent_at);
+
   `)
 
   await runBackfills(db)
