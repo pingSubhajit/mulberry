@@ -390,6 +390,8 @@ public actor BackendClient {
             request.setValue(clientBuild.platform, forHTTPHeaderField: "X-App-Platform")
             request.setValue(String(clientBuild.number), forHTTPHeaderField: "X-App-Build")
         }
+        // Read per request, so the server learns of a change as soon as the device moves zones.
+        request.setValue(TimeZone.autoupdatingCurrent.identifier, forHTTPHeaderField: "X-Time-Zone")
         return request
     }
     private func pathID(_ id: String) throws -> String {

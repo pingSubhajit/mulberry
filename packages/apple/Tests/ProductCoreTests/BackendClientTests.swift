@@ -199,6 +199,14 @@ private actor UpgradeRequiredTransport: BackendTransport {
     #expect(request.value(forHTTPHeaderField: "X-App-Build") == nil)
 }
 
+@Test func everyRequestNamesTheDevicesTimeZone() async throws {
+    let transport = try TestTransport()
+    let client = BackendClient(baseURL: URL(string: "https://example.invalid")!, tokenStore: TestTokenStore(nil), session: nil, transport: transport)
+    _ = try await client.wallpapers()
+    let request = try #require(await transport.requests.first)
+    #expect(request.value(forHTTPHeaderField: "X-Time-Zone") == TimeZone.autoupdatingCurrent.identifier)
+}
+
 @Test func failuresAreWordedByTheAppNotTheServer() {
     let expired = BackendError.rejected(400, "Invite code has expired", code: "INVITE_EXPIRED")
     #expect(expired.code == "INVITE_EXPIRED")
