@@ -69,6 +69,12 @@ export class FirebaseAdminPushSender implements PushSender {
   }
 }
 
+/** The partner's name for an alert, or nothing when only the "Your partner" stand-in is known. */
+function knownName(name: string | undefined): string | undefined {
+  const trimmed = name?.trim()
+  return trimmed && trimmed !== "Your partner" ? trimmed : undefined
+}
+
 /** Keep Android's data-only delivery intact. iPhones receive a quiet visible canvas alert because
  * the user's Shortcuts trigger cannot use silent pushes. A Mac draws the canvas on the desktop
  * itself, so canvas changes reach it silently, only to catch up. */
@@ -88,15 +94,27 @@ export function applePushConfiguration(message: MulberryPushMessage, platform: A
     case "CANVAS_UPDATED":
       alert = { title: "Mulberry canvas updated", body: "Your wallpaper update is ready." }
       break
-    case "PAIRING_CONFIRMED":
-      alert = { title: "You’re connected", body: "Open Mulberry to start drawing together." }
+    case "PAIRING_CONFIRMED": {
+      const name = knownName(data.actorDisplayName)
+      alert = { title: name ? `You’re paired with ${name}` : "You’re paired", body: "Draw them something to say hello." }
       break
-    case "PAIRING_DISCONNECTED":
-      alert = { title: "Pairing ended", body: "Open Mulberry to see your pairing status." }
+    }
+    case "PAIRING_DISCONNECTED": {
+      const name = knownName(data.actorDisplayName)
+      alert = {
+        title: name ? `You’re no longer paired with ${name}` : "You’re no longer paired",
+        body: "Your canvas is no longer shared.",
+      }
       break
-    case "DRAW_REMINDER":
-      alert = { title: "Draw them something cute", body: "Your shared canvas is waiting." }
+    }
+    case "DRAW_REMINDER": {
+      const name = knownName(data.partnerDisplayName)
+      alert = {
+        title: `Draw ${name ?? "them"} something cute`,
+        body: "They’ll see it next time they look at their phone.",
+      }
       break
+    }
     default:
       // Reactions and visibility changes are fetched by the app; an iPhone's reactions also show in
       // their Live Activity, which is pushed separately. An anniversary change only refreshes the

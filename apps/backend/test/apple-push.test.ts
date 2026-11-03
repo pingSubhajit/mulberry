@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import type { Messaging } from "firebase-admin/messaging"
-import { FirebaseAdminPushSender, reactionLiveActivityConfiguration } from "../src/infra/push/sender.js"
+import { applePushConfiguration, FirebaseAdminPushSender, reactionLiveActivityConfiguration } from "../src/infra/push/sender.js"
 import type { MulberryPushMessage } from "../src/infra/push/types.js"
 
 describe("Apple wallpaper delivery", () => {
@@ -43,6 +43,23 @@ describe("Apple wallpaper delivery", () => {
       PAIRING_DISCONNECTED: "active",
       DRAW_REMINDER: "passive",
     })
+  })
+
+  it("names the partner in pairing and reminder alerts", () => {
+    const alert = (data: MulberryPushMessage["data"]) => applePushConfiguration({
+      tokens: ["fixture-token"],
+      data,
+      android: { priority: "high", collapseKey: "pair-one", ttlMs: 60_000 },
+    }).payload?.aps.alert
+    const pair = { pairSessionId: "pair-one", actorUserId: "partner" }
+    expect(alert({ ...pair, type: "PAIRING_CONFIRMED", actorDisplayName: "Sam" }))
+      .toEqual({ title: "You’re paired with Sam", body: "Draw them something to say hello." })
+    expect(alert({ ...pair, type: "PAIRING_DISCONNECTED", actorDisplayName: " " }))
+      .toEqual({ title: "You’re no longer paired", body: "Your canvas is no longer shared." })
+    expect(alert({ pairSessionId: "pair-one", type: "DRAW_REMINDER", partnerDisplayName: "Sam", reminderCount: "1" }))
+      .toEqual({ title: "Draw Sam something cute", body: "They’ll see it next time they look at their phone." })
+    expect(alert({ pairSessionId: "pair-one", type: "DRAW_REMINDER", partnerDisplayName: "Your partner", reminderCount: "1" }))
+      .toMatchObject({ title: "Draw them something cute" })
   })
 
   it("catches Macs up silently instead of telling them about the wallpaper", async () => {
