@@ -1,6 +1,7 @@
 import CanvasDrawing
 import CanvasRendering
 import Foundation
+import ImageIO
 import ProductCore
 import Testing
 
@@ -89,6 +90,9 @@ import Testing
 
 /// Re-record the golden on purpose with `CANVAS_RECORD_GOLDENS=1 swift test`. A mismatch leaves
 /// the new render in Fixtures/canvas/rendered to compare.
+///
+/// Pixels are compared, not PNG bytes: macOS versions encode the same image differently and
+/// anti-alias edges a shade apart, so CI's older macOS never matched a golden recorded here.
 @Test func committedGoldenFixtureMatchesCurrentRenderer() throws {
     let rendered = try #require(renderGoldenFixture())
     let goldenURL = fixtureRoot().appendingPathComponent("goldens/preview-dry-brush.png")
@@ -98,16 +102,85 @@ import Testing
         try rendered.data.write(to: goldenURL)
         return
     }
-    let golden = try Data(contentsOf: goldenURL)
-    if rendered.data != golden {
+    let golden = try #require(PixelImage(png: Data(contentsOf: goldenURL)))
+    let current = try #require(PixelImage(png: rendered.data))
+    let difference = current.difference(from: golden, tolerance: GoldenTolerance.channel)
+    let matches = difference != nil && difference!.changed <= current.count / GoldenTolerance.pixelsPerChange
+    if !matches {
         let renderedURL = fixtureRoot().appendingPathComponent("rendered/preview-dry-brush.png")
         try? rendered.data.write(to: renderedURL)
     }
-    #expect(rendered.data == golden)
+    #expect(difference != nil, "The render is \(current.width)×\(current.height); the golden is \(golden.width)×\(golden.height)")
+    if let difference {
+        #expect(difference.changed <= current.count / GoldenTolerance.pixelsPerChange,
+                "\(difference.changed) of \(current.count) pixels differ by more than \(GoldenTolerance.channel); the largest by \(difference.largest)")
+    }
 }
 
-private func renderGoldenFixture() -> (data: Data, diagnostics: [CanvasDiagnostic])? {
-    let state = CanvasRenderFixture.previewState()
+@Test func goldenToleranceStillCatchesAMissingStroke() throws {
+    var state = DrawingState()
+    // The fixture's text and sticker, without the stroke before them.
+    for operation in CanvasRenderFixture.previewOperations().suffix(2) {
+        try state.apply(operation)
+    }
+    #expect(state.finishedStrokes.isEmpty && state.canvasElements.count == 2)
+    let rendered = try #require(renderGoldenFixture(state))
+    let golden = try #require(PixelImage(png: Data(contentsOf: fixtureRoot().appendingPathComponent("goldens/preview-dry-brush.png"))))
+    let difference = try #require(PixelImage(png: rendered.data)?.difference(from: golden, tolerance: GoldenTolerance.channel))
+    #expect(difference.changed > golden.count / GoldenTolerance.pixelsPerChange)
+}
+
+/// How far a render may drift from its golden: a channel a few shades off at an anti-aliased
+/// edge passes, while a missing or moved stroke, sticker or text, thousands of pixels, fails.
+private enum GoldenTolerance {
+    static let channel = 16
+    /// At most one pixel in this many may differ by more than `channel`.
+    static let pixelsPerChange = 400
+}
+
+/// A PNG's pixels as premultiplied sRGB RGBA, however the file was encoded.
+private struct PixelImage {
+    let width: Int
+    let height: Int
+    let bytes: [UInt8]
+    var count: Int { width * height }
+
+    init?(png: Data) {
+        guard let source = CGImageSourceCreateWithData(png as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        let width = image.width, height = image.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: width * 4, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+        self.width = width; self.height = height; self.bytes = bytes
+    }
+
+    /// How many pixels have a channel more than `tolerance` apart, and the largest gap; nil
+    /// when the sizes differ.
+    func difference(from other: PixelImage, tolerance: Int) -> (changed: Int, largest: Int)? {
+        guard width == other.width, height == other.height else { return nil }
+        var changed = 0, largest = 0
+        for pixel in 0..<count {
+            var gap = 0
+            for channel in 0..<4 {
+                let index = pixel * 4 + channel
+                gap = max(gap, abs(Int(bytes[index]) - Int(other.bytes[index])))
+            }
+            largest = max(largest, gap)
+            if gap > tolerance { changed += 1 }
+        }
+        return (changed, largest)
+    }
+}
+
+private func renderGoldenFixture(_ state: DrawingState = CanvasRenderFixture.previewState()) -> (data: Data, diagnostics: [CanvasDiagnostic])? {
     return CanvasOffscreenRenderer.renderPNG(
         input: CanvasRenderInput(
             state: state,
