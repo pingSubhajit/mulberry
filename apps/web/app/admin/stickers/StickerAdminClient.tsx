@@ -1,14 +1,37 @@
 "use client"
 
-import { LoaderCircle, Trash2, X } from "lucide-react"
-import Link from "next/link"
-import { FormEvent, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { ImagePlus, Plus, Sticker, Upload } from "lucide-react"
+import { FormEvent, useEffect, useRef, useState, useTransition } from "react"
 
-import { Button } from "@/components/ui/button"
 import { API_BASE_URL } from "@/lib/constants"
+import { cn } from "@/lib/utils"
 
-const PRIMARY_ADMIN_PASSWORD_STORAGE_KEY = "mulberry.wallpaperAdminPassword"
-const LEGACY_ADMIN_PASSWORD_STORAGE_KEY = "mulberry.stickerAdminPassword"
+import { useAdmin } from "../AdminShell"
+import {
+  AdminButton,
+  Dropzone,
+  EmptyState,
+  fieldClass,
+  LiveDot,
+  numberFieldClass,
+  PropertyRow,
+  PublishState,
+  SectionLabel,
+  Segmented,
+  Spinner,
+  StatusLine,
+  Switch,
+  textareaClass,
+  TopBar
+} from "../ui"
+
+type DetailTab = "stickers" | "details"
+
+const DETAIL_TABS: readonly { value: DetailTab; label: string }[] = [
+  { value: "stickers", label: "Stickers" },
+  { value: "details", label: "Details" }
+]
+
 const ACCEPTED_IMAGE_MIME_TYPES = new Set(["image/png"])
 
 type StickerPackAdminSummary = {
@@ -45,8 +68,7 @@ type AdminListResponse = {
 }
 
 export default function StickerAdminPage() {
-  const [passwordInput, setPasswordInput] = useState("")
-  const [adminPassword, setAdminPassword] = useState("")
+  const { adminHeaders } = useAdmin()
   const [packs, setPacks] = useState<StickerPackAdminSummary[]>([])
   const [openPack, setOpenPack] = useState<{ packKey: string; packVersion: number } | null>(null)
   const [openPackDetail, setOpenPackDetail] = useState<StickerPackAdminDetail | null>(null)
@@ -64,34 +86,28 @@ export default function StickerAdminPage() {
 
   const [isUploadingStickers, setIsUploadingStickers] = useState(false)
   const [stickerUploadProgress, setStickerUploadProgress] = useState<string | null>(null)
+  const [stickerUploadSelection, setStickerUploadSelection] = useState<string | null>(null)
   const stickerUploadInputRef = useRef<HTMLInputElement | null>(null)
   const [isUpdatingCover, setIsUpdatingCover] = useState(false)
   const [coverUpdateFileName, setCoverUpdateFileName] = useState<string | null>(null)
   const coverUpdateInputRef = useRef<HTMLInputElement | null>(null)
   const [isDeletingPack, setIsDeletingPack] = useState(false)
+  const [isCreatingView, setIsCreatingView] = useState(false)
+  const [detailTab, setDetailTab] = useState<DetailTab>("stickers")
+  const hasAutoOpenedRef = useRef(false)
 
-  const isUnlocked = adminPassword.trim().length > 0
-  const adminHeaders = useMemo(
-    () => ({
-      "x-sticker-admin-password": adminPassword.trim(),
-    }),
-    [adminPassword],
-  )
-
-  const fetchAdminPacks = async (password: string): Promise<StickerPackAdminSummary[]> => {
+  const fetchAdminPacks = async (): Promise<StickerPackAdminSummary[]> => {
     const response = await fetch(`${API_BASE_URL}/admin/stickers/packs`, {
       cache: "no-store",
-      headers: {
-        "x-sticker-admin-password": password,
-      },
+      headers: adminHeaders,
     })
     if (!response.ok) {
       const body = await response.json().catch(() => null)
-      throw new Error(body?.message ?? "Unable to unlock sticker admin")
+      throw new Error(body?.message ?? "Unable to load sticker packs")
     }
     const body = (await response.json()) as AdminListResponse
     return body.items
-}
+  }
 
   const fetchAdminPackDetail = async (packKey: string, packVersion: number): Promise<StickerPackAdminDetail> => {
     const response = await fetch(`${API_BASE_URL}/admin/stickers/packs/${packKey}/${packVersion}`, {
@@ -105,15 +121,12 @@ export default function StickerAdminPage() {
     return (await response.json()) as StickerPackAdminDetail
   }
 
-  const loadAdminCatalog = (password = adminPassword) => {
-    const credential = password.trim()
-    if (!credential) return
-
+  const loadAdminCatalog = () => {
     startTransition(() => {
       void (async () => {
         setError(null)
         try {
-          const next = await fetchAdminPacks(credential)
+          const next = await fetchAdminPacks()
           setPacks(next)
 
           // Close dialog if the open pack disappears.
@@ -134,6 +147,7 @@ export default function StickerAdminPage() {
   }
 
   const openPackDialog = (packKey: string, packVersion: number) => {
+    setIsCreatingView(false)
     setOpenPack({ packKey, packVersion })
     setCoverUpdateFileName(null)
     setIsUpdatingCover(false)
@@ -156,6 +170,7 @@ export default function StickerAdminPage() {
     setOpenPack(null)
     setOpenPackDetail(null)
     setStickerUploadProgress(null)
+    setStickerUploadSelection(null)
     setIsUploadingStickers(false)
     setCoverUpdateFileName(null)
     setIsUpdatingCover(false)
@@ -165,80 +180,19 @@ export default function StickerAdminPage() {
   }
 
   useEffect(() => {
-    const storedPassword =
-      window.localStorage.getItem(PRIMARY_ADMIN_PASSWORD_STORAGE_KEY) ??
-      window.localStorage.getItem(LEGACY_ADMIN_PASSWORD_STORAGE_KEY)
-    if (!storedPassword) return
-
-    setAdminPassword(storedPassword)
-    loadAdminCatalog(storedPassword)
+    loadAdminCatalog()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Open the first pack once the list arrives, so the detail pane never starts empty.
   useEffect(() => {
-    if (!openPack) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return
-      event.preventDefault()
-      closePackDialog()
-    }
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
+    if (hasAutoOpenedRef.current || openPack || isCreatingView) return
+    const first = packs[0]
+    if (!first) return
+    hasAutoOpenedRef.current = true
+    openPackDialog(first.packKey, first.packVersion)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openPack])
-
-  const unlockAdmin = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const credential = passwordInput.trim()
-    if (!credential) return
-
-    startTransition(() => {
-      void (async () => {
-        setError(null)
-        setStatus(null)
-        try {
-          const next = await fetchAdminPacks(credential)
-          window.localStorage.setItem(PRIMARY_ADMIN_PASSWORD_STORAGE_KEY, credential)
-          window.localStorage.removeItem(LEGACY_ADMIN_PASSWORD_STORAGE_KEY)
-          setAdminPassword(credential)
-          setPasswordInput("")
-          setPacks(next)
-        } catch (err) {
-          window.localStorage.removeItem(PRIMARY_ADMIN_PASSWORD_STORAGE_KEY)
-          window.localStorage.removeItem(LEGACY_ADMIN_PASSWORD_STORAGE_KEY)
-          setAdminPassword("")
-          setPacks([])
-          setOpenPack(null)
-          setOpenPackDetail(null)
-          setError(err instanceof Error ? err.message : "Unable to unlock sticker admin")
-        }
-      })()
-    })
-  }
-
-  const lockAdmin = () => {
-    window.localStorage.removeItem(PRIMARY_ADMIN_PASSWORD_STORAGE_KEY)
-    window.localStorage.removeItem(LEGACY_ADMIN_PASSWORD_STORAGE_KEY)
-    setAdminPassword("")
-    setPasswordInput("")
-    setPacks([])
-    setOpenPack(null)
-    setOpenPackDetail(null)
-    setError(null)
-    setStatus(null)
-    setCreatingCoverFileName(null)
-    setStickerUploadProgress(null)
-    setIsUploadingStickers(false)
-    setIsUpdatingCover(false)
-    setCoverUpdateFileName(null)
-    setIsCreatingPack(false)
-    setCreatingStickerFileNames(null)
-    setIsDraggingStickers(false)
-    createStickerDragDepthRef.current = 0
-    if (createCoverInputRef.current) createCoverInputRef.current.value = ""
-    if (createStickersInputRef.current) createStickersInputRef.current.value = ""
-    if (stickerUploadInputRef.current) stickerUploadInputRef.current.value = ""
-    if (coverUpdateInputRef.current) coverUpdateInputRef.current.value = ""
-  }
+  }, [packs])
 
   const setFileInputValue = (input: HTMLInputElement | null, file: File | null) => {
     if (!input) return
@@ -278,7 +232,7 @@ export default function StickerAdminPage() {
       setCreatingStickerFileNames(null)
       return
     }
-    setCreatingStickerFileNames(`${list.length} sticker${list.length === 1 ? "" : "s"} selected`)
+    setCreatingStickerFileNames(stickerCountLabel(list.length, "selected"))
   }
 
   const onDropCreateStickers = (event: React.DragEvent<HTMLLabelElement>) => {
@@ -296,32 +250,31 @@ export default function StickerAdminPage() {
 
   const onCreatePack = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!isUnlocked) return
 
     const form = event.currentTarget
     const cover = createCoverInputRef.current?.files?.[0] ?? null
     const stickerFiles = Array.from(createStickersInputRef.current?.files ?? [])
     if (stickerFiles.length === 0) {
-      setError("Select at least one sticker PNG.")
+      setError("Choose at least one sticker PNG")
       return
     }
 
     const filesOk = stickerFiles.every((file) => !file.type || ACCEPTED_IMAGE_MIME_TYPES.has(file.type))
     if (!filesOk) {
-      setError("All stickers must be PNG files.")
+      setError("Stickers must be PNG files")
       return
     }
 
     const coverOk = cover ? (!cover.type || ACCEPTED_IMAGE_MIME_TYPES.has(cover.type)) : true
     if (!coverOk) {
-      setError("Cover must be a PNG file.")
+      setError("The cover must be a PNG file")
       return
     }
 
     const sortedStickerFiles = stickerFiles.slice().sort((a, b) => a.name.localeCompare(b.name))
     const resolvedCover = cover ?? sortedStickerFiles[0]
     if (!resolvedCover) {
-      setError("Select at least one sticker PNG.")
+      setError("Choose at least one sticker PNG")
       return
     }
 
@@ -348,13 +301,13 @@ export default function StickerAdminPage() {
             throw new Error(body?.message ?? "Unable to create sticker pack")
           }
           const created = (await response.json()) as StickerPackAdminSummary
-          setStatus(`Created ${created.title} (${created.packKey} v${created.packVersion}). Uploading stickers...`)
+          setStatus(`Created ${created.title}, ${created.packKey} v${created.packVersion}`)
 
           for (let i = 0; i < sortedStickerFiles.length; i += 1) {
             const file = sortedStickerFiles[i]
             const stickerId = file.name.replace(/\.[^.]+$/, "").trim()
             if (!stickerId) continue
-            setStatus(`Uploading ${stickerId} (${i + 1}/${sortedStickerFiles.length})...`)
+            setStatus(`Uploading ${i + 1} of ${sortedStickerFiles.length} · ${stickerId}`)
             const stickerForm = new FormData()
             stickerForm.set("stickerId", stickerId)
             stickerForm.set("sortOrder", String(i))
@@ -369,7 +322,7 @@ export default function StickerAdminPage() {
             }
           }
 
-          setStatus(`Uploaded ${sortedStickerFiles.length} sticker${sortedStickerFiles.length === 1 ? "" : "s"} to ${created.title}.`)
+          setStatus(`Uploaded ${stickerCountLabel(sortedStickerFiles.length)} to ${created.title}`)
           if (createCoverInputRef.current) createCoverInputRef.current.value = ""
           setCreatingCoverFileName(null)
           if (createStickersInputRef.current) createStickersInputRef.current.value = ""
@@ -388,7 +341,6 @@ export default function StickerAdminPage() {
 
   const onUpdatePack = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!isUnlocked) return
     if (!openPack) return
 
     const form = event.currentTarget
@@ -421,7 +373,7 @@ export default function StickerAdminPage() {
             const body = await response.json().catch(() => null)
             throw new Error(body?.message ?? "Unable to update sticker pack")
           }
-          setStatus("Pack updated.")
+          setStatus("Pack saved")
           loadAdminCatalog()
           openPackDialog(openPack.packKey, openPack.packVersion)
         } catch (err) {
@@ -433,7 +385,6 @@ export default function StickerAdminPage() {
 
   const onUploadStickers = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!isUnlocked) return
     if (!openPack) return
 
     const input = stickerUploadInputRef.current
@@ -442,7 +393,7 @@ export default function StickerAdminPage() {
 
     const hasInvalid = files.some((file) => Boolean(file.type) && !ACCEPTED_IMAGE_MIME_TYPES.has(file.type))
     if (hasInvalid) {
-      setError("All stickers must be PNG files.")
+      setError("Stickers must be PNG files")
       return
     }
 
@@ -460,7 +411,7 @@ export default function StickerAdminPage() {
             const file = files[i]
             const stickerId = file.name.replace(/\.[^.]+$/, "").trim()
             if (!stickerId) continue
-            setStickerUploadProgress(`Uploading ${stickerId} (${i + 1}/${files.length})...`)
+            setStickerUploadProgress(`Uploading ${i + 1} of ${files.length} · ${stickerId}`)
             const formData = new FormData()
             formData.set("stickerId", stickerId)
             formData.set("sortOrder", String(baseSortOrder + i))
@@ -481,8 +432,9 @@ export default function StickerAdminPage() {
           }
 
           if (input) input.value = ""
+          setStickerUploadSelection(null)
           setStickerUploadProgress(null)
-          setStatus(`Uploaded ${files.length} sticker${files.length === 1 ? "" : "s"}.`)
+          setStatus(`Uploaded ${stickerCountLabel(files.length)}`)
           openPackDialog(openPack.packKey, openPack.packVersion)
           loadAdminCatalog()
         } catch (err) {
@@ -497,19 +449,18 @@ export default function StickerAdminPage() {
 
   const onUpdateCover = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!isUnlocked) return
     if (!openPack) return
     if (isUpdatingCover || isPending) return
 
     const file = coverUpdateInputRef.current?.files?.[0] ?? null
     if (!file) {
-      setError("Choose a PNG cover image.")
+      setError("Choose a PNG cover")
       return
     }
 
     const ok = !file.type || ACCEPTED_IMAGE_MIME_TYPES.has(file.type)
     if (!ok) {
-      setError("Cover must be a PNG file.")
+      setError("The cover must be a PNG file")
       return
     }
 
@@ -535,7 +486,7 @@ export default function StickerAdminPage() {
           }
           if (coverUpdateInputRef.current) coverUpdateInputRef.current.value = ""
           setCoverUpdateFileName(null)
-          setStatus("Cover image updated.")
+          setStatus("Cover updated")
           openPackDialog(openPack.packKey, openPack.packVersion)
           loadAdminCatalog()
         } catch (err) {
@@ -548,9 +499,9 @@ export default function StickerAdminPage() {
   }
 
   const deleteOpenPack = () => {
-    if (!isUnlocked || !openPack || isDeletingPack) return
+    if (!openPack || isDeletingPack) return
     const label = openPackDetail?.title?.trim() ? `"${openPackDetail.title}"` : `${openPack.packKey} v${openPack.packVersion}`
-    const ok = window.confirm(`Delete sticker pack ${label}? This will remove the pack and all its stickers.`)
+    const ok = window.confirm(`Delete sticker pack ${label}? This removes the pack and all its stickers.`)
     if (!ok) return
 
     setIsDeletingPack(true)
@@ -567,7 +518,7 @@ export default function StickerAdminPage() {
           throw new Error(body?.message ?? "Unable to delete sticker pack")
         }
         closePackDialog()
-        setStatus("Sticker pack deleted.")
+        setStatus("Pack deleted")
         loadAdminCatalog()
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to delete sticker pack")
@@ -577,484 +528,425 @@ export default function StickerAdminPage() {
     })()
   }
 
-  if (!isUnlocked) {
-    return (
-      <main className="min-h-screen bg-background text-foreground">
-        <header className="mx-auto flex w-full max-w-[94rem] items-center justify-between px-5 py-6 sm:px-8 lg:px-10">
-          <Link href="/" className="text-sm font-semibold tracking-[-0.03em] text-brand">
-            mulberry
-          </Link>
-          <Link href="/" className="text-sm font-medium text-muted-foreground transition hover:text-foreground">
-            Home
-          </Link>
-        </header>
+  const selected =
+    openPackDetail &&
+    openPack &&
+    openPackDetail.packKey === openPack.packKey &&
+    openPackDetail.packVersion === openPack.packVersion
+      ? openPackDetail
+      : null
+  const defaultStartSortOrder = selected?.stickers?.length ?? 0
+  const totalStickers = packs.reduce((sum, pack) => sum + pack.stickerCount, 0)
 
-        <section className="mx-auto flex min-h-[70vh] max-w-xl flex-col items-center justify-center px-5 pb-14 text-center sm:px-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.42em] text-brand/80">Sticker admin</p>
-          <h1 className="mt-5 text-4xl font-semibold tracking-[-0.065em] sm:text-5xl">Unlock the catalog.</h1>
-          <p className="mt-4 max-w-md text-sm leading-6 text-muted-foreground">
-            Enter the admin password once. This browser will remember it for future uploads and catalog edits.
-          </p>
-
-          <form onSubmit={unlockAdmin} className="mt-9 w-full space-y-4">
-            <label className="block w-full text-left">
-              <span className="sr-only">Admin password</span>
-              <input
-                type="password"
-                value={passwordInput}
-                onChange={(event) => setPasswordInput(event.target.value)}
-                placeholder="Admin password"
-                autoFocus
-                className="h-14 w-full rounded-2xl border border-soft-border bg-elevated px-5 text-base font-medium text-elevated-foreground outline-none transition placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/10"
-              />
-            </label>
-            <Button type="submit" disabled={passwordInput.trim().length === 0 || isPending} className="h-16 w-full rounded-2xl text-base">
-              {isPending ? "Checking..." : "Continue"}
-            </Button>
-            {error ? <p className="text-sm font-semibold text-red-700">{error}</p> : null}
-          </form>
-        </section>
-      </main>
-    )
+  const startCreating = () => {
+    setStatus(null)
+    setError(null)
+    setIsCreatingView(true)
   }
 
-  const selected = openPackDetail
-  const defaultStartSortOrder = selected?.stickers?.length ?? 0
+  const messages =
+    status || error ? (
+      <div className="flex flex-col gap-1">
+        {status ? <StatusLine tone="neutral">{status}</StatusLine> : null}
+        {error ? <StatusLine tone="error">{error}</StatusLine> : null}
+      </div>
+    ) : null
 
-  return (
-    <main className="min-h-screen bg-background text-foreground">
-      <header className="mx-auto flex w-full max-w-[94rem] items-center justify-between px-5 py-6 sm:px-8 lg:px-10">
-        <Link href="/" className="text-sm font-semibold tracking-[-0.03em] text-brand">
-          mulberry
-        </Link>
-        <div className="flex items-center gap-6 text-sm font-medium text-muted-foreground">
-          <button
-            type="button"
-            onClick={() => loadAdminCatalog()}
-            className="inline-flex transition-all duration-200 ease-out hover:text-foreground active:scale-[0.97]"
-          >
-            Refresh
-          </button>
-          <button
-            type="button"
-            onClick={lockAdmin}
-            className="inline-flex transition-all duration-200 ease-out hover:text-foreground active:scale-[0.97]"
-          >
-            Lock
-          </button>
-          <Link href="/admin/wallpapers" className="transition hover:text-foreground">
-            Wallpapers
-          </Link>
-          <Link href="/" className="transition hover:text-foreground">
-            Home
-          </Link>
-        </div>
+  const createView = (
+    <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-6 py-6">
+      <header className="flex items-center justify-between gap-4">
+        <h2 className="text-lg font-medium leading-7 text-admin-fg">New pack version</h2>
+        <AdminButton variant="ghost" onClick={() => setIsCreatingView(false)} disabled={isCreatingPack}>
+          Cancel
+        </AdminButton>
       </header>
 
-      <section className="mx-auto flex max-w-xl flex-col items-center px-5 pb-14 pt-6 text-center sm:px-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.42em] text-brand/80">Sticker admin</p>
-        <h1 className="mt-5 text-4xl font-semibold tracking-[-0.065em] sm:text-5xl">Curate the sticker shelf.</h1>
-        <p className="mt-4 max-w-md text-sm leading-6 text-muted-foreground">
-          Create a pack version, then open it to upload sticker PNGs.
-        </p>
+      {messages}
 
-        <form onSubmit={onCreatePack} className="mt-9 w-full space-y-4 text-left">
-          <fieldset disabled={isCreatingPack || isPending} className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="space-y-2">
-                <span className="text-xs font-semibold text-muted-foreground">Pack key</span>
-                <input
-                  name="packKey"
-                  required
-                  placeholder="kawaii-cats"
-                  className="h-12 w-full rounded-2xl border border-soft-border bg-elevated px-4 text-sm font-medium outline-none transition placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/10"
-                />
-              </label>
-              <label className="space-y-2">
-                <span className="text-xs font-semibold text-muted-foreground">Version</span>
-                <input
-                  name="packVersion"
-                  required
-                  defaultValue={1}
-                  type="number"
-                  min={1}
-                  className="h-12 w-full rounded-2xl border border-soft-border bg-elevated px-4 text-sm font-medium outline-none transition placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/10"
-                />
-              </label>
-            </div>
-
-            <label className="space-y-2">
-              <span className="text-xs font-semibold text-muted-foreground">Title</span>
+      <form onSubmit={onCreatePack}>
+        <fieldset disabled={isCreatingPack || isPending} className="flex flex-col gap-6">
+          <div className="divide-y divide-admin-line rounded-xl bg-admin-fill px-5 py-1">
+            <PropertyRow label="Pack key" htmlFor="new-pack-key">
               <input
-                name="title"
+                id="new-pack-key"
+                name="packKey"
                 required
-                placeholder="Kawaii Cats"
-                className="h-12 w-full rounded-2xl border border-soft-border bg-elevated px-4 text-sm font-medium outline-none transition placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/10"
+                placeholder="kawaii-cats"
+                className={cn(fieldClass, "font-mono")}
               />
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-xs font-semibold text-muted-foreground">Description</span>
+            </PropertyRow>
+            <PropertyRow label="Version" htmlFor="new-pack-version">
+              <input
+                id="new-pack-version"
+                name="packVersion"
+                required
+                defaultValue={1}
+                type="number"
+                min={1}
+                className={cn(numberFieldClass, "w-28")}
+              />
+            </PropertyRow>
+            <PropertyRow label="Title" htmlFor="new-pack-title">
+              <input id="new-pack-title" name="title" required placeholder="Kawaii Cats" className={fieldClass} />
+            </PropertyRow>
+            <PropertyRow label="Description" htmlFor="new-pack-description" align="start">
               <textarea
+                id="new-pack-description"
                 name="description"
                 rows={3}
                 placeholder="Optional"
-                className="w-full resize-none rounded-2xl border border-soft-border bg-elevated px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/10"
+                className={textareaClass}
               />
-            </label>
+            </PropertyRow>
+            <PropertyRow label="Sort order" htmlFor="new-pack-sort">
+              <input
+                id="new-pack-sort"
+                name="sortOrder"
+                defaultValue={0}
+                type="number"
+                className={cn(numberFieldClass, "w-28")}
+              />
+            </PropertyRow>
+            <PropertyRow label="Featured" htmlFor="new-pack-featured">
+              <Switch id="new-pack-featured" name="featured" defaultChecked />
+            </PropertyRow>
+            <PropertyRow label="Published" htmlFor="new-pack-published">
+              <Switch id="new-pack-published" name="published" defaultChecked />
+            </PropertyRow>
+          </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="space-y-2">
-                <span className="text-xs font-semibold text-muted-foreground">Sort order</span>
+          <section className="flex flex-col gap-3">
+            <SectionLabel>Artwork</SectionLabel>
+            <div className="flex flex-col gap-2 rounded-2xl bg-admin-fill p-2">
+              <Dropzone
+                icon={Upload}
+                title={creatingStickerFileNames ?? "Choose stickers"}
+                hint="PNG files, or drop them here"
+                isActive={isDraggingStickers}
+                onDragEnter={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  createStickerDragDepthRef.current += 1
+                  setIsDraggingStickers(true)
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  createStickerDragDepthRef.current = Math.max(0, createStickerDragDepthRef.current - 1)
+                  if (createStickerDragDepthRef.current === 0) setIsDraggingStickers(false)
+                }}
+                onDrop={onDropCreateStickers}
+              >
                 <input
-                  name="sortOrder"
-                  defaultValue={0}
+                  ref={createStickersInputRef}
+                  type="file"
+                  name="stickers"
+                  accept="image/png"
+                  multiple
+                  required
+                  className="sr-only"
+                  onChange={(event) => applyCreateStickerFiles(event.target.files)}
+                />
+              </Dropzone>
+              <Dropzone
+                icon={ImagePlus}
+                title={creatingCoverFileName ?? "Choose cover"}
+                hint="Optional, the first sticker otherwise"
+              >
+                <input
+                  ref={createCoverInputRef}
+                  type="file"
+                  name="cover"
+                  accept="image/png"
+                  className="sr-only"
+                  onChange={(event) => applyCoverFile(event.target.files?.[0] ?? null)}
+                />
+              </Dropzone>
+            </div>
+          </section>
+
+          <div className="flex justify-end">
+            <AdminButton type="submit" className="h-9" disabled={isCreatingPack}>
+              {isCreatingPack ? <Spinner /> : "Create pack version"}
+            </AdminButton>
+          </div>
+        </fieldset>
+      </form>
+    </div>
+  )
+
+  const detailView = selected ? (
+    <div
+      key={`${selected.packKey}:${selected.packVersion}:${selected.updatedAt}`}
+      className="mx-auto flex w-full max-w-[960px] flex-col gap-6 px-6 py-6"
+    >
+      <header className="flex items-center gap-4">
+        <div className="size-14 shrink-0 rounded-xl bg-admin-fill p-1.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={selected.coverThumbnailUrl} alt="" className="h-full w-full object-contain" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-lg font-medium leading-7 text-admin-fg">{selected.title}</h2>
+          <p className="truncate font-mono text-xs tabular-nums text-admin-muted">
+            {selected.packKey} · v{selected.packVersion} · {stickerCountLabel(selected.stickers?.length ?? 0)}
+          </p>
+        </div>
+        <div className="flex items-center gap-4">
+          {isPending ? <Spinner className="text-admin-muted" /> : null}
+          {selected.featured ? <span className="text-xs text-admin-fg-2">Featured</span> : null}
+          <PublishState published={selected.published} />
+        </div>
+      </header>
+
+      <Segmented value={detailTab} options={DETAIL_TABS} onChange={setDetailTab} />
+
+      {messages}
+
+      {detailTab === "stickers" ? (
+        <div className="flex flex-col gap-6">
+          <form onSubmit={onUploadStickers} className="flex flex-col gap-2">
+            <fieldset
+              disabled={isUploadingStickers || isPending}
+              className="flex flex-col gap-2 rounded-2xl bg-admin-fill p-2 sm:flex-row sm:items-center"
+            >
+              <Dropzone
+                icon={Upload}
+                title={stickerUploadSelection ?? "Add stickers"}
+                hint="PNG files, named by sticker ID"
+                className="flex-1"
+              >
+                <input
+                  ref={stickerUploadInputRef}
+                  type="file"
+                  accept="image/png"
+                  multiple
+                  className="sr-only"
+                  onChange={(event) => {
+                    const count = event.target.files?.length ?? 0
+                    setStickerUploadSelection(count > 0 ? stickerCountLabel(count, "selected") : null)
+                  }}
+                />
+              </Dropzone>
+              <label className="flex h-14 items-center gap-3 rounded-ctl border border-admin-line-strong bg-admin-panel px-3">
+                <span className="text-xs text-admin-muted">Start at</span>
+                <input
+                  name="startSortOrder"
                   type="number"
-                  className="h-12 w-full rounded-2xl border border-soft-border bg-elevated px-4 text-sm font-medium outline-none transition placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/10"
+                  defaultValue={defaultStartSortOrder}
+                  className="w-12 bg-transparent font-mono text-sm tabular-nums text-admin-fg outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </label>
-              <div className="flex items-end justify-between gap-3">
-                <label className="inline-flex items-center gap-2 rounded-2xl border border-soft-border bg-elevated px-4 py-3 text-sm font-medium">
-                  <input name="featured" type="checkbox" defaultChecked className="h-4 w-4 accent-brand" />
-                  Featured
-                </label>
-                <label className="inline-flex items-center gap-2 rounded-2xl border border-soft-border bg-elevated px-4 py-3 text-sm font-medium">
-                  <input name="published" type="checkbox" defaultChecked className="h-4 w-4 accent-brand" />
-                  Published
-                </label>
-              </div>
-            </div>
+              <AdminButton type="submit" className="h-9 sm:mx-2" disabled={!stickerUploadSelection}>
+                {isUploadingStickers ? <Spinner /> : "Upload"}
+              </AdminButton>
+            </fieldset>
 
-            <label className="group block cursor-pointer rounded-[2rem] border-2 border-dashed bg-soft-surface px-6 py-10 text-center transition hover:border-brand hover:bg-soft-surface-hover focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10">
-              <input
-                ref={createCoverInputRef}
-                type="file"
-                name="cover"
-                accept="image/png"
-                className="sr-only"
-                onChange={(event) => applyCoverFile(event.target.files?.[0] ?? null)}
-              />
-              <span className="block text-lg font-semibold tracking-[-0.04em]">
-                {creatingCoverFileName ?? "Upload cover PNG (optional)"}
-              </span>
-              <span className="mt-2 block text-xs font-medium text-muted-foreground">
-                If omitted, the first sticker becomes the cover.
-              </span>
-            </label>
+            {stickerUploadProgress ? (
+              <p className="px-2 font-mono text-xs tabular-nums text-admin-muted">{stickerUploadProgress}</p>
+            ) : null}
+          </form>
 
-            <label
-              className={[
-                "group block cursor-pointer rounded-[2rem] border-2 border-dashed bg-soft-surface px-6 py-10 text-center transition focus-within:ring-4 focus-within:ring-brand/10",
-                isDraggingStickers
-                  ? "border-brand bg-soft-surface-hover"
-                  : "border-soft-border hover:border-brand hover:bg-soft-surface-hover focus-within:border-brand",
-              ].join(" ")}
-              onDragEnter={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                createStickerDragDepthRef.current += 1
-                setIsDraggingStickers(true)
-              }}
-              onDragOver={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-              }}
-              onDragLeave={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                createStickerDragDepthRef.current = Math.max(0, createStickerDragDepthRef.current - 1)
-                if (createStickerDragDepthRef.current === 0) setIsDraggingStickers(false)
-              }}
-              onDrop={onDropCreateStickers}
-            >
-              <input
-                ref={createStickersInputRef}
-                type="file"
-                name="stickers"
-                accept="image/png"
-                multiple
-                required
-                className="sr-only"
-                onChange={(event) => applyCreateStickerFiles(event.target.files)}
-              />
-              <span className="block text-lg font-semibold tracking-[-0.04em]">
-                {creatingStickerFileNames ?? "Upload stickers (PNG, multiple)"}
-              </span>
-              <span className="mt-2 block text-xs font-medium text-muted-foreground">
-                Drag and drop all sticker PNGs here.
-              </span>
-            </label>
-
-            <Button type="submit" className="h-16 w-full rounded-2xl text-base" disabled={isCreatingPack}>
-              {isCreatingPack ? (
-                <>
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                "Create pack version"
-              )}
-            </Button>
-          </fieldset>
-
-          {status ? <p className="text-sm font-semibold text-brand">{status}</p> : null}
-          {error ? <p className="text-sm font-semibold text-red-700">{error}</p> : null}
-        </form>
-      </section>
-
-      <section className="mx-auto w-full max-w-[98rem] px-5 pb-24 sm:px-8 lg:px-10">
-        {packs.length === 0 ? (
-          <div className="rounded-[2rem] border border-dashed border-soft-border bg-soft-surface px-6 py-16 text-center text-sm font-medium text-muted-foreground">
-            No sticker packs yet.
-          </div>
-        ) : (
-          <div className="grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {packs.map((pack) => (
-              <article key={`${pack.packKey}:${pack.packVersion}`} className="min-w-0">
-                <button type="button" onClick={() => openPackDialog(pack.packKey, pack.packVersion)} className="w-full text-left">
-                  <div className="relative aspect-[171/103] overflow-hidden rounded-[1.65rem] bg-brand-soft">
+          {selected.stickers?.length ? (
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-x-3 gap-y-4">
+              {selected.stickers.map((sticker) => (
+                <li key={sticker.stickerId} className="min-w-0" title={sticker.stickerId}>
+                  <div className="aspect-square rounded-xl bg-admin-fill p-3 transition-[background-color] duration-150 ease-admin hover:bg-admin-fill-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={pack.coverThumbnailUrl} alt={pack.title} className="h-full w-full object-cover" loading="lazy" />
-                    {pack.featured ? (
-                      <div className="absolute left-4 top-4 rounded-full bg-elevated px-3 py-1 text-[11px] font-semibold text-brand shadow-sm">
-                        Featured
-                      </div>
-                    ) : null}
+                    <img
+                      src={sticker.thumbnailUrl}
+                      alt={sticker.stickerId}
+                      className="h-full w-full object-contain"
+                      loading="lazy"
+                    />
                   </div>
-
-                  <div className="mt-4 space-y-2">
-                    <h3 className="text-lg font-semibold tracking-[-0.04em] text-foreground">{pack.title}</h3>
-                    {pack.description ? (
-                      <p className="text-sm leading-6 text-muted-foreground">{pack.description}</p>
-                    ) : (
-                      <p className="text-sm leading-6 text-muted-foreground">
-                        {pack.packKey} · v{pack.packVersion}
-                      </p>
-                    )}
-                    <p className="text-xs font-semibold text-muted-foreground">
-                      {pack.stickerCount} sticker{pack.stickerCount === 1 ? "" : "s"} ·{" "}
-                      {pack.published ? "Published" : "Draft"}
-                    </p>
-                  </div>
-                </button>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {openPack ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.currentTarget !== event.target) return
-            closePackDialog()
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Sticker pack"
-            className="relative w-full max-w-4xl overflow-hidden rounded-[2rem] border border-soft-border bg-background shadow-xl"
-          >
-            <header className="flex items-start justify-between gap-4 border-b border-soft-border bg-soft-surface px-6 py-5">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.42em] text-brand/80">Sticker pack</p>
-                <h2 className="mt-2 truncate text-2xl font-semibold tracking-[-0.05em]">
-                  {selected?.title ?? `${openPack.packKey} v${openPack.packVersion}`}
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {openPack.packKey} · v{openPack.packVersion}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                {isPending ? <LoaderCircle className="h-5 w-5 animate-spin text-muted-foreground" /> : null}
-                <button
-                  type="button"
-                  onClick={deleteOpenPack}
-                  disabled={isDeletingPack || isPending}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soft-border bg-elevated text-muted-foreground transition hover:text-red-600 active:scale-[0.97] disabled:opacity-40"
-                  aria-label="Delete pack"
-                >
-                  {isDeletingPack ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={closePackDialog}
-                  disabled={isDeletingPack}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soft-border bg-elevated text-muted-foreground transition hover:text-foreground active:scale-[0.97] disabled:opacity-40"
-                  aria-label="Close"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </header>
-
-            <div className="max-h-[calc(100vh-12rem)] overflow-y-auto px-6 py-6">
-              {!selected ? (
-                <div className="rounded-[2rem] border border-dashed border-soft-border bg-soft-surface px-6 py-16 text-center text-sm font-medium text-muted-foreground">
-                  Loading…
-                </div>
-              ) : (
-                <>
-                  <form onSubmit={onUpdatePack} className="space-y-4">
-                    <fieldset disabled={isPending || isUploadingStickers || isCreatingPack} className="space-y-4">
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="space-y-2">
-                          <span className="text-xs font-semibold text-muted-foreground">Title</span>
-                          <input
-                            name="title"
-                            required
-                            defaultValue={selected.title}
-                            className="h-12 w-full rounded-2xl border border-soft-border bg-elevated px-4 text-sm font-medium outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
-                          />
-                        </label>
-                        <label className="space-y-2">
-                          <span className="text-xs font-semibold text-muted-foreground">Sort order</span>
-                          <input
-                            name="sortOrder"
-                            type="number"
-                            defaultValue={selected.sortOrder ?? 0}
-                            className="h-12 w-full rounded-2xl border border-soft-border bg-elevated px-4 text-sm font-medium outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
-                          />
-                        </label>
-                      </div>
-
-                      <label className="space-y-2">
-                        <span className="text-xs font-semibold text-muted-foreground">Description</span>
-                        <textarea
-                          name="description"
-                          rows={3}
-                          defaultValue={selected.description ?? ""}
-                          className="w-full resize-none rounded-2xl border border-soft-border bg-elevated px-4 py-3 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
-                        />
-                      </label>
-
-                      <div className="flex flex-wrap items-center gap-3">
-                        <label className="inline-flex items-center gap-2 rounded-2xl border border-soft-border bg-elevated px-4 py-3 text-sm font-medium">
-                          <input name="featured" type="checkbox" defaultChecked={Boolean(selected.featured)} className="h-4 w-4 accent-brand" />
-                          Featured
-                        </label>
-                        <label className="inline-flex items-center gap-2 rounded-2xl border border-soft-border bg-elevated px-4 py-3 text-sm font-medium">
-                          <input name="published" type="checkbox" defaultChecked={Boolean(selected.published)} className="h-4 w-4 accent-brand" />
-                          Published
-                        </label>
-                        <Button type="submit" className="h-11 rounded-2xl px-6">
-                          Save
-                        </Button>
-                      </div>
-                    </fieldset>
-                  </form>
-
-                  <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
-                    <div className="space-y-6">
-                      <section className="rounded-[1.6rem] border border-soft-border bg-soft-surface p-4">
-                        <h3 className="text-sm font-semibold tracking-[-0.03em]">Cover image</h3>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">Upload a new PNG to replace the pack cover.</p>
-
-                        <div className="mt-4 overflow-hidden rounded-2xl border border-soft-border bg-elevated">
-                          <div className="aspect-square w-full bg-background">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={selected.coverThumbnailUrl} alt={`${selected.title} cover`} className="h-full w-full object-cover" loading="lazy" />
-                          </div>
-                        </div>
-
-                        <form onSubmit={onUpdateCover} className="mt-4 space-y-3">
-                          <fieldset disabled={isUpdatingCover || isPending} className="space-y-3">
-                            <label className="block cursor-pointer rounded-[1.4rem] border-2 border-dashed border-soft-border bg-elevated px-4 py-5 text-center transition hover:border-brand hover:bg-soft-surface-hover focus-within:ring-4 focus-within:ring-brand/10">
-                              <input
-                                ref={coverUpdateInputRef}
-                                type="file"
-                                accept="image/png"
-                                className="sr-only"
-                                onChange={(event) => applyCoverUpdateFile(event.target.files?.[0] ?? null)}
-                              />
-                              <span className="block text-sm font-semibold">
-                                {coverUpdateFileName ? coverUpdateFileName : isUpdatingCover ? "Updating..." : "Choose PNG cover"}
-                              </span>
-                              <span className="mt-1 block text-xs font-medium text-muted-foreground">PNG only</span>
-                            </label>
-
-                            <Button type="submit" disabled={!coverUpdateFileName} className="h-11 w-full rounded-2xl">
-                              {isUpdatingCover ? "Updating..." : "Update cover"}
-                            </Button>
-                          </fieldset>
-                        </form>
-                      </section>
-
-                      <section className="rounded-[1.6rem] border border-soft-border bg-soft-surface p-4">
-                        <h3 className="text-sm font-semibold tracking-[-0.03em]">Upload stickers</h3>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          Select multiple PNG files. Sticker IDs are derived from filenames.
-                        </p>
-
-                        <form onSubmit={onUploadStickers} className="mt-4 space-y-3">
-                          <fieldset disabled={isUploadingStickers || isPending} className="space-y-3">
-                            <label className="space-y-2">
-                              <span className="text-[11px] font-semibold text-muted-foreground">Start sort order</span>
-                              <input
-                                name="startSortOrder"
-                                type="number"
-                                defaultValue={defaultStartSortOrder}
-                                className="h-11 w-full rounded-2xl border border-soft-border bg-elevated px-4 text-sm font-medium outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
-                              />
-                            </label>
-
-                            <label className="block cursor-pointer rounded-[1.4rem] border-2 border-dashed border-soft-border bg-elevated px-4 py-6 text-center transition hover:border-brand hover:bg-soft-surface-hover focus-within:ring-4 focus-within:ring-brand/10">
-                              <input ref={stickerUploadInputRef} type="file" accept="image/png" multiple className="sr-only" />
-                              <span className="block text-sm font-semibold">
-                                {isUploadingStickers ? "Uploading..." : "Choose PNG stickers"}
-                              </span>
-                              <span className="mt-1 block text-xs font-medium text-muted-foreground">PNG only</span>
-                            </label>
-
-                            <Button type="submit" className="h-11 w-full rounded-2xl">
-                              {isUploadingStickers ? "Uploading..." : "Upload"}
-                            </Button>
-                          </fieldset>
-
-                          {stickerUploadProgress ? (
-                            <p className="text-xs font-semibold text-muted-foreground">{stickerUploadProgress}</p>
-                          ) : null}
-                        </form>
-                      </section>
-                    </div>
-
-                    <section className="rounded-[1.6rem] border border-soft-border bg-soft-surface p-4">
-                      <h3 className="text-sm font-semibold tracking-[-0.03em]">Stickers</h3>
-                      {selected.stickers?.length ? (
-                        <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
-                          {selected.stickers.map((sticker) => (
-                            <div
-                              key={sticker.stickerId}
-                              className="rounded-2xl border border-soft-border bg-elevated p-2"
-                              title={sticker.stickerId}
-                            >
-                              <div className="aspect-square overflow-hidden rounded-xl bg-background">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={sticker.thumbnailUrl} alt={sticker.stickerId} className="h-full w-full object-contain" loading="lazy" />
-                              </div>
-                              <p className="mt-2 truncate text-[11px] font-semibold text-muted-foreground">
-                                {sticker.stickerId}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="mt-4 text-sm text-muted-foreground">No stickers uploaded yet.</p>
-                      )}
-                    </section>
-                  </div>
-                </>
-              )}
-
-              {status ? <p className="mt-6 text-sm font-semibold text-brand">{status}</p> : null}
-              {error ? <p className="mt-2 text-sm font-semibold text-red-700">{error}</p> : null}
-            </div>
-          </div>
+                  <p className="mt-2 truncate px-0.5 font-mono text-xs text-admin-muted">{sticker.stickerId}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState icon={Sticker} title="No stickers yet" />
+          )}
         </div>
-      ) : null}
-    </main>
+      ) : (
+        <div className="flex flex-col gap-8">
+          <form onSubmit={onUpdatePack}>
+            <fieldset disabled={isPending || isUploadingStickers || isCreatingPack} className="flex flex-col gap-3">
+              <div className="divide-y divide-admin-line rounded-xl bg-admin-fill px-5 py-1">
+                <PropertyRow label="Title" htmlFor="pack-title">
+                  <input id="pack-title" name="title" required defaultValue={selected.title} className={fieldClass} />
+                </PropertyRow>
+                <PropertyRow label="Description" htmlFor="pack-description" align="start">
+                  <textarea
+                    id="pack-description"
+                    name="description"
+                    rows={2}
+                    defaultValue={selected.description ?? ""}
+                    placeholder="Optional"
+                    className={textareaClass}
+                  />
+                </PropertyRow>
+                <PropertyRow label="Sort order" htmlFor="pack-sort">
+                  <input
+                    id="pack-sort"
+                    name="sortOrder"
+                    type="number"
+                    defaultValue={selected.sortOrder ?? 0}
+                    className={cn(numberFieldClass, "w-28")}
+                  />
+                </PropertyRow>
+                <PropertyRow label="Featured" htmlFor="pack-featured">
+                  <Switch id="pack-featured" name="featured" defaultChecked={Boolean(selected.featured)} />
+                </PropertyRow>
+                <PropertyRow label="Published" htmlFor="pack-published">
+                  <Switch id="pack-published" name="published" defaultChecked={Boolean(selected.published)} />
+                </PropertyRow>
+              </div>
+              <div className="flex justify-end">
+                <AdminButton type="submit" className="h-9 min-w-20">
+                  Save
+                </AdminButton>
+              </div>
+            </fieldset>
+          </form>
+
+          <section className="flex flex-col gap-3">
+            <SectionLabel>Cover</SectionLabel>
+            <form onSubmit={onUpdateCover}>
+              <fieldset
+                disabled={isUpdatingCover || isPending}
+                className="flex flex-col gap-2 rounded-2xl bg-admin-fill p-2 sm:flex-row sm:items-center"
+              >
+                <div className="size-14 shrink-0 rounded-ctl bg-admin-panel p-1.5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={selected.coverThumbnailUrl}
+                    alt={`${selected.title} cover`}
+                    className="h-full w-full object-contain"
+                    loading="lazy"
+                  />
+                </div>
+                <Dropzone icon={ImagePlus} title={coverUpdateFileName ?? "Choose a new cover"} hint="PNG" className="flex-1">
+                  <input
+                    ref={coverUpdateInputRef}
+                    type="file"
+                    accept="image/png"
+                    className="sr-only"
+                    onChange={(event) => applyCoverUpdateFile(event.target.files?.[0] ?? null)}
+                  />
+                </Dropzone>
+                <AdminButton type="submit" variant="secondary" disabled={!coverUpdateFileName} className="h-9 sm:mx-2">
+                  {isUpdatingCover ? <Spinner /> : "Replace"}
+                </AdminButton>
+              </fieldset>
+            </form>
+          </section>
+
+          <section className="flex items-center justify-between gap-4 rounded-xl border border-admin-line px-5 py-4">
+            <p className="text-sm text-admin-fg">Delete this pack and its stickers</p>
+            <AdminButton variant="danger" onClick={deleteOpenPack} disabled={isDeletingPack || isPending}>
+              {isDeletingPack ? <Spinner /> : "Delete"}
+            </AdminButton>
+          </section>
+        </div>
+      )}
+    </div>
+  ) : null
+
+  return (
+    <>
+      <TopBar
+        icon={Sticker}
+        title="Stickers"
+        meta={
+          packs.length > 0
+            ? `${packs.length} pack${packs.length === 1 ? "" : "s"} · ${stickerCountLabel(totalStickers)}`
+            : null
+        }
+      >
+        <AdminButton onClick={startCreating} disabled={isCreatingView}>
+          <Plus />
+          New pack
+        </AdminButton>
+      </TopBar>
+
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <aside
+          aria-label="Sticker packs"
+          className="shrink-0 border-b border-admin-line lg:w-80 lg:overflow-y-auto lg:border-b-0 lg:border-r"
+        >
+          {packs.length === 0 ? (
+            <EmptyState icon={Sticker} title="No sticker packs yet" />
+          ) : (
+            <ul className="flex flex-col gap-0.5 p-2">
+              {packs.map((pack) => {
+                const isActive =
+                  !isCreatingView &&
+                  openPack?.packKey === pack.packKey &&
+                  openPack.packVersion === pack.packVersion
+                return (
+                  <li key={`${pack.packKey}:${pack.packVersion}`}>
+                    <button
+                      type="button"
+                      aria-current={isActive ? "true" : undefined}
+                      onClick={() => {
+                        setDetailTab("stickers")
+                        setStickerUploadSelection(null)
+                        openPackDialog(pack.packKey, pack.packVersion)
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-xl p-1.5 pr-3 text-left outline-none",
+                        "transition-[background-color] duration-150 ease-admin focus-visible:ring-2 focus-visible:ring-admin-fg/20",
+                        isActive ? "bg-admin-fill-2" : "hover:bg-admin-fill"
+                      )}
+                    >
+                      <span className="size-11 shrink-0 rounded-tag bg-admin-fill p-1">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={pack.coverThumbnailUrl} alt="" className="h-full w-full object-contain" loading="lazy" />
+                      </span>
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-sm text-admin-fg">{pack.title}</span>
+                        <span className="truncate font-mono text-xs text-admin-muted">
+                          {pack.packKey} · v{pack.packVersion}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2 font-mono text-xs tabular-nums text-admin-muted">
+                        {pack.stickerCount}
+                        {pack.published ? <LiveDot /> : null}
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </aside>
+
+        <section className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+          {isCreatingView ? (
+            createView
+          ) : detailView ? (
+            detailView
+          ) : openPack ? (
+            <div className="flex h-full min-h-64 items-center justify-center text-admin-muted">
+              <Spinner />
+            </div>
+          ) : (
+            <div className="flex h-full flex-col">
+              {messages ? <div className="px-6 pt-6">{messages}</div> : null}
+              <EmptyState icon={Sticker} title="Choose a pack, or start a new one" />
+            </div>
+          )}
+        </section>
+      </div>
+    </>
   )
+}
+
+function stickerCountLabel(count: number, suffix?: string): string {
+  const base = `${count} sticker${count === 1 ? "" : "s"}`
+  return suffix ? `${base} ${suffix}` : base
 }

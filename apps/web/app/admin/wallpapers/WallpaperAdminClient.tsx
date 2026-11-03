@@ -1,13 +1,25 @@
 "use client"
 
-import { LoaderCircle, Trash2 } from "lucide-react"
-import Link from "next/link"
-import { FormEvent, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { ImageIcon, ImagePlus, Trash2 } from "lucide-react"
+import { FormEvent, useEffect, useRef, useState, useTransition } from "react"
 
-import { Button } from "@/components/ui/button"
 import { API_BASE_URL } from "@/lib/constants"
 
-const ADMIN_PASSWORD_STORAGE_KEY = "mulberry.wallpaperAdminPassword"
+import { useAdmin } from "../AdminShell"
+import {
+  AdminButton,
+  Dropzone,
+  EmptyState,
+  Field,
+  fieldClass,
+  IconButton,
+  PublishState,
+  Spinner,
+  StatusLine,
+  textareaClass,
+  TopBar
+} from "../ui"
+
 const ACCEPTED_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
 
 type WallpaperItem = {
@@ -30,8 +42,7 @@ type CatalogResponse = {
 }
 
 export default function WallpaperAdminPage() {
-  const [passwordInput, setPasswordInput] = useState("")
-  const [adminPassword, setAdminPassword] = useState("")
+  const { adminHeaders } = useAdmin()
   const [items, setItems] = useState<WallpaperItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
@@ -39,42 +50,29 @@ export default function WallpaperAdminPage() {
   const [isDraggingImage, setIsDraggingImage] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const dragDepthRef = useRef(0)
-  const isUnlocked = adminPassword.trim().length > 0
 
-  const adminHeaders = useMemo(
-    () => ({
-      "x-wallpaper-admin-password": adminPassword.trim(),
-    }),
-    [adminPassword],
-  )
-
-  const fetchAdminCatalog = async (password: string): Promise<WallpaperItem[]> => {
+  const fetchAdminCatalog = async (): Promise<WallpaperItem[]> => {
     const response = await fetch(`${API_BASE_URL}/admin/wallpapers`, {
       cache: "no-store",
-      headers: {
-        "x-wallpaper-admin-password": password,
-      },
+      headers: adminHeaders,
     })
     if (!response.ok) {
       const body = await response.json().catch(() => null)
-      throw new Error(body?.message ?? "Unable to unlock wallpaper admin")
+      throw new Error(body?.message ?? "Unable to load wallpaper catalog")
     }
     const body = (await response.json()) as CatalogResponse
     return body.items
   }
 
-  const loadAdminCatalog = (password = adminPassword) => {
-    const credential = password.trim()
-    if (!credential) return
-
+  const loadAdminCatalog = () => {
     startTransition(() => {
       void (async () => {
         setError(null)
         try {
-          const nextItems = await fetchAdminCatalog(credential)
+          const nextItems = await fetchAdminCatalog()
           setItems(nextItems)
         } catch (err) {
           setError(err instanceof Error ? err.message : "Unable to load wallpaper catalog")
@@ -84,49 +82,9 @@ export default function WallpaperAdminPage() {
   }
 
   useEffect(() => {
-    const storedPassword = window.localStorage.getItem(ADMIN_PASSWORD_STORAGE_KEY)
-    if (!storedPassword) return
-
-    setAdminPassword(storedPassword)
-    loadAdminCatalog(storedPassword)
+    loadAdminCatalog()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const unlockAdmin = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const credential = passwordInput.trim()
-    if (!credential) return
-
-    startTransition(() => {
-      void (async () => {
-        setError(null)
-        setStatus(null)
-        try {
-          const nextItems = await fetchAdminCatalog(credential)
-          window.localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, credential)
-          setAdminPassword(credential)
-          setPasswordInput("")
-          setItems(nextItems)
-        } catch (err) {
-          window.localStorage.removeItem(ADMIN_PASSWORD_STORAGE_KEY)
-          setAdminPassword("")
-          setItems([])
-          setError(err instanceof Error ? err.message : "Unable to unlock wallpaper admin")
-        }
-      })()
-    })
-  }
-
-  const lockAdmin = () => {
-    window.localStorage.removeItem(ADMIN_PASSWORD_STORAGE_KEY)
-    setAdminPassword("")
-    setPasswordInput("")
-    setItems([])
-    setError(null)
-    setStatus(null)
-    setSelectedFileName(null)
-    setIsDraggingImage(false)
-    dragDepthRef.current = 0
-  }
 
   const setFileInputValue = (file: File | null) => {
     const input = fileInputRef.current
@@ -161,7 +119,7 @@ export default function WallpaperAdminPage() {
 
     if (!isAcceptedMimeType || !isAcceptedExtension) {
       applySelectedFile(null)
-      setError("Unsupported file type. Use jpeg, jpg, png, or webp.")
+      setError("Use a JPG, PNG or WebP image")
       return
     }
 
@@ -170,7 +128,7 @@ export default function WallpaperAdminPage() {
 
   const onUpload = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!isUnlocked || isUploading || deletingId) return
+    if (isUploading || deletingId) return
 
     const form = event.currentTarget
     const data = new FormData(form)
@@ -190,7 +148,7 @@ export default function WallpaperAdminPage() {
         }
         form.reset()
         applySelectedFile(null)
-        setStatus("Wallpaper uploaded.")
+        setStatus("Wallpaper uploaded")
         loadAdminCatalog()
       } catch (err) {
         setError(err instanceof Error ? err.message : "Wallpaper upload failed")
@@ -201,7 +159,7 @@ export default function WallpaperAdminPage() {
   }
 
   const deleteWallpaper = (id: string) => {
-    if (!isUnlocked || isUploading || deletingId) return
+    if (isUploading || deletingId) return
 
     setDeletingId(id)
     void (async () => {
@@ -216,7 +174,7 @@ export default function WallpaperAdminPage() {
           const body = await response.json().catch(() => null)
           throw new Error(body?.message ?? "Unable to delete wallpaper")
         }
-        setStatus("Wallpaper deleted.")
+        setStatus("Wallpaper deleted")
         loadAdminCatalog()
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to delete wallpaper")
@@ -226,238 +184,120 @@ export default function WallpaperAdminPage() {
     })()
   }
 
-  if (!isUnlocked) {
-    return (
-      <main className="min-h-screen bg-background text-foreground">
-        <header className="mx-auto flex w-full max-w-[94rem] items-center justify-between px-5 py-6 sm:px-8 lg:px-10">
-          <Link href="/" className="text-sm font-semibold tracking-[-0.03em] text-brand">
-            mulberry
-          </Link>
-          <div className="flex items-center gap-6 text-sm font-medium text-muted-foreground">
-            <Link href="/admin/stickers" className="transition hover:text-foreground">
-              Stickers
-            </Link>
-            <Link href="/" className="transition hover:text-foreground">
-              Home
-            </Link>
-          </div>
-        </header>
-
-        <section className="mx-auto flex min-h-[70vh] max-w-xl flex-col items-center justify-center px-5 pb-14 text-center sm:px-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.42em] text-brand/80">
-            Wallpaper admin
-          </p>
-          <h1 className="mt-5 text-4xl font-semibold tracking-[-0.065em] sm:text-5xl">
-            Unlock the catalog.
-          </h1>
-          <p className="mt-4 max-w-md text-sm leading-6 text-muted-foreground">
-            Enter the admin password once. This browser will remember it for future uploads and
-            catalog edits.
-          </p>
-
-          <form onSubmit={unlockAdmin} className="mt-9 w-full space-y-4">
-            <label className="block text-left">
-              <span className="sr-only">Admin password</span>
-              <input
-                type="password"
-                value={passwordInput}
-                onChange={(event) => setPasswordInput(event.target.value)}
-                placeholder="Admin password"
-                autoFocus
-                className="h-14 w-full rounded-2xl border border-soft-border bg-elevated px-5 text-base font-medium text-elevated-foreground outline-none transition placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/10"
-              />
-            </label>
-            <Button
-              type="submit"
-              disabled={passwordInput.trim().length === 0 || isPending}
-              className="h-16 w-full rounded-2xl text-base"
-            >
-              {isPending ? "Checking..." : "Continue"}
-            </Button>
-            {error ? <p className="text-sm font-semibold text-red-700">{error}</p> : null}
-          </form>
-        </section>
-      </main>
-    )
-  }
-
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <header className="mx-auto flex w-full max-w-[94rem] items-center justify-between px-5 py-6 sm:px-8 lg:px-10">
-        <Link href="/" className="text-sm font-semibold tracking-[-0.03em] text-brand">
-          mulberry
-        </Link>
-        <div className="flex items-center gap-6 text-sm font-medium text-muted-foreground">
-          <button
-            type="button"
-            onClick={() => loadAdminCatalog()}
-            className="inline-flex transition-all duration-200 ease-out hover:text-foreground active:scale-[0.97]"
-          >
-            Refresh
-          </button>
-          <button
-            type="button"
-            onClick={lockAdmin}
-            className="inline-flex transition-all duration-200 ease-out hover:text-foreground active:scale-[0.97]"
-          >
-            Lock
-          </button>
-          <Link href="/admin/stickers" className="transition hover:text-foreground">
-            Stickers
-          </Link>
-          <Link href="/" className="transition hover:text-foreground">
-            Home
-          </Link>
-        </div>
-      </header>
+    <>
+      <TopBar
+        icon={ImageIcon}
+        title="Wallpapers"
+        meta={items.length > 0 ? items.length : null}
+      />
 
-      <section className="mx-auto flex max-w-xl flex-col items-center px-5 pb-14 pt-6 text-center sm:px-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.42em] text-brand/80">
-          Wallpaper admin
-        </p>
-        <h1 className="mt-5 text-4xl font-semibold tracking-[-0.065em] sm:text-5xl">
-          Curate the Mulberry background shelf.
-        </h1>
-        <p className="mt-4 max-w-md text-sm leading-6 text-muted-foreground">
-          Upload one image. The backend creates the thumbnail, preview, and optimized full
-          wallpaper variants.
-        </p>
-
-        <form onSubmit={onUpload} className="mt-9 w-full space-y-4">
-          <fieldset disabled={isUploading} className="space-y-4">
-            <label
-              className={[
-                "group block cursor-pointer rounded-[2rem] border-2 border-dashed bg-soft-surface px-6 py-10 text-center transition focus-within:ring-4 focus-within:ring-brand/10 disabled:pointer-events-none disabled:opacity-70",
-                isDraggingImage
-                  ? "border-brand bg-soft-surface-hover"
-                  : "border-soft-border hover:border-brand hover:bg-soft-surface-hover focus-within:border-brand",
-              ].join(" ")}
-              onDragEnter={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                dragDepthRef.current += 1
-                setIsDraggingImage(true)
-              }}
-              onDragOver={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                event.dataTransfer.dropEffect = "copy"
-                setIsDraggingImage(true)
-              }}
-              onDragLeave={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
-                if (dragDepthRef.current === 0) setIsDraggingImage(false)
-              }}
-              onDrop={onDropImage}
-            >
-              <input
-                ref={fileInputRef}
-                name="image"
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                required
-                className="sr-only"
-                onChange={(event) => applySelectedFile(event.target.files?.[0] ?? null)}
-              />
-              <span className="block text-lg font-semibold tracking-[-0.04em]">
-                {selectedFileName ?? "Upload image"}
-              </span>
-              <span className="mt-2 block text-xs font-medium text-muted-foreground">
-                Supported file types: jpeg, jpg, png, webp
-              </span>
-            </label>
-
-            <label className="block text-left">
-              <span className="sr-only">Name</span>
-              <input
-                name="title"
-                required
-                placeholder="Name"
-                className="h-14 w-full rounded-2xl border border-soft-border bg-elevated px-5 text-base font-medium text-elevated-foreground outline-none transition placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/10"
-              />
-            </label>
-
-            <label className="block text-left">
-              <span className="sr-only">Description</span>
-              <textarea
-                name="description"
-                rows={3}
-                placeholder="Description"
-                className="w-full resize-none rounded-2xl border border-soft-border bg-elevated px-5 py-4 text-base font-medium text-elevated-foreground outline-none transition placeholder:text-muted-foreground focus:border-brand focus:ring-4 focus:ring-brand/10"
-              />
-            </label>
-
-            <input name="sortOrder" type="hidden" value="0" />
-            <input name="published" type="hidden" value="true" />
-
-            <Button
-              type="submit"
-              disabled={isUploading || Boolean(deletingId)}
-              className="h-16 w-full rounded-2xl text-base"
-            >
-              {isUploading ? (
-                <>
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                  Uploading...
-                </>
-              ) : (
-                "Upload"
-              )}
-            </Button>
-          </fieldset>
-
-          {status ? <p className="text-sm font-semibold text-brand">{status}</p> : null}
-          {error ? <p className="text-sm font-semibold text-red-700">{error}</p> : null}
-        </form>
-      </section>
-
-      <section className="mx-auto w-full max-w-[98rem] px-5 pb-24 sm:px-8 lg:px-10">
-        {items.length === 0 ? (
-          <div className="rounded-[2rem] border border-dashed border-soft-border bg-soft-surface px-6 py-16 text-center text-sm font-medium text-muted-foreground">
-            No wallpapers yet.
-          </div>
-        ) : (
-          <div className="grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {items.map((item) => (
-              <article key={item.id} className="min-w-0">
-                <div className="relative aspect-[171/103] overflow-hidden rounded-[1.65rem] bg-brand-soft">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={item.thumbnailUrl}
-                    alt={item.title}
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                  />
-                  <button
-                    type="button"
-                    aria-label={
-                      deletingId === item.id ? `Deleting ${item.title}` : `Delete ${item.title}`
-                    }
-                    onClick={() => deleteWallpaper(item.id)}
-                    disabled={Boolean(deletingId) || isUploading}
-                    className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-elevated text-elevated-foreground shadow-sm transition-all duration-200 ease-out hover:text-brand active:scale-[0.97] disabled:opacity-40"
+      <div className="flex min-h-0 flex-1 flex-col-reverse lg:flex-row">
+        <section aria-label="Wallpapers" className="min-h-0 min-w-0 flex-1 overflow-y-auto p-6">
+          {items.length === 0 ? (
+            <EmptyState icon={ImageIcon} title="No wallpapers yet" />
+          ) : (
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-x-4 gap-y-6">
+              {items.map((item) => (
+                <li key={item.id} className="group min-w-0">
+                  <div
+                    className="relative aspect-[171/103] overflow-hidden rounded-xl"
+                    style={{ backgroundColor: item.dominantColor }}
                   >
-                    {deletingId === item.id ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={item.thumbnailUrl} alt={item.title} className="h-full w-full object-cover" loading="lazy" />
+                    <span aria-hidden className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-black/5" />
+                    <IconButton
+                      tone="danger"
+                      aria-label={deletingId === item.id ? `Deleting ${item.title}` : `Delete ${item.title}`}
+                      onClick={() => deleteWallpaper(item.id)}
+                      disabled={Boolean(deletingId) || isUploading}
+                      className="absolute right-2 top-2 bg-admin-panel text-admin-fg-2 shadow-[0_1px_2px_rgba(0,0,0,0.12)] hover:bg-admin-panel"
+                    >
+                      {deletingId === item.id ? <Spinner /> : <Trash2 />}
+                    </IconButton>
+                  </div>
 
-                <div className="mt-4 space-y-2">
-                  <h3 className="text-lg font-semibold tracking-[-0.04em] text-foreground">
-                    {item.title}
-                  </h3>
-                  <p className="text-sm leading-6 text-muted-foreground">{item.description}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-    </main>
+                  <div className="flex flex-col gap-0.5 px-1 pt-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="truncate text-sm text-admin-fg">{item.title}</h3>
+                      {item.published === undefined ? null : <PublishState published={item.published} />}
+                    </div>
+                    {item.description ? (
+                      <p className="line-clamp-2 text-[13px] leading-5 text-admin-fg-2">{item.description}</p>
+                    ) : null}
+                    <p className="font-mono text-xs tabular-nums text-admin-muted">
+                      {item.width} × {item.height}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <aside className="shrink-0 border-b border-admin-line lg:w-80 lg:overflow-y-auto lg:border-b-0 lg:border-l">
+          <form onSubmit={onUpload} className="flex flex-col gap-4 p-5">
+            <h2 className="text-sm font-medium text-admin-fg">New wallpaper</h2>
+
+            <fieldset disabled={isUploading} className="flex flex-col gap-4">
+              <Dropzone
+                icon={ImagePlus}
+                title={selectedFileName ?? "Choose image"}
+                hint="JPG, PNG or WebP"
+                isActive={isDraggingImage}
+                onDragEnter={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  dragDepthRef.current += 1
+                  setIsDraggingImage(true)
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  event.dataTransfer.dropEffect = "copy"
+                  setIsDraggingImage(true)
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+                  if (dragDepthRef.current === 0) setIsDraggingImage(false)
+                }}
+                onDrop={onDropImage}
+              >
+                <input
+                  ref={fileInputRef}
+                  name="image"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  required
+                  className="sr-only"
+                  onChange={(event) => applySelectedFile(event.target.files?.[0] ?? null)}
+                />
+              </Dropzone>
+
+              <Field label="Name">
+                <input name="title" required className={fieldClass} />
+              </Field>
+
+              <Field label="Description">
+                <textarea name="description" rows={3} placeholder="Optional" className={textareaClass} />
+              </Field>
+
+              <input name="sortOrder" type="hidden" value="0" />
+              <input name="published" type="hidden" value="true" />
+
+              <AdminButton type="submit" disabled={isUploading || Boolean(deletingId)} className="h-9 w-full">
+                {isUploading ? <Spinner /> : "Upload"}
+              </AdminButton>
+            </fieldset>
+
+            {status ? <StatusLine tone="neutral">{status}</StatusLine> : null}
+            {error ? <StatusLine tone="error">{error}</StatusLine> : null}
+          </form>
+        </aside>
+      </div>
+    </>
   )
 }

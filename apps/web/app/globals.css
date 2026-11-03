@@ -98,8 +98,76 @@
   }
 }
 
-* {
-  border-color: hsl(var(--border));
+/* Admin: a grey shell, one white working panel, fills for depth. green marks what is live. */
+@theme inline {
+  --color-admin-canvas: var(--admin-canvas);
+  --color-admin-panel: var(--admin-panel);
+  --color-admin-fill: var(--admin-fill);
+  --color-admin-fill-2: var(--admin-fill-2);
+  --color-admin-line: var(--admin-line);
+  --color-admin-line-strong: var(--admin-line-strong);
+  --color-admin-fg: var(--admin-fg);
+  --color-admin-fg-2: var(--admin-fg-2);
+  --color-admin-muted: var(--admin-muted);
+  --color-admin-primary: var(--admin-primary);
+  --color-admin-primary-fg: var(--admin-primary-fg);
+  --color-admin-primary-hover: var(--admin-primary-hover);
+  --color-admin-accent: var(--admin-accent);
+  --color-admin-positive: var(--admin-positive);
+  --color-admin-negative: var(--admin-negative);
+  --ease-admin: cubic-bezier(0.22, 1, 0.36, 1);
+  --radius-ctl: 8px;
+  --radius-tag: 6px;
+}
+
+:root {
+  --admin-canvas: #f3f3f2;
+  --admin-panel: #ffffff;
+  --admin-fill: #f7f7f6;
+  --admin-fill-2: #eeeeed;
+  --admin-line: rgba(0, 0, 0, 0.07);
+  --admin-line-strong: rgba(0, 0, 0, 0.12);
+  --admin-fg: #1c1c1e;
+  --admin-fg-2: #5c5c61;
+  --admin-muted: #7a7a80;
+  --admin-primary: #1c1c1e;
+  --admin-primary-fg: #ffffff;
+  --admin-primary-hover: #3a3a3d;
+  --admin-accent: #b31329;
+  --admin-positive: #16a34a;
+  --admin-negative: #d92d20;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --admin-canvas: #0d0d0e;
+    --admin-panel: #161617;
+    --admin-fill: #1c1c1e;
+    --admin-fill-2: #262628;
+    --admin-line: rgba(255, 255, 255, 0.07);
+    --admin-line-strong: rgba(255, 255, 255, 0.12);
+    --admin-fg: #ededed;
+    --admin-fg-2: #a1a1a6;
+    --admin-muted: #808087;
+    --admin-primary: #ededed;
+    --admin-primary-fg: #111112;
+    --admin-primary-hover: #ffffff;
+    --admin-accent: #f0687a;
+    --admin-positive: #4cc38a;
+    --admin-negative: #f06a63;
+  }
+}
+
+.admin-root {
+  --font-mono: var(--font-admin-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-admin-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
 }
 
 html {
