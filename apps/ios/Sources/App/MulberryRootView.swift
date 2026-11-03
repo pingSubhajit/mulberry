@@ -11,7 +11,8 @@ struct MulberryRootView: View {
     /// and Settings. The wallpapers are a step deeper, so they slide in as pushes do.
     @Namespace private var toolbarZoom
     @State private var streakClosings = 0
-    @State private var setupAfterSettings = false
+    /// Wallpaper setup opened from Settings, as a sheet over it, as Settings shows the streak.
+    @State private var settingsSetupOpen = false
     @ObservedObject private var quickActions = HomeQuickActions.shared
     @ObservedObject private var routes = AppRoutes.shared
     @ObservedObject private var inviteLinks = InviteLinks.shared
@@ -115,20 +116,12 @@ struct MulberryRootView: View {
             }
         }
         .sheet(isPresented: $model.showInviteEntry) { InviteEntryView(model: model) }
-        .sheet(isPresented: $model.showSettings, onDismiss: {
-            if setupAfterSettings { setupAfterSettings = false; setupOpen = true }
-        }) {
-            SettingsView(model: model, library: wallpapers) {
-                setupAfterSettings = true; model.showSettings = false
-            }
-            .navigationTransition(.zoom(sourceID: ToolbarZoomSource.settings, in: toolbarZoom))
+        .sheet(isPresented: $model.showSettings) {
+            SettingsView(model: model, library: wallpapers) { settingsSetupOpen = true }
+                .sheet(isPresented: $settingsSetupOpen) { WallpaperSetupView(setup: setup, onDone: finishSetup) }
+                .navigationTransition(.zoom(sourceID: ToolbarZoomSource.settings, in: toolbarZoom))
         }
-        .sheet(isPresented: $setupOpen) {
-            WallpaperSetupView(setup: setup) {
-                setupOpen = false
-                if setup.health.state == .responded { model.finishWallpaperOnboarding() }
-            }
-        }
+        .sheet(isPresented: $setupOpen) { WallpaperSetupView(setup: setup, onDone: finishSetup) }
         .alert(model.inviteNotice?.title ?? "", isPresented: Binding(
             get: { model.inviteNotice != nil },
             set: { if !$0 { model.inviteNotice = nil } }
@@ -145,8 +138,8 @@ struct MulberryRootView: View {
             guard url.scheme == Bundle.main.bundleIdentifier else { return }
             switch url.host {
             case "wallpaper-return": Task { await setup.refresh() }
-            case "shortcut-error": setup.message = "The Shortcut could not finish. Open it to check its actions and permissions."; setupOpen = true
-            case "shortcut-cancelled": setup.message = "Setup was cancelled. Run the Shortcut again when ready."; setupOpen = true
+            case "shortcut-error": setup.message = "The Shortcut could not finish. Open it to check its actions and permissions."; showSetup()
+            case "shortcut-cancelled": setup.message = "Setup was cancelled. Run the Shortcut again when ready."; showSetup()
             #if DEBUG
             // Opens wallpaper setup from a Mac: `devicectl device process launch --payload-url <bundle id>://wallpaper-setup`.
             case "wallpaper-setup": routes.pending = .wallpaperSetup
@@ -166,7 +159,7 @@ struct MulberryRootView: View {
         guard model.bootstrap != nil else { return }
         let covered = model.showSettings || model.showStreak || model.showInviteEntry || setupOpen || pairingConfirmationOpen
         model.showSettings = false; model.showStreak = false; model.showInviteEntry = false
-        setupOpen = false; wallpaperOpen = false; pairingConfirmationOpen = false
+        setupOpen = false; settingsSetupOpen = false; wallpaperOpen = false; pairingConfirmationOpen = false
         Task {
             if covered { try? await Task.sleep(for: .milliseconds(450)) }
             await model.redeemLinkedInvite()
@@ -179,16 +172,29 @@ struct MulberryRootView: View {
         Task { await model.redeemLinkedInvite() }
     }
 
+    /// Wallpaper setup is on screen, on its own or over Settings.
+    private var setupShowing: Bool { setupOpen || settingsSetupOpen }
+
+    /// Shows wallpaper setup, unless it's already showing over Settings, where it stays.
+    private func showSetup() {
+        if !settingsSetupOpen { setupOpen = true }
+    }
+
+    private func finishSetup() {
+        setupOpen = false; settingsSetupOpen = false
+        if setup.health.state == .responded { model.finishWallpaperOnboarding() }
+    }
+
     /// Opens what a tapped notification is about, once the app is past sign-in and onboarding.
     private func handleRoute() {
         // Setup is already showing, as after the reminder to come back from Shortcuts.
-        if routes.pending == .wallpaperSetup && setupOpen { routes.pending = nil; return }
+        if routes.pending == .wallpaperSetup && setupShowing { routes.pending = nil; return }
         guard !model.restoring, model.bootstrap?.onboardingCompleted == true,
               !model.showWallpaperOnboarding, let route = routes.pending else { return }
         routes.pending = nil
         let covered = model.showSettings || model.showStreak || model.showInviteEntry || setupOpen
         model.showSettings = false; model.showStreak = false; model.showInviteEntry = false
-        setupOpen = false; wallpaperOpen = false
+        setupOpen = false; settingsSetupOpen = false; wallpaperOpen = false
         Task {
             await model.refresh()
             // Let a sheet that was open finish closing before another opens.
