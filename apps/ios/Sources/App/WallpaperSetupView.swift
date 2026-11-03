@@ -309,7 +309,7 @@ struct WallpaperSetupView: View {
     private func perform(_ step: Step) {
         switch step {
         case .allow: Task { await setup.requestPermission() }
-        case .add: shareShortcut()
+        case .add: if setup.shortcutLink != nil { setup.addShortcutFromLink() } else { shareShortcut() }
         case .choose, .automate: setup.editShortcut(for: step)
         case .run: Task { await setup.runShortcut() }
         }

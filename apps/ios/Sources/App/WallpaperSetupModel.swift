@@ -29,7 +29,26 @@ final class WallpaperSetupModel: ObservableObject {
         guard let user = model.userId else { return nil }
         return try? ProductWallpaperService.shared.journal(user: user, pair: model.bootstrap?.pairSessionId)
     }
-    var shortcutName: String { "Mulberry Sync" }
+    var shortcutName: String {
+        #if DEBUG
+        if let name = Self.launchArgument("shortcutName") { return name }
+        #endif
+        return "Mulberry Sync"
+    }
+    /// An iCloud Shortcut link that opens Add Shortcut directly, skipping the share sheet.
+    var shortcutLink: URL? {
+        #if DEBUG
+        return Self.launchArgument("shortcutLink").flatMap(URL.init(string:))
+        #else
+        return nil
+        #endif
+    }
+    #if DEBUG
+    /// Debug launch arguments such as `shortcutLink=https://www.icloud.com/shortcuts/…`.
+    private static func launchArgument(_ key: String) -> String? {
+        ProcessInfo.processInfo.arguments.first { $0.hasPrefix("\(key)=") }.map { String($0.dropFirst(key.count + 1)) }
+    }
+    #endif
     private func stepKey(_ step: SetupStep) -> String { "wallpaperSetup.\(step).\(model.userId ?? "")" }
     private func mark(_ step: SetupStep, _ value: Bool) {
         UserDefaults.standard.set(value, forKey: stepKey(step))
@@ -41,7 +60,13 @@ final class WallpaperSetupModel: ObservableObject {
         }
     }
     func markShortcutAdded() { mark(.add, true) }
-    var template: URL? { Bundle.main.url(forResource: shortcutName, withExtension: "shortcut", subdirectory: "ShortcutTemplates") }
+    var template: URL? { Bundle.main.url(forResource: "Mulberry Sync", withExtension: "shortcut", subdirectory: "ShortcutTemplates") }
+    /// Opens the iCloud link in Shortcuts; like the editor steps, it counts once the user comes back.
+    func addShortcutFromLink() {
+        guard let shortcutLink else { return }
+        awaitingShortcutReturn = .add
+        UIApplication.shared.open(shortcutLink)
+    }
 
     /// Publishes only real changes. The screen polls every two seconds, and an unchanged
     /// assignment would still re-render it, rebuilding any open menu under the user's finger.
