@@ -25,3 +25,23 @@ export interface UpdateLiveActivityTokensRequest {
   pushToStartToken?: string | null
   activityPushToken?: string | null
 }
+
+/** Where WidgetKit takes reloads for this device's widgets. `null` forgets the widget token. */
+export interface UpdateWidgetPushTokenRequest {
+  /** The FCM registration token the device registered. */
+  token: string
+  /** WidgetKit's push token for the app's widgets, as hex. */
+  widgetPushToken: string | null
+  /** The app's bundle ID, which names the APNs topic. */
+  bundleId: string
+  /** Which APNs environment the build receives through. */
+  apnsEnvironment: "sandbox" | "production"
+  /** A random secret, as hex, the widget proves itself with when it asks for what to show. */
+  widgetSecret?: string
+}
+
+/** What the Time together widget shows, for the device whose widget asks. */
+export interface WidgetTimeTogetherResponse {
+  anniversaryDate: string | null
+  pairSessionId: string | null
+}

@@ -54,7 +54,7 @@ native client. The original `GOOGLE_SERVER_CLIENT_ID` remains supported.
 
 The iPhone, iPad and Mac apps also sign in with Apple through `POST /auth/apple`. The backend
 checks Apple's identity token against Apple's public keys, for the bundle IDs in
-`APPLE_CLIENT_IDS` (by default `com.subhajit.mulberry.beta` and `com.subhajit.mulberry.dev`), and
+`APPLE_CLIENT_IDS` (by default `com.subhajit.mulberry.beta` and `com.subhajit.mulberry.beta.dev`), and
 checks that the token carries the SHA-256 of the nonce the app sends.
 
 An Apple sign-in whose verified email matches an existing account signs in to that account, and
@@ -88,6 +88,26 @@ Use one of these environment variables outside source control:
 FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/path/to/service-account.json
 FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 ```
+
+## Widget Reloads (APNs)
+
+When the anniversary changes or a pair ends, a silent FCM push tells each device, and
+a WidgetKit push (`apns-push-type: widgets`) makes WidgetKit reload the Time together widget, which then asks `GET /widget/time-together` itself (with a per-device secret) so it shows the change even if the app never got the silent push.
+iOS doesn't reliably act on a widget reload asked for by an app it woke in the background, but it
+does on these. Firebase can't carry them, so the backend sends them to APNs itself, to the widget
+push token each iPhone, iPad or Mac reports through `PUT /devices/widget-push`. Without keys the
+backend skips them.
+
+```text
+APNS_TEAM_ID=HMJX9736KN                 # or APPLE_TEAM_ID
+APNS_SANDBOX_KEY_ID=…                   # development builds (aps-environment development)
+APNS_SANDBOX_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----
+APNS_PRODUCTION_KEY_ID=…                # TestFlight and App Store builds
+APNS_PRODUCTION_PRIVATE_KEY=…
+```
+
+The keys must be APNs auth keys valid for the environment and for the topic
+`<bundle ID>.push-type.widgets` (team-scoped keys are).
 
 ## PostHog Product Analytics
 
@@ -144,7 +164,7 @@ npx tsx scripts/import-sticker-pack.ts \
 The iOS app opens its wallpaper Shortcut from an iCloud link, which goes straight to Shortcuts' Add screen. Bootstrap returns the links in `wallpaperShortcutLinks`, keyed by bundle ID, because each build's Shortcut calls that build's own App Intents:
 
 ```text
-WALLPAPER_SHORTCUT_LINKS=com.subhajit.mulberry.beta=https://www.icloud.com/shortcuts/…,com.subhajit.mulberry.dev=https://www.icloud.com/shortcuts/…
+WALLPAPER_SHORTCUT_LINKS=com.subhajit.mulberry.beta=https://www.icloud.com/shortcuts/…,com.subhajit.mulberry.beta.dev=https://www.icloud.com/shortcuts/…
 ```
 
 Without a link for its bundle ID, the app falls back to sharing its bundled template. To make a link, build the template for that bundle ID (`apps/ios/scripts/make-shortcut.py`), add it on a device, then choose Share → Copy iCloud Link in Shortcuts. The shared copy must be named exactly "Mulberry Sync".

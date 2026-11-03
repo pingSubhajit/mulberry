@@ -72,6 +72,36 @@ describe("Apple wallpaper delivery", () => {
     }
   })
 
+  it("refreshes iPhone and Mac widgets silently when the anniversary changes", async () => {
+    const send = vi.fn().mockResolvedValue({ responses: [{ success: true }] })
+    const sender = new FirebaseAdminPushSender({ sendEachForMulticast: send } as unknown as Messaging)
+    const data = {
+      type: "ANNIVERSARY_CHANGED",
+      pairSessionId: "pair-one",
+      actorUserId: "partner",
+      anniversaryDate: "2026-02-14",
+    } as const
+    await sender.send({
+      tokens: ["phone", "mac"],
+      macTokens: ["mac"],
+      data,
+      android: { priority: "high", collapseKey: "anniversary-pair-one", ttlMs: 60_000 },
+    })
+    expect(send).toHaveBeenCalledTimes(2)
+    const [phone, mac] = send.mock.calls.map((call) => call[0])
+    expect(phone.tokens).toEqual(["phone"])
+    expect(mac.tokens).toEqual(["mac"])
+    for (const payload of [phone, mac]) {
+      expect(payload.data).toEqual(data)
+      expect(payload.apns.headers).toMatchObject({
+        "apns-push-type": "background",
+        "apns-priority": "5",
+        "apns-collapse-id": "anniversary-pair-one",
+      })
+      expect(payload.apns.payload.aps).toEqual({ contentAvailable: true })
+    }
+  })
+
   it("reports invalid tokens from each platform's send", async () => {
     const send = vi.fn()
       .mockResolvedValueOnce({ responses: [{ success: false, error: { code: "messaging/registration-token-not-registered" } }] })

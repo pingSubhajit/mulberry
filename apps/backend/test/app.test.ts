@@ -6,6 +6,7 @@ import { createApp } from "../src/app/createApp.js"
 import { runBackfills, runMigrations, type Database } from "../src/infra/db/database.js"
 import { PushDispatchService, type CanvasEditor } from "../src/infra/push/dispatchService.js"
 import type { MulberryPushMessage, PushSender, ReactionLiveActivityMessage } from "../src/infra/push/types.js"
+import type { WidgetPushResult, WidgetPushSender, WidgetPushTarget } from "../src/infra/push/widgetSender.js"
 import type { DevicePlatform } from "../src/contracts/devices.js"
 import type { SessionRecord } from "../src/contracts/dbRecords.js"
 import type { RemoteConfigTemplate, Version } from "firebase-admin/remote-config"
@@ -20,6 +21,7 @@ describe("Mulberry backend", () => {
   let app: FastifyInstance
   let db: Database
   let pushSender: RecordingPushSender
+  let widgetSender: ScriptedWidgetPushSender
   let wallpaperStorage: RecordingWallpaperStorage
   let remoteConfig: FakeRemoteConfig
 
@@ -48,13 +50,15 @@ describe("Mulberry backend", () => {
       },
     }
     pushSender = new RecordingPushSender()
+    widgetSender = new ScriptedWidgetPushSender()
     wallpaperStorage = new RecordingWallpaperStorage()
     remoteConfig = new FakeRemoteConfig()
     app = await createApp({
       remoteConfig,
       db,
       pushSender,
-      pushOptions: { debounceMs: 20 },
+      pushOptions: { debounceMs: 20, widgetReloadDelayMs: 0 },
+      widgetPushSender: widgetSender,
       wallpaperStorage,
       wallpaperImageProcessor: new FakeWallpaperImageProcessor(),
       config: {
@@ -66,7 +70,7 @@ describe("Mulberry backend", () => {
         enableDebugRoutes: true,
         adminPassword: "admin-password",
         cannySsoPrivateKey: "test-canny-secret",
-        wallpaperShortcutLinks: { "com.subhajit.mulberry.dev": "https://www.icloud.com/shortcuts/dev-link" },
+        wallpaperShortcutLinks: { "com.subhajit.mulberry.beta.dev": "https://www.icloud.com/shortcuts/dev-link" },
       },
     })
     await app.ready()
@@ -211,7 +215,7 @@ describe("Mulberry backend", () => {
     expect(bootstrap.json().pairedAt).toBeTruthy()
     expect(bootstrap.json().currentStreakDays).toBe(0)
     expect(bootstrap.json().wallpaperShortcutLinks).toEqual({
-      "com.subhajit.mulberry.dev": "https://www.icloud.com/shortcuts/dev-link",
+      "com.subhajit.mulberry.beta.dev": "https://www.icloud.com/shortcuts/dev-link",
     })
   })
 
@@ -1259,6 +1263,132 @@ describe("Mulberry backend", () => {
     })
   })
 
+  it("pushes a changed anniversary to every device in the pair", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(inviter.accessToken, "inviter-phone", "IOS")
+    await registerFcmToken(inviter.accessToken, "inviter-mac", "MACOS")
+    await registerFcmToken(recipient.accessToken, "recipient-token")
+
+    const update = await updatePartnerProfile(inviter.accessToken, "Ankita", "2026-02-14")
+    expect(update.statusCode).toBe(200)
+    await eventually(() => pushSender.sentMessages.length === 1)
+    const message = pushSender.sentMessages[0]
+    expect([...message.tokens].sort()).toEqual(["inviter-mac", "inviter-phone", "recipient-token"])
+    expect(message.macTokens).toEqual(["inviter-mac"])
+    expect(message.data).toEqual({
+      type: "ANNIVERSARY_CHANGED",
+      pairSessionId: inviter.pairSessionId,
+      actorUserId: inviter.userId,
+      anniversaryDate: "2026-02-14",
+    })
+    expect(message.android).toEqual({
+      priority: "high",
+      collapseKey: `anniversary-${inviter.pairSessionId}`,
+      ttlMs: 24 * 60 * 60 * 1_000,
+    })
+  })
+
+  it("reloads the pair's Apple widgets after an anniversary change", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(inviter.accessToken, "inviter-phone", "IOS")
+    await registerFcmToken(recipient.accessToken, "recipient-mac", "MACOS")
+    await registerFcmToken(recipient.accessToken, "recipient-android")
+    expect((await registerWidgetToken(inviter.accessToken, "inviter-phone", "ABCDEF0123456789AB", "com.subhajit.mulberry.beta.dev", "sandbox")).statusCode).toBe(204)
+    expect((await registerWidgetToken(recipient.accessToken, "recipient-mac", "0123456789abcdef01", "com.subhajit.mulberry.beta", "production")).statusCode).toBe(204)
+    // Android has no WidgetKit.
+    expect((await registerWidgetToken(recipient.accessToken, "recipient-android", "0123456789abcdef02", "com.subhajit.mulberry.beta", "production")).statusCode).toBe(404)
+
+    const update = await updatePartnerProfile(inviter.accessToken, "Ankita", "2026-02-14")
+    expect(update.statusCode).toBe(200)
+    await eventually(() => widgetSender.sent.length === 2)
+    expect(pushSender.sentMessages[0].data.type).toBe("ANNIVERSARY_CHANGED")
+    expect([...widgetSender.sent].sort((a, b) => a.token.localeCompare(b.token))).toEqual([
+      { token: "0123456789abcdef01", bundleId: "com.subhajit.mulberry.beta", environment: "production" },
+      { token: "abcdef0123456789ab", bundleId: "com.subhajit.mulberry.beta.dev", environment: "sandbox" },
+    ])
+  })
+
+  it("forgets a widget token APNs no longer knows", async () => {
+    const { inviter } = await pairUsers()
+    await registerFcmToken(inviter.accessToken, "inviter-phone", "IOS")
+    await registerWidgetToken(inviter.accessToken, "inviter-phone", "abcdef0123456789ab", "com.subhajit.mulberry.beta", "production")
+    widgetSender.result = "unregistered"
+
+    await updatePartnerProfile(inviter.accessToken, "Ankita", "2026-02-14")
+    await eventually(() => widgetSender.sent.length === 1)
+    await eventually(async () => {
+      const rows = await db.query<{ widget_push_token: string | null }>(
+        "SELECT widget_push_token FROM device_tokens WHERE token = 'inviter-phone'",
+      )
+      return rows.rows[0]?.widget_push_token === null
+    })
+  })
+
+  it("rejects malformed widget push registrations", async () => {
+    const { inviter } = await pairUsers()
+    await registerFcmToken(inviter.accessToken, "inviter-phone", "IOS")
+    expect((await registerWidgetToken(inviter.accessToken, "inviter-phone", "not-hex!", "com.subhajit.mulberry.beta", "production")).statusCode).toBe(400)
+    expect((await registerWidgetToken(inviter.accessToken, "inviter-phone", "abcdef0123456789ab", "bad bundle/id", "production")).statusCode).toBe(400)
+    const environment = await app.inject({
+      method: "PUT",
+      url: "/devices/widget-push",
+      headers: bearer(inviter.accessToken),
+      payload: { token: "inviter-phone", widgetPushToken: "abcdef0123456789ab", bundleId: "com.subhajit.mulberry.beta", apnsEnvironment: "staging" },
+    })
+    expect(environment.statusCode).toBe(400)
+    expect((await registerWidgetToken(inviter.accessToken, "unknown-token", "abcdef0123456789ab", "com.subhajit.mulberry.beta", "production")).statusCode).toBe(404)
+  })
+
+  it("pushes a changed anniversary sent with a partner photo", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-token")
+
+    const upload = createImageUploadPayload({ partnerDisplayName: "Ankita", anniversaryDate: "2026-03-08" })
+    const update = await app.inject({
+      method: "PUT",
+      url: "/me/partner-profile-with-photo",
+      headers: {
+        ...bearer(inviter.accessToken),
+        "content-type": upload.contentType,
+      },
+      payload: upload.body,
+    })
+    expect(update.statusCode).toBe(200)
+    await eventually(() => pushSender.sentMessages.length === 1)
+    expect(pushSender.sentMessages[0]).toMatchObject({
+      tokens: ["recipient-token"],
+      data: {
+        type: "ANNIVERSARY_CHANGED",
+        pairSessionId: inviter.pairSessionId,
+        actorUserId: inviter.userId,
+        anniversaryDate: "2026-03-08",
+      },
+    })
+  })
+
+  it("pushes nothing when the anniversary stays the same", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(recipient.accessToken, "recipient-token")
+
+    const update = await updatePartnerProfile(inviter.accessToken, "Ankita Nandi", "2026-01-01")
+    expect(update.statusCode).toBe(200)
+    expect(update.json().partnerDisplayName).toBe("Ankita Nandi")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(pushSender.sentMessages).toEqual([])
+  })
+
+  it("pushes no anniversary change while unpaired", async () => {
+    const auth = await signIn("subhajit-unpaired-anniversary@elaris.dev", "Subhajit")
+    await completeProfile(auth.accessToken, "Subhajit", "Ankita", "2026-01-01")
+    await registerFcmToken(auth.accessToken, "unpaired-token")
+
+    const update = await updatePartnerProfile(auth.accessToken, "Ankita", "2026-02-14")
+    expect(update.statusCode).toBe(200)
+    expect(update.json().anniversaryDate).toBe("2026-02-14")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(pushSender.sentMessages).toEqual([])
+  })
+
   it("pushes a pairing disconnected to the peer when a user disconnects", async () => {
     const { inviter, recipient } = await pairUsers()
     await registerFcmToken(recipient.accessToken, "recipient-token")
@@ -1270,8 +1400,9 @@ describe("Mulberry backend", () => {
     })
 
     expect(disconnect.statusCode).toBe(200)
-    await eventually(() => pushSender.sentMessages.length === 1)
-    expect(pushSender.sentMessages[0]).toMatchObject({
+    // An unpair also sends the pair's devices a silent PAIR_ENDED, in no fixed order.
+    await eventually(() => pushSender.sentMessages.some((message) => message.data.type === "PAIRING_DISCONNECTED"))
+    expect(pushSender.sentMessages.find((message) => message.data.type === "PAIRING_DISCONNECTED")).toMatchObject({
       tokens: ["recipient-token"],
       data: {
         type: "PAIRING_DISCONNECTED",
@@ -1298,8 +1429,9 @@ describe("Mulberry backend", () => {
     })
 
     expect(response.statusCode).toBe(200)
-    await eventually(() => pushSender.sentMessages.length === 1)
-    expect(pushSender.sentMessages[0]).toMatchObject({
+    // An unpair also sends the pair's devices a silent PAIR_ENDED, in no fixed order.
+    await eventually(() => pushSender.sentMessages.some((message) => message.data.type === "PAIRING_DISCONNECTED"))
+    expect(pushSender.sentMessages.find((message) => message.data.type === "PAIRING_DISCONNECTED")).toMatchObject({
       tokens: ["recipient-token"],
       data: {
         type: "PAIRING_DISCONNECTED",
@@ -1541,6 +1673,66 @@ describe("Mulberry backend", () => {
     await localDb.end()
   })
 
+  it("reloads both people's widgets when a pairing is confirmed", async () => {
+    const { inviter } = await pairUsers()
+    await registerFcmToken(inviter.accessToken, "inviter-phone", "IOS")
+    await registerWidgetToken(inviter.accessToken, "inviter-phone", "abcdef0123456789ab", "com.subhajit.mulberry.beta", "production")
+
+    const confirmed = await app.inject({ method: "POST", url: "/debug/pairing-confirmation-push", headers: bearer(inviter.accessToken) })
+    expect(confirmed.statusCode).toBe(200)
+    await eventually(() => widgetSender.sent.length === 1)
+    expect(widgetSender.sent[0]).toEqual({ token: "abcdef0123456789ab", bundleId: "com.subhajit.mulberry.beta", environment: "production" })
+  })
+
+  it("lets a device's widget fetch what to show with its secret", async () => {
+    const { inviter } = await pairUsers()
+    await registerFcmToken(inviter.accessToken, "inviter-phone", "IOS")
+    const secret = "ab".repeat(32)
+    const register = await app.inject({
+      method: "PUT",
+      url: "/devices/widget-push",
+      headers: bearer(inviter.accessToken),
+      payload: { token: "inviter-phone", widgetPushToken: "abcdef0123456789ab", bundleId: "com.subhajit.mulberry.beta", apnsEnvironment: "production", widgetSecret: secret },
+    })
+    expect(register.statusCode).toBe(204)
+    await updatePartnerProfile(inviter.accessToken, "Ankita", "2026-02-14")
+
+    const widget = () => app.inject({ method: "GET", url: "/widget/time-together", headers: { "x-mulberry-widget-secret": secret } })
+    const paired = await widget()
+    expect(paired.statusCode).toBe(200)
+    expect(paired.json()).toEqual({ anniversaryDate: "2026-02-14", pairSessionId: inviter.pairSessionId })
+
+    await app.inject({ method: "POST", url: "/pairing/disconnect", headers: bearer(inviter.accessToken) })
+    expect((await widget()).json()).toEqual({ anniversaryDate: null, pairSessionId: null })
+
+    const unknown = await app.inject({ method: "GET", url: "/widget/time-together", headers: { "x-mulberry-widget-secret": "cd".repeat(32) } })
+    expect(unknown.statusCode).toBe(401)
+    expect((await app.inject({ method: "GET", url: "/widget/time-together" })).statusCode).toBe(401)
+
+    // Signed out, the device's token is revoked and its widget learns nothing more.
+    await app.inject({ method: "DELETE", url: "/devices/fcm-token", headers: bearer(inviter.accessToken), payload: { token: "inviter-phone" } })
+    expect((await widget()).statusCode).toBe(401)
+  })
+
+  it("tells both people's devices the pair ended and reloads their widgets", async () => {
+    const { inviter, recipient } = await pairUsers()
+    await registerFcmToken(inviter.accessToken, "inviter-phone", "IOS")
+    await registerFcmToken(inviter.accessToken, "inviter-mac", "MACOS")
+    await registerFcmToken(recipient.accessToken, "recipient-android")
+    await registerWidgetToken(inviter.accessToken, "inviter-phone", "abcdef0123456789ab", "com.subhajit.mulberry.beta.dev", "sandbox")
+
+    const disconnect = await app.inject({ method: "POST", url: "/pairing/disconnect", headers: bearer(inviter.accessToken) })
+    expect(disconnect.statusCode).toBe(200)
+
+    await eventually(() => pushSender.sentMessages.some((message) => message.data.type === "PAIR_ENDED"))
+    const ended = pushSender.sentMessages.find((message) => message.data.type === "PAIR_ENDED")
+    expect([...(ended?.tokens ?? [])].sort()).toEqual(["inviter-mac", "inviter-phone", "recipient-android"])
+    expect(ended?.macTokens).toEqual(["inviter-mac"])
+    expect(ended?.data).toEqual({ type: "PAIR_ENDED", pairSessionId: inviter.pairSessionId })
+    await eventually(() => widgetSender.sent.length === 1)
+    expect(widgetSender.sent[0]).toEqual({ token: "abcdef0123456789ab", bundleId: "com.subhajit.mulberry.beta.dev", environment: "sandbox" })
+  })
+
   it("disconnects a paired session while clearing active partner metadata", async () => {
     const { inviter, recipient } = await pairUsers()
 
@@ -1623,8 +1815,9 @@ describe("Mulberry backend", () => {
     expect(recipientBootstrap.json().partnerDisplayName).toBeNull()
     expect(recipientBootstrap.json().anniversaryDate).toBeNull()
 
-    await eventually(() => pushSender.sentMessages.length === 1)
-    expect(pushSender.sentMessages[0]).toMatchObject({
+    // An unpair also sends the pair's devices a silent PAIR_ENDED, in no fixed order.
+    await eventually(() => pushSender.sentMessages.some((message) => message.data.type === "PAIRING_DISCONNECTED"))
+    expect(pushSender.sentMessages.find((message) => message.data.type === "PAIRING_DISCONNECTED")).toMatchObject({
       tokens: ["recipient-token"],
       data: {
         type: "PAIRING_DISCONNECTED",
@@ -3208,6 +3401,21 @@ describe("Mulberry backend", () => {
     return { userId: rows.rows[0].user_id, signInId: rows.rows[0].sign_in_id }
   }
 
+  function registerWidgetToken(
+    accessToken: string,
+    token: string,
+    widgetPushToken: string,
+    bundleId: string,
+    apnsEnvironment: WidgetPushTarget["environment"],
+  ) {
+    return app.inject({
+      method: "PUT",
+      url: "/devices/widget-push",
+      headers: bearer(accessToken),
+      payload: { token, widgetPushToken, bundleId, apnsEnvironment },
+    })
+  }
+
   async function registerFcmToken(accessToken: string, token: string, platform: DevicePlatform = "ANDROID") {
     const response = await app.inject({
       method: "POST",
@@ -3522,13 +3730,16 @@ function createMultipartPayload(input: {
   }
 }
 
-function createImageUploadPayload() {
+function createImageUploadPayload(fields: Record<string, string> = {}) {
   const boundary = `----mulberry-photo-${Date.now()}-${Math.random()}`
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
     "base64",
   )
   const body = Buffer.concat([
+    ...Object.entries(fields).map(([name, value]) =>
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`),
+    ),
     Buffer.from(`--${boundary}\r\n`),
     Buffer.from(
       `Content-Disposition: form-data; name="image"; filename="avatar.png"\r\n` +
@@ -3620,5 +3831,16 @@ class FakeWallpaperImageProcessor implements WallpaperImageProcessor {
       contentType: "image/webp",
       extension: "webp",
     }
+  }
+}
+
+/** Records widget reloads and answers each with `result`. */
+class ScriptedWidgetPushSender implements WidgetPushSender {
+  readonly sent: WidgetPushTarget[] = []
+  result: WidgetPushResult = "sent"
+
+  async reloadWidgets(target: WidgetPushTarget): Promise<WidgetPushResult> {
+    this.sent.push(target)
+    return this.result
   }
 }

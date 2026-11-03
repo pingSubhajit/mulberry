@@ -243,6 +243,7 @@ export class PairingService {
       context.user.id,
       actorDisplayName,
     )
+    this.pushDispatchService?.enqueuePairEnded(pairSession.id, [pairSession.user_one_id, pairSession.user_two_id])
     return this.bootstrapService.buildBootstrap(context.user.id)
   }
 

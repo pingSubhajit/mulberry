@@ -13,6 +13,7 @@ import { createAnalyticsClient } from "../infra/analytics/posthogAnalytics.js"
 import { getRemoteConfig } from "firebase-admin/remote-config"
 import { firebaseApp, type FirebaseCredentials } from "../infra/firebase/app.js"
 import { createPushSender } from "../infra/push/sender.js"
+import { createWidgetPushSender, type WidgetPushSender } from "../infra/push/widgetSender.js"
 import { PushDispatchService, type PushDispatchOptions } from "../infra/push/dispatchService.js"
 import type { PushSender } from "../infra/push/types.js"
 import { HttpError } from "../infra/http/HttpError.js"
@@ -66,6 +67,7 @@ export interface CreateAppOptions {
   analytics?: AnalyticsClient
   pushSender?: PushSender
   pushOptions?: PushDispatchOptions
+  widgetPushSender?: WidgetPushSender
   wallpaperStorage?: WallpaperStorage
   wallpaperImageProcessor?: WallpaperImageProcessor
   /** Stands in for Firebase Remote Config; null leaves it unconfigured. */
@@ -99,6 +101,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       drawReminderMaxBackoffDays: config.drawReminderMaxBackoffDays,
       ...options.pushOptions,
     },
+    options.widgetPushSender ?? createWidgetPushSender(config.apnsKeys),
   )
 
   const storage = options.wallpaperStorage ?? createWallpaperStorage(config)

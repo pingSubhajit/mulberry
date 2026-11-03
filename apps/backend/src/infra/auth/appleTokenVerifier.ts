@@ -100,6 +100,6 @@ function developmentIdentity(token: string): AppleIdentity {
     subject,
     email: email || null,
     emailVerified: Boolean(email),
-    clientId: "com.subhajit.mulberry.dev",
+    clientId: "com.subhajit.mulberry.beta.dev",
   }
 }

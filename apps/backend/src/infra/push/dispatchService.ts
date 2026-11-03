@@ -3,6 +3,7 @@ import type { DeviceTokenRow } from "../../contracts/dbRecords.js"
 import type { DevicePlatform } from "../../contracts/devices.js"
 import type { ReactionType } from "../../contracts/reactions.js"
 import type { PushRecipients, PushSendResult, PushSender, ReactionActivityContentState } from "./types.js"
+import { NoopWidgetPushSender, type WidgetPushSender } from "./widgetSender.js"
 
 type DeviceTokenTarget = Pick<DeviceTokenRow, "token" | "platform">
 
@@ -53,6 +54,11 @@ function reactionActivityContent(latest: ReactionType, counts: ReactionCounts): 
   return { counts: arrived, latest }
 }
 
+/** `$1, $2, …` for a query's `IN (…)` list. */
+function placeholders(values: readonly unknown[]): string {
+  return values.map((_, index) => `$${index + 1}`).join(", ")
+}
+
 function pushRecipients(rows: DeviceTokenTarget[]): PushRecipients {
   return {
     tokens: rows.map((row) => row.token),
@@ -94,6 +100,9 @@ export interface PushDispatchOptions {
   drawReminderPollIntervalMs?: number
   drawReminderTtlMs?: number
   drawReminderMaxBackoffDays?: number
+  /** How long after a data push the widgets are told to reload. The widget fetches what to show
+   * itself, so by default it doesn't wait. */
+  widgetReloadDelayMs?: number
 }
 
 const DEFAULT_CANVAS_UPDATE_TTL_MS = 24 * 60 * 60 * 1_000
@@ -107,6 +116,10 @@ const DEFAULT_DRAW_REMINDER_TTL_MS = 24 * 60 * 60 * 1_000
 const DEFAULT_DRAW_REMINDER_MAX_BACKOFF_DAYS = 7
 const DEFAULT_PARTNER_VISIBILITY_TTL_MS = 24 * 60 * 60 * 1_000
 const DEFAULT_REACTION_TTL_MS = 24 * 60 * 60 * 1_000
+const DEFAULT_ANNIVERSARY_TTL_MS = 24 * 60 * 60 * 1_000
+const DEFAULT_WIDGET_RELOAD_DELAY_MS = 0
+
+type WidgetPushDevice = Pick<DeviceTokenRow, "token" | "widget_push_token" | "widget_push_bundle_id" | "widget_push_environment">
 
 export class PushDispatchService {
   private readonly pendingByPairSession = new Map<string, PendingCanvasUpdate>()
@@ -122,6 +135,7 @@ export class PushDispatchService {
   private readonly drawReminderTtlMs: number
   private readonly drawReminderMaxBackoffDays: number
   private readonly partnerVisibilityTtlMs: number
+  private readonly widgetReloadDelayMs: number
   private nudgePoller: ReturnType<typeof setInterval> | null = null
   private nudgeFlushInProgress = false
   private drawReminderPoller: ReturnType<typeof setInterval> | null = null
@@ -131,6 +145,7 @@ export class PushDispatchService {
     private readonly db: Database,
     private readonly sender: PushSender,
     options: PushDispatchOptions = {},
+    private readonly widgetSender: WidgetPushSender = new NoopWidgetPushSender(),
   ) {
     this.debounceMs = options.debounceMs ?? 2_000
     this.canvasUpdateTtlMs = options.canvasUpdateTtlMs ?? DEFAULT_CANVAS_UPDATE_TTL_MS
@@ -150,6 +165,7 @@ export class PushDispatchService {
       Math.floor(options.drawReminderMaxBackoffDays ?? DEFAULT_DRAW_REMINDER_MAX_BACKOFF_DAYS),
     )
     this.partnerVisibilityTtlMs = DEFAULT_PARTNER_VISIBILITY_TTL_MS
+    this.widgetReloadDelayMs = options.widgetReloadDelayMs ?? DEFAULT_WIDGET_RELOAD_DELAY_MS
 
     this.nudgePoller = setInterval(() => {
       void this.flushDueNudges()
@@ -199,7 +215,10 @@ export class PushDispatchService {
     actorUserId: string,
     actorDisplayName: string,
   ): void {
-    void this.sendPairingConfirmed(pairSessionId, actorUserId, actorDisplayName)
+    // A new pair: both people's widgets stop asking them to pair and start counting.
+    void this.sendPairingConfirmed(pairSessionId, actorUserId, actorDisplayName).then(() =>
+      this.reloadPairWidgets(pairSessionId),
+    )
   }
 
   enqueuePairingDisconnected(
@@ -209,6 +228,12 @@ export class PushDispatchService {
     actorDisplayName: string,
   ): void {
     void this.sendPairingDisconnected(pairSessionId, recipientUserId, actorUserId, actorDisplayName)
+  }
+
+  /** Every device of the people who were in the pair forgets it, and their widgets redraw. Runs after
+   * the pair is deleted, so devices are found by person. */
+  enqueuePairEnded(pairSessionId: string, userIds: string[]): void {
+    void this.sendPairEnded(pairSessionId, userIds)
   }
 
   enqueueReaction(
@@ -262,6 +287,12 @@ export class PushDispatchService {
       canSeeLatestDrawings,
       details,
     )
+  }
+
+  /** Tells every device in the pair, the actor's own included, that the anniversary changed, so
+   * their "Time together" widgets follow without the app being opened. */
+  enqueueAnniversaryChanged(pairSessionId: string, actorUserId: string, anniversaryDate: string): void {
+    void this.sendAnniversaryChanged(pairSessionId, actorUserId, anniversaryDate)
   }
 
   initializePairDrawReminders(pairSessionId: string): void {
@@ -541,6 +572,138 @@ export class PushDispatchService {
     }
   }
 
+  private async sendAnniversaryChanged(
+    pairSessionId: string,
+    actorUserId: string,
+    anniversaryDate: string,
+  ): Promise<void> {
+    const { tokens, macTokens } = pushRecipients(await this.pairDeviceTargets(pairSessionId))
+    if (tokens.length === 0) {
+      console.info("[push] no active pair tokens for anniversary change", {
+        pairSessionId,
+        actorUserId,
+      })
+      return
+    }
+
+    console.info("[push] sending anniversary change", {
+      pairSessionId,
+      actorUserId,
+      tokenCount: tokens.length,
+    })
+
+    let result: PushSendResult
+    try {
+      result = await this.sender.send({
+        tokens,
+        macTokens,
+        data: {
+          type: "ANNIVERSARY_CHANGED",
+          pairSessionId,
+          actorUserId,
+          anniversaryDate,
+        },
+        android: {
+          priority: "high",
+          collapseKey: `anniversary-${pairSessionId}`,
+          ttlMs: DEFAULT_ANNIVERSARY_TTL_MS,
+        },
+      })
+    } catch (error) {
+      console.error("[push] anniversary change send failed", {
+        pairSessionId,
+        actorUserId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+
+    console.info("[push] anniversary change sent", {
+      pairSessionId,
+      invalidTokenCount: result.invalidTokens.length,
+    })
+
+    if (result.invalidTokens.length > 0) {
+      await this.revokeTokens(result.invalidTokens)
+    }
+
+    // The data push has saved the new day for the widgets; now have WidgetKit redraw them, which
+    // a reload asked for by an app woken in the background doesn't reliably do.
+    await new Promise((resolve) => setTimeout(resolve, this.widgetReloadDelayMs))
+    await this.reloadPairWidgets(pairSessionId)
+  }
+
+  /** Tells every Apple device in the pair with widgets to reload them. */
+  async reloadPairWidgets(pairSessionId: string): Promise<void> {
+    const pair = await this.db.query<{ user_one_id: string; user_two_id: string }>(
+      `SELECT user_one_id, user_two_id FROM pair_sessions WHERE id = $1`,
+      [pairSessionId],
+    )
+    const users = pair.rows[0]
+    if (!users) return
+    await this.reloadWidgetsOf([users.user_one_id, users.user_two_id], pairSessionId)
+  }
+
+  /** Tells these people's Apple devices with widgets to reload them. */
+  private async reloadWidgetsOf(userIds: string[], pairSessionId: string): Promise<void> {
+    if (userIds.length === 0) return
+    const rows = await this.db.query<WidgetPushDevice>(
+      `
+      SELECT token, widget_push_token, widget_push_bundle_id, widget_push_environment
+      FROM device_tokens
+      WHERE user_id IN (${placeholders(userIds)})
+        AND revoked_at IS NULL
+        AND widget_push_token IS NOT NULL
+        AND widget_push_bundle_id IS NOT NULL
+        AND widget_push_environment IS NOT NULL
+      `,
+      userIds,
+    )
+    for (const device of rows.rows) {
+      if (!device.widget_push_token || !device.widget_push_bundle_id || !device.widget_push_environment) continue
+      const result = await this.widgetSender.reloadWidgets({
+        token: device.widget_push_token,
+        bundleId: device.widget_push_bundle_id,
+        environment: device.widget_push_environment,
+      })
+      if (result === "unregistered") {
+        await this.db.query(
+          `UPDATE device_tokens SET widget_push_token = NULL WHERE token = $1 AND widget_push_token = $2`,
+          [device.token, device.widget_push_token],
+        )
+      }
+    }
+    console.info("[push] widget reloads sent", { pairSessionId, deviceCount: rows.rows.length })
+  }
+
+  private async sendPairEnded(pairSessionId: string, userIds: string[]): Promise<void> {
+    if (userIds.length === 0) return
+    const rows = await this.db.query<DeviceTokenTarget>(
+      `SELECT token, platform FROM device_tokens WHERE user_id IN (${placeholders(userIds)}) AND revoked_at IS NULL`,
+      userIds,
+    )
+    const { tokens, macTokens } = pushRecipients(rows.rows)
+    if (tokens.length > 0) {
+      try {
+        const result = await this.sender.send({
+          tokens,
+          macTokens,
+          data: { type: "PAIR_ENDED", pairSessionId },
+          android: { priority: "high", collapseKey: `pair-ended-${pairSessionId}`, ttlMs: DEFAULT_ANNIVERSARY_TTL_MS },
+        })
+        if (result.invalidTokens.length > 0) await this.revokeTokens(result.invalidTokens)
+      } catch (error) {
+        console.error("[push] pair ended send failed", {
+          pairSessionId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    // As with an anniversary change: the data push clears what the widgets show, then they redraw.
+    await new Promise((resolve) => setTimeout(resolve, this.widgetReloadDelayMs))
+    await this.reloadWidgetsOf(userIds, pairSessionId)
+  }
+
   private async sendReaction(
     pairSessionId: string,
     actorUserId: string,
@@ -718,6 +881,11 @@ export class PushDispatchService {
     pairSessionId: string,
     editors: Map<string, Set<string>>,
   ): Promise<PushRecipients> {
+    return canvasUpdateRecipients(await this.pairDeviceTargets(pairSessionId), editors)
+  }
+
+  /** Every active device of both partners in the pair. */
+  private async pairDeviceTargets(pairSessionId: string): Promise<PairDeviceTarget[]> {
     const rows = await this.db.query<PairDeviceTarget>(
       `
       SELECT dt.user_id, dt.token, dt.platform, dt.sign_in_id
@@ -729,7 +897,7 @@ export class PushDispatchService {
       `,
       [pairSessionId],
     )
-    return canvasUpdateRecipients(rows.rows, editors)
+    return rows.rows
   }
 
   private async activeUserTokens(userId: string): Promise<PushRecipients> {

@@ -85,6 +85,22 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
     ALTER TABLE device_tokens
       ADD COLUMN IF NOT EXISTS live_activity_token TEXT;
 
+    -- An Apple device's WidgetKit push token, so a change its widgets show can reload them at once.
+    ALTER TABLE device_tokens
+      ADD COLUMN IF NOT EXISTS widget_push_token TEXT;
+
+    ALTER TABLE device_tokens
+      ADD COLUMN IF NOT EXISTS widget_push_bundle_id TEXT;
+
+    ALTER TABLE device_tokens
+      ADD COLUMN IF NOT EXISTS widget_push_environment TEXT;
+
+    -- The widget fetches what to show itself, proving it belongs to the device with this secret.
+    ALTER TABLE device_tokens
+      ADD COLUMN IF NOT EXISTS widget_secret_hash TEXT;
+
+    CREATE INDEX IF NOT EXISTS device_tokens_widget_secret_idx ON device_tokens (widget_secret_hash);
+
     -- One sign-in per device: refreshing a session keeps it, so an edit and a push token can be
     -- matched to the device they came from. Sessions from before keep their own id.
     ALTER TABLE sessions

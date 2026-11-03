@@ -44,6 +44,21 @@ export interface AppConfig {
    * that build's own App Intents, so dev and production need their own link.
    */
   wallpaperShortcutLinks?: Record<string, string>
+  /** Keys for pushing to Apple devices directly, for what Firebase can't carry: widget reloads. */
+  apnsKeys?: ApnsKeys
+}
+
+export interface ApnsKey {
+  keyId: string
+  /** The key's `.p8` contents, in PEM. */
+  privateKey: string
+}
+
+/** APNs auth keys by environment: development builds receive through the sandbox. */
+export interface ApnsKeys {
+  teamId: string
+  sandbox?: ApnsKey
+  production?: ApnsKey
 }
 
 export interface AppleSignInKey {
@@ -54,7 +69,7 @@ export interface AppleSignInKey {
 }
 
 /** Mulberry's production and development bundle IDs, on iPhone, iPad and Mac. */
-const DEFAULT_APPLE_CLIENT_IDS = ["com.subhajit.mulberry.beta", "com.subhajit.mulberry.dev"]
+const DEFAULT_APPLE_CLIENT_IDS = ["com.subhajit.mulberry.beta", "com.subhajit.mulberry.beta.dev"]
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   env = { ...loadDotenv(), ...env }
@@ -108,7 +123,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     stickerLocalStorageDir: optionalLocalStickerStorageDir(env.STICKER_LOCAL_STORAGE_DIR, isProduction),
     cannySsoPrivateKey: env.CANNY_SSO_PRIVATE_KEY?.trim() ? env.CANNY_SSO_PRIVATE_KEY : undefined,
     wallpaperShortcutLinks: wallpaperShortcutLinks(env.WALLPAPER_SHORTCUT_LINKS),
+    apnsKeys: apnsKeys(env),
   }
+}
+
+function apnsKeys(env: NodeJS.ProcessEnv): ApnsKeys | undefined {
+  const teamId = (env.APNS_TEAM_ID ?? env.APPLE_TEAM_ID)?.trim()
+  const key = (prefix: string): ApnsKey | undefined => {
+    const keyId = env[`${prefix}_KEY_ID`]?.trim()
+    // Hosts' secret stores often keep a PEM on one line, with its line breaks escaped.
+    const privateKey = env[`${prefix}_PRIVATE_KEY`]?.replaceAll("\\n", "\n").trim()
+    return keyId && privateKey ? { keyId, privateKey } : undefined
+  }
+  const sandbox = key("APNS_SANDBOX")
+  const production = key("APNS_PRODUCTION")
+  if (!teamId || (!sandbox && !production)) return undefined
+  return { teamId, sandbox, production }
 }
 
 function appleSignInKey(env: NodeJS.ProcessEnv): AppleSignInKey | undefined {

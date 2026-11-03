@@ -71,6 +71,12 @@ export interface DeviceTokenRow {
   app_environment: string
   live_activity_start_token: string | null
   live_activity_token: string | null
+  /** WidgetKit's push token for the app's widgets on this device, as hex. */
+  widget_push_token: string | null
+  widget_push_bundle_id: string | null
+  widget_push_environment: "sandbox" | "production" | null
+  /** SHA-256 of the secret the device's widget fetches its own data with. */
+  widget_secret_hash: string | null
   /** The sign-in that last registered this token, if it has registered since sign-ins were kept. */
   sign_in_id: string | null
   last_seen_at: Date | string

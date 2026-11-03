@@ -99,8 +99,9 @@ export function applePushConfiguration(message: MulberryPushMessage, platform: A
       break
     default:
       // Reactions and visibility changes are fetched by the app; an iPhone's reactions also show in
-      // their Live Activity, which is pushed separately. The canvas nudge is Android's partner-doodle
-      // alert: an iPhone's wallpaper already follows the canvas update push.
+      // their Live Activity, which is pushed separately. An anniversary change only refreshes the
+      // "Time together" widgets, on iPhones and Macs alike. The canvas nudge is Android's
+      // partner-doodle alert: an iPhone's wallpaper already follows the canvas update push.
       return background
   }
   // Joining and ending a pairing show as banners; the rest arrive quietly in Notification Center.

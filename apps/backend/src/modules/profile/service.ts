@@ -3,7 +3,12 @@ import sharp from "sharp"
 import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import type { BootstrapResponse } from "../../contracts/bootstrap.js"
-import type { ProfileRecord, UserPresenceSurfaceRow, UserWallpaperStatusRow } from "../../contracts/dbRecords.js"
+import type {
+  PairSessionRecord,
+  ProfileRecord,
+  UserPresenceSurfaceRow,
+  UserWallpaperStatusRow,
+} from "../../contracts/dbRecords.js"
 import {
   PresenceSurfaceTypes,
   type PresenceSurfaceType,
@@ -14,6 +19,7 @@ import type { PushDispatchService } from "../../infra/push/dispatchService.js"
 import { requireSessionContext } from "../_shared/session.js"
 import { getProfileFrom } from "../_shared/profiles.js"
 import { getPairSession } from "../_shared/pairs.js"
+import { normalizeDateString } from "../_shared/dates.js"
 import type { BootstrapService } from "../bootstrap/service.js"
 
 export interface UploadedProfilePhoto {
@@ -392,6 +398,7 @@ export class ProfileService {
       }
     })
 
+    this.notifyAnniversaryChanged(context.user.id, pairSession, existing, anniversaryDate)
     return this.bootstrapService.buildBootstrap(context.user.id)
   }
 
@@ -487,8 +494,21 @@ export class ProfileService {
       }
     })
 
+    this.notifyAnniversaryChanged(context.user.id, pairSession, existing, anniversaryDate)
     await this.removeStoredProfilePhotos(oldPaths)
     return this.bootstrapService.buildBootstrap(context.user.id)
+  }
+
+  /** A paired user's new anniversary reaches every device in the pair, so their widgets follow. */
+  private notifyAnniversaryChanged(
+    userId: string,
+    pairSession: Pick<PairSessionRecord, "id"> | null,
+    existing: Pick<ProfileRecord, "anniversary_date"> | null,
+    anniversaryDate: string,
+  ): void {
+    const next = normalizeDateString(anniversaryDate)
+    if (!pairSession || !next || next === existing?.anniversary_date) return
+    this.pushDispatchService?.enqueueAnniversaryChanged(pairSession.id, userId, next)
   }
 
   async updatePartnerProfilePhoto(accessToken: string, upload: UploadedProfilePhoto): Promise<BootstrapResponse> {

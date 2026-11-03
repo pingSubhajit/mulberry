@@ -82,6 +82,7 @@ export class AccountService {
         userId,
         deleted.displayName,
       )
+      this.pushDispatchService?.enqueuePairEnded(deleted.pairSession.id, [deleted.partnerUserId])
     }
     await this.removeProfilePhotos(userId, deleted.photoPaths)
     await this.revokeApple(userId, deleted.appleCredential)

@@ -60,6 +60,20 @@ export interface PartnerVisibilityChangedPushPayload {
   wallpaperSelectedOnLock: string
 }
 
+export interface AnniversaryChangedPushPayload {
+  type: "ANNIVERSARY_CHANGED"
+  pairSessionId: string
+  actorUserId: string
+  /** The pair's new relationship anniversary, as `yyyy-MM-dd`. */
+  anniversaryDate: string
+}
+
+/** The pair ended: devices that still show it, such as the Time together widget, forget it. */
+export interface PairEndedPushPayload {
+  type: "PAIR_ENDED"
+  pairSessionId: string
+}
+
 export type MulberryPushPayload =
   | CanvasUpdatedPushPayload
   | CanvasNudgePushPayload
@@ -68,6 +82,8 @@ export type MulberryPushPayload =
   | DrawReminderPushPayload
   | ReactionPushPayload
   | PartnerVisibilityChangedPushPayload
+  | AnniversaryChangedPushPayload
+  | PairEndedPushPayload
 
 export interface PushRecipients {
   tokens: string[]

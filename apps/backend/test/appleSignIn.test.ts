@@ -67,7 +67,7 @@ describe("Sign in with Apple", () => {
     expect(body.bootstrapState.userEmail).toBe("new@icloud.com")
     expect(body.bootstrapState.userDisplayName).toBe("Riya")
     expect(body.bootstrapState.signInMethods).toEqual(["apple"])
-    expect(appleCredentials.exchanged).toEqual([{ code: "code-1", clientId: "com.subhajit.mulberry.dev" }])
+    expect(appleCredentials.exchanged).toEqual([{ code: "code-1", clientId: "com.subhajit.mulberry.beta.dev" }])
 
     const again: AuthResponse = (await apple("apple-1", "new@icloud.com")).json()
     expect(again.userId).toBe(body.userId)
@@ -163,7 +163,7 @@ describe("Sign in with Apple", () => {
     const deletion = await app.inject({ method: "DELETE", url: "/me", headers: bearer(body.accessToken) })
 
     expect(deletion.statusCode).toBe(204)
-    expect(appleCredentials.revoked).toEqual([{ refreshToken: "refresh-for-code-10", clientId: "com.subhajit.mulberry.dev" }])
+    expect(appleCredentials.revoked).toEqual([{ refreshToken: "refresh-for-code-10", clientId: "com.subhajit.mulberry.beta.dev" }])
   })
 
   it("answers a refused token while linking as a bad request, keeping the session", async () => {
@@ -308,7 +308,7 @@ function testConfig(): AppConfig {
     googleAllowedClientIds: [],
     allowDevGoogleTokens: true,
     allowDevAppleTokens: true,
-    appleClientIds: ["com.subhajit.mulberry.beta", "com.subhajit.mulberry.dev"],
+    appleClientIds: ["com.subhajit.mulberry.beta", "com.subhajit.mulberry.beta.dev"],
     enableDebugRoutes: false,
   }
 }

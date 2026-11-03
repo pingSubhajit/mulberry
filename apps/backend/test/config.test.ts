@@ -22,10 +22,10 @@ describe("loadConfig", () => {
   it("reads the wallpaper Shortcut links by bundle ID and rejects anything but an iCloud Shortcut link", () => {
     expect(wallpaperShortcutLinks(undefined)).toEqual({})
     expect(wallpaperShortcutLinks(
-      "com.subhajit.mulberry.beta=https://www.icloud.com/shortcuts/abc, com.subhajit.mulberry.dev=https://www.icloud.com/shortcuts/def",
+      "com.subhajit.mulberry.beta=https://www.icloud.com/shortcuts/abc, com.subhajit.mulberry.beta.dev=https://www.icloud.com/shortcuts/def",
     )).toEqual({
       "com.subhajit.mulberry.beta": "https://www.icloud.com/shortcuts/abc",
-      "com.subhajit.mulberry.dev": "https://www.icloud.com/shortcuts/def",
+      "com.subhajit.mulberry.beta.dev": "https://www.icloud.com/shortcuts/def",
     })
     expect(() => wallpaperShortcutLinks("https://www.icloud.com/shortcuts/abc")).toThrow(/WALLPAPER_SHORTCUT_LINKS/)
     expect(() => wallpaperShortcutLinks("com.subhajit.mulberry.beta=https://example.com/shortcuts/abc")).toThrow()

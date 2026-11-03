@@ -1,7 +1,11 @@
 import type { FastifyInstance } from "fastify"
 import { requireBearerToken } from "../../infra/http/auth.js"
 import type { DevicesService } from "./service.js"
-import type { DevicePlatform, UpdateLiveActivityTokensRequest } from "../../contracts/devices.js"
+import type {
+  DevicePlatform,
+  UpdateLiveActivityTokensRequest,
+  UpdateWidgetPushTokenRequest,
+} from "../../contracts/devices.js"
 
 export function registerDeviceRoutes(app: FastifyInstance, service: DevicesService): void {
   app.post("/devices/fcm-token", async (request) => {
@@ -25,6 +29,24 @@ export function registerDeviceRoutes(app: FastifyInstance, service: DevicesServi
       activityPushToken: body.activityPushToken,
     })
     reply.code(204).send()
+  })
+
+  app.put("/devices/widget-push", async (request, reply) => {
+    const body = request.body as Partial<UpdateWidgetPushTokenRequest>
+    await service.updateWidgetPushToken(requireBearerToken(request), {
+      token: body.token ?? "",
+      widgetPushToken: body.widgetPushToken ?? null,
+      bundleId: body.bundleId ?? "",
+      apnsEnvironment: body.apnsEnvironment ?? "production",
+      widgetSecret: body.widgetSecret,
+    })
+    reply.code(204).send()
+  })
+
+  // The widget has no session; it proves itself with the secret its app registered.
+  app.get("/widget/time-together", async (request) => {
+    const secret = request.headers["x-mulberry-widget-secret"]
+    return service.widgetTimeTogether(typeof secret === "string" ? secret : "")
   })
 
   app.delete("/devices/fcm-token", async (request, reply) => {
