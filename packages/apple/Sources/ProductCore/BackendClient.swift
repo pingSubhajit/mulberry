@@ -184,8 +184,8 @@ public actor BackendClient {
     public func setStrokeRenderMode(_ value: String) async throws -> BootstrapState {
         try await json("me/canvas-stroke-render-mode", method: "PUT", body: ["canvasStrokeRenderMode": value])
     }
-    public func wallpapers(cursor: String? = nil) async throws -> WallpaperCatalogPage {
-        var query = [URLQueryItem(name: "limit", value: "24")]
+    public func wallpapers(cursor: String? = nil, limit: Int = 24) async throws -> WallpaperCatalogPage {
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
         if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
         return try await get("wallpapers", query: query, authenticated: false)
     }

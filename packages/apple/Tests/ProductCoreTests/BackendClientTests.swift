@@ -119,6 +119,15 @@ private actor TestTransport: BackendTransport {
     #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
 }
 
+@Test func galleryPageSizeIsSentAsTheLimit() async throws {
+    let transport = try TestTransport()
+    let client = try BackendClient(baseURL: URL(string: "https://example.invalid")!, tokenStore: TestTokenStore(savedSession), transport: transport)
+    _ = try await client.wallpapers()
+    _ = try await client.wallpapers(limit: 4)
+    let limits = await transport.requests.map { URLComponents(url: $0.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "limit" }?.value }
+    #expect(limits == ["24", "4"])
+}
+
 @Test func photoAndPartnerDetailsAreOneMultipartRequest() async throws {
     let transport = try TestTransport()
     let client = try BackendClient(baseURL: URL(string: "https://example.invalid")!, tokenStore: TestTokenStore(.init(accessToken: "fresh", refreshToken: "r", userId: savedSession.userId)), transport: transport)
