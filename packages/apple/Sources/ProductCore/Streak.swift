@@ -29,17 +29,17 @@ public struct StreakResponse: Codable, Equatable, Sendable {
     public func title(days: Int) -> String {
         if lostRecently { return "Oops! Streak lost" }
         if days == 0 { return "Start your streak" }
-        return "\(days) \(days == 1 ? "day" : "days") streak!"
+        return "\(days)-day streak!"
     }
 
     public var message: String {
         let choices: [String]
         if lostRecently {
             choices = [
-                "You had a \(previousStreakDays) day streak. Start again today and it will grow in no time",
-                "That was a \(previousStreakDays) day streak. Take a breath and begin again today",
-                "You built a \(previousStreakDays) day streak. A fresh start today is all you need",
-                "Your \(previousStreakDays) day streak was a great run. Let today be day one again",
+                "You had a \(previousStreakDays)-day streak. Start again today and it will grow in no time",
+                "That was a \(previousStreakDays)-day streak. Take a breath and begin again today",
+                "You built a \(previousStreakDays)-day streak. A fresh start today is all you need",
+                "Your \(previousStreakDays)-day streak was a great run. Let today be day one again",
                 "You were consistent for \(previousStreakDays) days. Restart today and build it back"
             ]
         } else if currentStreakDays == 0 {
@@ -71,6 +71,15 @@ public struct StreakResponse: Codable, Equatable, Sendable {
         let hash = today.utf16.reduce(Int32(0)) { ($0 &* 31) &+ Int32($1) }
         let seed = (hash &* 31) &+ (Int32(clamping: currentStreakDays) &* 7) &+ (Int32(clamping: previousStreakDays) &* 13)
         return choices[Int(seed.magnitude) % choices.count]
+    }
+
+    /// The server's day as the reader writes it, "Nov 3". `today` is a calendar day, so it is read
+    /// and written in UTC to keep it from shifting a day.
+    public var todayDisplay: String {
+        guard let date = Self.dayFormatter.date(from: today) else { return today }
+        var style = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        style.timeZone = TimeZone(secondsFromGMT: 0)!
+        return date.formatted(style)
     }
 
     private static var dayFormatter: DateFormatter {

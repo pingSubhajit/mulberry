@@ -225,6 +225,8 @@ public struct ReactionArrivalView: View {
     let ink: Color
     /// Room kept clear at either side of the caption.
     let captionInset: CGFloat
+    /// Who sent them, for VoiceOver. Nil reads "Your partner".
+    let partnerName: String?
     let done: () -> Void
     @State private var start = Date()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -232,10 +234,12 @@ public struct ReactionArrivalView: View {
     private static let slide = 0.26, wiggle = 1.2, fall = 0.85, fadeIn = 0.16, fadeOut = 0.65
     public static let duration = slide + wiggle + fall
 
-    public init(arrival: ReactionArrival, ink: Color = .primary, captionInset: CGFloat = 48, done: @escaping () -> Void) {
+    public init(arrival: ReactionArrival, ink: Color = .primary, captionInset: CGFloat = 48, partnerName: String? = nil,
+                done: @escaping () -> Void) {
         self.arrival = arrival
         self.ink = ink
         self.captionInset = captionInset
+        self.partnerName = partnerName
         self.done = done
     }
 
@@ -268,14 +272,14 @@ public struct ReactionArrivalView: View {
         }
         .allowsHitTesting(false)
         .accessibilityElement()
-        .accessibilityLabel(Self.announcement(arrival.batch))
+        .accessibilityLabel(Self.announcement(arrival.batch, from: partnerName))
         .sensoryFeedback(.impact(weight: .medium), trigger: arrival)
         .task(id: arrival) {
             start = .now
             #if os(macOS)
             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
             #endif
-            AccessibilityNotification.Announcement(Self.announcement(arrival.batch)).post()
+            AccessibilityNotification.Announcement(Self.announcement(arrival.batch, from: partnerName)).post()
             try? await Task.sleep(for: .seconds(Self.duration))
             if !Task.isCancelled { done() }
         }
@@ -310,8 +314,9 @@ public struct ReactionArrivalView: View {
     }
 
     /// What VoiceOver reads: each kind with its count.
-    public static func announcement(_ batch: PendingReactionBatch) -> String {
-        "Your partner sent " + summary(batch)
+    public static func announcement(_ batch: PendingReactionBatch, from partnerName: String? = nil) -> String {
+        let name = partnerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return "\(name.isEmpty ? "Your partner" : name) sent " + summary(batch)
     }
 
     /// Each kind that arrived with its count, as "2 ❤️, 1 💋".

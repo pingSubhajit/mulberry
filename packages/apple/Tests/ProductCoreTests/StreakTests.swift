@@ -16,8 +16,8 @@ private func streak(_ days: Int = 1, today: String = "2026-10-27", previous: Int
 
 @Test func streakCopyCoversNewActiveAndRecentlyLostStates() throws {
     #expect(try streak(0, previous: 0, last: nil, active: false).title == "Start your streak")
-    #expect(try streak().title == "1 day streak!")
-    #expect(try streak(2).title == "2 days streak!")
+    #expect(try streak().title == "1-day streak!")
+    #expect(try streak(2).title == "2-day streak!")
     let lost = try streak(0, previous: 8, last: "2026-10-25", active: false)
     #expect(lost.lostRecently)
     #expect(lost.title == "Oops! Streak lost")
@@ -236,7 +236,7 @@ private actor RisingStreakTransport: BackendTransport {
     await transport.set(3)
     await model.refresh(api: api)
     #expect(model.celebrationStart == 1)
-    #expect(model.streak?.title(days: 1) == "1 day streak!")
+    #expect(model.streak?.title(days: 1) == "1-day streak!")
     model.streakShown()
     #expect(model.celebrationStart == nil)
 
