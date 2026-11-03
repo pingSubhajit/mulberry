@@ -2160,11 +2160,13 @@ describe("Mulberry backend", () => {
       const miss = await redeem(wrongCode)
       expect(miss.statusCode).toBe(404)
       expect(miss.json().message).toBe("Invite code not found")
+      expect(miss.json().code).toBe("INVITE_NOT_FOUND")
     }
 
     const blocked = await redeem(invite.code)
     expect(blocked.statusCode).toBe(429)
     expect(blocked.json().message).toBe("Too many invite attempts. Try again later.")
+    expect(blocked.json().code).toBe("TOO_MANY_INVITE_ATTEMPTS")
 
     await db.query(
       `UPDATE invite_redeem_failures SET window_started_at = NOW() - INTERVAL '2 hours'`,

@@ -52,7 +52,7 @@ export class ProfileService {
     const context = await requireSessionContext(this.db, accessToken)
     const pairSession = await getPairSession(this.db, context.user.id)
     if (!pairSession) {
-      throw new HttpError(400, "User is not paired")
+      throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
 
     const mode = parseCanvasStrokeRenderMode(request.canvasStrokeRenderMode)
@@ -72,7 +72,7 @@ export class ProfileService {
     const context = await requireSessionContext(this.db, accessToken)
     const pairSession = await getPairSession(this.db, context.user.id)
     if (!pairSession) {
-      throw new HttpError(400, "User is not paired")
+      throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
 
     const wallpaperSyncEnabled = Boolean(request.wallpaperSyncEnabled)
@@ -165,7 +165,7 @@ export class ProfileService {
     const context = await requireSessionContext(this.db, accessToken)
     const pairSession = await getPairSession(this.db, context.user.id)
     if (!pairSession) {
-      throw new HttpError(400, "User is not paired")
+      throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
 
     const parsedSurfaceType = parsePresenceSurfaceType(surfaceType)
@@ -615,10 +615,10 @@ export class ProfileService {
       throw new HttpError(400, "image is required")
     }
     if (upload.data.length > PROFILE_PHOTO_MAX_BYTES) {
-      throw new HttpError(400, "Profile photo must be 10 MB or smaller")
+      throw new HttpError(400, "Profile photo must be 10 MB or smaller", { code: "PROFILE_PHOTO_TOO_LARGE" })
     }
     if (!isSupportedProfilePhotoType(upload.contentType)) {
-      throw new HttpError(400, "Profile photo must be JPEG, PNG, or WebP")
+      throw new HttpError(400, "Profile photo must be JPEG, PNG, or WebP", { code: "PROFILE_PHOTO_UNSUPPORTED" })
     }
 
     let processed: Buffer
@@ -629,7 +629,7 @@ export class ProfileService {
         .webp({ quality: 84 })
         .toBuffer()
     } catch {
-      throw new HttpError(400, "Profile photo could not be processed")
+      throw new HttpError(400, "Profile photo could not be processed", { code: "PROFILE_PHOTO_UNREADABLE" })
     }
 
     const path = `${PROFILE_PHOTO_PREFIX}/${userId}/${randomUUID()}.webp`

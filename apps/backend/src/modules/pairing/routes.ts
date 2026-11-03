@@ -11,7 +11,7 @@ export function registerPairingRoutes(app: FastifyInstance, service: PairingServ
   app.post("/invites/redeem", async (request) => {
     const body = request.body as { code?: string }
     if (!body?.code || !/^\d{6}$/.test(body.code)) {
-      throw new HttpError(400, "A 6-digit code is required")
+      throw new HttpError(400, "A 6-digit code is required", { code: "INVITE_CODE_REQUIRED" })
     }
     return service.redeemInvite(requireBearerToken(request), body.code)
   })

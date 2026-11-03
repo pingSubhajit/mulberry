@@ -29,10 +29,10 @@ export class PairingService {
     const context = await requireSessionContext(this.db, accessToken)
     const bootstrap = await this.bootstrapService.buildBootstrap(context.user.id)
     if (!bootstrap.onboardingCompleted) {
-      throw new HttpError(400, "Complete onboarding before creating an invite")
+      throw new HttpError(400, "Complete onboarding before creating an invite", { code: "ONBOARDING_INCOMPLETE" })
     }
     if (bootstrap.pairingStatus === "PAIRED") {
-      throw new HttpError(400, "Already paired")
+      throw new HttpError(400, "Already paired", { code: "ALREADY_PAIRED" })
     }
     const inviterProfile = await getProfileFrom(this.db, context.user.id)
     this.requireActivePartnerDetails(inviterProfile)
@@ -90,7 +90,7 @@ export class PairingService {
     const context = await requireSessionContext(this.db, accessToken)
     const bootstrap = await this.bootstrapService.buildBootstrap(context.user.id)
     if (bootstrap.pairingStatus === "PAIRED") {
-      throw new HttpError(400, "Already paired")
+      throw new HttpError(400, "Already paired", { code: "ALREADY_PAIRED" })
     }
 
     await this.requireRedeemAttemptsLeft(context.user.id)
@@ -104,10 +104,10 @@ export class PairingService {
     }
     if (inviteStatus !== "PENDING") {
       await this.recordRedeemFailure(context.user.id)
-      throw new HttpError(400, "Invite code is no longer valid")
+      throw new HttpError(400, "Invite code is no longer valid", { code: "INVITE_NO_LONGER_VALID" })
     }
     if (invite.inviter_user_id === context.user.id) {
-      throw new HttpError(400, "You cannot redeem your own invite")
+      throw new HttpError(400, "You cannot redeem your own invite", { code: "OWN_INVITE" })
     }
 
     const inviterProfile = await getProfileFrom(this.db, invite.inviter_user_id)
@@ -146,7 +146,7 @@ export class PairingService {
     const invite = await this.requireInviteById(inviteId)
     const inviteStatus = this.normalizeInviteStatus(invite)
     if (inviteStatus !== "REDEEMED" || invite.recipient_user_id !== context.user.id) {
-      throw new HttpError(400, "Invite cannot be accepted")
+      throw new HttpError(400, "Invite cannot be accepted", { code: "INVITE_NO_LONGER_VALID" })
     }
 
     const pairId = randomUUID()
@@ -204,7 +204,7 @@ export class PairingService {
     const invite = await this.requireInviteById(inviteId)
     const inviteStatus = this.normalizeInviteStatus(invite)
     if (inviteStatus !== "REDEEMED" || invite.recipient_user_id !== context.user.id) {
-      throw new HttpError(400, "Invite cannot be declined")
+      throw new HttpError(400, "Invite cannot be declined", { code: "INVITE_NO_LONGER_VALID" })
     }
 
     await this.db.query(
@@ -223,7 +223,7 @@ export class PairingService {
     const context = await requireSessionContext(this.db, accessToken)
     const pairSession = await getPairSession(this.db, context.user.id)
     if (!pairSession) {
-      throw new HttpError(400, "User is not paired")
+      throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
 
     const recipientUserId = pairSession.user_one_id === context.user.id
@@ -251,7 +251,7 @@ export class PairingService {
     const context = await requireSessionContext(this.db, accessToken)
     const pairSession = await getPairSession(this.db, context.user.id)
     if (!pairSession) {
-      throw new HttpError(400, "User is not paired")
+      throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
 
     const profile = await getProfileFrom(this.db, context.user.id)
@@ -267,7 +267,7 @@ export class PairingService {
     const context = await requireSessionContext(this.db, accessToken)
     const pairSession = await getPairSession(this.db, context.user.id)
     if (!pairSession) {
-      throw new HttpError(400, "User is not paired")
+      throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
 
     const recipientUserId = pairSession.user_one_id === context.user.id
@@ -404,12 +404,12 @@ export class PairingService {
     )
     const invite = rows.rows[0]
     if (!invite) {
-      throw new HttpError(404, "Invite code not found")
+      throw new HttpError(404, "Invite code not found", { code: "INVITE_NOT_FOUND" })
     }
     const status = this.normalizeInviteStatus(invite)
     if (status === "EXPIRED") {
       await this.expireInvite(invite.id)
-      throw new HttpError(400, "Invite code has expired")
+      throw new HttpError(400, "Invite code has expired", { code: "INVITE_EXPIRED" })
     }
     return invite
   }
@@ -426,7 +426,7 @@ export class PairingService {
     )
     const invite = rows.rows[0]
     if (!invite) {
-      throw new HttpError(404, "Invite not found")
+      throw new HttpError(404, "Invite not found", { code: "INVITE_NOT_FOUND" })
     }
     return invite
   }
@@ -434,7 +434,7 @@ export class PairingService {
   private async requireRedeemAttemptsLeft(userId: string): Promise<void> {
     const failures = await this.currentRedeemFailures(userId)
     if (failures && failures.count >= REDEEM_FAILURE_LIMIT) {
-      throw new HttpError(429, "Too many invite attempts. Try again later.")
+      throw new HttpError(429, "Too many invite attempts. Try again later.", { code: "TOO_MANY_INVITE_ATTEMPTS" })
     }
   }
 

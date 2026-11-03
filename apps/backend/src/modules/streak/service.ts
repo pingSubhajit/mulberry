@@ -82,7 +82,7 @@ export class StreakService {
 
     const pairSession = await getPairSession(this.db, context.user.id)
     if (!pairSession) {
-      throw new HttpError(400, "User is not paired")
+      throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
 
     await this.db.query(

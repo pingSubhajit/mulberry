@@ -445,7 +445,7 @@ export class CanvasService {
     const context = await requireSessionContext(this.db, accessToken)
     const pairSession = await getPairSession(this.db, context.user.id)
     if (!pairSession) {
-      throw new HttpError(403, "User is not paired")
+      throw new HttpError(403, "User is not paired", { code: "NOT_PAIRED" })
     }
     return { ...context, pairSession }
   }

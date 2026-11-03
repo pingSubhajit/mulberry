@@ -45,7 +45,7 @@ export class ReactionsService {
     const context = await requireSessionContext(this.db, accessToken)
     const pairSession = await getPairSession(this.db, context.user.id)
     if (!pairSession) {
-      throw new HttpError(400, "User is not paired")
+      throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
 
     const recipientUserId = pairSession.user_one_id === context.user.id
@@ -131,7 +131,7 @@ export class ReactionsService {
     const context = await requireSessionContext(this.db, accessToken)
     const pairSession = await getPairSession(this.db, context.user.id)
     if (!pairSession) {
-      throw new HttpError(400, "User is not paired")
+      throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
 
     const rows = await this.db.query<{
@@ -187,7 +187,7 @@ export class ReactionsService {
     const context = await requireSessionContext(this.db, accessToken)
     const pairSession = await getPairSession(this.db, context.user.id)
     if (!pairSession) {
-      throw new HttpError(400, "User is not paired")
+      throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
     const generation = Number(request.generation)
     if (!Number.isFinite(generation) || generation <= 0) {
@@ -220,7 +220,7 @@ export class ReactionsService {
     const context = await requireSessionContext(this.db, accessToken)
     const pairSession = await getPairSession(this.db, context.user.id)
     if (!pairSession) {
-      throw new HttpError(400, "User is not paired")
+      throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
     const generation = Number(request.generation)
     if (!Number.isFinite(generation) || generation <= 0) {
@@ -302,7 +302,7 @@ export class ReactionsService {
         `,
         [input.actorUserId, input.pairSessionId, tokens, nowMs],
       )
-      throw new HttpError(429, "Too many reactions sent; try again in a moment")
+      throw new HttpError(429, "Too many reactions sent; try again in a moment", { code: "TOO_MANY_REACTIONS" })
     }
 
     tokens -= 1
