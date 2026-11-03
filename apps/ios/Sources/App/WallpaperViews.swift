@@ -137,7 +137,7 @@ struct WallpaperPickerView: View {
     private func lockScreen(pad: Bool) -> some View {
         GeometryReader { proxy in
             let width = proxy.size.width, height = proxy.size.height
-            Image(uiImage: library.image).resizable().scaledToFill()
+            WallpaperThumbnail(key: WallpaperThumbnails.key(for: library.image), placeholder: .black) { library.image }
                 .frame(width: width, height: height).clipped()
                 .overlay(alignment: .topTrailing) {
                     HStack(spacing: width * 0.012) {
@@ -203,7 +203,11 @@ struct WallpaperPickerView: View {
         let selected = library.choice.id == choice.id
         return Button { library.select(choice) } label: {
             Color.clear.aspectRatio(171 / 133, contentMode: .fit)
-                .overlay { Image(choice.asset!).resizable().scaledToFill() }
+                .overlay {
+                    WallpaperThumbnail(key: "asset-\(choice.asset!)", placeholder: MulberryDesign.softAlt) {
+                        UIImage(named: choice.asset!)
+                    }
+                }
                 .overlay {
                     if selected {
                         ZStack {
@@ -354,5 +358,75 @@ private struct WallpaperGalleryPreview: View {
                     }.padding(24).background(MulberryDesign.background)
                 }
         }.interactiveDismissDisabled(library.working)
+    }
+}
+
+/// A wallpaper drawn small, decoded at the size it fills and off the main thread, so a card or
+/// the lock screen preview never decodes a full wallpaper to fill a few hundred points. Until the
+/// first one is ready it shows `placeholder`; a new wallpaper replaces the old one once it is.
+private struct WallpaperThumbnail: View {
+    let key: String
+    let placeholder: Color
+    let source: () -> UIImage?
+    @Environment(\.displayScale) private var displayScale
+    @State private var thumbnail: UIImage?
+
+    init(key: String, placeholder: Color, source: @escaping () -> UIImage?) {
+        self.key = key
+        self.placeholder = placeholder
+        self.source = source
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let pixels = CGSize(width: (proxy.size.width * displayScale).rounded(.up),
+                                height: (proxy.size.height * displayScale).rounded(.up))
+            Group {
+                if let shown = WallpaperThumbnails.shared.cached(key, filling: pixels) ?? thumbnail {
+                    Image(uiImage: shown).resizable().scaledToFill()
+                } else {
+                    placeholder
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .task(id: "\(key)-\(Int(pixels.width))x\(Int(pixels.height))") {
+                guard pixels.width > 0, pixels.height > 0, let image = source() else { return }
+                thumbnail = await WallpaperThumbnails.shared.thumbnail(key, of: image, filling: pixels)
+            }
+        }
+    }
+}
+
+/// The wallpapers' thumbnails, kept for the next showing.
+@MainActor
+private final class WallpaperThumbnails {
+    static let shared = WallpaperThumbnails()
+    private struct Entry {
+        /// Held, so an image's identity, which `key(for:)` uses, can't pass to another image.
+        let source: UIImage
+        let pixels: CGSize
+        let thumbnail: UIImage
+    }
+    private var entries: [String: Entry] = [:]
+
+    /// A key for an image with no name, such as the chosen wallpaper or a photo.
+    static func key(for image: UIImage) -> String { "image-\(ObjectIdentifier(image).hashValue)" }
+
+    func cached(_ key: String, filling pixels: CGSize) -> UIImage? {
+        guard let entry = entries[key], entry.pixels == pixels else { return nil }
+        return entry.thumbnail
+    }
+
+    func thumbnail(_ key: String, of image: UIImage, filling pixels: CGSize) async -> UIImage? {
+        if let cached = cached(key, filling: pixels) { return cached }
+        // Filling the frame, as `scaledToFill` draws it, at most at the image's own size.
+        let scale = min(1, max(pixels.width / image.size.width, pixels.height / image.size.height) / image.scale)
+        let size = CGSize(width: (image.size.width * image.scale * scale).rounded(.up),
+                          height: (image.size.height * image.scale * scale).rounded(.up))
+        guard let thumbnail = await image.byPreparingThumbnail(ofSize: size) else { return nil }
+        // A handful: the presets and the last few chosen wallpapers.
+        if entries.count >= 12 { entries.removeAll() }
+        entries[key] = Entry(source: image, pixels: pixels, thumbnail: thumbnail)
+        return thumbnail
     }
 }
