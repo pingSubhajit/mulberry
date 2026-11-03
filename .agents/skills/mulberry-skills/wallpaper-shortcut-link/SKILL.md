@@ -19,12 +19,13 @@ Scripts are in `scripts/` next to this file (`.agents/skills/mulberry-skills/wal
 
 | | Dev | Production |
 | --- | --- | --- |
-| Bundle ID | `com.subhajit.mulberry.dev` (`Configuration/Debug.xcconfig`) | `com.subhajit.mulberry.beta` (`Configuration/Base.xcconfig`) |
-| Team | `DEVELOPMENT_TEAM` in ignored `apps/ios/Configuration/Local.xcconfig` | `DEVELOPMENT_TEAM` in ignored `apps/ios/Configuration/Production.local.xcconfig` |
+| Bundle ID | `com.subhajit.mulberry.beta.dev` (`Configuration/Debug.xcconfig`) | `com.subhajit.mulberry.beta` (`Configuration/Base.xcconfig`) |
+| Team | `HMJX9736KN` (`Configuration/Base.xcconfig`) | `HMJX9736KN` (`Configuration/Base.xcconfig`) |
 | Backend | local, through Hun: root `.env` | Fly app `mulberry`: secret |
 
+- **Dev and production differ only in bundle ID.** Both sign with `HMJX9736KN`; the personal team `YGJRT89MH9` and the old dev bundle `com.subhajit.mulberry.dev` are retired. If the bundle ID or team ever changes again, every link for that build stops working: its Shortcut calls the old app. Make new links and retire the old ones in the ledger.
 - **The Shortcut must be named exactly "Mulberry Sync".** The app runs it and opens it by that name.
-- **`apps/ios/ShortcutTemplates/` holds the committed dev template.** When the template changes, regenerate it with the dev team and bundle ID (`make-shortcut.py --team-id <dev team> --bundle-id com.subhajit.mulberry.dev`) and commit it. The app's build phase (`prepare-shortcut.py`) builds each build's own bundled copy, which is the share-sheet fallback. **Never write a production template into `ShortcutTemplates/`**: always pass `--output-dir`.
+- **`apps/ios/ShortcutTemplates/` holds the committed dev template.** When the template changes, regenerate it with the team and dev bundle ID (`make-shortcut.py --team-id HMJX9736KN --bundle-id com.subhajit.mulberry.beta.dev`) and commit it. The app's build phase (`prepare-shortcut.py`) builds each build's own bundled copy, which is the share-sheet fallback. **Never write a production template into `ShortcutTemplates/`**: always pass `--output-dir`.
 - Links are public. Anyone with one can view the Shortcut, which holds nothing private. Deleting the device copy doesn't revoke the link.
 
 ## Steps
@@ -34,10 +35,10 @@ Repeat steps 1–7 for each bundle ID that needs a link.
 ### 1. Build the template
 
 ```sh
-B=com.subhajit.mulberry.beta          # or com.subhajit.mulberry.dev
-T=<team from the table above>
+B=com.subhajit.mulberry.beta          # or com.subhajit.mulberry.beta.dev
 OUT=/tmp/mulberry-shortcut-$B
-python3 apps/ios/scripts/make-shortcut.py --team-id $T --bundle-id $B --output-dir $OUT
+rm -rf $OUT
+python3 apps/ios/scripts/make-shortcut.py --team-id HMJX9736KN --bundle-id $B --output-dir $OUT
 ```
 
 This writes `$OUT/Mulberry Sync.plist` (the source, used in step 6) and the signed `$OUT/Mulberry Sync.shortcut`, which starts with `AEA1`.
@@ -60,16 +61,17 @@ xcrun devicectl device process launch --device <id> --payload-url "http://$IP:87
 
 - **The file must be called `Mulberry Sync.shortcut`.** Shortcuts names the Shortcut after the file, not after the name inside it.
 - **Tap Download straight away.** A download left waiting can stall at 0 KB; if it does, open the URL again with `?2` on the end.
-- Open it from Safari's ☰ menu in the address bar → Downloads → the newest file. If Downloads already held one, Safari adds " 2" to the file name; fix the name in step 4.
+- Open it from Safari's ☰ menu in the address bar → Downloads → the newest file, at the top. Earlier runs leave their files there, so Safari numbers the new one ("Mulberry Sync 4.shortcut"); fix the name in step 4.
 
 ### 4. Add it
 
 - Tap **Set Up Shortcut**, then **Add Shortcut**. Leave Wallpaper unchosen: the shared link drops it anyway.
-- If it came in under another name, long-press it in the library, choose Rename, and type `Mulberry Sync` with `$S/devicehub.sh type`. Selecting all sometimes misses and appends instead. Check the screenshot, run `type` again if needed, then tap Done.
+- If it came in under another name, go back to the library first. Long-press it there, choose Rename, and type `Mulberry Sync` with `$S/devicehub.sh type`. Selecting all sometimes misses and appends instead. Check the screenshot, run `type` again if needed, then tap Done.
+- **Never rename it from the title menu** at the top of the Shortcut's own page. That saves the Shortcut again without its setup question, and the link made from it is useless. Step 6 catches it as `FAIL setup question`; delete that copy and add the file again.
 
 ### 5. Copy the link
 
-Long-press "Mulberry Sync" in the library, then **Share → Copy iCloud Link → Copy Link**. Tap well clear of the contacts row in the share sheet. Then read the phone's clipboard:
+Long-press "Mulberry Sync" in the library, then **Share → Copy iCloud Link → Copy Link**. Share from the library, not from the Shortcut's own page. Tap well clear of the contacts row in the share sheet. Then read the phone's clipboard:
 
 ```sh
 xcrun devicectl device pasteboard paste --device <id>
@@ -90,7 +92,7 @@ Every line must be `ok`, followed by `LINK MATCHES TEMPLATE`. The script checks:
 - that the app identity matches the template;
 - that no Lock Screen from the phone came along.
 
-If anything fails, don't use the link: fix the cause and make a new one.
+If anything fails, don't use the link: fix the cause and make a new one. Record the failed link as retired in the ledger, since it stays public.
 
 ### 7. Clean up the phone
 

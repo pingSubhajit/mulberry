@@ -32,4 +32,4 @@ xcodebuild -project "$IOS_ROOT/Mulberry.xcodeproj" -scheme Mulberry \
   -configuration Debug -destination "platform=iOS Simulator,id=$SIM_DEVICE" \
   -derivedDataPath "$IOS_ROOT/.build/xcode" "${SIGNING_ARGS[@]}" build
 xcrun simctl install "$SIM_DEVICE" "$IOS_ROOT/.build/xcode/Build/Products/Debug-iphonesimulator/Mulberry.app"
-xcrun simctl launch "$SIM_DEVICE" com.subhajit.mulberry.dev
+xcrun simctl launch "$SIM_DEVICE" com.subhajit.mulberry.beta.dev

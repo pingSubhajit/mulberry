@@ -18,7 +18,8 @@ case "$ENVIRONMENT:$CONFIGURATION" in
   prod:release) XCODE_CONFIGURATION=Release ;;
   *) echo 'Use ENVIRONMENT=dev|prod and CONFIGURATION=debug|release' >&2; exit 1 ;;
 esac
-if [ "$ENVIRONMENT" = prod ]; then DEFAULT_TEAM=HMJX9736KN; else DEFAULT_TEAM=YGJRT89MH9; fi
+# Debug and Release builds of both apps sign with the paid team.
+DEFAULT_TEAM=HMJX9736KN
 python3 Scripts/generate-project.py
 args=(-project MulberryMac.xcodeproj -scheme 'Mulberry Production' -configuration "$XCODE_CONFIGURATION"
   -destination "platform=macOS,arch=$HOST_ARCH" -derivedDataPath .build/xcode

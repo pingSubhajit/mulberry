@@ -19,7 +19,7 @@ class ClientConfigurationTests(unittest.TestCase):
         (scripts / SCRIPT.name).write_bytes(SCRIPT.read_bytes())
         config = self.root / 'ios/Configuration'
         config.mkdir(parents=True)
-        for variant, bid in [('prod', 'com.subhajit.mulberry.beta'), ('dev', 'com.subhajit.mulberry.dev')]:
+        for variant, bid in [('prod', 'com.subhajit.mulberry.beta'), ('dev', 'com.subhajit.mulberry.beta.dev')]:
             (config / f'GoogleService-Info.{variant}.plist').write_bytes(plistlib.dumps({'BUNDLE_ID': bid}))
         (self.mac / '.env.release').write_text('MULBERRY_MAC_GOOGLE_CLIENT_ID=existing-desktop-client\nSERVER_PRIVATE_KEY=never-copy\n')
         self.env = {k:v for k,v in os.environ.items() if not k.startswith('MULBERRY_')}
@@ -43,11 +43,11 @@ class ClientConfigurationTests(unittest.TestCase):
         self.assertNotEqual(self.run_copy(MULBERRY_MAC_API_BASE_URL='http://api.mulberry.my/', MULBERRY_ALLOW_LOCAL_SERVER='YES').returncode, 0)
 
     def test_firebase_identity_must_match(self):
-        self.env['PRODUCT_BUNDLE_IDENTIFIER']='com.subhajit.mulberry.dev'
+        self.env['PRODUCT_BUNDLE_IDENTIFIER']='com.subhajit.mulberry.beta.dev'
         self.assertNotEqual(self.run_copy().returncode, 0)
 
     def test_unsigned_development_build_needs_no_private_configuration(self):
-        self.env.update(MULBERRY_APP_ENVIRONMENT='dev', PRODUCT_BUNDLE_IDENTIFIER='com.subhajit.mulberry.dev',
+        self.env.update(MULBERRY_APP_ENVIRONMENT='dev', PRODUCT_BUNDLE_IDENTIFIER='com.subhajit.mulberry.beta.dev',
                         MULBERRY_MAC_UNSIGNED_BUILD='YES')
         (self.root / 'ios/Configuration/GoogleService-Info.dev.plist').unlink()
         result = self.run_copy()
@@ -61,7 +61,7 @@ class ClientConfigurationTests(unittest.TestCase):
         self.assertNotEqual(self.run_copy(MULBERRY_MAC_UNSIGNED_BUILD='YES').returncode, 0)
 
     def test_signed_development_still_requires_configuration(self):
-        self.env.update(MULBERRY_APP_ENVIRONMENT='dev', PRODUCT_BUNDLE_IDENTIFIER='com.subhajit.mulberry.dev')
+        self.env.update(MULBERRY_APP_ENVIRONMENT='dev', PRODUCT_BUNDLE_IDENTIFIER='com.subhajit.mulberry.beta.dev')
         self.assertNotEqual(self.run_copy().returncode, 0)
 
 if __name__ == '__main__':

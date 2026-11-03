@@ -26,7 +26,7 @@ class ConfigurationTests(unittest.TestCase):
             return {scheme.replace('$(PRODUCT_BUNDLE_IDENTIFIER)', bundle)
                           .replace('$(GOOGLE_REVERSED_CLIENT_ID)', 'google.' + bundle)
                     for entry in info['CFBundleURLTypes'] for scheme in entry['CFBundleURLSchemes']}
-        self.assertFalse(schemes('com.subhajit.mulberry.dev') & schemes('com.subhajit.mulberry.beta'),
+        self.assertFalse(schemes('com.subhajit.mulberry.beta.dev') & schemes('com.subhajit.mulberry.beta'),
                          'A Shortcut callback can open the wrong installed app when schemes overlap.')
 
     def transport(self, url, allow=False, old_exceptions=False):
@@ -74,7 +74,7 @@ class ConfigurationTests(unittest.TestCase):
         self.assertTrue(destination.exists())
 
     def test_wrong_bundle_is_never_copied(self):
-        result, destination = self.firebase('com.subhajit.mulberry.dev')
+        result, destination = self.firebase('com.subhajit.mulberry.beta.dev')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(destination.exists())
 
@@ -97,7 +97,7 @@ class ConfigurationTests(unittest.TestCase):
         for descriptor in descriptors:
             self.assertEqual(descriptor['TeamIdentifier'], 'HMJX9736KN')
             self.assertEqual(descriptor['BundleIdentifier'], 'com.subhajit.mulberry.beta')
-        self.assertNotIn(b'com.subhajit.mulberry.dev', (self.directory / 'Mulberry Sync.plist').read_bytes())
+        self.assertNotIn(b'com.subhajit.mulberry.beta.dev', (self.directory / 'Mulberry Sync.plist').read_bytes())
 
     def test_symbols_use_the_selected_package_cache(self):
         for custom in [False, True]:

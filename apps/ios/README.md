@@ -12,7 +12,7 @@ The Xcode project uses the official Google Sign-In package. Regenerate it with `
 
 | Environment | Debug configuration | Optimised configuration | Bundle ID | Icon |
 | --- | --- | --- | --- | --- |
-| Local development | `Debug` | `DevRelease` | `com.subhajit.mulberry.dev` | Purple `AppIconDev` |
+| Local development | `Debug` | `DevRelease` | `com.subhajit.mulberry.beta.dev` | Purple `AppIconDev` |
 | Production | `ProdDebug` | `Release` | `com.subhajit.mulberry.beta` | Normal `AppIcon` |
 
 The `.beta` suffix is a temporary production identity for the Techaboard team, not another environment. Its extension is `com.subhajit.mulberry.beta.widgets`. The final `com.subhajit.mulberry` identity is reserved for the owner's team. The `Mulberry` scheme runs development; `Mulberry Production` runs the production identity with debug compilation. Both environments use the existing Firebase project, backend Google server client audience and Firebase server credentials. Client registrations are specific to each bundle ID. Developer tools are limited to the development environment.
@@ -42,7 +42,7 @@ Run `python3 apps/ios/scripts/test-product.py` from the repository root to check
 
 The canvas never draws an Apple Pencil sample as UIKit first reports it. `PencilInput` sits between the touch view and the editor: a sample counts once iPadOS has measured its force (it arrives estimated, then in `touchesEstimatedPropertiesUpdated` some 30 ms later) and only if the Pencil pressed, and only if the Pencil could have reached it. With a palm on the glass and the tip hovering close, iPadOS opens Pencil touches whose measured force is zero, and pulls single samples across to the palm; both drew straight lines before. Strokes reach the editor whole and in order. Fingers pass through `PalmRejection`, and a finger's stroke is saved only once it has proved not to be a palm. On iPhone, where a flat thumb or finger pad reads as large as an iPad palm, fingers are judged only while the Pencil has touched or hovered in the last 30 seconds (or with Only Draw with Apple Pencil on); otherwise every finger draws at once. iPad judges every finger.
 
-A debug build writes every touch the canvas receives to `Library/Caches/InputTrace.jsonl`, starting afresh at each launch. Read it off a connected iPad, while the app stays open, with `xcrun devicectl device copy from --device DEVICE_ID --domain-type appDataContainer --domain-identifier com.subhajit.mulberry.dev --source Library/Caches/InputTrace.jsonl --destination /tmp/InputTrace.jsonl`. `Tests/Offline/Fixtures/pencil-palm-trace.json` is one such session, compacted; `scripts/test-offline.sh` replays it.
+A debug build writes every touch the canvas receives to `Library/Caches/InputTrace.jsonl`, starting afresh at each launch. Read it off a connected iPad, while the app stays open, with `xcrun devicectl device copy from --device DEVICE_ID --domain-type appDataContainer --domain-identifier com.subhajit.mulberry.beta.dev --source Library/Caches/InputTrace.jsonl --destination /tmp/InputTrace.jsonl`. `Tests/Offline/Fixtures/pencil-palm-trace.json` is one such session, compacted; `scripts/test-offline.sh` replays it.
 
 The development template is `ShortcutTemplates/Mulberry Sync.shortcut`. The app shares it from Wallpaper setup. The user selects the target wallpaper and enables its notification automation in Shortcuts. First-run permissions still require iOS prompts. The template does not silently enable automation. A local test and matching completion receipt check the chain; neither proves remote push delivery or reads wallpaper pixels.
 
@@ -180,10 +180,10 @@ The wallpaper import question was removed after reproducing a stuck Add Shortcut
 
 The iOS app registers an FCM token only after APNs registration succeeds. The backend accepts `IOS` device tokens and sends passive APNs alerts titled `Mulberry canvas updated`, which match the supplied Shortcut trigger. Android continues receiving its existing data-only payload. A completed Shortcut removes only matching canvas notifications through the rendered revision; it does not remove newer updates or account notices.
 
-Local personal-team provisioning does not include `aps-environment`. Local Shortcut tests can run with that profile, but a passing local test does not prove remote partner delivery. For remote delivery, enroll the same personal identity in the Apple Developer Program, enable Push Notifications for the app ID, add its APNs authentication key to the corresponding Firebase iOS app, and build with push-enabled provisioning:
+Debug and Release builds both sign with the paid team `HMJX9736KN` and carry `aps-environment` (development in Debug). Remote delivery also needs the APNs authentication key added to the matching Firebase iOS app (`com.subhajit.mulberry.beta.dev` for development builds). To install push-enabled provisioning on a device:
 
 ```sh
-python3 apps/ios/scripts/run-device.py --device 00008150-001455913C83C01C --team-id YGJRT89MH9 --push
+python3 apps/ios/scripts/run-device.py --device 00008150-001455913C83C01C --team-id HMJX9736KN --push
 ```
 
 The APNs key belongs in Firebase, never in the app bundle or repository. The build copies only `Configuration/GoogleService-Info.dev.plist` for Debug or `GoogleService-Info.prod.plist` for Release and rejects a mismatched bundle ID. Release requires the production client file. Configure production OAuth client IDs separately before distributing a release; development OAuth configuration must not be copied into production.

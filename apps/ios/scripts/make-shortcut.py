@@ -13,7 +13,7 @@ import subprocess
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--team-id', default='FAKETEAMID')
-parser.add_argument('--bundle-id', default='com.subhajit.mulberry.dev')
+parser.add_argument('--bundle-id', default='com.subhajit.mulberry.beta.dev')
 parser.add_argument('--name', default=None, help='Shortcut name; defaults to Mulberry Sync')
 parser.add_argument('--output-dir', type=Path, help='Write this build\'s template outside the source tree')
 parser.add_argument('--unsigned-only', action='store_true')

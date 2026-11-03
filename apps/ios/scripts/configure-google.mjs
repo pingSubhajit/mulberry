@@ -18,7 +18,7 @@ const { values: options } = parseArgs({ options: {
 } });
 if (!['dev', 'prod'].includes(options.environment)) throw new Error('Environment must be dev or prod.');
 const variant = options.environment;
-const bundleId = variant === 'dev' ? 'com.subhajit.mulberry.dev' : 'com.subhajit.mulberry.beta';
+const bundleId = variant === 'dev' ? 'com.subhajit.mulberry.beta.dev' : 'com.subhajit.mulberry.beta';
 if (variant === 'prod' && options['api-url']) throw new Error('Use run-device.py --api-url for a local production-identity test; do not persist its URL in release settings.');
 
 async function main() {

@@ -44,15 +44,15 @@
 	<array>
 		<dict>
 			<key>WFWorkflowActionIdentifier</key>
-			<string>com.subhajit.mulberry.dev.GetLatestWallpaperIntent</string>
+			<string>com.subhajit.mulberry.beta.dev.GetLatestWallpaperIntent</string>
 			<key>WFWorkflowActionParameters</key>
 			<dict>
 				<key>AppIntentDescriptor</key>
 				<dict>
 					<key>TeamIdentifier</key>
-					<string>YGJRT89MH9</string>
+					<string>HMJX9736KN</string>
 					<key>BundleIdentifier</key>
-					<string>com.subhajit.mulberry.dev</string>
+					<string>com.subhajit.mulberry.beta.dev</string>
 					<key>Name</key>
 					<string>Mulberry</string>
 					<key>AppIntentIdentifier</key>
@@ -292,15 +292,15 @@
 		</dict>
 		<dict>
 			<key>WFWorkflowActionIdentifier</key>
-			<string>com.subhajit.mulberry.dev.RecordWallpaperResultIntent</string>
+			<string>com.subhajit.mulberry.beta.dev.RecordWallpaperResultIntent</string>
 			<key>WFWorkflowActionParameters</key>
 			<dict>
 				<key>AppIntentDescriptor</key>
 				<dict>
 					<key>TeamIdentifier</key>
-					<string>YGJRT89MH9</string>
+					<string>HMJX9736KN</string>
 					<key>BundleIdentifier</key>
-					<string>com.subhajit.mulberry.dev</string>
+					<string>com.subhajit.mulberry.beta.dev</string>
 					<key>Name</key>
 					<string>Mulberry</string>
 					<key>AppIntentIdentifier</key>
@@ -337,11 +337,11 @@
 				<key>SelectedApps</key>
 				<dict>
 					<key>BundleIdentifier</key>
-					<string>com.subhajit.mulberry.dev</string>
+					<string>com.subhajit.mulberry.beta.dev</string>
 					<key>Name</key>
 					<string>Mulberry</string>
 					<key>TeamIdentifier</key>
-					<string>YGJRT89MH9</string>
+					<string>HMJX9736KN</string>
 				</dict>
 				<key>Conditions</key>
 				<dict>

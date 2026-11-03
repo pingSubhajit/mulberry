@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGES=(
-  "com.subhajit.mulberry.dev"
+  "com.subhajit.mulberry.beta.dev"
   "com.subhajit.mulberry"
   "com.subhajit.elaris.dev"
   "com.subhajit.elaris"
