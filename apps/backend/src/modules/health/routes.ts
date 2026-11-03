@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify"
 
 export function registerHealthRoutes(app: FastifyInstance): void {
-  app.get("/health", async (_request, reply) => {
-    reply.code(200).send({ ok: true })
-  })
+  // Returned, not reply.send(): async preSerialization hooks would otherwise let the handler
+  // resolve before the send finishes, and Fastify would answer twice.
+  app.get("/health", async () => ({ ok: true }))
 }
 
