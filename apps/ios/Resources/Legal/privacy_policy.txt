@@ -1,7 +1,7 @@
 Mulberry Privacy Policy
 
 Effective date: April 21, 2026
-Last updated: November 1, 2026
+Last updated: November 4, 2026
 
 This Privacy Policy explains how Mulberry collects, uses, stores, shares, and protects information when you use the Mulberry apps for Android, iPhone, iPad, and Mac, the Mulberry live wallpaper on Android, the Mulberry wallpaper Shortcut on iPhone and iPad, the Mulberry desktop overlay and menu bar on Mac, and related backend services. Mulberry is operated by Subhajit Kundu.
 
@@ -105,7 +105,7 @@ Mulberry stores and synchronizes drawing data that you or your paired partner cr
 
 - Strokes, stroke identifiers, colors, brush widths, and point coordinates.
 - Text and stickers placed on the canvas, with their position, size, rotation, color, and font.
-- Reactions you send to your paired partner, such as hearts or hugs, and how many of each.
+- Reactions you send to your paired partner, such as hearts or hugs: the kind of each reaction, when you sent it, and how many of each are waiting for your partner.
 - Drawing operations such as adding strokes, appending points, finishing strokes, deleting strokes, and clearing the canvas.
 - Client operation identifiers, operation batches, and timestamps.
 - Server-assigned revision numbers.
@@ -123,6 +123,7 @@ Mulberry may collect technical information needed to operate, secure, diagnose, 
 
 - App environment, such as development or production.
 - Device platform: Android, iOS, iPadOS, or macOS.
+- Your device's time zone, such as Asia/Kolkata, and when it changes, so times on the shared canvas can be shown in your local time.
 - Firebase Cloud Messaging registration tokens on Android, iPhone, iPad, and Mac.
 - On Mac, a random identifier created for each Mac installation, whether the desktop overlay is showing, the name of the display it is on, and its sync state.
 - Token registration, last-seen, and revocation timestamps.
@@ -200,6 +201,7 @@ Mulberry uses information for the following purposes:
 - To render and cache the shared canvas locally on your device.
 - To update your wallpaper with the latest canvas: the live wallpaper on Android, or the wallpaper image the Mulberry Shortcut sets on iPhone and iPad.
 - To show the shared canvas on your Mac desktop and in the menu bar.
+- To show you and your paired partner summaries of your time together on the shared canvas, such as your drawing and reaction activity over a year, in your local time.
 - To show your paired partner's reactions over the canvas, on iPhone in the Dynamic Island and on the Lock Screen while they are fresh, and on Mac at the top of your screen.
 - To register and unregister Firebase Cloud Messaging tokens.
 - To send minimal push signals so backgrounded devices can catch up to the latest canvas revision.
@@ -305,12 +307,12 @@ Mulberry generally keeps personal data only as long as needed to provide the app
 
 Unless a longer period is required by law or needed for an active dispute, security incident, fraud investigation, or legal obligation, Mulberry uses the following retention approach:
 
-- Account and profile data, including your Google or Apple identifier and Apple's refresh token, are retained while your account is active. When you delete your account in the app, they are deleted from Mulberry's database straight away. Copies in backups or provider records are deleted or anonymized within 30 days.
+- Account and profile data, including your Google or Apple identifier, Apple's refresh token, and the time zones your devices report, are retained while your account is active. When you delete your account in the app, they are deleted from Mulberry's database straight away. Copies in backups or provider records are deleted or anonymized within 30 days.
 - Access and refresh sessions are retained while active. Revoked, expired, or replaced sessions are deleted or anonymized within 30 days.
 - Device and FCM tokens are retained while active. Revoked or inactive tokens are deleted or anonymized within 30 days.
 - Invite records are retained while active and for up to 30 days after expiry, acceptance, decline, or cancellation.
 - Pairing records are retained while the pair session is active. After pair deletion or account deletion that ends the pair, they are deleted or anonymized within 30 days.
-- Canvas operations and snapshots are retained while needed to provide synchronization, ordering, replay, recovery, and paired canvas functionality. After account deletion, pair deletion, or canvas deletion that removes the relevant pair data, they are deleted or anonymized within 30 days.
+- Canvas operations, sent reactions, and snapshots are retained while needed to provide synchronization, ordering, replay, recovery, and paired canvas functionality. After account deletion, pair deletion, or canvas deletion that removes the relevant pair data, they are deleted or anonymized within 30 days.
 - Analytics, diagnostic, and operational log data are retained for up to 30 days where Mulberry controls the retention period.
 - Firebase Crashlytics keeps crash reports for up to 90 days under its own retention settings. Crash reports from iPhone, iPad, and Mac are not linked to your account.
 - Support and privacy request emails are retained for up to 30 days after the request is resolved, unless a longer period is required by law or needed to protect rights, safety, or the service.

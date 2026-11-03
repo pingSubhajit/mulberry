@@ -72,7 +72,7 @@ That works out to **4+**. Your terms say Mulberry isn't for anyone under 18. Use
 | Usage Data → Product Interaction | Yes | Analytics, App Functionality | PostHog events from the backend; streak activity days |
 | Diagnostics → Crash Data | No | App Functionality | Firebase Crashlytics, with no user ID attached |
 | Diagnostics → Other Diagnostic Data | No | App Functionality | Crashlytics and Firebase Installations |
-| Other Data → Other Data Types | Yes | App Functionality | Anniversary date, wallpaper and desktop overlay status |
+| Other Data → Other Data Types | Yes | App Functionality | Anniversary date, wallpaper and desktop overlay status, the device's time zone |
 
 This matches the apps' own `PrivacyInfo.xcprivacy`, with one change: Analytics is added to User ID, because of the PostHog properties in fix 3. Remove that purpose if you remove those properties.
 
