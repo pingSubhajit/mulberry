@@ -2,9 +2,19 @@ name: mulberry
 
 services:
   backend:
-    cmd: docker compose up --build backend
+    # --no-deps: Hun starts postgres itself, so compose leaves its port alone.
+    cmd: docker compose up --build --no-deps backend
     port: 8080
     depends_on: [postgres]
   postgres:
     cmd: docker compose up postgres
+    port: 5432
+    port_env: POSTGRES_PORT
     ready: "database system is ready to accept connections"
+  web:
+    cmd: pnpm exec next dev -p $PORT
+    cwd: ./apps/web
+    port: 3000
+
+profiles:
+  admin: [web, backend]
