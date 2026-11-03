@@ -426,6 +426,20 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
     CREATE INDEX IF NOT EXISTS reaction_events_pair_sent_idx
       ON reaction_events(pair_session_id, sent_at);
 
+    -- The IANA time zone the apps last reported (X-Time-Zone), and each change to it, so a
+    -- moment can be read in the local time the person was in when it happened.
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS time_zone TEXT;
+
+    CREATE TABLE IF NOT EXISTS user_time_zone_changes (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      time_zone TEXT NOT NULL,
+      changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS user_time_zone_changes_user_changed_idx
+      ON user_time_zone_changes(user_id, changed_at);
   `)
 
   await runBackfills(db)

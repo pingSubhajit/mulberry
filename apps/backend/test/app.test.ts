@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createApp } from "../src/app/createApp.js"
 import { runBackfills, runMigrations, type Database } from "../src/infra/db/database.js"
+import { canonicalTimeZone } from "../src/modules/timeZones/recorder.js"
 import { PushDispatchService, type CanvasEditor } from "../src/infra/push/dispatchService.js"
 import type { MulberryPushMessage, PushSender, ReactionLiveActivityMessage } from "../src/infra/push/types.js"
 import type { WidgetPushResult, WidgetPushSender, WidgetPushTarget } from "../src/infra/push/widgetSender.js"
@@ -448,6 +449,50 @@ describe("Mulberry backend", () => {
       [recipient.userId, "KISS"],
     ])
     expect(events.rows.every((row) => row.pair_session_id === inviter.pairSessionId && row.sent_at)).toBe(true)
+  })
+
+  it("records the time zone the apps report, and each change to it", async () => {
+    const auth = await signIn("subhajit@elaris.dev", "Subhajit")
+    const bootstrapIn = (timeZone?: string) =>
+      app.inject({
+        method: "GET",
+        url: "/bootstrap",
+        headers: { ...bearer(auth.accessToken), ...(timeZone ? { "x-time-zone": timeZone } : {}) },
+      })
+    const recorded = async () => {
+      const user = await db.query<{ time_zone: string | null }>(`SELECT time_zone FROM users WHERE id = $1`, [auth.userId])
+      const changes = await db.query<{ time_zone: string }>(
+        `SELECT time_zone FROM user_time_zone_changes WHERE user_id = $1 ORDER BY changed_at`,
+        [auth.userId],
+      )
+      return { current: user.rows[0].time_zone, changes: changes.rows.map((row) => row.time_zone) }
+    }
+
+    expect((await bootstrapIn()).statusCode).toBe(200)
+    expect(await recorded()).toEqual({ current: null, changes: [] })
+
+    expect((await bootstrapIn("Not/AZone")).statusCode).toBe(200)
+    expect(await recorded()).toEqual({ current: null, changes: [] })
+
+    const kolkata = canonicalTimeZone("Asia/Kolkata")
+    expect((await bootstrapIn("Asia/Kolkata")).statusCode).toBe(200)
+    expect((await bootstrapIn("Asia/Calcutta")).statusCode).toBe(200)
+    expect(await recorded()).toEqual({ current: kolkata, changes: [kolkata] })
+
+    expect((await bootstrapIn("America/New_York")).statusCode).toBe(200)
+    expect((await bootstrapIn("Asia/Kolkata")).statusCode).toBe(200)
+    expect(await recorded()).toEqual({ current: kolkata, changes: [kolkata, "America/New_York", kolkata] })
+  })
+
+  it("ignores the time zone header without a valid session", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/bootstrap",
+      headers: { ...bearer("not-a-session"), "x-time-zone": "Asia/Kolkata" },
+    })
+    expect(response.statusCode).toBe(401)
+    const changes = await db.query<{ count: string }>(`SELECT COUNT(*) AS count FROM user_time_zone_changes`)
+    expect(Number(changes.rows[0].count)).toBe(0)
   })
 
   it("leases and confirms reaction playback exactly once across devices", async () => {

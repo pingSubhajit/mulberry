@@ -57,6 +57,7 @@ import { registerAdminRoutes } from "../modules/admin/routes.js"
 import { AppVersionsService, type RemoteConfigClient } from "../modules/appVersions/service.js"
 import { registerAppVersionRoutes } from "../modules/appVersions/routes.js"
 import { registerUpdateGate } from "../modules/appVersions/updateGate.js"
+import { registerTimeZoneRecorder } from "../modules/timeZones/recorder.js"
 import { ADMIN_PASSWORD_HEADER } from "../infra/http/adminAuth.js"
 
 export interface CreateAppOptions {
@@ -150,6 +151,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   await app.register(fastifyWebsocket)
 
   registerUpdateGate(app, appVersionsService)
+  registerTimeZoneRecorder(app, db)
 
   registerWhatsNewRoutes(app)
 
