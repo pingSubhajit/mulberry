@@ -18,3 +18,4 @@ services:
 
 profiles:
   admin: [web, backend]
+  frontend: [web]
