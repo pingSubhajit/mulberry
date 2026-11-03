@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { HttpError } from "../../infra/http/HttpError.js"
+import { absolutizeLocalUrls } from "../../infra/http/localAssetUrls.js"
 import type { StickerStorage } from "./service.js"
 
 export const LOCAL_STICKER_ASSET_PREFIX = "/dev/sticker-assets/"
@@ -66,14 +67,5 @@ export class LocalStickerStorage implements StickerStorage {
 
 /** Local asset URLs are relative; clients receive them on the host they called. */
 export function absolutizeLocalStickerUrls<T>(value: T, origin: string): T {
-  if (typeof value === "string") {
-    return (value.startsWith(LOCAL_STICKER_ASSET_PREFIX) ? `${origin}${value}` : value) as T
-  }
-  if (Array.isArray(value)) return value.map((item) => absolutizeLocalStickerUrls(item, origin)) as T
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, absolutizeLocalStickerUrls(item, origin)]),
-    ) as T
-  }
-  return value
+  return absolutizeLocalUrls(value, LOCAL_STICKER_ASSET_PREFIX, origin)
 }

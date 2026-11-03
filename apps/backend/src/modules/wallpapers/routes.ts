@@ -3,9 +3,31 @@ import { multipartNumber, multipartBoolean, validateMultipartFields } from "../c
 import type { FastifyInstance } from "fastify"
 import { HttpError } from "../../infra/http/HttpError.js"
 import { readAdminPassword } from "../../infra/http/adminAuth.js"
-import type { WallpaperCatalogService } from "./service.js"
+import type { WallpaperCatalogService, WallpaperStorage } from "./service.js"
+import { absolutizeLocalWallpaperUrls, LOCAL_WALLPAPER_ASSET_PREFIX, LocalWallpaperStorage } from "./localStorage.js"
 
-export function registerWallpaperRoutes(app: FastifyInstance, wallpaperCatalogService: WallpaperCatalogService): void {
+const WALLPAPER_ROUTE = /^\/(admin\/)?wallpapers(\/|\?|$)/
+
+export function registerWallpaperRoutes(
+  app: FastifyInstance,
+  wallpaperCatalogService: WallpaperCatalogService,
+  storage: WallpaperStorage | null = null,
+): void {
+  if (storage instanceof LocalWallpaperStorage) {
+    // Development only: give relative local asset URLs the host the client called.
+    app.addHook("preSerialization", async (request, _reply, payload) => {
+      if (!WALLPAPER_ROUTE.test(request.url)) return payload
+      return absolutizeLocalWallpaperUrls(payload, `${request.protocol}://${request.headers.host ?? "localhost"}`)
+    })
+
+    app.get(`${LOCAL_WALLPAPER_ASSET_PREFIX}*`, async (request, reply) => {
+      const params = request.params as { "*"?: string }
+      const asset = await storage.read(params["*"] ?? "")
+      reply.header("cache-control", "public, max-age=31536000, immutable").type(asset.contentType)
+      return asset.data
+    })
+  }
+
   app.get("/wallpapers", async (request) => {
     const query = request.query as { cursor?: string; limit?: string }
     const limit = Number(query.limit ?? "24")

@@ -12,6 +12,7 @@ describe("loadConfig", () => {
       DATABASE_URL: "postgres://x",
       GOOGLE_SERVER_CLIENT_ID: "server-client",
       STICKER_LOCAL_STORAGE_DIR: "",
+      WALLPAPER_LOCAL_STORAGE_DIR: "",
     }
     expect(loadConfig(production).enableDebugRoutes).toBe(false)
     expect(loadConfig({ ...production, ENABLE_DEBUG_ROUTES: "true" }).enableDebugRoutes).toBe(true)

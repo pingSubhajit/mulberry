@@ -8,7 +8,7 @@ This guide is the reference for agents and for adding future content kinds. The 
 
 Real catalog management uses `https://api.mulberry.my` and `x-admin-password`. Credentials remain server-side or in the agent's secret input; never put a Supabase service key in an app. The web admin and agents call the same APIs. Agents must not edit production tables or storage objects directly.
 
-A local backend uses its configured `DATABASE_URL` and storage buckets. A local database does not imply local storage. `STICKER_LOCAL_STORAGE_DIR` provides local sticker storage in development. Wallpaper work needs an isolated bucket as well as an isolated database. The import scripts are development tools, not the agent path for production.
+A local backend uses its configured `DATABASE_URL` and storage buckets. A local database does not imply local storage. In development, `STICKER_LOCAL_STORAGE_DIR` and `WALLPAPER_LOCAL_STORAGE_DIR` keep catalog assets on the backend's disk. The backend serves them under `/dev/sticker-assets/` (signed) and `/dev/wallpaper-assets/` (public, like the bucket). Production refuses both. Profile photos always use the Supabase bucket, because their URLs leave in bootstrap and push payloads. The import scripts are development tools, not the agent path for production.
 
 Admin authorization runs before multipart processing. Service methods also check authorization. Admin responses keep their existing top-level content fields and add `message`; errors include a stable `code`. Public routes keep their existing contracts.
 

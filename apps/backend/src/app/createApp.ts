@@ -25,6 +25,7 @@ import {
   type WallpaperImageProcessor,
   type WallpaperStorage,
 } from "../modules/wallpapers/service.js"
+import { LocalWallpaperStorage } from "../modules/wallpapers/localStorage.js"
 import { createStickerStorage, StickerCatalogService } from "../modules/stickers/service.js"
 import { registerWhatsNewRoutes } from "../modules/whatsNew/routes.js"
 import { StreakService } from "../modules/streak/service.js"
@@ -106,10 +107,14 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     options.widgetPushSender ?? createWidgetPushSender(config.apnsKeys),
   )
 
+  // Profile photos share the Supabase wallpaper bucket. Their URLs leave in bootstrap and push
+  // payloads, so only the wallpaper catalog, served by its own routes, may use local files.
   const storage = options.wallpaperStorage ?? createWallpaperStorage(config)
+  const wallpaperStorage = options.wallpaperStorage
+    ?? (config.wallpaperLocalStorageDir ? new LocalWallpaperStorage(config.wallpaperLocalStorageDir) : storage)
   const wallpaperCatalogService = new WallpaperCatalogService(
     db,
-    storage,
+    wallpaperStorage,
     options.wallpaperImageProcessor ?? new SharpWallpaperImageProcessor(),
     config,
   )
@@ -184,7 +189,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   registerReactionRoutes(app, reactionsService)
   registerCanvasRoutes(app, canvasService)
   registerCatalogAdminHooks(app, config.adminPassword)
-  registerWallpaperRoutes(app, wallpaperCatalogService)
+  registerWallpaperRoutes(app, wallpaperCatalogService, wallpaperStorage)
   registerStickerRoutes(app, stickerCatalogService, stickerStorage)
   registerCanvasSyncRoutes(app, canvasSyncHub)
   registerFeedbackRoutes(app, feedbackService)

@@ -38,6 +38,7 @@ export interface AppConfig {
   /** Unlocks every admin route: wallpapers, stickers and app versions. */
   adminPassword?: string
   stickerLocalStorageDir?: string
+  wallpaperLocalStorageDir?: string
   cannySsoPrivateKey?: string
   /**
    * iCloud links to the iOS wallpaper Shortcut, by app bundle ID. Each build's Shortcut calls
@@ -120,7 +121,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     supabaseWallpaperBucket: env.SUPABASE_WALLPAPER_BUCKET,
     supabaseStickerBucket: env.SUPABASE_STICKER_BUCKET ?? env.SUPABASE_WALLPAPER_BUCKET,
     adminPassword: env.ADMIN_PASSWORD?.trim() ? env.ADMIN_PASSWORD.trim() : undefined,
-    stickerLocalStorageDir: optionalLocalStickerStorageDir(env.STICKER_LOCAL_STORAGE_DIR, isProduction),
+    stickerLocalStorageDir: optionalLocalStorageDir("STICKER_LOCAL_STORAGE_DIR", env, isProduction),
+    wallpaperLocalStorageDir: optionalLocalStorageDir("WALLPAPER_LOCAL_STORAGE_DIR", env, isProduction),
     cannySsoPrivateKey: env.CANNY_SSO_PRIVATE_KEY?.trim() ? env.CANNY_SSO_PRIVATE_KEY : undefined,
     wallpaperShortcutLinks: wallpaperShortcutLinks(env.WALLPAPER_SHORTCUT_LINKS),
     apnsKeys: apnsKeys(env),
@@ -167,11 +169,15 @@ export function wallpaperShortcutLinks(value: string | undefined): Record<string
   return links
 }
 
-// Local sticker files exist only for development against the local database.
-function optionalLocalStickerStorageDir(value: string | undefined, isProduction: boolean): string | undefined {
-  const dir = value?.trim()
+// Local sticker and wallpaper files exist only for development against the local database.
+function optionalLocalStorageDir(
+  name: "STICKER_LOCAL_STORAGE_DIR" | "WALLPAPER_LOCAL_STORAGE_DIR",
+  env: NodeJS.ProcessEnv,
+  isProduction: boolean,
+): string | undefined {
+  const dir = env[name]?.trim()
   if (!dir) return undefined
-  if (isProduction) throw new Error("STICKER_LOCAL_STORAGE_DIR is for local development only")
+  if (isProduction) throw new Error(`${name} is for local development only`)
   return dir
 }
 

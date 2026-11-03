@@ -43,6 +43,7 @@ services:
       SUPABASE_STICKER_BUCKET: ${SUPABASE_STICKER_BUCKET:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       STICKER_LOCAL_STORAGE_DIR: ${STICKER_LOCAL_STORAGE_DIR:-}
+      WALLPAPER_LOCAL_STORAGE_DIR: ${WALLPAPER_LOCAL_STORAGE_DIR:-}
       CANNY_SSO_PRIVATE_KEY: ${CANNY_SSO_PRIVATE_KEY:-}
       WALLPAPER_SHORTCUT_LINKS: ${WALLPAPER_SHORTCUT_LINKS:-}
       APNS_TEAM_ID: ${APNS_TEAM_ID:-}
@@ -54,6 +55,7 @@ services:
       - "8080:8080"
     volumes:
       - mulberry-sticker-assets:/data/sticker-assets
+      - mulberry-wallpaper-assets:/data/wallpaper-assets
     healthcheck:
       test:
         [
@@ -69,3 +71,4 @@ services:
 volumes:
   mulberry-postgres-data:
   mulberry-sticker-assets:
+  mulberry-wallpaper-assets:
