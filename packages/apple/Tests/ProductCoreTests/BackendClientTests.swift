@@ -198,3 +198,17 @@ private actor UpgradeRequiredTransport: BackendTransport {
     let request = try #require(await transport.requests.first)
     #expect(request.value(forHTTPHeaderField: "X-App-Build") == nil)
 }
+
+@Test func failuresAreWordedByTheAppNotTheServer() {
+    let expired = BackendError.rejected(400, "Invite code has expired", code: "INVITE_EXPIRED")
+    #expect(expired.code == "INVITE_EXPIRED")
+    #expect(expired.errorDescription == "That invite code has expired. Ask your partner for a new one.")
+    #expect(BackendError.rejected(400, "User is not paired").errorDescription == "Mulberry couldn’t finish that. Try again.")
+    #expect(BackendError.rejected(429, "Too many invite attempts. Try again later.", code: "TOO_MANY_INVITE_ATTEMPTS").errorDescription
+        == "Too many tries. Wait an hour, then enter the code again.")
+    #expect(BackendError.rejected(500, "Internal server error").errorDescription == "Mulberry is having trouble right now. Try again in a moment.")
+    #expect(UserFacingError.message(for: URLError(.notConnectedToInternet), fallback: "x") == UserFacingError.offline)
+    #expect(UserFacingError.message(for: URLError(.cancelled), fallback: "x") == nil)
+    #expect(UserFacingError.message(for: CancellationError(), fallback: "x") == nil)
+    #expect(UserFacingError.message(for: CocoaError(.fileReadCorruptFile), fallback: "Couldn’t open that.") == "Couldn’t open that.")
+}

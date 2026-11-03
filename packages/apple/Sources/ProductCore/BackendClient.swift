@@ -20,19 +20,29 @@ public struct URLSessionTransport: BackendTransport {
     }
 }
 
-public enum BackendError: Error, LocalizedError, Equatable, Sendable {
+public enum BackendError: PresentableError, Equatable, Sendable {
     case signedOut, sessionChanged, invalidResponse
     /// The server no longer accepts this build. `BackendClient.updateRequired` is posted with it.
     case updateRequired
-    case rejected(Int, String)
+    /// The server's status, its own message (for logs, never shown) and its machine-readable code.
+    case rejected(Int, String, code: String? = nil)
 
+    /// The server's machine-readable reason, as "ALREADY_PAIRED".
+    public var code: String? {
+        if case .rejected(_, _, let code) = self { code } else { nil }
+    }
+
+    /// Mulberry's own words, never the server's: a known code has its message, anything else a
+    /// plain one.
     public var errorDescription: String? {
         switch self {
-        case .signedOut: "Please sign in again."
-        case .sessionChanged: "Your account changed. Please try again."
-        case .invalidResponse: "Mulberry could not read the server's reply. Please try again."
+        case .signedOut: "Sign in again to keep going."
+        case .sessionChanged: "Your account changed. Try again."
+        case .invalidResponse: "Mulberry couldn’t finish that. Try again."
         case .updateRequired: "Update Mulberry to keep going."
-        case .rejected(_, let message): message
+        case .rejected(let status, _, let code):
+            code.flatMap(UserFacingError.message(forCode:))
+                ?? (status >= 500 ? "Mulberry is having trouble right now. Try again in a moment." : "Mulberry couldn’t finish that. Try again.")
         }
     }
 }
@@ -359,7 +369,7 @@ public actor BackendClient {
         } catch {
             if generation == epoch {
                 refreshTask = nil
-                if case BackendError.rejected(let code, _) = error, code == 401 {
+                if case BackendError.rejected(let code, _, _) = error, code == 401 {
                     try tokenStore.clear()
                     tokens = nil
                     generation += 1
@@ -392,9 +402,9 @@ public actor BackendClient {
             throw BackendError.updateRequired
         }
         guard (200..<300).contains(response.statusCode) else {
-            struct Failure: Decodable { let message: String?; let error: String? }
+            struct Failure: Decodable { let message: String?; let error: String?; let code: String? }
             let failure = try? JSONDecoder().decode(Failure.self, from: data)
-            throw BackendError.rejected(response.statusCode, failure?.message ?? failure?.error ?? "Mulberry could not finish this request. Please try again.")
+            throw BackendError.rejected(response.statusCode, failure?.message ?? failure?.error ?? "", code: failure?.code)
         }
     }
 }

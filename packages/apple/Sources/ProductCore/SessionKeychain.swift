@@ -39,13 +39,13 @@ public struct SessionKeychain: SessionTokenStore {
     }
 }
 
-private struct KeychainFailure: LocalizedError {
+private struct KeychainFailure: PresentableError {
     let status: OSStatus
     var errorDescription: String? {
         #if os(iOS)
-        "Mulberry could not access your saved sign-in. Please unlock your phone and try again."
+        "Mulberry couldn’t open your saved sign-in. Unlock your phone and try again."
         #else
-        "Mulberry could not access your saved sign-in. Please try again."
+        "Mulberry couldn’t open your saved sign-in. Try again."
         #endif
     }
 }

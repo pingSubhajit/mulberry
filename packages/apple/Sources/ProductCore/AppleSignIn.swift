@@ -18,14 +18,14 @@ public struct AppleIDCredential: Encodable, Sendable {
     public let displayName: String?
 }
 
-public enum AppleSignInError: LocalizedError, Sendable {
+public enum AppleSignInError: PresentableError, Sendable {
     case missingIdentityToken
     case failed
     /// Apple's own error, kept for diagnostics; people see the same plain message.
     case authorization(code: Int)
 
     public var errorDescription: String? {
-        "Sign in with Apple didn’t finish. Please try again."
+        "Sign in with Apple didn’t finish. Try again."
     }
 }
 

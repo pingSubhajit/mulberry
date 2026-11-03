@@ -139,14 +139,14 @@ public struct DrawingSnapshotPayload: Decodable, Sendable {
     }
 }
 
-public enum DrawingError: Error, Equatable, LocalizedError {
+public enum DrawingError: Error, Equatable, PresentableError {
     case wrongSession, invalidStroke, missingStroke(String), revisionGap(expected: Int64, actual: Int64), unsupportedOperation(String)
     public var errorDescription: String? {
         switch self {
-        case .wrongSession: "This drawing belongs to a different pairing."
-        case .invalidStroke: "This stroke could not be read."
+        case .wrongSession: "These doodles belong to a different pairing."
+        case .invalidStroke: "This doodle couldn’t be read."
         case .missingStroke, .revisionGap: "The canvas needs to sync again."
-        case .unsupportedOperation: "This drawing needs a newer version of Mulberry."
+        case .unsupportedOperation: "Update Mulberry to see these doodles."
         }
     }
 }

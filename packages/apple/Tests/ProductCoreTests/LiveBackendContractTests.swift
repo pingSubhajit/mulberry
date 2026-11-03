@@ -156,7 +156,7 @@ func swiftClientPairsDrawsAndUnpairsThroughRealBackendRoutes() async throws {
     do {
         _ = try await first.updatePartner(name: "Sam", anniversary: "2024-06-12")
         Issue.record("Backend did not enforce the partner cooldown")
-    } catch BackendError.rejected(let code, _) { #expect(code == 409) }
+    } catch BackendError.rejected(let code, _, _) { #expect(code == 409) }
     #expect(try await first.cannyToken().split(separator: ".").count == 3)
     #expect(try await first.wallpapers().items.isEmpty)
     let disconnected = try await second.disconnect()
@@ -168,7 +168,7 @@ func swiftClientPairsDrawsAndUnpairsThroughRealBackendRoutes() async throws {
     do {
         _ = try await first.createInvite()
         Issue.record("Invite unexpectedly allowed without partner details")
-    } catch BackendError.rejected(let code, _) { #expect(code == 400) }
+    } catch BackendError.rejected(let code, _, _) { #expect(code == 400) }
     let readyToInvite = try await first.updatePartner(name: "Sam", anniversary: "2024-06-12")
     #expect(readyToInvite.canEditPartner())
     let newInvite = try await first.createInvite()

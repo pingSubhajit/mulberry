@@ -23,7 +23,7 @@ struct SendReactionIntent: AppIntent {
         let api = try AppRuntime.api()
         guard let user = await api.signedInUserId else { throw ReactionIntentError.signedOut }
         do { try await api.sendReaction(reaction) }
-        catch BackendError.rejected(400, _) { throw ReactionIntentError.unpaired }
+        catch BackendError.rejected(400, _, _) { throw ReactionIntentError.unpaired }
         UserDefaults.standard.set(reaction.rawValue, forKey: "reactionLastUsed.\(user)")
         return .result(dialog: "Sent \(reaction.emoji)")
     }

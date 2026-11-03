@@ -28,7 +28,7 @@ public enum WallpaperContent {
             return [.notConnectedToInternet, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
                     .networkConnectionLost, .timedOut, .dataNotAllowed, .internationalRoamingOff].contains(url.code)
         }
-        if case BackendError.rejected(let status, _) = error { return (500...599).contains(status) }
+        if case BackendError.rejected(let status, _, _) = error { return (500...599).contains(status) }
         return false
     }
 }
