@@ -1,8 +1,11 @@
+import { headers } from "next/headers"
 import Image from "next/image"
 import Link from "next/link"
 
-import { Button } from "@/components/ui/button"
-import {CONTACT_MAILTO, GITHUB_URL, GOOGLE_PLAY_DOWNLOAD_URL} from "@/lib/constants"
+import { CONTACT_MAILTO, GITHUB_URL } from "@/lib/constants"
+import { storeFromUserAgent } from "@/lib/store"
+
+import StoreCta from "./StoreCta"
 
 const notes = [
   {
@@ -22,10 +25,15 @@ const notes = [
   }
 ]
 
-export default function LandingPage() {
+const navLinkClassName =
+  "inline-flex min-h-11 items-center rounded-full px-2 text-sm font-medium text-white transition hover:text-white/70"
+
+export default async function LandingPage() {
+  const store = storeFromUserAgent((await headers()).get("user-agent"))
+
   return (
     <main className="min-h-screen overflow-hidden text-foreground bg-brand">
-      <SiteHeader />
+      <SiteHeader showSourceLink={store !== null} />
 
       <section className="mx-auto flex min-h-[calc(100vh-6rem)] w-full max-w-7xl flex-col items-center px-5 pt-8 text-center sm:px-8 lg:px-10 lg:pt-10">
         <div className="mx-auto max-w-4xl">
@@ -39,29 +47,20 @@ export default function LandingPage() {
           </p>
 
           <div className="mt-7 flex items-center flex-col">
-            <Button asChild size="lg" className="bg-white text-[#090d18] shadow-none hover:bg-white/90 hover:shadow-none">
-              <Link href={GOOGLE_PLAY_DOWNLOAD_URL}>
-                <Image
-                  src="/brand/google-play.svg"
-                  alt=""
-                  width={26}
-                  height={26}
-                  className="size-6"
-                />
-                Google Play
-              </Link>
-            </Button>
+            <StoreCta store={store} />
 
-            <p className="mt-2 text-sm text-white">
-              <span className="opacity-80">Check the source on </span>
-              <a
-                target="_blank"
-                className="opacity-80 transition hover:opacity-100 underline italic"
-                href={GITHUB_URL}
-              >
-                Github
-              </a>
-            </p>
+            {store === null ? (
+              <p className="mt-2 text-sm text-white">
+                <span className="opacity-80">Check the source on </span>
+                <a
+                  target="_blank"
+                  className="opacity-80 transition hover:opacity-100 underline italic"
+                  href={GITHUB_URL}
+                >
+                  GitHub
+                </a>
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -131,7 +130,8 @@ export default function LandingPage() {
   )
 }
 
-function SiteHeader() {
+/** The source link moves up here when the hero has a single store button. */
+function SiteHeader({ showSourceLink }: { showSourceLink: boolean }) {
   return (
     <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-6 sm:px-8 lg:px-10">
       <Link href="/" aria-label="Mulberry home" className="inline-flex min-h-11 items-center">
@@ -144,12 +144,21 @@ function SiteHeader() {
           className="h-8 w-auto"
         />
       </Link>
-      <Link
-        href={GOOGLE_PLAY_DOWNLOAD_URL}
-        className="inline-flex min-h-11 items-center rounded-full px-2 text-sm font-medium text-white transition hover:text-white/70"
-      >
-        Download
-      </Link>
+      <nav className="flex items-center gap-2">
+        {showSourceLink ? (
+          <a
+            href={GITHUB_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={navLinkClassName}
+          >
+            GitHub
+          </a>
+        ) : null}
+        <Link href="/download" className={navLinkClassName}>
+          Download
+        </Link>
+      </nav>
     </header>
   )
 }
