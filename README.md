@@ -324,3 +324,7 @@ This is expected under Android Doze, app standby, and OEM battery policies. Acti
 docker compose down -v
 docker compose up --build
 ```
+
+## Server-driven content
+
+See [Server-driven content](docs/server-driven-content.md) for sticker and wallpaper management, the agent skill, safety rules, history and recovery, and the pattern for future content types.

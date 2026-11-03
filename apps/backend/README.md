@@ -143,7 +143,9 @@ ADMIN_PASSWORD=
 
 `SUPABASE_STICKER_BUCKET` falls back to `SUPABASE_WALLPAPER_BUCKET` when unset.
 
-Admin endpoints use the `x-admin-password` header.
+Admin endpoints use the `x-admin-password` header. See [Server-driven content](../../docs/server-driven-content.md) for the catalog API, version rules, history, recovery, and agent workflow.
+
+Sticker importers create drafts and publish only after all sticker uploads pass. Existing versions cannot be overwritten. Use the admin API for production; local imports require isolated database and storage settings.
 
 To import a local folder of `.png` stickers as a pack version (example uses the repo-root `temp/` folder):
 
