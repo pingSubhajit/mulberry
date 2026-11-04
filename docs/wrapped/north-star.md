@@ -17,40 +17,36 @@ This is the reference for Mulberry's yearly recap. It covers what the recap is, 
 9. [Canvas replays](#9-canvas-replays)
 10. [Moments for two](#10-moments-for-two)
 11. [Sharing and growth](#11-sharing-and-growth)
-12. [Revenue](#12-revenue)
-13. [System design](#13-system-design)
-14. [Data](#14-data)
-15. [What needs to be built](#15-what-needs-to-be-built)
-16. [Scope for 2026](#16-scope-for-2026)
-17. [Measuring success](#17-measuring-success)
-18. [Privacy and safety](#18-privacy-and-safety)
-19. [Risks](#19-risks)
-20. [Open decisions](#20-open-decisions)
-21. [Beyond 2026](#21-beyond-2026)
+12. [System design](#12-system-design)
+13. [Data](#13-data)
+14. [What needs to be built](#14-what-needs-to-be-built)
+15. [Scope for 2026](#15-scope-for-2026)
+16. [Measuring success](#16-measuring-success)
+17. [Privacy and safety](#17-privacy-and-safety)
+18. [Risks](#18-risks)
+19. [Open decisions](#19-open-decisions)
+20. [Beyond 2026](#20-beyond-2026)
 
 ## 1. In one paragraph
 
-Once a year, each Mulberry pair gets a short feed of full-screen cards about their year on the shared canvas. It replays everything they drew, from their first day to today, and shows their colours, when they draw, their longest streak, the reactions they sent, and the kind of couple they are. It ends with a poster to share, a note to leave on the partner's wallpaper at midnight on New Year's Eve, and a prompt to draw the first doodle of the new year. The cards scroll vertically like Reels or TikTok. The apps draw every card natively, and the server decides which cards a pair sees and what each one says, so the same system can run next year's recap and other recaps without app releases.
+Once a year, each Mulberry pair gets a short feed of full-screen cards about their year on the shared canvas. It replays everything they drew, from their first day to today, and shows their colours, when they draw, their longest streak, the reactions they sent, and the kind of couple they are. It ends with a poster to share and a note for the partner that reaches them at midnight on 1 January. The cards scroll vertically like Reels or TikTok. The apps draw every card natively, and the server decides which cards a pair sees and what each one says, so the same system can run next year's recap and other recaps without app releases.
 
 ## 2. Name
 
-- **Public name:** *Our Year in Doodles*, for example "Our Year in Doodles 2026".
+- **Public name (confirmed):** *Our Year in Doodles*, for example "Our Year in Doodles 2026".
 - **Internal name:** Mulberry Wrapped. Use it in code, docs and conversation, never in the apps or marketing.
 
-Why not "Wrapped" in public: the word belongs to Spotify in most people's minds. *Our Year in Doodles* makes sense on its own in an Instagram Story, even to someone who has never heard of Mulberry, and it's the same name as the printed book (see [Revenue](#12-revenue)).
-
-The public name isn't final yet (see [Open decisions](#20-open-decisions)).
+Why not "Wrapped" in public: the word belongs to Spotify in most people's minds. *Our Year in Doodles* makes sense on its own in an Instagram Story, even to someone who has never heard of Mulberry.
 
 ## 3. Why we're building it
 
 Mulberry is a private canvas for two. That privacy is what people value, and it also means the product can't spread through its own network: once a partner joins, nothing in the app reaches anyone else. The recap is the one moment in the year when couples *want* to show Mulberry to other people, on their own terms.
 
-It serves four goals:
+It serves three goals:
 
 1. **Growth.** Share cards and videos put Mulberry in front of the couples' friends at the time of year when people already post recaps.
 2. **Reactivation.** "Your year is ready" is the most natural reason a lapsed pair will ever have to open the app again.
-3. **Retention.** The recap ends on the live canvas, so it starts the new year with drawing.
-4. **Revenue.** The recap leads to keepsakes people pay for: the printed book and an HD time-lapse.
+3. **Retention.** The recap ends with a note drawn for the partner and a button back to the live canvas, so it starts the new year with drawing.
 
 It also does something no competitor can: we keep every stroke a couple has drawn, so we can replay their whole year.
 
@@ -64,6 +60,7 @@ It also does something no competitor can: we keep every stroke a couple has draw
 6. **Native and server-driven.** The apps draw every card natively. The server sends which cards appear and what they say. No web views.
 7. **Built to be reused.** Every layout is generic enough for next year's recap and for other recaps, such as Valentine's week.
 8. **Mulberry's voice.** Squee narrates, in the handwritten style of the canvas prompts. Warm and short, never loud.
+9. **Nothing to sell.** The recap is a gift. It has no offers, upsells or paid extras.
 
 ## 5. Who gets a recap
 
@@ -78,20 +75,20 @@ It also does something no competitor can: we keep every stroke a couple has draw
 
 An "active day" is a day in `pair_activity_days`, the same days the streak counts.
 
-A recap covers the current pairing only. It never includes data from an earlier partner. Today, unpairing deletes the pair's history, so this already holds (see [Data](#14-data)).
+A recap covers the current pairing only. It never includes data from an earlier partner. Unpairing deletes the pair's history, and that stays the rule, so this always holds (see [Data](#13-data)).
+
+The recap is on Android, iPhone and iPad. The Mac app doesn't show it.
 
 ## 6. Timeline
 
 | Date (2026) | What happens |
 | --- | --- |
 | Early December | Spotify Wrapped launches and recaps fill people's feeds. We don't compete with it. |
-| About 10 December | Creators get early access, so posts are already out at launch. |
-| **About 15 December** | **Cutoff.** Stats are computed up to this date and recaps are generated. Days after the cutoff aren't counted. |
-| **About 20 December** | **Launch.** Banner, push notification, and the Settings entry go live. |
-| **31 December, midnight** | Midnight notes appear on partners' wallpapers (see [Moments for two](#10-moments-for-two)). |
+| **About 20 December** | **Cutoff.** Stats are computed up to this date and recaps are generated. Days after the cutoff aren't counted. |
+| A few days before launch | Creators get early access, so posts are already out at launch. |
+| **Last week of December** | **Launch.** Banner, push notification, and the Settings entry go live. |
+| **Midnight, 1 January** | Midnight notes reach partners, at each recipient's local midnight (see [Moments for two](#10-moments-for-two)). |
 | 31 January 2027 | Last day to watch it again. After that it's hidden. |
-
-**If December is too tight:** run the same system as a Valentine's recap on 14 February 2027. There will be more users and more data by then, and Valentine's fits the brand even better.
 
 ## 7. The experience
 
@@ -113,6 +110,7 @@ A recap covers the current pairing only. It never includes data from an earlier 
   - **Share** the card: an image, or a video for animated cards.
   - **React:** send your partner a heart, hug, kiss, smile, laugh or sparkles about this card. It arrives as a normal Mulberry reaction.
   - **Save** the card to Photos.
+- **The end:** the last card has a "Back to your canvas" button. Until midnight on 1 January the last card is the midnight note (card 14). After that, it's the poster (card 13).
 
 Why a reel feed and not a tap-through story: people choose how long to stay on each card, which matters for the guessing cards and the poster. The buttons on the right fit cards people choose to stay on. And a long card, like the 15–20 second time-lapse, feels normal in a reel and wrong in a story.
 
@@ -135,13 +133,11 @@ Wording below is draft. Squee narrates throughout.
 | 11 | **Guess: who's the night owl?** | Two profile photos to tap. The answer leads into the next card. | Guess |
 | 12 | **Your couple type** | A title such as *Midnight Muses*, with its own Squee illustration, and two roles, such as "The Artist & The Hype Person". Never percentages. This is the card people will share most, so it must look like a poster on its own. | Persona |
 | 13 | **Your poster** | Swipe sideways inside the card to choose your favourite canvas of the year, or hide the canvas. Shows the key stats, the couple type and a small Mulberry mark, with a large "Share to Story" button. **Locked until both partners reach this card**; until then it says "Waiting for *[Partner]*", with a nudge button. | Poster |
-| 14 | **A note for midnight** | "Leave something for *[Partner]* to wake up to in 2027." A small canvas opens inside the card. At midnight on 31 December, the note appears on the partner's wallpaper. | Drawing input |
-| 15 | **Keep this year** | A soft offer for the printed *Our Year in Doodles* book and the HD time-lapse without a watermark. Easy to scroll past. | Offer |
-| 16 | **Last card** | "Draw the first doodle of 2027." One button opens the real canvas. | Call to action |
+| 14 | **A note for midnight** | The last card. A canvas pops up: "Leave something behind for *[Partner]* to wake up to on New Year's." A short line underneath says that whatever you draw here will be sent to *[Partner]* at midnight on 1 January. Once the note is left, a "Back to your canvas" button closes the recap. The card appears only until midnight on 1 January. | Drawing input |
 
 ### "Your first chapter" (short version)
 
-For pairs with fewer than 10 active days: cards 1, 2, 4, 13, 14 and 16. On card 2, the speed-up covers weeks instead of months.
+For pairs with fewer than 10 active days: cards 1, 2, 4, 13 and 14. On card 2, the speed-up covers weeks instead of months.
 
 ### Couple types (draft)
 
@@ -203,35 +199,23 @@ These are what set the recap apart from Spotify's. Each person's recap is person
 - **The poster waits for both.** Card 13 unlocks only after both partners have reached it, with a nudge button while one is waiting. This is how the recap brings a quiet partner back.
 - **Guessing cards.** Cards 3 and 11 ask you to guess something about your partner. It's playful, made for two, and gets couples talking.
 - **React about a card.** The React button sends a normal Mulberry reaction about the card on screen.
-- **A note for midnight.** Card 14 lets each partner leave a doodle that appears on the other's wallpaper at midnight on New Year's Eve, in the recipient's time zone. This uses Mulberry's core feature, the wallpaper, rather than just copying Spotify's format.
+- **A note for midnight.** Card 14 lets each partner leave a doodle that reaches the other at midnight on 1 January, in the recipient's time zone, and shows on their wallpaper. This uses Mulberry's core feature, the wallpaper, rather than just copying Spotify's format.
 
 ## 11. Sharing and growth
 
 - **Share cards** sized for Instagram Stories, with a small Mulberry mark and a link: "Make yours → mulberry.my/doodles". That page needs building.
-- **Videos** of animated cards are made on the device and carry a small watermark.
-- **Public totals for press.** For example: "India drew 3.2M doodles on Mulberry this year. The most popular hour was 11:47 pm. Valentine's Day was 4× a normal day. The most-used colour was Mulberry red." That's a ready-made press release and Reel script, and it reveals no one's data. It needs a line in the privacy policy first (see [Privacy and safety](#18-privacy-and-safety)).
+- **Videos** of animated cards are made on the device and carry the same small Mulberry mark.
+- **Public totals for press.** For example: "India drew 3.2M doodles on Mulberry this year. The most popular hour was 11:47 pm. Valentine's Day was 4× a normal day. The most-used colour was Mulberry red." That's a ready-made press release and Reel script, and it reveals no one's data. It needs a line in the privacy policy first (see [Privacy and safety](#17-privacy-and-safety)).
 - **Early access for creators** a few days before launch, so their posts are out when everyone else gets theirs.
 - **Lapsed pairs** who are still paired get "Your year is ready". This is the reactivation goal.
 
-## 12. Revenue
-
-The recap itself is always free, including the share cards and a watermarked time-lapse.
-
-Card 15 offers, when they exist:
-
-- An **HD time-lapse without the watermark**, as part of Mulberry+ or a one-time purchase (around ₹99).
-- The **printed *Our Year in Doodles* book**, timed for New Year's and Valentine's gifts. Physical goods are paid for outside the app stores, so there's no store commission.
-- A **Mulberry+ trial**, offered on card 16.
-
-Mulberry has no in-app purchases yet. If none of these are ready at launch, card 15 doesn't appear.
-
-## 13. System design
+## 12. System design
 
 The server-driven contract will be designed in its own document. This section records the decisions that are already made.
 
 ### Decided
 
-- **Native on every platform.** Android, iPhone and iPad draw every card with native views. No web views.
+- **Native on every platform.** Android, iPhone and iPad draw every card with native views. No web views. The Mac app doesn't show the recap.
 - **The server decides the content.** For each pair, the server sends the recap: which cards, in what order, with which layout, and what data and wording each one shows. The apps own how each layout looks and moves.
 - **A small set of reusable layouts.** New recaps combine existing layouts with new data, without an app release. A new layout needs an app release.
 - **Unknown layouts are skipped.** An app that gets a layout it doesn't know leaves that card out instead of failing, so the server can add cards that older builds simply don't show.
@@ -252,8 +236,6 @@ The server-driven contract will be designed in its own document. This section re
 | Persona | 12 | Title, roles, illustration ID |
 | Poster | 13 | Canvas choices, stats, and a flag that it waits for both partners |
 | Drawing input | 14 | Prompt, and when to deliver the note |
-| Offer | 15 | Products and prices |
-| Call to action | 16 | Caption, and where the button goes |
 
 ### Replay data
 
@@ -265,7 +247,7 @@ A year of raw canvas operations can be large, because each stroke arrives as man
 
 The server keeps each note's drawing, then adds it to the shared canvas at midnight in the recipient's time zone, credited to the author. From there it travels through the normal sync, push and wallpaper paths on every platform. If partners are in different time zones, each note arrives at its recipient's midnight. This needs confirming during design.
 
-## 14. Data
+## 13. Data
 
 ### What each card uses
 
@@ -279,7 +261,7 @@ The server keeps each note's drawing, then adds it to the shared canvas at midni
 | 9 | Stickers and fonts | Sticker and text operations | Ready, as long as old sticker art stays available |
 | 10 | Reactions, with sender, type and time | `reaction_events` | Logging since 4 November 2026; no backfill |
 | 12 | Built from the stats above | — | Ready |
-| 13–16 | Recap progress, guesses, notes | New tables | Built with the feature |
+| 13–14 | Recap progress, guesses, notes | New tables | Built with the feature |
 
 Points in a stroke are stored relative to the canvas size, so a replay draws correctly at any screen size.
 
@@ -298,9 +280,9 @@ Points in a stroke are stored relative to the canvas size, so a replay draws cor
 
 - **No canvas compaction.** Don't prune old `APPEND_POINTS` rows or other operations before the recap is generated. The replays need them.
 - **Keep old sticker art.** Replays rebuild stickers from `(packKey, packVersion, stickerId)`. Hiding a pack keeps its art, but deleting a pack version breaks old canvases (see [Server-driven content](../server-driven-content.md)). Don't delete pack versions that have been used.
-- **Unpairing deletes history.** `unpair` deletes the pair and all its data. A couple who unpair and pair again start their recap from the new pairing (see [Open decisions](#20-open-decisions)).
+- **Unpairing deletes history.** `unpair` deletes the pair and all its data. A couple who unpair and pair again start their recap from the new pairing. We decided to keep it this way rather than hold data for a possible re-pair.
 
-## 15. What needs to be built
+## 14. What needs to be built
 
 ### Backend
 
@@ -334,16 +316,16 @@ Points in a stroke are stored relative to the canvas size, so a replay draws cor
 - The motion for each layout.
 - All wording, in Mulberry's voice and on every platform at once.
 
-## 16. Scope for 2026
+## 15. Scope for 2026
 
-There are about six weeks before launch, alongside the iOS launch. A realistic first version:
+There are about seven weeks before launch in the last week of December, alongside the iOS launch. A realistic first version:
 
-- **Ship:** cards 1, 2, 4, 7, 12, 13, 14 and 16, with the share cards, the ways in, and "Your first chapter".
-- **Later:** cards 3, 5, 6, 8, 9, 10, 11 and 15.
+- **Ship:** cards 1, 2, 4, 7, 12, 13 and 14, with the share cards, the ways in, and "Your first chapter".
+- **Later:** cards 3, 5, 6, 8, 9, 10 and 11.
 
-The full card list is the long-term vision; the first version is a subset of it. If even this subset won't be ready by 20 December, move the launch to Valentine's 2027 (see [Timeline](#6-timeline)).
+The full card list is the long-term vision; the first version is a subset of it.
 
-## 17. Measuring success
+## 16. Measuring success
 
 Track these with PostHog events named `mulberry_recap_*`:
 
@@ -354,7 +336,6 @@ Track these with PostHog events named `mulberry_recap_*`:
 - Poster unlocked (both partners reached it).
 - Midnight note left, and delivered.
 - Time-lapse saved or exported.
-- Offer tapped.
 
 What success looks like:
 
@@ -366,7 +347,7 @@ What success looks like:
 
 Set number targets once we know how many pairs are eligible.
 
-## 18. Privacy and safety
+## 17. Privacy and safety
 
 - The recap uses only data Mulberry already keeps to run the app. The privacy policy was updated on 4 November 2026 to cover the reaction log, time zones, and showing pairs summaries of their year.
 - **Before publishing public totals,** add a line to the privacy policy about anonymous, combined statistics. Change it in all three copies, which the website also reads.
@@ -375,7 +356,7 @@ Set number targets once we know how many pairs are eligible.
 - No recap includes data from an earlier partner, and nobody who is unpaired gets one.
 - Gentler wording for pairs who have gone quiet.
 
-## 19. Risks
+## 18. Risks
 
 | Risk | What we do about it |
 | --- | --- |
@@ -383,21 +364,25 @@ Set number targets once we know how many pairs are eligible.
 | A breakup between the cutoff and launch | Check that the pair still exists when the recap is opened, not only at generation |
 | Large replay data on slow connections | The compact replay stream, loaded per card, with today's canvas shown while it loads |
 | Reaction counts that look low in 2026 | Show them only above a threshold, with "since November" wording |
-| Too much to build in six weeks | The smaller 2026 scope, with Valentine's as the fallback |
+| Too much to build before the last week of December | The smaller 2026 scope |
+| A late-December launch leaves only a few days to leave a midnight note | Card 14 is the last card, so everyone who finishes the feed reaches it. It disappears at midnight on 1 January |
 | A pack version deleted, breaking old canvases | Hide packs instead of deleting them until the recap has run |
 | Feeling like surveillance | Roles not scores, no quoted text, wording that feels warm rather than analytical |
 
-## 20. Open decisions
+## 19. Open decisions
 
-- **The public name.** *Our Year in Doodles* is the proposal.
-- **Unpairing.** Keep deleting everything when a pair unpairs, or keep the data for about 30 days and restore it if the *same two people* pair again. PostHog's `mulberry_pair_created` events can show how often that happens. Decide before mid-December.
-- **Mac.** Whether the Mac app shows the recap. Its portrait main window could hold the feed, but the reel gestures need a Mac equivalent.
 - **Couple types.** The final list of titles and roles, and the thresholds for each.
-- **The midnight note.** Confirm it's added to the shared canvas at the recipient's midnight, as proposed.
-- **Card 15.** Depends on whether the book or Mulberry+ exist by launch.
-- **Launch date.** 20 December or Valentine's 2027.
+- **How the midnight note is delivered.** The experience is decided (see card 14). The proposed way to deliver it is to add it to the shared canvas at the recipient's midnight (see [System design](#12-system-design)).
 
-## 21. Beyond 2026
+### Decided (4 November 2026)
+
+- **Public name:** *Our Year in Doodles*.
+- **Unpairing:** keeps deleting everything. We don't hold data for a possible re-pair.
+- **Mac:** the Mac app doesn't show the recap.
+- **Midnight note:** the last card of the feed. Whatever a partner draws there is sent to the other at midnight on 1 January. There's no separate "draw the first doodle" card after it.
+- **Launch:** the last week of December, with the cutoff around 20 December.
+
+## 20. Beyond 2026
 
 The same system should run:
 
