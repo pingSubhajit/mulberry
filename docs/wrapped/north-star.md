@@ -211,7 +211,7 @@ These are what set the recap apart from Spotify's. Each person's recap is person
 
 ## 12. System design
 
-The server-driven contract will be designed in its own document. This section records the decisions that are already made.
+The full design, including the server-driven contract, is in [Architecture](architecture.md). This section records the main decisions.
 
 ### Decided
 
@@ -243,9 +243,9 @@ A year of raw canvas operations can be large, because each stroke arrives as man
 
 `canvas_snapshots` holds only each pair's latest canvas. Past canvases, such as "the canvas that night" on card 6 and the poster choices on card 13, are rebuilt on the server from `canvas_operations`. The canvas just before each clear is a finished picture the couple chose to wipe, which makes those moments natural poster choices.
 
-### Proposed: delivering the midnight note
+### Delivering the midnight note
 
-The server keeps each note's drawing, then adds it to the shared canvas at midnight in the recipient's time zone, credited to the author. From there it travels through the normal sync, push and wallpaper paths on every platform. If partners are in different time zones, each note arrives at its recipient's midnight. This needs confirming during design.
+The server keeps each note's drawing, then adds it to the shared canvas at midnight in the recipient's time zone, credited to the author. From there it travels through the normal sync, push and wallpaper paths on every platform. If partners are in different time zones, each note arrives at its recipient's midnight.
 
 ## 13. Data
 
@@ -372,14 +372,13 @@ Set number targets once we know how many pairs are eligible.
 ## 19. Open decisions
 
 - **Couple types.** The final list of titles and roles, and the thresholds for each.
-- **How the midnight note is delivered.** The experience is decided (see card 14). The proposed way to deliver it is to add it to the shared canvas at the recipient's midnight (see [System design](#12-system-design)).
 
 ### Decided (4 November 2026)
 
 - **Public name:** *Our Year in Doodles*.
 - **Unpairing:** keeps deleting everything. We don't hold data for a possible re-pair.
 - **Mac:** the Mac app doesn't show the recap.
-- **Midnight note:** the last card of the feed. Whatever a partner draws there is sent to the other at midnight on 1 January. There's no separate "draw the first doodle" card after it.
+- **Midnight note:** the last card of the feed. Whatever a partner draws there is sent to the other at midnight on 1 January. There's no separate "draw the first doodle" card after it. The server adds the note to the shared canvas at the recipient's midnight, credited to the author.
 - **Launch:** the last week of December, with the cutoff around 20 December.
 
 ## 20. Beyond 2026
