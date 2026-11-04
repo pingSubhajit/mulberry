@@ -116,11 +116,11 @@ export function signInMethodOf(user: Pick<UserRow, "google_subject" | "apple_sub
 }
 
 /**
- * How PostHog lists a person: "Name - email", or the email alone before they've set a name. The
+ * How PostHog lists a person: "Name - email", or the email alone when there's no other name. The
  * project shows `display_label` first wherever it names a person.
  */
 export function personLabel(name: string | null, email: string): string {
-  return name ? `${name} - ${email}` : email
+  return name && name.toLowerCase() !== email.toLowerCase() ? `${name} - ${email}` : email
 }
 
 /** The name a person shows under: their display name, or their email before they've set one. */
