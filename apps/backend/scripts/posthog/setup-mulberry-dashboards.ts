@@ -28,8 +28,16 @@ interface Paginated<T> {
   results?: T[]
 }
 
-/** Only events recorded under the tracking plan; older events have no `source`. */
-const TRACKED_ONLY: JsonObject[] = [{ key: "source", type: "event", operator: "is_set", value: "is_set" }]
+/**
+ * Only events recorded under the tracking plan. Some older events also had a `source` property
+ * (canvas or reaction), so this names the plan's values rather than checking it's set.
+ */
+const TRACKED_ONLY: JsonObject[] = [{ key: "source", type: "event", operator: "exact", value: ["server", "app", "backfill"] }]
+/**
+ * Counts pairs by the `pair_id` every pair event carries. PostHog didn't attach backfilled events,
+ * which have old timestamps, to their pair group, so the group can't be used to count them.
+ */
+const BY_PAIR: JsonObject = { funnelAggregateByHogQL: "properties.pair_id" }
 const LAST_30_DAYS: JsonObject = { date_from: "-30d" }
 const LAST_90_DAYS: JsonObject = { date_from: "-90d" }
 /** PostHog numbers group types in the order they first appear; `pair` is Mulberry's only one. */
@@ -152,6 +160,24 @@ function event(name: string, label: string, extra: JsonObject = {}): JsonObject 
   return { kind: "EventsNode", event: name, name: label, ...extra }
 }
 
+/** Pairs by active days, newest activity breaking ties. `days` null means all time. */
+function mostActivePairs(days: number | null): string {
+  return `
+    SELECT g.properties.name AS pair, count() AS active_days, max(e.timestamp) AS last_active,
+      g.properties.partner_one_email AS partner_one_email, g.properties.partner_two_email AS partner_two_email,
+      g.properties.status AS status
+    FROM events e
+    LEFT JOIN groups g ON g.key = e.properties.pair_id AND g.index = ${PAIR_GROUP_INDEX}
+    WHERE e.event = 'mulberry_pair_active_day'
+      AND e.properties.source IN ('server', 'backfill')
+      AND toString(g.properties.is_internal) = 'false'
+      ${days === null ? "" : `AND e.timestamp > now() - INTERVAL ${days} DAY`}
+    GROUP BY pair, partner_one_email, partner_two_email, status
+    ORDER BY active_days DESC, last_active DESC
+    LIMIT 100
+  `
+}
+
 function table(query: string): JsonObject {
   return { kind: "DataTableNode", source: { kind: "HogQLQuery", query } }
 }
@@ -187,7 +213,7 @@ const INSIGHTS: Insight[] = [
         event("mulberry_canvas_first_action", "First canvas change"),
         event("mulberry_pair_active_day", "Active day"),
       ],
-      { aggregation_group_type_index: PAIR_GROUP_INDEX },
+      { funnelsFilter: BY_PAIR },
     ),
   },
   {
@@ -202,7 +228,7 @@ const INSIGHTS: Insight[] = [
   },
   {
     name: "Retention (Active Pairs)",
-    description: "Share of pairs active again in the weeks after their first active week.",
+    description: "Share of pairs active again in the weeks after their first active week. Counts from the deploy of 2026-11-04: older pair weeks aren't attached to their pair.",
     query: {
       kind: "InsightVizNode",
       source: {
@@ -230,7 +256,7 @@ const INSIGHTS: Insight[] = [
     description: "How long pairs take from forming to their first canvas change.",
     query: funnel(
       [event("mulberry_pair_created", "Pair created"), event("mulberry_canvas_first_action", "First canvas change")],
-      { aggregation_group_type_index: PAIR_GROUP_INDEX, funnelsFilter: { funnelVizType: "time_to_convert" } },
+      { funnelsFilter: { ...BY_PAIR, funnelVizType: "time_to_convert" } },
     ),
   },
   {
@@ -290,19 +316,12 @@ const INSIGHTS: Insight[] = [
   {
     name: "Most active pairs (30 days)",
     description: "Pairs by active days in the last 30 days, shown as Partner 1 x Partner 2.",
-    query: table(`
-      SELECT groups.properties.name AS pair, count() AS active_days, max(events.timestamp) AS last_active,
-        groups.properties.partner_one_email AS partner_one_email, groups.properties.partner_two_email AS partner_two_email
-      FROM events
-      LEFT JOIN groups ON groups.key = events.$group_${PAIR_GROUP_INDEX} AND groups.index = ${PAIR_GROUP_INDEX}
-      WHERE events.event = 'mulberry_pair_active_day'
-        AND events.timestamp > now() - INTERVAL 30 DAY
-        AND events.$group_${PAIR_GROUP_INDEX} != ''
-        AND toString(groups.properties.is_internal) != 'true'
-      GROUP BY pair, partner_one_email, partner_two_email
-      ORDER BY active_days DESC, last_active DESC
-      LIMIT 50
-    `),
+    query: table(mostActivePairs(30)),
+  },
+  {
+    name: "Most active pairs (all time)",
+    description: "Every pair by active days since it formed, shown as Partner 1 x Partner 2.",
+    query: table(mostActivePairs(null)),
   },
 ]
 

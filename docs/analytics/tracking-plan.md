@@ -146,6 +146,11 @@ The server rejects any other event name or value, so a new step or push type is 
   - Every account's sign-up and onboarding.
   - Every current pair, with its active days, active weeks and reactions.
   - Each person's and pair's properties.
+- PostHog didn't attach backfilled events, which carry old timestamps, to their pair group. Pair
+  insights therefore count pairs by the `pair_id` property; retention by pair counts only from the
+  backfill on.
+- Older events sometimes had a `source` property of their own (`canvas`, `reaction`). Only events
+  whose `source` is `server`, `app` or `backfill` follow this plan.
 - Pairs that ended before the backfill can't be recovered, because unpairing deletes them.
 - Invites that expired earlier are recorded by the expiry sweep, timestamped at their expiry.
 
@@ -156,7 +161,7 @@ The server rejects any other event name or value, so a new step or push type is 
   - Adds the event descriptions.
   - Creates or updates the "Mulberry — Core" dashboard: funnels, active pairs, retention by pair,
     setup steps, notifications, pair endings, plus the "Unpaired people" and "Most active pairs"
-    tables.
+    (30 days and all time) tables.
 - A row that keeps failing to send is retried with backoff for about a day, then kept with
   `dead_at` set. To check the outbox:
 
