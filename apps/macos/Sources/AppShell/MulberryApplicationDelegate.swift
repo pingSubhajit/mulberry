@@ -163,6 +163,11 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     public func applicationDidFinishLaunching(_ notification: Notification) {
         if handOverToRunningCopy() { return NSApp.terminate(nil) }
         CrashReporting.start()
+        AppAnalytics.start(AnalyticsQueue(file: MacBackend.analyticsFile, sender: api))
+        // A Mac app is never sent to the background; stepping away from Mulberry is the moment.
+        surfaceObservers.append(NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
+            Task { await AppAnalytics.flush() }
+        })
         pushRegistration.configure()
         authController.beforeSignOut = { [weak self] in await self?.pushRegistration.signOut() }
         partnerArrival.remoteMessage = { [weak self] event in await self?.receiveRemoteUpdate(event) }
@@ -959,7 +964,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
     }
 
     @objc private func toggleOverlay() {
-        overlayController.toggle()
+        overlayController.setShownByPerson(!overlayController.isVisible)
         updateSyncDemand()
         refreshStatusMenu()
     }

@@ -157,7 +157,24 @@ public enum MacBackend {
             baseURL: configuration.normalizedAPIBaseURL,
             tokenStore: tokens,
             session: session,
-            shortTransport: URLSessionTransport(session: URLSession(configuration: quick))
+            shortTransport: URLSessionTransport(session: URLSession(configuration: quick)),
+            clientBuild: clientBuild,
+            device: ClientDevice(family: .mac, anonymousID: AnalyticsInstall.anonymousID())
         )
+    }
+
+    /// The server's update gate looks only at iOS and Android, so naming the Mac's build can never
+    /// turn it away. Without a bundle, as under `swift run`, there is no build to name.
+    private static var clientBuild: ClientBuild? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String, let number = Int(value) else { return nil }
+        return ClientBuild(platform: "macos", number: number)
+    }
+
+    /// Where unsent analytics events wait, beside the drawings.
+    public static var analyticsFile: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Mulberry", isDirectory: true)
+            .appendingPathComponent("Analytics", isDirectory: true)
+            .appendingPathComponent("events.json")
     }
 }

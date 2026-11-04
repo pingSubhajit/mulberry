@@ -68,6 +68,7 @@ struct AuthenticationView: View {
         }
         // Android's owned landing artwork has one intentional light appearance.
         .preferredColorScheme(.light)
+        .analyticsStep(.signIn)
     }
 }
 

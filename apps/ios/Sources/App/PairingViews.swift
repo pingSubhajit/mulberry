@@ -34,6 +34,7 @@ struct InviteEntryView: View {
                 }
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
                 .fullScreenCover(isPresented: $helpOpen) { PairingHelpView { helpOpen = false } }
+                .analyticsStep(.redeemCodeEntry)
         }.interactiveDismissDisabled(model.busy)
     }
 }
@@ -76,6 +77,7 @@ struct InviteAcceptanceView: View {
                 }
             }
             .fullScreenCover(isPresented: $helpOpen) { PairingHelpView { helpOpen = false } }
+            .analyticsStep(.inviteReview)
     }
 }
 
@@ -132,6 +134,7 @@ struct InviteShareView: View {
                                 }
                             }
                         }
+                        .analyticsStep(.inviteCodeShown)
                     } else if model.busy { ProgressView("Creating your invite…") }
                     InlineError(message: model.errorMessage)
                     if model.createdInvite == nil && !model.busy {
@@ -168,5 +171,6 @@ private struct InvitePartnerDetailsView: View {
                 }.padding(24).background(MulberryDesign.background)
             }
             .onAppear { name = model.bootstrap?.partnerDisplayName ?? ""; anniversary = model.bootstrap?.anniversaryDate ?? "" }
+            .analyticsStep(.partnerDetails)
     }
 }

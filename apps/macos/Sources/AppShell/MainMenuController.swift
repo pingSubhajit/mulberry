@@ -147,7 +147,7 @@ final class MainMenuController: NSObject, NSMenuDelegate {
         let bootstrap = appStateController.loadState.bootstrap
 
         settingsMenu.addItem(toggle("Show on Desktop", on: overlayController.isVisible) { [overlayController] in
-            overlayController.isVisible ? overlayController.hide() : overlayController.show()
+            overlayController.setShownByPerson(!overlayController.isVisible)
         })
 
         let display = NSMenuItem(title: "Display", action: nil, keyEquivalent: "")

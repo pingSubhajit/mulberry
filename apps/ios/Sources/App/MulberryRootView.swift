@@ -43,8 +43,16 @@ struct MulberryRootView: View {
                 NavigationStack { OnboardingNameView(model: model) }
             } else if model.showWallpaperOnboarding {
                 NavigationStack {
-                    WallpaperPickerView(library: wallpapers, onboarding: true, onSetup: { setupOpen = true }, onSkip: model.finishWallpaperOnboarding)
+                    WallpaperPickerView(library: wallpapers, onboarding: true, onSetup: {
+                        AppAnalytics.track(.wallpaperSetupStep(surface: .iosShortcut, step: .chooseBackground, outcome: .completed))
+                        setupOpen = true
+                    }, onSkip: {
+                        AppAnalytics.track(.wallpaperSetupStep(surface: .iosShortcut, step: .chooseBackground, outcome: .skipped))
+                        model.finishWallpaperOnboarding()
+                    })
                 }
+                .analyticsStep(.wallpaperSetup)
+                .analyticsStep(.chooseBackground, on: .iosShortcut)
             } else { mainCanvas }
         }
         .task {
@@ -81,7 +89,7 @@ struct MulberryRootView: View {
             Button("Clear", role: .destructive) { Task { await model.clearCanvas() } }
         } message: { Text("This erases everything on it for both of you.") }
         .task(id: phase) {
-            if phase == .background { ReactionActivities.appBackgrounded() }
+            if phase == .background { ReactionActivities.appBackgrounded(); AppRuntime.sendAnalyticsInBackground() }
             await model.setActive(phase == .active, updateWallpaper: phase == .background)
             guard phase == .active else { return }
             while !Task.isCancelled {
@@ -114,6 +122,7 @@ struct MulberryRootView: View {
                                   partnerName: model.bootstrap?.partnerDisplayName ?? "your partner") {
                 pairingConfirmationOpen = false
             }
+            .analyticsStep(.pairedCelebration)
         }
         .sheet(isPresented: $model.showInviteEntry) { InviteEntryView(model: model) }
         .sheet(isPresented: $model.showSettings) {
@@ -138,8 +147,12 @@ struct MulberryRootView: View {
             guard url.scheme == Bundle.main.bundleIdentifier else { return }
             switch url.host {
             case "wallpaper-return": Task { await setup.refresh() }
-            case "shortcut-error": setup.message = "The Shortcut couldn’t finish. Open it to check its actions and permissions."; showSetup()
-            case "shortcut-cancelled": setup.message = "Setup was cancelled. Run the Shortcut again when ready."; showSetup()
+            case "shortcut-error":
+                setup.shortcutReturned(failure: .shortcutError)
+                setup.message = "The Shortcut couldn’t finish. Open it to check its actions and permissions."; showSetup()
+            case "shortcut-cancelled":
+                setup.shortcutReturned(failure: .shortcutCancelled)
+                setup.message = "Setup was cancelled. Run the Shortcut again when ready."; showSetup()
             #if DEBUG
             // Opens wallpaper setup from a Mac: `devicectl device process launch --payload-url <bundle id>://wallpaper-setup`.
             case "wallpaper-setup": routes.pending = .wallpaperSetup

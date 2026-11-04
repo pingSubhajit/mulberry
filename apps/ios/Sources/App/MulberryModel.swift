@@ -203,6 +203,7 @@ final class MulberryModel: ObservableObject {
     func finishWallpaperOnboarding() {
         guard let userId else { return }
         UserDefaults.standard.set(true, forKey: "wallpaperVisited.\(userId)")
+        if showWallpaperOnboarding { AppAnalytics.track(.onboardingStepViewed(.onboardingFinished)) }
         showWallpaperOnboarding = false
     }
 

@@ -173,7 +173,7 @@ struct DesktopPane: View {
                 SettingsToggleRow(
                     "Show on Desktop",
                     detail: "The shared canvas sits behind your windows.",
-                    isOn: Binding(get: { overlayController.isVisible }, set: { $0 ? overlayController.show() : overlayController.hide() })
+                    isOn: Binding(get: { overlayController.isVisible }, set: { overlayController.setShownByPerson($0) })
                 )
                 SettingsRow("Display") {
                     SettingsMenu(
@@ -206,6 +206,12 @@ struct DesktopPane: View {
                     Button("Reset", action: overlayController.resetPosition)
                         .buttonStyle(.settings)
                 }
+            }
+        }
+        // With the drawings off the desktop, this is where they are turned on.
+        .onAppear {
+            if !overlayController.isVisible {
+                AppAnalytics.track(.wallpaperSetupStep(surface: .macOverlay, step: .enableOverlay, outcome: .viewed))
             }
         }
     }

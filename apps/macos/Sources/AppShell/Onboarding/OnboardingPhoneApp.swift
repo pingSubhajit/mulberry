@@ -191,6 +191,7 @@ private struct ProfileScreen: View {
             CodeLink(flow: flow)
         }
         .onAppear {
+            flow.track(flow.profileStep)
             #if DEBUG
             // `-onboardingDateOpen YES` opens with the wheel unfolded, for looking at it.
             if UserDefaults.standard.bool(forKey: "onboardingDateOpen") {
@@ -319,6 +320,7 @@ private struct CodeScreen: View {
             .offset(x: -4, y: -30)
         }
         .onAppear {
+            flow.track(.redeemCodeEntry)
             // A code just copied from a message is waiting on the clipboard.
             if flow.code.isEmpty, let copied = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
                copied.count == 6, copied.allSatisfy({ $0.isASCII && $0.isNumber }) {
@@ -361,6 +363,7 @@ private struct AcceptanceScreen: View {
                 .disabled(flow.busy)
             PhoneError(message: flow.error)
         }
+        .onAppear { flow.track(.inviteReview) }
     }
 }
 
@@ -391,6 +394,7 @@ private struct InviteScreen: View {
                             }
                         }
                     }
+                    .onAppear { flow.track(.inviteCodeShown) }
                 } else if flow.busy {
                     ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 50)
                 } else {

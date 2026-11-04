@@ -7,6 +7,16 @@ enum SetupStep: Int, CaseIterable {
     case allow = 1, add, run, automate
     /// Steps iOS cannot confirm, so they are remembered once the user takes them.
     static let selfReported: [SetupStep] = [.add, .automate]
+
+    /// The tracking plan's name for the step.
+    var analyticsStep: WallpaperSetupStep {
+        switch self {
+        case .allow: .grantPermission
+        case .add: .installShortcut
+        case .run: .setWallpaper
+        case .automate: .createAutomation
+        }
+    }
 }
 
 @MainActor
@@ -20,6 +30,8 @@ final class WallpaperSetupModel: ObservableObject {
     @Published private(set) var shortcutAdded = false
     @Published private(set) var automationOn = false
     @Published private(set) var shortcutRan = false
+    /// Checked at least once, so the steps shown are this device's rather than the defaults.
+    @Published private(set) var refreshed = false
     private var refreshing = false
     private var awaitingShortcutReturn: SetupStep?
     private var presenceReport: Task<Void, Never>?
@@ -141,6 +153,7 @@ final class WallpaperSetupModel: ObservableObject {
         update(\.shortcutAdded, ran || UserDefaults.standard.bool(forKey: stepKey(.add)))
         // A manual run works with Automation off, so only a passed test proves this step.
         update(\.automationOn, health.state == .responded || UserDefaults.standard.bool(forKey: stepKey(.automate)))
+        update(\.refreshed, true)
         // A slow or unreachable backend must not hold up the next local refresh.
         if presenceReport == nil {
             presenceReport = Task { await reportPresence(); presenceReport = nil }
@@ -171,6 +184,7 @@ final class WallpaperSetupModel: ObservableObject {
         do {
             if permission == "Off" { openSettings(); return }
             if try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { UIApplication.shared.registerForRemoteNotifications() }
+            else { track(.grantPermission, .failed, failure: .notificationsDenied) }
             await refresh()
         } catch { message = UserFacingError.message(for: error, fallback: "Couldn’t ask for notifications. Turn them on in Settings.") }
     }
@@ -185,6 +199,15 @@ final class WallpaperSetupModel: ObservableObject {
                           .init(name: "x-error", value: "\(scheme)://shortcut-error"), .init(name: "x-cancel", value: "\(scheme)://shortcut-cancelled")]
         if !(await UIApplication.shared.open(url.url!)) { message = "Shortcuts couldn’t open. Install Apple’s Shortcuts app, then try again." }
         await refresh()
+    }
+    /// The Shortcut's run from setup came back with an error or was cancelled. Runs once setup is
+    /// past that step are everyday wallpaper updates, not setup.
+    func shortcutReturned(failure: WallpaperSetupFailure) {
+        guard !shortcutRan else { return }
+        track(.setWallpaper, .failed, failure: failure)
+    }
+    func track(_ step: WallpaperSetupStep, _ outcome: WallpaperSetupOutcome, failure: WallpaperSetupFailure? = nil) {
+        AppAnalytics.track(.wallpaperSetupStep(surface: .iosShortcut, step: step, outcome: outcome, failureReason: failure))
     }
     func startOver() async { await undoSteps(from: .add) }
     /// Redoing a step invalidates every later step and the test. Only Automation follows the run,

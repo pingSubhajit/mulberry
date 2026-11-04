@@ -678,6 +678,7 @@ struct UnpairedCanvasView: View {
         }
         }.frame(maxWidth: .infinity, maxHeight: .infinity).background(MulberryDesign.background)
             .sheet(isPresented: $inviteOpen) { InviteShareView(model: model) }
+            .analyticsStep(.pairingChoice)
     }
 }
 

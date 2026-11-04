@@ -59,6 +59,22 @@ public struct ClientBuild: Sendable, Equatable {
     }
 }
 
+public enum DeviceFamily: String, Sendable {
+    case iphone, ipad, mac
+}
+
+/// What kind of device this is and the install's anonymous analytics id, sent with every request,
+/// debug builds included.
+public struct ClientDevice: Sendable, Equatable {
+    public let family: DeviceFamily
+    public let anonymousID: String
+
+    public init(family: DeviceFamily, anonymousID: String) {
+        self.family = family
+        self.anonymousID = anonymousID
+    }
+}
+
 /// Serializes token rotation. Concurrent requests share one refresh, and an old request
 /// can never restore a session after sign-out or account switching.
 public actor BackendClient {
@@ -67,6 +83,7 @@ public actor BackendClient {
 
     public let baseURL: URL
     private let clientBuild: ClientBuild?
+    private let device: ClientDevice?
     private let transport: any BackendTransport
     private let shortTransport: any BackendTransport
     private let tokenStore: any SessionTokenStore
@@ -74,15 +91,16 @@ public actor BackendClient {
     private var generation = 0
     private var refreshTask: Task<SessionTokens, Error>?
 
-    public init(baseURL: URL, tokenStore: any SessionTokenStore, transport: any BackendTransport = URLSessionTransport(), shortTransport: (any BackendTransport)? = nil, clientBuild: ClientBuild? = nil) throws {
-        self.init(baseURL: baseURL, tokenStore: tokenStore, session: try tokenStore.load(), transport: transport, shortTransport: shortTransport, clientBuild: clientBuild)
+    public init(baseURL: URL, tokenStore: any SessionTokenStore, transport: any BackendTransport = URLSessionTransport(), shortTransport: (any BackendTransport)? = nil, clientBuild: ClientBuild? = nil, device: ClientDevice? = nil) throws {
+        self.init(baseURL: baseURL, tokenStore: tokenStore, session: try tokenStore.load(), transport: transport, shortTransport: shortTransport, clientBuild: clientBuild, device: device)
     }
 
     /// Starts from `session` rather than reading the store, as when the store cannot be read: sign-in
     /// and sign-out still save to it.
-    public init(baseURL: URL, tokenStore: any SessionTokenStore, session: SessionTokens?, transport: any BackendTransport = URLSessionTransport(), shortTransport: (any BackendTransport)? = nil, clientBuild: ClientBuild? = nil) {
+    public init(baseURL: URL, tokenStore: any SessionTokenStore, session: SessionTokens?, transport: any BackendTransport = URLSessionTransport(), shortTransport: (any BackendTransport)? = nil, clientBuild: ClientBuild? = nil, device: ClientDevice? = nil) {
         self.baseURL = baseURL
         self.clientBuild = clientBuild
+        self.device = device
         self.tokenStore = tokenStore
         self.transport = transport
         self.shortTransport = shortTransport ?? transport
@@ -289,6 +307,20 @@ public actor BackendClient {
         let _: JSONValue = try await json("reactions/confirm", method: "POST", body: ReactionPlayback(generation: generation, deviceId: deviceId))
     }
 
+    /// Sends a batch of analytics events, signed in or not. It never refreshes the session or
+    /// signs anyone out: any reply but a server error ends the batch, a 401 or 426 included.
+    public func sendAnalytics(_ events: [AnalyticsRecord]) async -> AnalyticsDelivery {
+        struct Batch: Encodable { let events: [AnalyticsRecord] }
+        guard !events.isEmpty, let body = try? JSONEncoder().encode(Batch(events: events)) else { return .drop }
+        var request = makeRequest("analytics/events", method: "POST")
+        request.timeoutInterval = 3
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = tokens?.accessToken { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        guard let (_, response) = try? await shortTransport.data(for: request) else { return .keep }
+        return (200..<500).contains(response.statusCode) ? .drop : .keep
+    }
+
     private func get<Response: Decodable & Sendable>(_ path: String, query: [URLQueryItem] = [], authenticated: Bool = true, quick: Bool = false) async throws -> Response {
         try await decode(makeRequest(path, query: query), authenticated: authenticated, quick: quick)
     }
@@ -389,6 +421,10 @@ public actor BackendClient {
         if let clientBuild {
             request.setValue(clientBuild.platform, forHTTPHeaderField: "X-App-Platform")
             request.setValue(String(clientBuild.number), forHTTPHeaderField: "X-App-Build")
+        }
+        if let device {
+            request.setValue(device.family.rawValue, forHTTPHeaderField: "X-Device-Family")
+            request.setValue(device.anonymousID, forHTTPHeaderField: "X-Analytics-Anonymous-Id")
         }
         // Read per request, so the server learns of a change as soon as the device moves zones.
         request.setValue(TimeZone.autoupdatingCurrent.identifier, forHTTPHeaderField: "X-Time-Zone")

@@ -59,7 +59,9 @@ final class OnboardingFlow: ObservableObject {
     /// The mark's rise, from below the screen, large and glowing, to its place above the title.
     @Published private(set) var logoFlight: CGFloat = 0
     @Published private(set) var welcomeShown = false
-    @Published private(set) var signInShown = false
+    @Published private(set) var signInShown = false {
+        didSet { if signInShown && !oldValue { track(.signIn) } }
+    }
     @Published private(set) var introShown = true
     @Published private(set) var signInError: String?
     @Published private(set) var doodle: NSImage?
@@ -239,6 +241,7 @@ final class OnboardingFlow: ObservableObject {
     }
 
     private func playIntro() async {
+        track(.welcome)
         await show(backdrop: true)
         withAnimation(.easeOut(duration: 0.8)) { creditShown = true }
         await pause(1.0)
@@ -469,6 +472,18 @@ final class OnboardingFlow: ObservableObject {
     private var debugging: Bool { false }
     #endif
 
+    /// Records an onboarding screen as shown, unless it was forced for testing.
+    func track(_ step: OnboardingStep) {
+        guard !debugging else { return }
+        AppAnalytics.track(.onboardingStepViewed(step))
+    }
+
+    /// The details form asks for the person's own name first; after a disconnect it is there only
+    /// for the partner's details.
+    var profileStep: OnboardingStep {
+        bootstrap?.onboardingCompleted == true ? .partnerDetails : .profileName
+    }
+
     /// An invite needs the partner's name and the anniversary, which a disconnect clears.
     private static func needsPartnerDetails(_ bootstrap: BootstrapState) -> Bool {
         bootstrap.partnerDisplayName?.nonEmpty == nil || bootstrap.anniversaryDate?.nonEmpty == nil
@@ -599,6 +614,7 @@ final class OnboardingFlow: ObservableObject {
     private func welcome(ending: Ending) async {
         pendingEnding = ending
         scene = .welcome
+        track(.pairedCelebration)
         // Drawn once hidden first: fading in from the moment it is added, it would not fade at all.
         await pause(0.05)
         withAnimation(.easeOut(duration: 0.8)) { pairShown = true }
@@ -639,11 +655,16 @@ final class OnboardingFlow: ObservableObject {
     /// Told the partner's arrival will be news, the person is left to it.
     private func waiting() async {
         scene = .waiting
+        track(.waitingForPartner)
         await pause(0.05)
         withAnimation(.easeOut(duration: 0.7)) { waitingShown = true }
         // The promise is the moment to ask. The ending does not wait on the answer: macOS keeps
         // the request on screen after onboarding has gone.
-        Task { _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) }
+        Task {
+            let center = UNUserNotificationCenter.current()
+            if await center.notificationSettings().authorizationStatus == .notDetermined { track(.notificationsPermission) }
+            _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+        }
         await pause(2.8)
         withAnimation(.easeIn(duration: 0.6)) { waitingShown = false }
         await pause(0.6)
@@ -653,6 +674,8 @@ final class OnboardingFlow: ObservableObject {
     private func finish(_ ending: Ending) {
         guard !self.ending else { return }
         self.ending = true
+        // The two photos alone, for a partner who joined later, come after onboarding finished.
+        if case .partnerJoined = start {} else { track(.onboardingFinished) }
         network.cancel()
         // Only a choice the person saw on the form.
         if !debugging, askedOpenAtLogin, openAtLogin != launchAtLogin.isEnabled {

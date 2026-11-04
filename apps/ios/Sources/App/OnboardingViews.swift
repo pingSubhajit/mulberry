@@ -33,6 +33,7 @@ struct OnboardingNameView: View {
             }.readableColumn().padding(.horizontal, 24).padding(.bottom, 12).padding(.top, 12).background(MulberryDesign.background)
         }
         .navigationDestination(isPresented: $details) { OnboardingDetailsView(model: model) }
+        .analyticsStep(.profileName)
         .sheet(item: $legal) { LegalDocumentView(document: $0) }
         .onChange(of: model.draft) { _, _ in model.saveDraft() }
         // The invite page copies the partner's link before sending them to the App Store.
@@ -103,6 +104,7 @@ struct OnboardingDetailsView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: model.draft) { _, _ in model.saveDraft() }
+        .analyticsStep(.partnerDetails)
     }
 }
 

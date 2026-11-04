@@ -15,6 +15,7 @@ final class NotificationBridge: NSObject, UIApplicationDelegate, UNUserNotificat
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        AppRuntime.startAnalytics()
         PushRegistration.shared.configure()
         AppUpdateGate.shared.start()
         ReactionActivities.followTokens()
@@ -52,8 +53,11 @@ final class NotificationBridge: NSObject, UIApplicationDelegate, UNUserNotificat
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         await record(response.notification, stage: "notification_opened")
-        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier,
-              let route = AppRoute(notificationType: response.notification.request.content.userInfo["type"] as? String) else { return }
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
+        let type = response.notification.request.content.userInfo["type"] as? String
+        // Only the server's pushes; Mulberry's own reminders and tests are not counted as opened.
+        if response.notification.request.trigger is UNPushNotificationTrigger { AppAnalytics.track(.pushOpened(PushType(payloadType: type))) }
+        guard let route = AppRoute(notificationType: type) else { return }
         await MainActor.run { AppRoutes.shared.pending = route }
     }
 

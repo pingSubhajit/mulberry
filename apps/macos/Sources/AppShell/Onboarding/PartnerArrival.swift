@@ -166,6 +166,10 @@ final class PartnerArrival: NSObject, UNUserNotificationCenterDelegate {
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        // Only the server's pushes; the partner-joined notice is the Mac's own.
+        if response.actionIdentifier == UNNotificationDefaultActionIdentifier, response.notification.request.trigger is UNPushNotificationTrigger {
+            AppAnalytics.track(.pushOpened(PushType(payloadType: response.notification.request.content.userInfo["type"] as? String)))
+        }
         if let event = MacPushEvent(response.notification.request.content.userInfo) { await remoteMessage(event) }
         guard response.notification.request.content.categoryIdentifier == Self.category else { return }
         await MainActor.run { open() }

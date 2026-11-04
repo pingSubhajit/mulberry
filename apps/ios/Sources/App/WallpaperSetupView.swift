@@ -11,6 +11,8 @@ struct WallpaperSetupView: View {
     @State private var barHeight: CGFloat = 0
     @State private var contentHeight: CGFloat = 0
     @State private var actionHeight: CGFloat = 0
+    /// The step last recorded as viewed while the sheet is open.
+    @State private var reportedStep: WallpaperSetupStep?
     /// The navigation bar, steps and button together, or the usual total before they are measured.
     private var sheetHeight: CGFloat {
         barHeight > 0 && contentHeight > 0 && actionHeight > 0 ? barHeight + contentHeight + actionHeight : 746
@@ -52,6 +54,9 @@ struct WallpaperSetupView: View {
             .sensoryFeedback(.success, trigger: celebration)
             .onChange(of: setup.health.state) { old, new in
                 if new == .responded && old == .waiting { celebration += 1 }
+                guard old == .waiting else { return }
+                if new == .responded { setup.track(.runTest, .completed) }
+                if new == .incomplete { setup.track(.runTest, .failed, failure: .testNoResponse) }
             }
             .onChange(of: phase) { if phase == .active { setup.returnedToApp() } }
             .task(id: phase) {
@@ -65,6 +70,32 @@ struct WallpaperSetupView: View {
         // The Automation guide page needs room for its screenshot at full width.
         .frame(idealHeight: pad ? (automationGuide ? max(sheetHeight, 800) : sheetHeight) : nil)
         .presentationSizing(.form.fitted(horizontal: false, vertical: true))
+        // Outside the navigation stack, so the iPad's Automation guide page doesn't count as leaving.
+        .onAppear { setup.track(.intro, .viewed); report(shownStep) }
+        .onChange(of: shownStep) { _, step in report(step) }
+        .onDisappear {
+            if let reportedStep, reportedStep != .finished { setup.track(reportedStep, .skipped) }
+            reportedStep = nil
+        }
+    }
+
+    /// The step on screen as analytics names it: nothing until the first check, then the next
+    /// step, the test once every step is done, or the end.
+    private var shownStep: WallpaperSetupStep? {
+        guard setup.refreshed else { return nil }
+        if isAllSet { return .finished }
+        return currentStep?.analyticsStep ?? .runTest
+    }
+
+    /// Records a newly shown step, and the step it follows as completed when it is done. The
+    /// test's result comes from the health check instead.
+    private func report(_ step: WallpaperSetupStep?) {
+        guard let step, step != reportedStep else { return }
+        if let previous = Step.allCases.first(where: { $0.analyticsStep == reportedStep }), isDone(previous) {
+            setup.track(previous.analyticsStep, .completed)
+        }
+        reportedStep = step
+        setup.track(step, .viewed)
     }
 
     private var automationGuideView: some View {

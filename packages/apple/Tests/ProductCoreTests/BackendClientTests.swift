@@ -208,6 +208,37 @@ private actor UpgradeRequiredTransport: BackendTransport {
     #expect(request.value(forHTTPHeaderField: "X-App-Build") == nil)
 }
 
+@Test func everyRequestNamesTheDeviceAndTheInstall() async throws {
+    let store = TestTokenStore(savedSession)
+    let transport = try TestTransport()
+    let device = ClientDevice(family: .mac, anonymousID: "0b6e3a8e-2a1e-4c64-9e43-4f1c8d2b7a11")
+    let client = try BackendClient(baseURL: URL(string: "https://example.invalid")!, tokenStore: store, transport: transport,
+                                   clientBuild: ClientBuild(platform: "macos", number: 12), device: device)
+    // The saved access token has expired, so this refreshes too.
+    _ = try await client.bootstrap()
+    _ = try await client.wallpapers()
+    let requests = await transport.requests
+    #expect(requests.map { $0.url?.path } == ["/bootstrap", "/auth/refresh", "/bootstrap", "/wallpapers"])
+    for request in requests {
+        #expect(request.value(forHTTPHeaderField: "X-Device-Family") == "mac")
+        #expect(request.value(forHTTPHeaderField: "X-Analytics-Anonymous-Id") == device.anonymousID)
+        #expect(request.value(forHTTPHeaderField: "X-App-Platform") == "macos")
+        #expect(request.value(forHTTPHeaderField: "X-App-Build") == "12")
+    }
+}
+
+@Test func aDebugBuildStillNamesTheDeviceAndTheInstall() async throws {
+    let transport = try TestTransport()
+    let client = BackendClient(baseURL: URL(string: "https://example.invalid")!, tokenStore: TestTokenStore(nil), session: nil, transport: transport,
+                               device: ClientDevice(family: .iphone, anonymousID: "0b6e3a8e-2a1e-4c64-9e43-4f1c8d2b7a11"))
+    _ = try? await client.signIn(googleIDToken: "token")
+    let request = try #require(await transport.requests.first)
+    #expect(request.url?.path == "/auth/google")
+    #expect(request.value(forHTTPHeaderField: "X-App-Platform") == nil)
+    #expect(request.value(forHTTPHeaderField: "X-Device-Family") == "iphone")
+    #expect(request.value(forHTTPHeaderField: "X-Analytics-Anonymous-Id") == "0b6e3a8e-2a1e-4c64-9e43-4f1c8d2b7a11")
+}
+
 @Test func everyRequestNamesTheDevicesTimeZone() async throws {
     let transport = try TestTransport()
     let client = BackendClient(baseURL: URL(string: "https://example.invalid")!, tokenStore: TestTokenStore(nil), session: nil, transport: transport)

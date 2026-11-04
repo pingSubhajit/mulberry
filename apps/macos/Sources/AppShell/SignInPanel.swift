@@ -1,6 +1,7 @@
 import AppKit
 import Auth
 import ProductCore
+import ProductUI
 import SwiftUI
 
 /// The account last signed in on this Mac: its name and photo outlive signing out, so the sign-in
@@ -85,6 +86,7 @@ struct SignInPanel: View {
             if !signedIn { account = LastAccount.load() }
         }
         .sheet(item: $document) { LegalDocumentSheet(document: $0) }
+        .analyticsStep(.signIn)
     }
 
     /// The button whose sign-in is under way; the preview's pretend one is Google's.
