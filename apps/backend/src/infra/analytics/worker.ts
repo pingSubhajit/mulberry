@@ -212,7 +212,8 @@ export function toPostHogMessage(row: OutboxRow): PostHogMessage {
   const operation = operationOf(row)
   const timestamp = new Date(row.occurred_at).toISOString()
   const base = { uuid: row.id, timestamp }
-  const lib = { $lib: "mulberry-backend" }
+  // Every message comes from the server, so PostHog's IP lookup would place everyone at the server.
+  const lib = { $lib: "mulberry-backend", $geoip_disable: true }
   switch (operation.kind) {
     case "capture":
       return {

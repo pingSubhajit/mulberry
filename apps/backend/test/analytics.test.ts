@@ -193,7 +193,14 @@ describe("Analytics", () => {
 
     const signUp = transport.events("mulberry_user_signed_up").find((m) => m.distinct_id === user.userId)
     expect(signUp?.properties).toMatchObject({ sign_in_method: "google", source: "server", platform: "ios", device_family: "ipad", app_build: 12 })
-    expect(transport.person(user.userId)).toMatchObject({ email: "someone@elaris.dev", name: "Someone", is_internal: false, is_paired: false })
+    expect(transport.person(user.userId)).toMatchObject({
+      email: "someone@elaris.dev",
+      name: "Someone",
+      display_label: "Someone - someone@elaris.dev",
+      is_internal: false,
+      is_paired: false,
+    })
+    expect(transport.messages.every((message) => message.properties.$geoip_disable === true)).toBe(true)
     expect(transport.person(internal.userId).is_internal).toBe(true)
     expect(transport.events("$create_alias")[0]).toMatchObject({ distinct_id: user.userId, properties: { alias: `anon:${ANON_ID}` } })
   })
@@ -306,6 +313,7 @@ describe("Analytics", () => {
 
     const deleted = transport.person(recipient.userId)
     expect(deleted.email).toBeUndefined()
+    expect(deleted.display_label).toBeUndefined()
     expect(deleted.name).toBeUndefined()
     expect(deleted.account_deleted).toBe(true)
     expect(transport.events("mulberry_account_deleted")[0].properties).toMatchObject({ was_paired: true, $process_person_profile: false })

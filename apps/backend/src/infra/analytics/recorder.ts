@@ -38,7 +38,7 @@ export interface TrackInput<E extends AnalyticsEventName> {
 export type PersonlessTrackInput<E extends AnalyticsEventName> = Omit<TrackInput<E>, "distinctId">
 
 /** Person properties emptied when an account is deleted, before the person itself is. */
-const PERSONAL_PROPERTIES = ["email", "name", "partner_name", "partner_email", "pair_name"]
+const PERSONAL_PROPERTIES = ["email", "name", "display_label", "partner_name", "partner_email", "pair_name"]
 
 /** How long a deleted account's PostHog person waits, so its last events are in before it goes. */
 const PERSON_DELETION_DELAY_MS = 60 * 60 * 1_000

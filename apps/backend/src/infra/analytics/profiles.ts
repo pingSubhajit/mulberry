@@ -56,9 +56,11 @@ export async function personSnapshot(
   const user = users.rows[0]
   if (!user) return null
 
+  const name = user.display_name?.trim() || null
   const set: JsonObject = {
     email: user.email,
-    name: user.display_name?.trim() || null,
+    name,
+    display_label: personLabel(name, user.email),
     sign_in_methods: signInMethods(user),
     is_internal: isInternalEmail(user.email, accounts),
     onboarding_completed: user.onboarding_completed_at !== null,
@@ -111,6 +113,14 @@ export async function pairSnapshot(
 
 export function signInMethodOf(user: Pick<UserRow, "google_subject" | "apple_subject">): SignInMethod {
   return user.apple_subject && !user.google_subject ? "apple" : "google"
+}
+
+/**
+ * How PostHog lists a person: "Name - email", or the email alone before they've set a name. The
+ * project shows `display_label` first wherever it names a person.
+ */
+export function personLabel(name: string | null, email: string): string {
+  return name ? `${name} - ${email}` : email
 }
 
 /** The name a person shows under: their display name, or their email before they've set one. */

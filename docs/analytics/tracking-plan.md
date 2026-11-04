@@ -16,6 +16,8 @@ the apps talks to PostHog directly.
   the PostHog person is deleted an hour later. On every pair they were ever in, current or ended,
   they show as "Deleted account" with no email (`analytics_pair_members` remembers those pairs), and
   a remaining partner's `partner_name` and `partner_email` are cleared.
+- **No IP location.** Every event comes from the server, so each one sets `$geoip_disable`; otherwise
+  PostHog would place everyone where the server is.
 - **Production only.** Servers whose `POSTHOG_ENVIRONMENT` isn't `production` record nothing unless
   `POSTHOG_DISABLED=false`, and then every person they record is marked internal.
 - **Internal people** (`is_internal = true`) are the accounts in `POSTHOG_INTERNAL_EMAILS`, and
@@ -40,6 +42,7 @@ the apps talks to PostHog directly.
 | Property | Meaning |
 |---|---|
 | `email`, `name` | The account's email and display name |
+| `display_label` | "Name - email", or the email before a name is set. PostHog shows it wherever it names a person |
 | `sign_in_methods` | `google`, `apple` |
 | `signed_up_at` | Account creation time (set once) |
 | `is_internal` | Internal or development account |
@@ -146,9 +149,10 @@ The server rejects any other event name or value, so a new step or push type is 
   - Every account's sign-up and onboarding.
   - Every current pair, with its active days, active weeks and reactions.
   - Each person's and pair's properties.
-- PostHog didn't attach backfilled events, which carry old timestamps, to their pair group. Pair
-  insights therefore count pairs by the `pair_id` property; retention by pair counts only from the
-  backfill on.
+- PostHog attaches an event to its pair group only when the event is recent and belongs to a person,
+  so backfilled events, which carry old timestamps, have no pair group. Pair trends, funnels and
+  retention count unique pairs (so their lists name pairs) from 2026-11-04 on; the "Most active
+  pairs" tables read `pair_id` and cover the whole history.
 - Older events sometimes had a `source` property of their own (`canvas`, `reaction`). Only events
   whose `source` is `server`, `app` or `backfill` follow this plan.
 - Pairs that ended before the backfill can't be recovered, because unpairing deletes them.

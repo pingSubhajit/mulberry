@@ -32,16 +32,15 @@ interface Paginated<T> {
  * Only events recorded under the tracking plan. Some older events also had a `source` property
  * (canvas or reaction), so this names the plan's values rather than checking it's set.
  */
-const TRACKED_ONLY: JsonObject[] = [{ key: "source", type: "event", operator: "exact", value: ["server", "app", "backfill"] }]
-/**
- * Counts pairs by the `pair_id` every pair event carries. PostHog didn't attach backfilled events,
- * which have old timestamps, to their pair group, so the group can't be used to count them.
- */
-const BY_PAIR: JsonObject = { funnelAggregateByHogQL: "properties.pair_id" }
-const LAST_30_DAYS: JsonObject = { date_from: "-30d" }
-const LAST_90_DAYS: JsonObject = { date_from: "-90d" }
 /** PostHog numbers group types in the order they first appear; `pair` is Mulberry's only one. */
 const PAIR_GROUP_INDEX = 0
+const TRACKED_ONLY: JsonObject[] = [{ key: "source", type: "event", operator: "exact", value: ["server", "app", "backfill"] }]
+/** Funnels and retention that follow pairs rather than people, so their lists name pairs. */
+const BY_PAIR: JsonObject = { aggregation_group_type_index: PAIR_GROUP_INDEX }
+/** Trend series that count unique pairs, so clicking a point lists "Partner 1 x Partner 2". */
+const UNIQUE_PAIRS: JsonObject = { math: "unique_group", math_group_type_index: PAIR_GROUP_INDEX }
+const LAST_30_DAYS: JsonObject = { date_from: "-30d" }
+const LAST_90_DAYS: JsonObject = { date_from: "-90d" }
 
 const EVENT_DESCRIPTIONS: Record<string, string> = {
   mulberry_user_signed_up: "An account was created.",
@@ -110,6 +109,8 @@ async function configureInternalFilter(env: Env): Promise<void> {
     body: {
       test_account_filters: hasInternal ? filters : [...filters, INTERNAL_FILTER],
       test_account_filters_default_checked: true,
+      // People show as "Name - email"; display_label is set on every person.
+      person_display_name_properties: ["display_label", "email", "name"],
     },
   })
   console.log(`Internal account filters: ${filters.length + (hasInternal ? 0 : 1)} (is_internal ${hasInternal ? "already there" : "added"}).`)
@@ -213,18 +214,18 @@ const INSIGHTS: Insight[] = [
         event("mulberry_canvas_first_action", "First canvas change"),
         event("mulberry_pair_active_day", "Active day"),
       ],
-      { funnelsFilter: BY_PAIR },
+      BY_PAIR,
     ),
   },
   {
     name: "Daily Active Pairs",
     description: "Pairs that drew, wrote, placed a sticker or sent a reaction each UTC day.",
-    query: trends([event("mulberry_pair_active_day", "Active pairs")]),
+    query: trends([event("mulberry_pair_active_day", "Active pairs", UNIQUE_PAIRS)]),
   },
   {
     name: "Weekly Active Pairs",
     description: "Pairs active each ISO week.",
-    query: trends([event("mulberry_pair_active_week", "Active pairs")], { dateRange: LAST_90_DAYS, interval: "week" }),
+    query: trends([event("mulberry_pair_active_week", "Active pairs", UNIQUE_PAIRS)], { dateRange: LAST_90_DAYS, interval: "week" }),
   },
   {
     name: "Retention (Active Pairs)",
@@ -249,20 +250,20 @@ const INSIGHTS: Insight[] = [
   {
     name: "Daily Active Pairs by platform",
     description: "Active pair-days by the platform of the partner who acted first that day.",
-    query: trends([event("mulberry_pair_active_day", "Active pairs")], { breakdownFilter: { breakdown: "platform", breakdown_type: "event" } }),
+    query: trends([event("mulberry_pair_active_day", "Active pairs", UNIQUE_PAIRS)], { breakdownFilter: { breakdown: "platform", breakdown_type: "event" } }),
   },
   {
     name: "Time To First Canvas Action (Pair → First Action)",
     description: "How long pairs take from forming to their first canvas change.",
     query: funnel(
       [event("mulberry_pair_created", "Pair created"), event("mulberry_canvas_first_action", "First canvas change")],
-      { funnelsFilter: { ...BY_PAIR, funnelVizType: "time_to_convert" } },
+      { ...BY_PAIR, funnelsFilter: { funnelVizType: "time_to_convert" } },
     ),
   },
   {
     name: "Daily Active Pairs by Brush Mode",
     description: "Active pairs split by dry and round stroke mode.",
-    query: trends([event("mulberry_pair_active_day", "Active pairs")], {
+    query: trends([event("mulberry_pair_active_day", "Active pairs", UNIQUE_PAIRS)], {
       breakdownFilter: { breakdown: "canvas_stroke_render_mode", breakdown_type: "event" },
     }),
   },
@@ -292,7 +293,7 @@ const INSIGHTS: Insight[] = [
   {
     name: "Pairs ended by reason",
     description: "Unpairs and account deletions that ended a pair.",
-    query: trends([event("mulberry_pair_ended", "Pairs ended")], {
+    query: trends([event("mulberry_pair_ended", "Pairs ended", UNIQUE_PAIRS)], {
       dateRange: LAST_90_DAYS,
       interval: "week",
       breakdownFilter: { breakdown: "reason", breakdown_type: "event" },
