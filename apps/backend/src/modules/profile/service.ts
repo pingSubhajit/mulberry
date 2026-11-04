@@ -21,6 +21,7 @@ import { getProfileFrom } from "../_shared/profiles.js"
 import { getPairSession } from "../_shared/pairs.js"
 import { normalizeDateString } from "../_shared/dates.js"
 import type { BootstrapService } from "../bootstrap/service.js"
+import { disabledAnalytics, type Analytics } from "../../infra/analytics/recorder.js"
 
 export interface UploadedProfilePhoto {
   filename?: string
@@ -43,6 +44,7 @@ export class ProfileService {
     private readonly bootstrapService: BootstrapService,
     private readonly pushDispatchService?: PushDispatchService,
     private readonly profilePhotoStorage?: ProfilePhotoStorage,
+    private readonly analytics: Analytics = disabledAnalytics,
   ) {}
 
   async updateCanvasStrokeRenderMode(
@@ -199,6 +201,7 @@ export class ProfileService {
       throw new HttpError(400, "All onboarding fields are required")
     }
 
+    const before = await getProfileFrom(this.db, context.user.id)
     await this.db.query(
       `
       INSERT INTO user_profiles (
@@ -223,8 +226,23 @@ export class ProfileService {
         profile.anniversaryDate.trim(),
       ],
     )
+    if (!before?.onboarding_completed_at) {
+      await this.analytics.track(this.db, { event: "mulberry_onboarding_completed", distinctId: context.user.id, properties: {} })
+    }
+    await this.syncNames(context.user.id)
 
     return this.bootstrapService.buildBootstrap(context.user.id)
+  }
+
+  /** A changed display name shows on the person and on their pair. */
+  private async syncNames(userId: string): Promise<void> {
+    if (!this.analytics.enabled) return
+    const pairSession = await getPairSession(this.db, userId)
+    if (pairSession) {
+      await this.analytics.syncPair(this.db, pairSession)
+    } else {
+      await this.analytics.syncPerson(this.db, userId)
+    }
   }
 
   async updateDisplayName(accessToken: string, displayNameInput: string): Promise<BootstrapResponse> {
@@ -276,6 +294,7 @@ export class ProfileService {
         )
       }
     })
+    await this.syncNames(context.user.id)
 
     return this.bootstrapService.buildBootstrap(context.user.id)
   }
@@ -674,6 +693,14 @@ export class ProfileService {
       details: Record<string, unknown>
     },
   ): Promise<UserPresenceSurfaceRow> {
+    const previous = await this.db.query<Pick<UserPresenceSurfaceRow, "can_see_latest_drawings" | "has_ever_been_able_to_see">>(
+      `
+      SELECT can_see_latest_drawings, has_ever_been_able_to_see
+      FROM user_presence_surfaces
+      WHERE user_id = $1 AND surface_type = $2 AND device_instance_id = $3
+      `,
+      [userId, input.surfaceType, input.deviceInstanceId],
+    )
     const rows = await this.db.query<UserPresenceSurfaceRow>(
       `
       INSERT INTO user_presence_surfaces (
@@ -722,7 +749,36 @@ export class ProfileService {
         JSON.stringify(input.details),
       ],
     )
+    await this.recordVisibility(userId, pairSessionId, input.surfaceType, previous.rows[0] ?? null, rows.rows[0])
     return rows.rows[0]
+  }
+
+  /** Sends visibility events when a surface first shows doodles, or starts or stops showing them. */
+  private async recordVisibility(
+    userId: string,
+    pairSessionId: string,
+    surfaceType: PresenceSurfaceType,
+    previous: Pick<UserPresenceSurfaceRow, "can_see_latest_drawings" | "has_ever_been_able_to_see"> | null,
+    current: UserPresenceSurfaceRow,
+  ): Promise<void> {
+    if (!this.analytics.enabled) return
+    const firstVisible = !previous?.has_ever_been_able_to_see && current.has_ever_been_able_to_see
+    const changed = (previous?.can_see_latest_drawings ?? false) !== current.can_see_latest_drawings
+    if (!firstVisible && !changed) return
+    await this.db.transaction(async (tx) => {
+      const base = { distinctId: userId, pairId: pairSessionId }
+      if (firstVisible) {
+        await this.analytics.track(tx, { ...base, event: "mulberry_wallpaper_first_visible", properties: { surface_type: surfaceType } })
+      }
+      if (changed) {
+        await this.analytics.track(tx, {
+          ...base,
+          event: "mulberry_wallpaper_visibility_changed",
+          properties: { surface_type: surfaceType, can_see_latest_drawings: current.can_see_latest_drawings },
+        })
+      }
+      await this.analytics.syncPerson(tx, userId)
+    })
   }
 }
 

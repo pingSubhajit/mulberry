@@ -1,4 +1,6 @@
 import type { Database } from "../db/database.js"
+import { disabledAnalytics, type Analytics } from "../analytics/recorder.js"
+import type { SentPushType } from "../analytics/events.js"
 import type { DeviceTokenRow } from "../../contracts/dbRecords.js"
 import type { DevicePlatform } from "../../contracts/devices.js"
 import type { ReactionType } from "../../contracts/reactions.js"
@@ -146,6 +148,7 @@ export class PushDispatchService {
     private readonly sender: PushSender,
     options: PushDispatchOptions = {},
     private readonly widgetSender: WidgetPushSender = new NoopWidgetPushSender(),
+    private readonly analytics: Analytics = disabledAnalytics,
   ) {
     this.debounceMs = options.debounceMs ?? 2_000
     this.canvasUpdateTtlMs = options.canvasUpdateTtlMs ?? DEFAULT_CANVAS_UPDATE_TTL_MS
@@ -435,6 +438,8 @@ export class PushDispatchService {
       return
     }
 
+    await this.recordPushSent("PAIRING_CONFIRMED", pairSessionId, { peerOf: actorUserId })
+
     console.info("[push] pairing confirmation sent", {
       pairSessionId,
       invalidTokenCount: result.invalidTokens.length,
@@ -494,6 +499,8 @@ export class PushDispatchService {
       })
       return
     }
+
+    await this.recordPushSent("PAIRING_DISCONNECTED", pairSessionId, { userId: recipientUserId })
 
     console.info("[push] pairing disconnected sent", {
       pairSessionId,
@@ -561,6 +568,8 @@ export class PushDispatchService {
       })
       return
     }
+
+    await this.recordPushSent("PARTNER_VISIBILITY_CHANGED", pairSessionId, { peerOf: actorUserId })
 
     console.info("[push] partner visibility sent", {
       pairSessionId,
@@ -764,6 +773,8 @@ export class PushDispatchService {
       return
     }
 
+    await this.recordPushSent("REACTION", pairSessionId, { peerOf: actorUserId })
+
     console.info("[push] reaction sent", {
       pairSessionId,
       invalidTokenCount: result.invalidTokens.length,
@@ -837,6 +848,38 @@ export class PushDispatchService {
         actorUserId,
         error: error instanceof Error ? error.message : String(error),
       })
+    }
+  }
+
+  /** `mulberry_push_sent` for the notification's recipient. Never fails the send. */
+  private async recordPushSent(
+    pushType: SentPushType,
+    pairSessionId: string,
+    recipient: { userId: string } | { peerOf: string },
+  ): Promise<void> {
+    if (!this.analytics.enabled) return
+    try {
+      let userId: string | null
+      if ("userId" in recipient) {
+        userId = recipient.userId
+      } else {
+        const rows = await this.db.query<{ user_one_id: string; user_two_id: string }>(
+          `SELECT user_one_id, user_two_id FROM pair_sessions WHERE id = $1`,
+          [pairSessionId],
+        )
+        const pair = rows.rows[0]
+        userId = pair ? (pair.user_one_id === recipient.peerOf ? pair.user_two_id : pair.user_one_id) : null
+      }
+      if (!userId) return
+      await this.analytics.track(this.db, {
+        event: "mulberry_push_sent",
+        distinctId: userId,
+        pairId: pairSessionId,
+        properties: { push_type: pushType },
+        client: { platform: null, deviceFamily: null, appBuild: null, anonymousId: null },
+      })
+    } catch (error) {
+      console.error("[analytics] push sent failed", { error: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -1022,6 +1065,8 @@ export class PushDispatchService {
           continue
         }
 
+        await this.recordPushSent("CANVAS_NUDGE", pairSessionId, { peerOf: actorUserId })
+
         console.info("[push] canvas nudge sent", {
           pairSessionId,
           latestRevision,
@@ -1192,6 +1237,8 @@ export class PushDispatchService {
           await this.rescheduleDrawReminder(pairSessionId, userId, reminderCount)
           continue
         }
+
+        await this.recordPushSent("DRAW_REMINDER", pairSessionId, { userId })
 
         console.info("[push] draw reminder sent", {
           pairSessionId,

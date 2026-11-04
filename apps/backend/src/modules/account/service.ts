@@ -6,7 +6,8 @@ import type { CanvasSyncHub } from "../canvasSync/hub.js"
 import type { ProfilePhotoStorage } from "../profile/service.js"
 import { requireSessionContext } from "../_shared/session.js"
 import { clearPartnerMetadata, getProfileFrom } from "../_shared/profiles.js"
-import { getPairSession } from "../_shared/pairs.js"
+import { getPairSession, pairActiveDays } from "../_shared/pairs.js"
+import { disabledAnalytics, wholeDaysBetween, type Analytics } from "../../infra/analytics/recorder.js"
 
 interface DeletedAccount {
   pairSession: PairSessionRecord | null
@@ -29,6 +30,7 @@ export class AccountService {
     private readonly profilePhotoStorage?: ProfilePhotoStorage,
     private readonly canvasSyncHub?: Pick<CanvasSyncHub, "closePairSession">,
     private readonly appleCredentials?: AppleCredentialClient,
+    private readonly analytics: Analytics = disabledAnalytics,
   ) {}
 
   /**
@@ -53,17 +55,32 @@ export class AccountService {
         partnerProfile?.partner_profile_photo_path,
       ].filter((path): path is string => Boolean(path))
 
-      const apple = await tx.query<{ apple_client_id: string | null; apple_refresh_token: string | null }>(
-        `SELECT apple_client_id, apple_refresh_token FROM users WHERE id = $1`,
+      const apple = await tx.query<{ apple_client_id: string | null; apple_refresh_token: string | null; email: string; created_at: string | Date }>(
+        `SELECT apple_client_id, apple_refresh_token, email, created_at FROM users WHERE id = $1`,
         [userId],
       )
-      const { apple_client_id: clientId, apple_refresh_token: refreshToken } = apple.rows[0] ?? {}
+      const { apple_client_id: clientId, apple_refresh_token: refreshToken, email, created_at: createdAt } = apple.rows[0] ?? {}
+      const activeDays = pairSession ? await pairActiveDays(tx, pairSession.id) : 0
 
       if (pairSession && partnerUserId) {
         await tx.query(`DELETE FROM pair_sessions WHERE id = $1`, [pairSession.id])
         await clearPartnerMetadata(tx, [partnerUserId])
       }
       await tx.query(`DELETE FROM users WHERE id = $1`, [userId])
+
+      // The deleted person's email and name leave PostHog; the pair and the partner stay.
+      await this.analytics.forgetPerson(tx, userId)
+      if (pairSession && partnerUserId) {
+        await this.analytics.endPair(tx, { pair: pairSession, reason: "account_deleted", distinctId: partnerUserId, activeDays })
+      }
+      await this.analytics.trackPersonless(tx, {
+        event: "mulberry_account_deleted",
+        properties: {
+          was_paired: pairSession !== null,
+          account_age_days: createdAt ? wholeDaysBetween(new Date(createdAt), new Date()) : 0,
+          is_internal: this.analytics.isInternalEmail(email ?? null),
+        },
+      })
 
       return {
         pairSession,

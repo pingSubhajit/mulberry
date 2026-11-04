@@ -98,6 +98,11 @@ export class StreakService {
   }
 
   async currentStreakDays(pairSessionId: string): Promise<number> {
+    return (await this.currentStreak(pairSessionId)).days
+  }
+
+  /** The pair's running streak and the day it began; `startDay` is null with no streak. */
+  async currentStreak(pairSessionId: string): Promise<{ days: number; startDay: string | null }> {
     const rows = await this.db.query<{ activity_day: string | Date }>(
       `
       SELECT activity_day
@@ -107,20 +112,22 @@ export class StreakService {
       `,
       [pairSessionId],
     )
-    if (rows.rows.length === 0) return 0
+    if (rows.rows.length === 0) return { days: 0, startDay: null }
 
     const days = new Set(rows.rows.map((row) => normalizeDateString(row.activity_day)).filter(Boolean))
     const today = dateOnly(new Date())
     const yesterday = addDays(today, -1)
     let cursor = days.has(today) ? today : days.has(yesterday) ? yesterday : null
-    if (!cursor) return 0
+    if (!cursor) return { days: 0, startDay: null }
 
     let streak = 0
+    let startDay = cursor
     while (cursor && days.has(cursor)) {
       streak += 1
+      startDay = cursor
       cursor = addDays(cursor, -1)
     }
-    return streak
+    return { days: streak, startDay }
   }
 
   async listPairActivityDays(pairSessionId: string): Promise<string[]> {

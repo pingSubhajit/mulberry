@@ -19,9 +19,22 @@ export interface AppConfig {
   firebaseServiceAccountPath?: string
   firebaseServiceAccountJson?: string
   posthogProjectApiKey?: string
+  /** Where events are sent, as https://us.i.posthog.com. */
   posthogHost?: string
+  /** Labels events, and decides whether `posthogDisabled` defaults to on or off. */
   posthogEnvironment?: string
+  /**
+   * Turns analytics off or on. Unset, it's on in production and off elsewhere; set it to false to
+   * test analytics outside production, where everyone recorded is marked internal.
+   */
   posthogDisabled?: boolean
+  /** Accounts, by email, marked internal in PostHog and left out of its reports. */
+  posthogInternalEmails?: string[]
+  /** For deleting a deleted account's PostHog person. */
+  posthogPersonalApiKey?: string
+  posthogProjectId?: string
+  /** PostHog's app API, as https://us.posthog.com. */
+  posthogApiHost?: string
   canvasUpdatePushTtlMs?: number
   pairingConfirmationTtlMs?: number
   canvasNudgeDelayMs?: number
@@ -80,8 +93,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const googleAllowedClientIds = parseCsvList(env.GOOGLE_ALLOWED_CLIENT_IDS)
   const posthogProjectApiKey = env.POSTHOG_PROJECT_API_KEY
   const posthogHost = env.POSTHOG_HOST
-  const posthogEnvironment = env.POSTHOG_ENVIRONMENT
-  const posthogDisabled = (env.POSTHOG_DISABLED ?? "false") === "true"
+  const posthogEnvironment = env.POSTHOG_ENVIRONMENT ?? (isProduction ? "production" : "development")
+  const posthogDisabled = env.POSTHOG_DISABLED?.trim() ? env.POSTHOG_DISABLED.trim() === "true" : undefined
 
   if (isProduction && databaseUrl.trim() === "") {
     throw new Error("DATABASE_URL is required when NODE_ENV=production")
@@ -105,8 +118,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     firebaseServiceAccountJson: env.FIREBASE_SERVICE_ACCOUNT_JSON,
     posthogProjectApiKey: posthogProjectApiKey?.trim() ? posthogProjectApiKey : undefined,
     posthogHost: posthogHost?.trim() ? posthogHost : undefined,
-    posthogEnvironment: posthogEnvironment?.trim() ? posthogEnvironment : undefined,
+    posthogEnvironment: posthogEnvironment.trim() ? posthogEnvironment.trim() : undefined,
     posthogDisabled,
+    posthogInternalEmails: parseCsvList(env.POSTHOG_INTERNAL_EMAILS).map((email) => email.toLowerCase()),
+    posthogPersonalApiKey: env.POSTHOG_PERSONAL_API_KEY?.trim() ? env.POSTHOG_PERSONAL_API_KEY.trim() : undefined,
+    posthogProjectId: env.POSTHOG_PROJECT_ID?.trim() ? env.POSTHOG_PROJECT_ID.trim() : undefined,
+    posthogApiHost: env.POSTHOG_API_HOST?.trim() ? env.POSTHOG_API_HOST.trim() : undefined,
     canvasUpdatePushTtlMs: optionalPositiveNumber(env.CANVAS_UPDATE_PUSH_TTL_MS),
     pairingConfirmationTtlMs: optionalPositiveNumber(env.PAIRING_CONFIRMATION_PUSH_TTL_MS),
     canvasNudgeDelayMs: optionalPositiveNumber(env.CANVAS_NUDGE_DELAY_MS),

@@ -9,8 +9,14 @@ import { createDatabase, type Database } from "../infra/db/database.js"
 import { DefaultGoogleTokenVerifier, type GoogleTokenVerifier } from "../infra/auth/googleTokenVerifier.js"
 import { DefaultAppleTokenVerifier, type AppleTokenVerifier } from "../infra/auth/appleTokenVerifier.js"
 import { createAppleCredentialClient, type AppleCredentialClient } from "../infra/auth/appleCredentialClient.js"
-import type { AnalyticsClient } from "../infra/analytics/analytics.js"
-import { createAnalyticsClient } from "../infra/analytics/posthogAnalytics.js"
+import { createAnalyticsRuntime } from "../infra/analytics/setup.js"
+import type { PostHogTransport } from "../infra/analytics/transport.js"
+import type { OutboxWorkerOptions } from "../infra/analytics/worker.js"
+import { registerClientContext } from "../infra/analytics/context.js"
+import { registerClientRecorder } from "../infra/analytics/clientRecorder.js"
+import { runAnalyticsBackfill } from "../infra/analytics/backfill.js"
+import { ClientAnalyticsService } from "../modules/analytics/service.js"
+import { registerAnalyticsRoutes } from "../modules/analytics/routes.js"
 import { getRemoteConfig } from "firebase-admin/remote-config"
 import { firebaseApp, type FirebaseCredentials } from "../infra/firebase/app.js"
 import { createPushSender } from "../infra/push/sender.js"
@@ -67,7 +73,11 @@ export interface CreateAppOptions {
   googleVerifier?: GoogleTokenVerifier
   appleVerifier?: AppleTokenVerifier
   appleCredentials?: AppleCredentialClient
-  analytics?: AnalyticsClient
+  /** Replaces PostHog's HTTP API, as in tests. */
+  analyticsTransport?: PostHogTransport
+  analyticsWorker?: OutboxWorkerOptions
+  /** Sends PostHog the history from before analytics was keyed to people, once. On by default. */
+  analyticsBackfill?: boolean
   pushSender?: PushSender
   pushOptions?: PushDispatchOptions
   widgetPushSender?: WidgetPushSender
@@ -83,7 +93,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const googleVerifier = options.googleVerifier ?? new DefaultGoogleTokenVerifier(config)
   const appleVerifier = options.appleVerifier ?? new DefaultAppleTokenVerifier(config)
   const appleCredentials = options.appleCredentials ?? createAppleCredentialClient(config.appleSignInKey)
-  const analytics = options.analytics ?? createAnalyticsClient(config)
+  const { analytics, worker: analyticsWorker } = createAnalyticsRuntime(config, db, {
+    transport: options.analyticsTransport,
+    worker: options.analyticsWorker,
+  })
 
   const firebaseCredentials: FirebaseCredentials = {
     serviceAccountPath: config.firebaseServiceAccountPath,
@@ -105,6 +118,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       ...options.pushOptions,
     },
     options.widgetPushSender ?? createWidgetPushSender(config.apnsKeys),
+    analytics,
   )
 
   // Profile photos share the Supabase wallpaper bucket. Their URLs leave in bootstrap and push
@@ -130,16 +144,17 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   void appVersionsService.refreshMinimums()
 
   const streakService = new StreakService(db)
-  const bootstrapService = new BootstrapService(db, streakService, storage, config.wallpaperShortcutLinks)
-  const authService = new AuthService(db, googleVerifier, bootstrapService, appleVerifier, appleCredentials)
+  const bootstrapService = new BootstrapService(db, streakService, storage, config.wallpaperShortcutLinks, analytics)
+  const authService = new AuthService(db, googleVerifier, bootstrapService, appleVerifier, appleCredentials, analytics)
   const devicesService = new DevicesService(db)
-  const profileService = new ProfileService(db, bootstrapService, pushDispatchService, storage)
+  const profileService = new ProfileService(db, bootstrapService, pushDispatchService, storage, analytics)
   const pairingService = new PairingService(db, bootstrapService, pushDispatchService, analytics)
   const reactionsService = new ReactionsService(db, pushDispatchService, analytics)
   const canvasService = new CanvasService(db, streakService, pushDispatchService, analytics)
   const canvasSyncHub = new CanvasSyncHub(canvasService)
   const feedbackService = new FeedbackService(db, config.cannySsoPrivateKey)
-  const accountService = new AccountService(db, pushDispatchService, storage, canvasSyncHub, appleCredentials)
+  const accountService = new AccountService(db, pushDispatchService, storage, canvasSyncHub, appleCredentials, analytics)
+  const clientAnalyticsService = new ClientAnalyticsService(db, analytics)
 
   const app = Fastify({ logger: false })
   await app.register(fastifyCors, {
@@ -155,14 +170,19 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   })
   await app.register(fastifyWebsocket)
 
+  registerClientContext(app)
   registerUpdateGate(app, appVersionsService)
+  registerClientRecorder(app, db, analytics)
   registerTimeZoneRecorder(app, db)
 
   registerWhatsNewRoutes(app)
 
   app.addHook("onClose", async () => {
     pushDispatchService.dispose()
-    await analytics.shutdown()
+    if (analyticsWorker) {
+      analyticsWorker.stop()
+      await flushWithin(analyticsWorker.flush(), ANALYTICS_SHUTDOWN_FLUSH_MS)
+    }
     await db.end()
   })
 
@@ -199,9 +219,32 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   if (config.enableDebugRoutes) {
     registerDebugRoutes(app, pairingService, streakService)
   }
+  registerAnalyticsRoutes(app, clientAnalyticsService)
   registerHealthRoutes(app)
 
+  if (analyticsWorker) {
+    analyticsWorker.start()
+  }
+  if (analyticsWorker && options.analyticsBackfill !== false) {
+    const backfillCutoff = new Date()
+    void runAnalyticsBackfill(db, analytics, backfillCutoff).catch((error: unknown) => {
+      console.error("[analytics] backfill failed", { error: error instanceof Error ? error.message : String(error) })
+    })
+  }
+
   return app
+}
+
+/** How long shutdown waits for the analytics outbox to send. Whatever's left goes after restart. */
+const ANALYTICS_SHUTDOWN_FLUSH_MS = 5_000
+
+async function flushWithin(flush: Promise<number>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms)
+  })
+  await Promise.race([flush.then(() => undefined).catch(() => undefined), timeout])
+  clearTimeout(timer)
 }
 
 function remoteConfigFor(credentials: FirebaseCredentials): RemoteConfigClient | null {

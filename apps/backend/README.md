@@ -111,16 +111,32 @@ The keys must be APNs auth keys valid for the environment and for the topic
 
 ## PostHog Product Analytics
 
-Backend analytics emits Mulberry product events to PostHog when configured:
+`docs/analytics/tracking-plan.md` lists every event and property. In short:
+
+- People are users and pairs are a PostHog group named "Partner 1 x Partner 2".
+- Events go into the `analytics_outbox` table in the same transaction as the change they record, and
+  a worker sends them to PostHog with retries.
+- The apps send their own events to `POST /analytics/events`.
+
+Production records analytics once `POSTHOG_PROJECT_API_KEY` is set. Other environments record
+nothing unless `POSTHOG_DISABLED=false`, and then everyone they record is marked internal.
 
 ```text
 POSTHOG_PROJECT_API_KEY=phc_...
 POSTHOG_HOST=https://us.i.posthog.com
-POSTHOG_ENVIRONMENT=development
-POSTHOG_DISABLED=false
+POSTHOG_ENVIRONMENT=production        # defaults to production when NODE_ENV=production
+POSTHOG_INTERNAL_EMAILS=a@x.com,b@y.com  # marked is_internal and filtered out of reports
+POSTHOG_PERSONAL_API_KEY=phx_...      # deletes a deleted account's PostHog person
+POSTHOG_PROJECT_ID=123
+POSTHOG_DISABLED=                     # unset: on in production, off elsewhere
 ```
 
-To auto-create Mulberry dashboards + insights (requires a **PostHog personal API key**):
+The first production start after this change backfills PostHog once from the database: sign-ups,
+onboarding, current pairs and their active days and reactions. It's recorded in `schema_backfills`
+as `analytics.posthog.v2`.
+
+To create or update the Mulberry dashboard, saved insights, the internal-account filter and the
+event descriptions (needs a **PostHog personal API key**):
 
 ```bash
 cd apps/backend

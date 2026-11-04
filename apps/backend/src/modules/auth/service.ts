@@ -11,6 +11,9 @@ import { HttpError } from "../../infra/http/HttpError.js"
 import { createSession, requireSessionByRefreshToken, requireSessionContext, USER_COLUMNS } from "../_shared/session.js"
 import { ensureProfileRow } from "../_shared/profiles.js"
 import type { BootstrapService } from "../bootstrap/service.js"
+import { currentClientContext } from "../../infra/analytics/context.js"
+import type { SignInMethod } from "../../infra/analytics/events.js"
+import { disabledAnalytics, type Analytics } from "../../infra/analytics/recorder.js"
 
 /** The column holding each sign-in method's subject. */
 type SubjectColumn = "google_subject" | "apple_subject"
@@ -22,11 +25,13 @@ export class AuthService {
     private readonly bootstrapService: BootstrapService,
     private readonly appleVerifier: AppleTokenVerifier,
     private readonly appleCredentials: AppleCredentialClient,
+    private readonly analytics: Analytics = disabledAnalytics,
   ) {}
 
   async authenticateWithGoogle(idToken: string): Promise<AuthResponse> {
     const identity = await this.googleVerifier.verify(idToken)
     const user = await this.findOrCreateUser(identity)
+    await this.recordSignIn(user.id)
     const session = await createSession(this.db, user.id)
     return this.authResponseForSession(session)
   }
@@ -35,6 +40,7 @@ export class AuthService {
     const identity = await this.appleVerifier.verify(request.identityToken, request.nonce)
     const user = await this.findOrCreateAppleUser(identity, request.displayName ?? null)
     await this.storeAppleCredential(user.id, identity.clientId, request.authorizationCode)
+    await this.recordSignIn(user.id)
     const session = await createSession(this.db, user.id)
     return this.authResponseForSession(session)
   }
@@ -48,6 +54,7 @@ export class AuthService {
       `UPDATE users SET google_subject = $2, google_picture_url = COALESCE(google_picture_url, $3) WHERE id = $1`,
       [user.id, identity.subject, identity.pictureUrl],
     )
+    await this.analytics.syncPerson(this.db, user.id)
     return this.bootstrapService.buildBootstrap(user.id)
   }
 
@@ -58,6 +65,7 @@ export class AuthService {
     await this.requireUnclaimed("apple_subject", identity.subject, user.id)
     await this.db.query(`UPDATE users SET apple_subject = $2 WHERE id = $1`, [user.id, identity.subject])
     await this.storeAppleCredential(user.id, identity.clientId, request.authorizationCode)
+    await this.analytics.syncPerson(this.db, user.id)
     return this.bootstrapService.buildBootstrap(user.id)
   }
 
@@ -118,11 +126,14 @@ export class AuthService {
       google_picture_url: identity.pictureUrl,
       first_drew_at: null,
     }
-    await this.db.query(
-      `INSERT INTO users (id, google_subject, email, google_picture_url) VALUES ($1, $2, $3, $4)`,
-      [user.id, user.google_subject, user.email, user.google_picture_url],
-    )
-    await ensureProfileRow(this.db, user.id, identity.name)
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `INSERT INTO users (id, google_subject, email, google_picture_url) VALUES ($1, $2, $3, $4)`,
+        [user.id, user.google_subject, user.email, user.google_picture_url],
+      )
+      await ensureProfileRow(tx, user.id, identity.name)
+      await this.recordSignUp(tx, user.id, "google")
+    })
     return user
   }
 
@@ -147,13 +158,31 @@ export class AuthService {
       google_picture_url: null,
       first_drew_at: null,
     }
-    await this.db.query(`INSERT INTO users (id, apple_subject, email) VALUES ($1, $2, $3)`, [
-      user.id,
-      user.apple_subject,
-      user.email,
-    ])
-    await ensureProfileRow(this.db, user.id, displayName)
+    await this.db.transaction(async (tx) => {
+      await tx.query(`INSERT INTO users (id, apple_subject, email) VALUES ($1, $2, $3)`, [
+        user.id,
+        user.apple_subject,
+        user.email,
+      ])
+      await ensureProfileRow(tx, user.id, displayName)
+      await this.recordSignUp(tx, user.id, "apple")
+    })
     return user
+  }
+
+  private async recordSignUp(tx: Pick<Database, "query">, userId: string, method: SignInMethod): Promise<void> {
+    await this.analytics.syncPerson(tx, userId)
+    await this.analytics.track(tx, {
+      event: "mulberry_user_signed_up",
+      distinctId: userId,
+      properties: { sign_in_method: method },
+    })
+  }
+
+  /** Keeps the person's email and name current, and joins the install's pre-sign-in events to them. */
+  private async recordSignIn(userId: string): Promise<void> {
+    await this.analytics.syncPerson(this.db, userId)
+    await this.analytics.alias(this.db, userId, currentClientContext().anonymousId)
   }
 
   private async userWithSubject(column: SubjectColumn, subject: string): Promise<UserRecord | null> {

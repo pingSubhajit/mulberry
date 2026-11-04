@@ -12,10 +12,13 @@ import type {
 import { DRAWING_OPERATION_TYPES } from "../../contracts/canvas.js"
 import type { CanvasOperationRecord } from "../../contracts/dbRecords.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
-import type { AnalyticsClient } from "../../infra/analytics/analytics.js"
+import { disabledAnalytics, type Analytics } from "../../infra/analytics/recorder.js"
+import { StreakMilestones } from "../../infra/analytics/events.js"
+import { stableUuid } from "../../infra/analytics/outbox.js"
+import { recordPairActivity } from "../_shared/pairActivity.js"
 import { requireSessionContext, type CanvasSessionContext } from "../_shared/session.js"
 import { getPairSession } from "../_shared/pairs.js"
-import { dateOnly, validDateOrNow } from "../_shared/dates.js"
+import { validDateOrNow } from "../_shared/dates.js"
 import type { StreakService } from "../streak/service.js"
 
 interface MaterializedStroke {
@@ -64,7 +67,7 @@ export class CanvasService {
     private readonly db: Database,
     private readonly streakService: StreakService,
     private readonly pushDispatchService?: PushDispatchService,
-    private readonly analytics?: AnalyticsClient,
+    private readonly analytics: Analytics = disabledAnalytics,
   ) {}
 
   async bootstrapCanvasSync(
@@ -182,8 +185,6 @@ export class CanvasService {
       shouldPushCanvasUpdate,
       shouldEnqueueCanvasNudge,
       shouldRecordUserDrew,
-      durableCounts,
-      firstCanvasAction,
     } = await this.db.transaction(
       async (tx) => {
         const snapshotRow = await this.getOrCreateCanvasSnapshot(context.pairSession.id, tx, true)
@@ -301,6 +302,17 @@ export class CanvasService {
           ],
         )
 
+        if (durableTotal > 0) {
+          await this.recordCanvasAnalytics(tx, context, {
+            accepted: acceptedRecords,
+            durableCounts,
+            durableTotal,
+            latestRevision,
+            snapshotRevision,
+            firstCanvasAction,
+          })
+        }
+
         return {
           accepted: acceptedRecords.map((row) => this.canvasOperationToEnvelope(row)),
           latestRevision,
@@ -308,76 +320,15 @@ export class CanvasService {
           shouldPushCanvasUpdate,
           shouldEnqueueCanvasNudge,
           shouldRecordUserDrew,
-          durableCounts: { ...durableCounts, _TOTAL: durableTotal },
           firstCanvasAction,
         }
       },
     )
 
-    const durableCountsByType = durableCounts as unknown as Record<string, number>
-
-    if (this.analytics?.enabled && (durableCountsByType._TOTAL ?? 0) > 0) {
-      const strokeMode = context.pairSession.canvas_stroke_render_mode
-      const activityRecordedAt = firstCanvasAction?.at ?? new Date()
-      const activity = await this.recordPairProductActivity({
-        pairSessionId: context.pairSession.id,
-        occurredAt: activityRecordedAt,
+    if (shouldRecordUserDrew) {
+      await this.recordStreakMilestone(context).catch((error: unknown) => {
+        console.error("[analytics] streak milestone failed", { error: error instanceof Error ? error.message : String(error) })
       })
-
-      this.analytics.capture({
-        distinctId: context.pairSession.id,
-        event: "mulberry_canvas_batch_ingested",
-        properties: {
-          latest_revision: latestRevision,
-          snapshot_revision: snapshotRevision,
-          durable_ops_total: durableCountsByType._TOTAL ?? 0,
-          strokes_finished_count: durableCountsByType["FINISH_STROKE"] ?? 0,
-          strokes_deleted_count: durableCountsByType["DELETE_STROKE"] ?? 0,
-          canvas_cleared_count: durableCountsByType["CLEAR_CANVAS"] ?? 0,
-          text_added_count: durableCountsByType["ADD_TEXT_ELEMENT"] ?? 0,
-          text_updated_count: durableCountsByType["UPDATE_TEXT_ELEMENT"] ?? 0,
-          text_deleted_count: durableCountsByType["DELETE_TEXT_ELEMENT"] ?? 0,
-          sticker_added_count: durableCountsByType["ADD_STICKER_ELEMENT"] ?? 0,
-          sticker_updated_count: durableCountsByType["UPDATE_STICKER_ELEMENT"] ?? 0,
-          sticker_deleted_count: durableCountsByType["DELETE_STICKER_ELEMENT"] ?? 0,
-          canvas_stroke_render_mode: strokeMode,
-        },
-      })
-      if (activity.insertedDay) {
-        this.analytics.capture({
-          distinctId: context.pairSession.id,
-          event: "mulberry_pair_active_day",
-          timestamp: activityRecordedAt,
-          properties: {
-            source: "canvas",
-            activity_day: activity.activityDay,
-            canvas_stroke_render_mode: strokeMode,
-          },
-        })
-      }
-      if (activity.insertedWeek) {
-        this.analytics.capture({
-          distinctId: context.pairSession.id,
-          event: "mulberry_pair_active_week",
-          timestamp: activityRecordedAt,
-          properties: {
-            source: "canvas",
-            week_start_day: activity.weekStartDay,
-            canvas_stroke_render_mode: strokeMode,
-          },
-        })
-      }
-      if (firstCanvasAction) {
-        this.analytics.capture({
-          distinctId: context.pairSession.id,
-          event: "mulberry_canvas_first_action",
-          timestamp: firstCanvasAction.at,
-          properties: {
-            first_action_type: firstCanvasAction.type,
-            canvas_stroke_render_mode: strokeMode,
-          },
-        })
-      }
     }
 
     if (shouldPushCanvasUpdate) {
@@ -404,41 +355,94 @@ export class CanvasService {
     return accepted
   }
 
-  private async recordPairProductActivity(input: {
-    pairSessionId: string
-    occurredAt: Date
-  }): Promise<{ insertedDay: boolean; insertedWeek: boolean; activityDay: string; weekStartDay: string }> {
-    const activityDay = dateOnly(input.occurredAt)
-    const weekStartDay = weekStartFromDay(activityDay)
+  private async recordCanvasAnalytics(
+    tx: Pick<Database, "query">,
+    context: CanvasSessionContext,
+    batch: {
+      accepted: CanvasOperationRecord[]
+      durableCounts: Record<string, number>
+      durableTotal: number
+      latestRevision: number
+      snapshotRevision: number
+      firstCanvasAction: { at: Date; type: string } | null
+    },
+  ): Promise<void> {
+    if (!this.analytics.enabled) return
+    const mode = context.pairSession.canvas_stroke_render_mode
+    const count = (type: string): number => batch.durableCounts[type] ?? 0
+    const stickerPackKeys = [...new Set(
+      batch.accepted
+        .filter((record) => record.type === "ADD_STICKER_ELEMENT")
+        .map((record) => normalizeStickerElement(record.payload_json)?.packKey)
+        .filter((packKey): packKey is string => Boolean(packKey)),
+    )].sort()
+    const base = { distinctId: context.user.id, pairId: context.pairSession.id }
 
-    const dayRows = await this.db.query<{ inserted: boolean }>(
-      `
-      INSERT INTO pair_product_activity_days (pair_session_id, activity_day, last_seen_at)
-      VALUES ($1, $2::date, NOW())
-      ON CONFLICT (pair_session_id, activity_day) DO UPDATE SET
-        last_seen_at = NOW()
-      RETURNING (xmax = 0) AS inserted
-      `,
-      [input.pairSessionId, activityDay],
-    )
-
-    const weekRows = await this.db.query<{ inserted: boolean }>(
-      `
-      INSERT INTO pair_product_activity_weeks (pair_session_id, week_start_day, last_seen_at)
-      VALUES ($1, $2::date, NOW())
-      ON CONFLICT (pair_session_id, week_start_day) DO UPDATE SET
-        last_seen_at = NOW()
-      RETURNING (xmax = 0) AS inserted
-      `,
-      [input.pairSessionId, weekStartDay],
-    )
-
-    return {
-      insertedDay: Boolean(dayRows.rows[0]?.inserted),
-      insertedWeek: Boolean(weekRows.rows[0]?.inserted),
-      activityDay,
-      weekStartDay,
+    await this.analytics.track(tx, {
+      ...base,
+      event: "mulberry_canvas_batch_ingested",
+      properties: {
+        latest_revision: batch.latestRevision,
+        snapshot_revision: batch.snapshotRevision,
+        durable_ops_total: batch.durableTotal,
+        strokes_finished_count: count("FINISH_STROKE"),
+        strokes_deleted_count: count("DELETE_STROKE"),
+        canvas_cleared_count: count("CLEAR_CANVAS"),
+        text_added_count: count("ADD_TEXT_ELEMENT"),
+        text_updated_count: count("UPDATE_TEXT_ELEMENT"),
+        text_deleted_count: count("DELETE_TEXT_ELEMENT"),
+        sticker_added_count: count("ADD_STICKER_ELEMENT"),
+        sticker_updated_count: count("UPDATE_STICKER_ELEMENT"),
+        sticker_deleted_count: count("DELETE_STICKER_ELEMENT"),
+        sticker_pack_keys: stickerPackKeys,
+        canvas_stroke_render_mode: mode,
+      },
+    })
+    if (batch.firstCanvasAction) {
+      await this.analytics.track(tx, {
+        ...base,
+        event: "mulberry_canvas_first_action",
+        occurredAt: batch.firstCanvasAction.at,
+        properties: { first_action_type: batch.firstCanvasAction.type, canvas_stroke_render_mode: mode },
+      })
     }
+    await recordPairActivity(tx, this.analytics, {
+      pairSession: context.pairSession,
+      actorUserId: context.user.id,
+      occurredAt: batch.firstCanvasAction?.at ?? new Date(),
+      activitySource: "canvas",
+    })
+  }
+
+  /** `mulberry_streak_milestone`, once per milestone per streak. */
+  private async recordStreakMilestone(context: CanvasSessionContext): Promise<void> {
+    if (!this.analytics.enabled) return
+    const streak = await this.streakService.currentStreak(context.pairSession.id)
+    const milestone = StreakMilestones.find((days) => days === streak.days)
+    if (!milestone || !streak.startDay) return
+    const startDay = streak.startDay
+    await this.db.transaction(async (tx) => {
+      const recorded = await tx.query(
+        `SELECT 1 FROM pair_streak_milestones WHERE pair_session_id = $1 AND streak_start_day = $2::date AND streak_days = $3`,
+        [context.pairSession.id, startDay, milestone],
+      )
+      if (recorded.rows.length > 0) return
+      await tx.query(
+        `
+        INSERT INTO pair_streak_milestones (pair_session_id, streak_start_day, streak_days)
+        VALUES ($1, $2::date, $3)
+        ON CONFLICT (pair_session_id, streak_start_day, streak_days) DO NOTHING
+        `,
+        [context.pairSession.id, startDay, milestone],
+      )
+      await this.analytics.track(tx, {
+        event: "mulberry_streak_milestone",
+        id: stableUuid(`streak:${context.pairSession.id}:${startDay}:${milestone}`),
+        distinctId: context.user.id,
+        pairId: context.pairSession.id,
+        properties: { streak_days: milestone },
+      })
+    })
   }
 
   private async requireDefaultCanvasSessionContext(accessToken: string): Promise<CanvasSessionContext> {
@@ -708,14 +712,6 @@ function normalizeCanvasSnapshot(raw: unknown): {
     }
   }
   return { strokes: [], elements: [], textElements: [] }
-}
-
-function weekStartFromDay(day: string): string {
-  const date = new Date(`${day}T00:00:00.000Z`)
-  const dayOfWeek = date.getUTCDay() // Sun=0..Sat=6
-  const delta = (dayOfWeek + 6) % 7 // shift to Monday=0..Sunday=6
-  date.setUTCDate(date.getUTCDate() - delta)
-  return dateOnly(date)
 }
 
 function normalizeCanvasPoint(raw: unknown): { x: number; y: number } | null {

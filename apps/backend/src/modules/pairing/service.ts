@@ -6,11 +6,12 @@ import type { AcceptInviteResponse, CreateInviteResponse, RedeemInviteResponse }
 import type { InviteRecord, ProfileRecord } from "../../contracts/dbRecords.js"
 import { requireSessionContext } from "../_shared/session.js"
 import { clearPartnerMetadata, getProfileFrom } from "../_shared/profiles.js"
-import { getPairSession } from "../_shared/pairs.js"
+import { getPairSession, pairActiveDays } from "../_shared/pairs.js"
 import { isUniqueViolation } from "../_shared/dbErrors.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
 import type { BootstrapService } from "../bootstrap/service.js"
-import type { AnalyticsClient } from "../../infra/analytics/analytics.js"
+import { disabledAnalytics, type Analytics } from "../../infra/analytics/recorder.js"
+import type { InviteRedeemFailureReason } from "../../infra/analytics/events.js"
 
 const PARTNER_DETAILS_REQUIRED_MESSAGE = "Partner details are required before creating an invite"
 /** Wrong codes an account may try per window, so six-digit codes can't be guessed. */
@@ -22,7 +23,7 @@ export class PairingService {
     private readonly db: Database,
     private readonly bootstrapService: BootstrapService,
     private readonly pushDispatchService?: PushDispatchService,
-    private readonly analytics?: AnalyticsClient,
+    private readonly analytics: Analytics = disabledAnalytics,
   ) {}
 
   async createInvite(accessToken: string): Promise<CreateInviteResponse> {
@@ -51,26 +52,25 @@ export class PairingService {
       const inviteId = randomUUID()
       const code = `${randomInt(0, 1_000_000)}`.padStart(6, "0")
       try {
-        await this.db.query(
-          `
-          INSERT INTO invites (
-            id,
-            inviter_user_id,
-            recipient_user_id,
-            code,
-            status,
-            expires_at
-          ) VALUES ($1, $2, NULL, $3, 'PENDING', $4)
-          `,
-          [inviteId, context.user.id, code, expiresAt.toISOString()],
-        )
-        this.analytics?.capture({
-          distinctId: inviteId,
-          event: "mulberry_invite_created",
-          properties: {
-            inviter_user_id: context.user.id,
-            expires_at: expiresAt.toISOString(),
-          },
+        await this.db.transaction(async (tx) => {
+          await tx.query(
+            `
+            INSERT INTO invites (
+              id,
+              inviter_user_id,
+              recipient_user_id,
+              code,
+              status,
+              expires_at
+            ) VALUES ($1, $2, NULL, $3, 'PENDING', $4)
+            `,
+            [inviteId, context.user.id, code, expiresAt.toISOString()],
+          )
+          await this.analytics.track(tx, {
+            event: "mulberry_invite_created",
+            distinctId: context.user.id,
+            properties: { invite_id: inviteId, expires_at: expiresAt.toISOString() },
+          })
         })
         return {
           inviteId,
@@ -93,9 +93,14 @@ export class PairingService {
       throw new HttpError(400, "Already paired", { code: "ALREADY_PAIRED" })
     }
 
-    await this.requireRedeemAttemptsLeft(context.user.id)
+    await this.requireRedeemAttemptsLeft(context.user.id).catch(async (error: unknown) => {
+      await this.trackRedeemFailure(context.user.id, "rate_limited")
+      throw error
+    })
     const invite = await this.requireInviteByCode(code).catch(async (error: unknown) => {
       await this.recordRedeemFailure(context.user.id)
+      const expired = error instanceof HttpError && error.details?.code === "INVITE_EXPIRED"
+      await this.trackRedeemFailure(context.user.id, expired ? "expired" : "not_found")
       throw error
     })
     const inviteStatus = this.normalizeInviteStatus(invite)
@@ -104,9 +109,11 @@ export class PairingService {
     }
     if (inviteStatus !== "PENDING") {
       await this.recordRedeemFailure(context.user.id)
+      await this.trackRedeemFailure(context.user.id, "no_longer_valid")
       throw new HttpError(400, "Invite code is no longer valid", { code: "INVITE_NO_LONGER_VALID" })
     }
     if (invite.inviter_user_id === context.user.id) {
+      await this.trackRedeemFailure(context.user.id, "own_invite")
       throw new HttpError(400, "You cannot redeem your own invite", { code: "OWN_INVITE" })
     }
 
@@ -121,21 +128,20 @@ export class PairingService {
       recipientOnboardingCompleted,
     )
 
-    await this.db.query(
-      `
-      UPDATE invites
-      SET recipient_user_id = $1, status = 'REDEEMED'
-      WHERE id = $2
-      `,
-      [context.user.id, invite.id],
-    )
-    this.analytics?.capture({
-      distinctId: invite.id,
-      event: "mulberry_invite_redeemed",
-      properties: {
-        inviter_user_id: invite.inviter_user_id,
-        recipient_user_id: context.user.id,
-      },
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `
+        UPDATE invites
+        SET recipient_user_id = $1, status = 'REDEEMED'
+        WHERE id = $2
+        `,
+        [context.user.id, invite.id],
+      )
+      await this.analytics.track(tx, {
+        event: "mulberry_invite_redeemed",
+        distinctId: context.user.id,
+        properties: { invite_id: invite.id, inviter_user_id: invite.inviter_user_id },
+      })
     })
 
     return this.redeemInviteResponseFor(context.user.id, invite, "REDEEMED")
@@ -150,41 +156,38 @@ export class PairingService {
     }
 
     const pairId = randomUUID()
-    await this.db.query(
-      `
-      INSERT INTO pair_sessions (id, user_one_id, user_two_id)
-      VALUES ($1, $2, $3)
-      `,
-      [pairId, invite.inviter_user_id, context.user.id],
-    )
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `
+        INSERT INTO pair_sessions (id, user_one_id, user_two_id)
+        VALUES ($1, $2, $3)
+        `,
+        [pairId, invite.inviter_user_id, context.user.id],
+      )
+      await tx.query(
+        `
+        UPDATE invites
+        SET status = 'ACCEPTED', consumed_at = NOW()
+        WHERE id = $1
+        `,
+        [invite.id],
+      )
+      await this.analytics.track(tx, {
+        event: "mulberry_invite_accepted",
+        distinctId: context.user.id,
+        pairId,
+        properties: { invite_id: invite.id, inviter_user_id: invite.inviter_user_id },
+      })
+      const pairSession = await getPairSession(tx, context.user.id)
+      if (pairSession) await this.analytics.syncPair(tx, pairSession)
+      await this.analytics.track(tx, {
+        event: "mulberry_pair_created",
+        distinctId: context.user.id,
+        pairId,
+        properties: { invite_id: invite.id, inviter_user_id: invite.inviter_user_id },
+      })
+    })
     this.pushDispatchService?.initializePairDrawReminders(pairId)
-    await this.db.query(
-      `
-      UPDATE invites
-      SET status = 'ACCEPTED', consumed_at = NOW()
-      WHERE id = $1
-      `,
-      [invite.id],
-    )
-
-    this.analytics?.capture({
-      distinctId: invite.id,
-      event: "mulberry_invite_accepted",
-      properties: {
-        pair_session_id: pairId,
-        inviter_user_id: invite.inviter_user_id,
-        recipient_user_id: context.user.id,
-      },
-    })
-    this.analytics?.capture({
-      distinctId: pairId,
-      event: "mulberry_pair_created",
-      properties: {
-        invite_id: invite.id,
-        inviter_user_id: invite.inviter_user_id,
-        recipient_user_id: context.user.id,
-      },
-    })
 
     const recipientProfile = await getProfileFrom(this.db, context.user.id)
     this.pushDispatchService?.enqueuePairingConfirmed(
@@ -207,15 +210,23 @@ export class PairingService {
       throw new HttpError(400, "Invite cannot be declined", { code: "INVITE_NO_LONGER_VALID" })
     }
 
-    await this.db.query(
-      `
-      UPDATE invites
-      SET status = 'DECLINED', consumed_at = NOW()
-      WHERE id = $1
-      `,
-      [invite.id],
-    )
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `
+        UPDATE invites
+        SET status = 'DECLINED', consumed_at = NOW()
+        WHERE id = $1
+        `,
+        [invite.id],
+      )
+      await this.analytics.track(tx, {
+        event: "mulberry_invite_declined",
+        distinctId: context.user.id,
+        properties: { invite_id: invite.id, inviter_user_id: invite.inviter_user_id },
+      })
+    })
     await this.clearProfileAfterInviteDecline(context.user.id)
+    await this.analytics.syncPerson(this.db, context.user.id)
     return this.bootstrapService.buildBootstrap(context.user.id)
   }
 
@@ -233,8 +244,10 @@ export class PairingService {
     const actorDisplayName = profile?.display_name ?? "Your partner"
 
     await this.db.transaction(async (tx) => {
+      const activeDays = await pairActiveDays(tx, pairSession.id)
       await tx.query(`DELETE FROM pair_sessions WHERE id = $1`, [pairSession.id])
       await clearPartnerMetadata(tx, [pairSession.user_one_id, pairSession.user_two_id])
+      await this.analytics.endPair(tx, { pair: pairSession, reason: "unpaired", distinctId: context.user.id, activeDays })
     })
 
     this.pushDispatchService?.enqueuePairingDisconnected(
@@ -281,6 +294,14 @@ export class PairingService {
       profile?.display_name ?? "Your partner",
     )
     return { ok: true }
+  }
+
+  private async trackRedeemFailure(userId: string, reason: InviteRedeemFailureReason): Promise<void> {
+    await this.analytics.track(this.db, {
+      event: "mulberry_invite_redeem_failed",
+      distinctId: userId,
+      properties: { reason },
+    })
   }
 
   private requireActivePartnerDetails(profile: ProfileRecord | null): void {

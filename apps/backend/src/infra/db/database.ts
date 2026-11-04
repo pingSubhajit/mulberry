@@ -440,6 +440,69 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
 
     CREATE INDEX IF NOT EXISTS user_time_zone_changes_user_changed_idx
       ON user_time_zone_changes(user_id, changed_at);
+
+    -- Analytics waiting to reach PostHog, written in the same transaction as the change each row
+    -- describes and removed once sent. No foreign keys: a deleted account's last rows still go.
+    CREATE TABLE IF NOT EXISTS analytics_outbox (
+      seq BIGSERIAL,
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      payload_json JSONB NOT NULL,
+      occurred_at TIMESTAMPTZ NOT NULL,
+      available_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      claimed_until TIMESTAMPTZ,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      dead_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS analytics_outbox_due_idx
+      ON analytics_outbox(available_at, seq)
+      WHERE dead_at IS NULL;
+
+    -- Each app an account has used, from the X-App-Platform, X-Device-Family and X-App-Build headers.
+    CREATE TABLE IF NOT EXISTS user_clients (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      platform TEXT NOT NULL,
+      device_family TEXT NOT NULL,
+      app_build INTEGER,
+      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, platform, device_family)
+    );
+
+    -- The UTC days each account opened an app, so mulberry_app_opened is sent once a day.
+    CREATE TABLE IF NOT EXISTS user_app_open_days (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      open_day DATE NOT NULL,
+      PRIMARY KEY (user_id, open_day)
+    );
+
+    -- Streak milestones already recorded, per streak (identified by the day it started).
+    CREATE TABLE IF NOT EXISTS pair_streak_milestones (
+      pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      streak_start_day DATE NOT NULL,
+      streak_days INTEGER NOT NULL,
+      reached_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (pair_session_id, streak_start_day, streak_days)
+    );
+
+    -- Every pair each person has been in, kept after the pair ends so that deleting the account
+    -- can remove their name and email from those pairs in PostHog. Identifiers only.
+    CREATE TABLE IF NOT EXISTS analytics_pair_members (
+      pair_session_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      position SMALLINT NOT NULL,
+      PRIMARY KEY (pair_session_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS analytics_pair_members_user_idx
+      ON analytics_pair_members(user_id);
+
+    -- When mulberry_invite_expired was recorded for the invite.
+    ALTER TABLE invites
+      ADD COLUMN IF NOT EXISTS analytics_expired_at TIMESTAMPTZ;
   `)
 
   await runBackfills(db)

@@ -1,3 +1,4 @@
+import { disabledAnalytics, type Analytics } from "../../infra/analytics/recorder.js"
 import type { Database } from "../../infra/db/database.js"
 import type { SignInMethod } from "../../contracts/auth.js"
 import type { BootstrapResponse } from "../../contracts/bootstrap.js"
@@ -26,10 +27,15 @@ export class BootstrapService {
     private readonly streakService: StreakService,
     private readonly profilePhotoStorage?: ProfilePhotoStorage,
     private readonly wallpaperShortcutLinks: Record<string, string> = {},
+    private readonly analytics: Analytics = disabledAnalytics,
   ) {}
 
+  /** The apps fetch this when they open, so it also marks the day's `mulberry_app_opened`. */
   async getBootstrap(accessToken: string): Promise<BootstrapResponse> {
     const context = await requireSessionContext(this.db, accessToken)
+    await this.analytics.trackDailyAppOpen(this.db, context.user.id).catch((error: unknown) => {
+      console.error("[analytics] app open failed", { error: error instanceof Error ? error.message : String(error) })
+    })
     return this.buildBootstrap(context.user.id)
   }
 

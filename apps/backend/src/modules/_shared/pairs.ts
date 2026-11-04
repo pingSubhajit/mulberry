@@ -16,3 +16,12 @@ export async function getPairSession(
   )
   return rows.rows[0] ?? null
 }
+
+/** The pair's active days, counted before the pair is deleted and its days with it. */
+export async function pairActiveDays(db: Pick<Database, "query">, pairSessionId: string): Promise<number> {
+  const rows = await db.query<{ days: string | number }>(
+    `SELECT COUNT(*) AS days FROM pair_product_activity_days WHERE pair_session_id = $1`,
+    [pairSessionId],
+  )
+  return Number(rows.rows[0]?.days ?? 0)
+}
