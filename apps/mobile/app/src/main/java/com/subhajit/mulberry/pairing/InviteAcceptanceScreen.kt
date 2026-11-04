@@ -1,5 +1,7 @@
 package com.subhajit.mulberry.pairing
 
+import com.subhajit.mulberry.analytics.OnboardingStep
+import com.subhajit.mulberry.analytics.TrackOnboardingStep
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -75,6 +77,7 @@ fun InviteAcceptanceRoute(
     onNavigateToPairingHelp: () -> Unit,
     viewModel: InviteAcceptanceViewModel = hiltViewModel()
 ) {
+    TrackOnboardingStep(OnboardingStep.INVITE_REVIEW)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(viewModel) {

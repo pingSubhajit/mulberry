@@ -11,6 +11,8 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.subhajit.mulberry.MainActivity
 import com.subhajit.mulberry.R
+import com.subhajit.mulberry.analytics.PushOpenIntent
+import com.subhajit.mulberry.analytics.PushType
 import com.subhajit.mulberry.app.shortcut.AppShortcutAction
 import com.subhajit.mulberry.notifications.MulberryNotificationChannels
 
@@ -30,10 +32,11 @@ object PairingNotificationPresenter {
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             action = AppShortcutAction.ShowPairingConfirmation.intentAction
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            PushOpenIntent.tag(this, PushType.PAIRING_CONFIRMED)
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
-            0,
+            PushOpenIntent.requestCode(PushType.PAIRING_CONFIRMED),
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -72,10 +75,11 @@ object PairingNotificationPresenter {
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             action = AppShortcutAction.ShowPairingHub.intentAction
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            PushOpenIntent.tag(this, PushType.PAIRING_DISCONNECTED)
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
-            0,
+            PushOpenIntent.requestCode(PushType.PAIRING_DISCONNECTED),
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )

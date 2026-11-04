@@ -12,6 +12,8 @@ import androidx.core.content.ContextCompat
 import com.subhajit.mulberry.EnableWallpaperSyncActivity
 import com.subhajit.mulberry.MainActivity
 import com.subhajit.mulberry.R
+import com.subhajit.mulberry.analytics.PushOpenIntent
+import com.subhajit.mulberry.analytics.PushType
 import com.subhajit.mulberry.app.shortcut.AppShortcutAction
 import com.subhajit.mulberry.notifications.MulberryNotificationChannels
 
@@ -60,10 +62,11 @@ object PartnerDoodleNotificationPresenter {
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             action = AppShortcutAction.ChangeWallpaper.intentAction
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            PushOpenIntent.tag(this, PushType.CANVAS_NUDGE)
         }
         return PendingIntent.getActivity(
             context,
-            0,
+            PushOpenIntent.requestCode(PushType.CANVAS_NUDGE),
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )

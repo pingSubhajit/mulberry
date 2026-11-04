@@ -1,5 +1,7 @@
 package com.subhajit.mulberry.home
 
+import com.subhajit.mulberry.analytics.OnboardingStep
+import com.subhajit.mulberry.analytics.TrackOnboardingStep
 import android.content.Intent
 import android.os.SystemClock
 import com.subhajit.mulberry.BuildConfig
@@ -458,6 +460,9 @@ fun CanvasHomeRoute(
         }
     }
 
+    uiState.pairingSheetMode.onboardingStep()?.let { step ->
+        TrackOnboardingStep(step, keyPrefix = "home_sheet")
+    }
     when (uiState.pairingSheetMode) {
         HomePairingSheetMode.Hidden -> Unit
         HomePairingSheetMode.ShareInvite -> InviteCodeBottomSheet(
@@ -986,6 +991,7 @@ private fun CanvasHomePane(
         ?: stringResource(R.string.home_default_user_name)
 
     if (uiState.bootstrapState.pairingStatus == PairingStatus.UNPAIRED) {
+        TrackOnboardingStep(OnboardingStep.PAIRING_CHOICE, keyPrefix = "home")
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -3825,4 +3831,14 @@ private fun CustomColorSwatch(
             contentScale = ContentScale.Fit
         )
     }
+}
+
+private fun HomePairingSheetMode.onboardingStep(): OnboardingStep? = when (this) {
+    HomePairingSheetMode.ShareInvite -> OnboardingStep.INVITE_CODE_SHOWN
+    HomePairingSheetMode.JoinCodeEntry -> OnboardingStep.REDEEM_CODE_ENTRY
+    HomePairingSheetMode.PartnerDetails -> OnboardingStep.PARTNER_DETAILS
+    HomePairingSheetMode.PairingConfirmed -> OnboardingStep.PAIRED_CELEBRATION
+    // Asks an already paired person whether to switch partners; no contract step fits it.
+    HomePairingSheetMode.InboundInvitePaired,
+    HomePairingSheetMode.Hidden -> null
 }

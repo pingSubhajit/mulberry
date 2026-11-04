@@ -3,6 +3,7 @@ package com.subhajit.mulberry
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.subhajit.mulberry.analytics.AnalyticsQueue
 import com.subhajit.mulberry.app.shortcut.ReactionShortcutPublisher
 import com.subhajit.mulberry.notifications.MulberryNotificationChannels
 import com.subhajit.mulberry.reactions.ReactionLocalStore
@@ -25,6 +26,7 @@ class MulberryApplication : Application(), Configuration.Provider {
     @Inject lateinit var reactionLocalStore: ReactionLocalStore
     @Inject lateinit var relationshipWidgetAnniversaryObserver: RelationshipWidgetAnniversaryObserver
     @Inject lateinit var stickerArtworkPrewarmer: StickerArtworkPrewarmer
+    @Inject lateinit var analyticsQueue: AnalyticsQueue
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -33,6 +35,7 @@ class MulberryApplication : Application(), Configuration.Provider {
         MulberryNotificationChannels.registerAll(this)
         relationshipWidgetAnniversaryObserver.start(applicationScope)
         stickerArtworkPrewarmer.start(applicationScope)
+        analyticsQueue.start()
         applicationScope.launch {
             ReactionShortcutPublisher.publish(
                 context = this@MulberryApplication,

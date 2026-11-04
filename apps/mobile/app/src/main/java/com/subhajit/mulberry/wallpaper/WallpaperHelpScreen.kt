@@ -1,5 +1,10 @@
 package com.subhajit.mulberry.wallpaper
 
+import com.subhajit.mulberry.analytics.AnalyticsEvent
+import com.subhajit.mulberry.analytics.TrackScreenView
+import com.subhajit.mulberry.analytics.WallpaperSetupOutcome
+import com.subhajit.mulberry.analytics.WallpaperSetupStep
+import com.subhajit.mulberry.analytics.analyticsEntryPoint
 import android.provider.Settings
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -139,6 +144,13 @@ fun WallpaperHelpRoute(
     var pausedAfterLaunchingPicker by remember { mutableStateOf(false) }
     var exitRequested by remember { mutableStateOf(false) }
 
+    TrackScreenView(key = "wallpaper_help:intro") {
+        AnalyticsEvent.WallpaperSetupStepChanged(
+            step = WallpaperSetupStep.INTRO,
+            outcome = WallpaperSetupOutcome.VIEWED
+        )
+    }
+
     LaunchedEffect(exitRequested) {
         if (!exitRequested) return@LaunchedEffect
         androidx.compose.runtime.withFrameNanos { }
@@ -174,6 +186,7 @@ fun WallpaperHelpRoute(
         onSetUpWallpaper = {
             launchedWallpaperPicker = true
             pausedAfterLaunchingPicker = false
+            context.analyticsEntryPoint().wallpaperSetupTracker().onPickerOpened()
             WallpaperIntentFactory.openWallpaperPicker(context)
         }
     )

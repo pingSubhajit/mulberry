@@ -74,6 +74,8 @@ object PreferenceStorage {
     val fcmRegisteredToken = stringPreferencesKey("fcm_registered_token")
     val fcmRegisteredUserId = stringPreferencesKey("fcm_registered_user_id")
     val installationDeviceId = stringPreferencesKey("installation_device_id")
+    /** Made once per install; sign-out leaves it, so analytics can follow one install across accounts. */
+    val analyticsAnonymousId = stringPreferencesKey("analytics_anonymous_id")
     val lastUsedReactionType = stringPreferencesKey("last_used_reaction_type")
     val pendingReactionGeneration = longPreferencesKey("pending_reaction_generation")
     val pendingReactionPairSessionId = stringPreferencesKey("pending_reaction_pair_session_id")

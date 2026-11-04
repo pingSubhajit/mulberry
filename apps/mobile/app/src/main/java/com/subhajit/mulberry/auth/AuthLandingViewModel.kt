@@ -1,5 +1,8 @@
 package com.subhajit.mulberry.auth
 
+import com.subhajit.mulberry.analytics.AnalyticsEvent
+import com.subhajit.mulberry.analytics.AppAnalytics
+import com.subhajit.mulberry.analytics.OnboardingStep
 import com.subhajit.mulberry.core.UserFacingError
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.ViewModel
@@ -22,7 +25,8 @@ class AuthLandingViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val inboundInviteRepository: InboundInviteRepository,
     private val installReferrerInboundInviteIngester: InstallReferrerInboundInviteIngester,
-    private val inviteRepository: InviteRepository
+    private val inviteRepository: InviteRepository,
+    private val analytics: AppAnalytics
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AuthLandingUiState())
     val uiState = _uiState.asStateFlow()
@@ -58,6 +62,7 @@ class AuthLandingViewModel @Inject constructor(
     }
 
     fun onGoogleSignInClicked(activity: ComponentActivity) {
+        analytics.track(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.SIGN_IN))
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             authRepository.signInWithGoogle(activity)

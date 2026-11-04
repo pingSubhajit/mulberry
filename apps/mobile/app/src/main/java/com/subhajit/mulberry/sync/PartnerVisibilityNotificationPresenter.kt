@@ -12,6 +12,8 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.subhajit.mulberry.MainActivity
 import com.subhajit.mulberry.R
+import com.subhajit.mulberry.analytics.PushOpenIntent
+import com.subhajit.mulberry.analytics.PushType
 import com.subhajit.mulberry.app.shortcut.AppShortcutAction
 import com.subhajit.mulberry.notifications.MulberryNotificationChannels
 import android.app.NotificationManager
@@ -102,10 +104,11 @@ object PartnerVisibilityNotificationPresenter {
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             this.action = action.intentAction
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            PushOpenIntent.tag(this, PushType.PARTNER_VISIBILITY_CHANGED)
         }
         return PendingIntent.getActivity(
             context,
-            0,
+            PushOpenIntent.requestCode(PushType.PARTNER_VISIBILITY_CHANGED),
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )

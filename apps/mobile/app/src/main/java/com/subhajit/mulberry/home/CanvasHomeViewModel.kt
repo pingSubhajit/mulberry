@@ -1,5 +1,9 @@
 package com.subhajit.mulberry.home
 
+import com.subhajit.mulberry.analytics.WallpaperSetupFailureReason
+import com.subhajit.mulberry.analytics.WallpaperSetupOutcome
+import com.subhajit.mulberry.analytics.WallpaperSetupStep
+import com.subhajit.mulberry.analytics.WallpaperSetupTracker
 import com.subhajit.mulberry.core.UserFacingError
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -197,6 +201,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val reactionRepository: ReactionRepository,
     private val reactionLocalStore: ReactionLocalStore,
     private val reactionSendRateLimiter: ReactionSendRateLimiter,
+    private val wallpaperSetupTracker: WallpaperSetupTracker,
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
     private val showClearConfirmation = MutableStateFlow(false)
@@ -1261,8 +1266,14 @@ class CanvasHomeViewModel @Inject constructor(
                 ensureDefaultBackgroundIfNeeded()
                 wallpaperCoordinator.ensureSnapshotCurrent()
             }.onSuccess {
+                wallpaperSetupTracker.onPickerOpened()
                 _effects.emit(CanvasHomeEffect.OpenWallpaperSetup)
             }.onFailure { error ->
+                wallpaperSetupTracker.track(
+                    WallpaperSetupStep.SET_WALLPAPER,
+                    WallpaperSetupOutcome.FAILED,
+                    WallpaperSetupFailureReason.SNAPSHOT_FAILED
+                )
                 wallpaperErrorState.value = UserFacingError.message(error, "Couldn’t prepare wallpaper setup. Try again.")
             }
             wallpaperBusyState.value = false

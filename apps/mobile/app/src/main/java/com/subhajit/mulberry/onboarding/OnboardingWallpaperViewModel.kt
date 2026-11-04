@@ -1,5 +1,12 @@
 package com.subhajit.mulberry.onboarding
 
+import com.subhajit.mulberry.analytics.AnalyticsEvent
+import com.subhajit.mulberry.analytics.AppAnalytics
+import com.subhajit.mulberry.analytics.OnboardingStep
+import com.subhajit.mulberry.analytics.WallpaperSetupFailureReason
+import com.subhajit.mulberry.analytics.WallpaperSetupOutcome
+import com.subhajit.mulberry.analytics.WallpaperSetupStep
+import com.subhajit.mulberry.analytics.WallpaperSetupTracker
 import com.subhajit.mulberry.core.UserFacingError
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -52,7 +59,9 @@ class OnboardingWallpaperViewModel @Inject constructor(
     sessionBootstrapRepository: SessionBootstrapRepository,
     private val backgroundImageRepository: BackgroundImageRepository,
     private val wallpaperCoordinator: WallpaperCoordinator,
-    private val wallpaperCatalogRepository: WallpaperCatalogRepository
+    private val wallpaperCatalogRepository: WallpaperCatalogRepository,
+    private val wallpaperSetupTracker: WallpaperSetupTracker,
+    private val analytics: AppAnalytics
 ) : ViewModel() {
     private val busyState = MutableStateFlow(false)
     private val errorState = MutableStateFlow<String?>(null)
@@ -146,8 +155,14 @@ class OnboardingWallpaperViewModel @Inject constructor(
                 ensureDefaultBackgroundIfNeeded()
                 wallpaperCoordinator.ensureSnapshotCurrent()
             }.onSuccess {
+                wallpaperSetupTracker.onPickerOpened()
                 _effects.emit(OnboardingWallpaperEffect.OpenWallpaperSetup)
             }.onFailure { error ->
+                wallpaperSetupTracker.track(
+                    WallpaperSetupStep.SET_WALLPAPER,
+                    WallpaperSetupOutcome.FAILED,
+                    WallpaperSetupFailureReason.SNAPSHOT_FAILED
+                )
                 errorState.value = UserFacingError.message(error, "Couldn’t prepare wallpaper setup. Try again.")
             }
             busyState.value = false
@@ -166,6 +181,8 @@ class OnboardingWallpaperViewModel @Inject constructor(
         viewModelScope.launch {
             if (!uiState.value.canComplete) return@launch
             sessionRepository.setWallpaperConfigured(true)
+            wallpaperSetupTracker.track(WallpaperSetupStep.FINISHED, WallpaperSetupOutcome.COMPLETED)
+            analytics.track(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.ONBOARDING_FINISHED))
             _effects.emit(OnboardingWallpaperEffect.NavigateHome)
         }
     }
@@ -174,6 +191,8 @@ class OnboardingWallpaperViewModel @Inject constructor(
         viewModelScope.launch {
             if (uiState.value.isBusy) return@launch
             sessionRepository.setWallpaperConfigured(true)
+            wallpaperSetupTracker.track(WallpaperSetupStep.SET_WALLPAPER, WallpaperSetupOutcome.SKIPPED)
+            analytics.track(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.ONBOARDING_FINISHED))
             _effects.emit(OnboardingWallpaperEffect.NavigateHome)
         }
     }
@@ -184,7 +203,14 @@ class OnboardingWallpaperViewModel @Inject constructor(
             block()
             wallpaperCoordinator.ensureSnapshotCurrent()
             wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
+        }.onSuccess {
+            wallpaperSetupTracker.track(WallpaperSetupStep.CHOOSE_BACKGROUND, WallpaperSetupOutcome.COMPLETED)
         }.onFailure { error ->
+            wallpaperSetupTracker.track(
+                WallpaperSetupStep.CHOOSE_BACKGROUND,
+                WallpaperSetupOutcome.FAILED,
+                WallpaperSetupFailureReason.BACKGROUND_IMPORT_FAILED
+            )
             errorState.value = UserFacingError.message(error, "Couldn’t update background. Try again.")
         }
     }

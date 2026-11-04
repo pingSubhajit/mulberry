@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
+import com.subhajit.mulberry.analytics.AnalyticsQueue
+import com.subhajit.mulberry.analytics.AppAnalytics
 import com.subhajit.mulberry.auth.AuthRepository
 import com.subhajit.mulberry.auth.CredentialManagerAuthRepository
 import com.subhajit.mulberry.bootstrap.BackendBootstrapRepository
@@ -31,6 +33,7 @@ import com.subhajit.mulberry.drawing.data.local.DrawingDao
 import com.subhajit.mulberry.drawing.data.local.DrawingMigrations
 import com.subhajit.mulberry.drawing.data.local.DrawingOperationsDao
 import com.subhajit.mulberry.navigation.BootstrapRouteResolver
+import com.subhajit.mulberry.network.AnalyticsHeaderInterceptor
 import com.subhajit.mulberry.network.AuthHeaderInterceptor
 import com.subhajit.mulberry.network.AppBuildHeaderInterceptor
 import com.subhajit.mulberry.network.TimeZoneHeaderInterceptor
@@ -343,6 +346,12 @@ abstract class AppBindingsModule {
 
     @Binds
     @Singleton
+    abstract fun bindAppAnalytics(
+        implementation: AnalyticsQueue
+    ): AppAnalytics
+
+    @Binds
+    @Singleton
     abstract fun bindWhatsNewPromptStateStore(
         implementation: DataStoreWhatsNewPromptStateStore
     ): WhatsNewPromptStateStore
@@ -372,6 +381,16 @@ object AppProvidesModule {
     ): DataStore<Preferences> = PreferenceDataStoreFactory.create(
         scope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
         produceFile = { context.preferencesDataStoreFile("sticker_cache") }
+    )
+
+    @Provides
+    @Singleton
+    @AnalyticsQueueDataStore
+    fun provideAnalyticsQueueDataStore(
+        @ApplicationContext context: Context
+    ): DataStore<Preferences> = PreferenceDataStoreFactory.create(
+        scope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+        produceFile = { context.preferencesDataStoreFile("analytics_queue") }
     )
 
     @Provides
@@ -438,11 +457,13 @@ object AppProvidesModule {
         authHeaderInterceptor: AuthHeaderInterceptor,
         appBuildHeaderInterceptor: AppBuildHeaderInterceptor,
         timeZoneHeaderInterceptor: TimeZoneHeaderInterceptor,
+        analyticsHeaderInterceptor: AnalyticsHeaderInterceptor,
         loggingInterceptor: HttpLoggingInterceptor
     ): OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(authHeaderInterceptor)
         .addInterceptor(appBuildHeaderInterceptor)
         .addInterceptor(timeZoneHeaderInterceptor)
+        .addInterceptor(analyticsHeaderInterceptor)
         .addInterceptor(loggingInterceptor)
         .build()
 

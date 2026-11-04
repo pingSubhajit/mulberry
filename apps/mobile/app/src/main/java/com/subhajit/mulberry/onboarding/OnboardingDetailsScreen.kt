@@ -1,5 +1,7 @@
 package com.subhajit.mulberry.onboarding
 
+import com.subhajit.mulberry.analytics.OnboardingStep
+import com.subhajit.mulberry.analytics.TrackOnboardingStep
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -82,6 +84,7 @@ fun OnboardingDetailsRoute(
     onNavigateToBootstrap: () -> Unit,
     viewModel: OnboardingDetailsViewModel = hiltViewModel()
 ) {
+    TrackOnboardingStep(OnboardingStep.PARTNER_DETAILS)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(viewModel) {

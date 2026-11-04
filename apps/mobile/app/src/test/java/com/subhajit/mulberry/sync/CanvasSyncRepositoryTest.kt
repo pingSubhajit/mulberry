@@ -2,6 +2,7 @@
 
 package com.subhajit.mulberry.sync
 
+import com.subhajit.mulberry.analytics.AnalyticsEventsRequest
 import com.subhajit.mulberry.canvas.CanvasRenderState
 import com.subhajit.mulberry.canvas.CanvasRuntime
 import com.subhajit.mulberry.canvas.CanvasRuntimeEvent
@@ -737,4 +738,7 @@ private class FakeMulberryApiService : MulberryApiService {
     ): WhatsNewListResponse = error("unused")
 
     override suspend fun getCannySsoToken(): CannySsoTokenResponse = error("unused")
+
+    override suspend fun sendAnalyticsEvents(request: AnalyticsEventsRequest): Response<ResponseBody> =
+        error("unused")
 }

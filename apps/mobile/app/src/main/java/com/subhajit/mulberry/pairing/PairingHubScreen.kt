@@ -1,5 +1,7 @@
 package com.subhajit.mulberry.pairing
 
+import com.subhajit.mulberry.analytics.OnboardingStep
+import com.subhajit.mulberry.analytics.TrackOnboardingStep
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +38,11 @@ fun PairingHubRoute(
     viewModel: PairingHubViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    TrackOnboardingStep(OnboardingStep.PAIRING_CHOICE, keyPrefix = "pairing_hub")
+    if (uiState.currentInvite != null) {
+        TrackOnboardingStep(OnboardingStep.INVITE_CODE_SHOWN, keyPrefix = "pairing_hub")
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->

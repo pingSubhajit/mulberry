@@ -1,5 +1,7 @@
 package com.subhajit.mulberry.pairing
 
+import com.subhajit.mulberry.analytics.OnboardingStep
+import com.subhajit.mulberry.analytics.TrackOnboardingStep
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -80,6 +82,7 @@ fun InviteCodeEntryRoute(
     onNavigateToPairingHelp: () -> Unit,
     viewModel: InviteCodeEntryViewModel = hiltViewModel()
 ) {
+    TrackOnboardingStep(OnboardingStep.REDEEM_CODE_ENTRY)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(viewModel) {

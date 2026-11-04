@@ -20,6 +20,10 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
+import com.subhajit.mulberry.analytics.AnalyticsEvent
+import com.subhajit.mulberry.analytics.AppAnalytics
+import com.subhajit.mulberry.analytics.PushOpenIntent
+import com.subhajit.mulberry.analytics.WallpaperSetupTracker
 import com.subhajit.mulberry.app.AppForegroundState
 import com.subhajit.mulberry.app.MulberryApp
 import com.subhajit.mulberry.app.bootstrap.AppStartupGate
@@ -72,6 +76,8 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var appUpdateGate: AppUpdateGate
     @Inject lateinit var partnerWallpaperStatusReportCoordinator: PartnerWallpaperStatusReportCoordinator
     @Inject lateinit var whatsNewPrompter: WhatsNewPrompter
+    @Inject lateinit var appAnalytics: AppAnalytics
+    @Inject lateinit var wallpaperSetupTracker: WallpaperSetupTracker
 
     private val currentRoute = MutableStateFlow<String?>(null)
     private var pendingUpdatePromptVersionCode: Int? = null
@@ -89,6 +95,8 @@ class MainActivity : ComponentActivity() {
             AppStartupGate.keepSplashVisible.value
         }
         super.onCreate(savedInstanceState)
+        // A recreated activity gets its old intent back; that open was already counted.
+        if (savedInstanceState == null) trackPushOpen(intent) else PushOpenIntent.consume(intent)
         AppShortcutActionController.dispatch(intent)
         handleInviteLink(intent)
         AppStartupGate.armTimeout(lifecycleScope)
@@ -169,6 +177,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        trackPushOpen(intent)
         AppShortcutActionController.dispatch(intent)
         handleInviteLink(intent)
         applyDebugUpdateStatus(intent)
@@ -190,6 +199,9 @@ class MainActivity : ComponentActivity() {
             partnerWallpaperStatusReportCoordinator.reportNow(reason = "foreground_start")
         }
         installReferrerInboundInviteIngester.ingestIfNeededAsync()
+        lifecycleScope.launch {
+            wallpaperSetupTracker.onAppReturned()
+        }
         if (isMainAppRoute(currentRoute.value)) {
             maybeStartFlexibleUpdatePrompt(isManual = false)
         }
@@ -228,6 +240,12 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val NOTIFICATION_PERMISSION_REQUEST_CODE = 3001
         const val TAG = "MulberryInAppUpdate"
+    }
+
+    private fun trackPushOpen(intent: Intent?) {
+        val pushType = PushOpenIntent.consume(intent) ?: return
+        val fromRecents = ((intent?.flags ?: 0) and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (!fromRecents) appAnalytics.track(AnalyticsEvent.PushOpened(pushType))
     }
 
     private fun handleInviteLink(intent: Intent?) {

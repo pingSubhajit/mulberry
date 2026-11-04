@@ -1,5 +1,11 @@
 package com.subhajit.mulberry.onboarding
 
+import com.subhajit.mulberry.analytics.OnboardingStep
+import com.subhajit.mulberry.analytics.TrackOnboardingStep
+import com.subhajit.mulberry.analytics.AnalyticsEvent
+import com.subhajit.mulberry.analytics.TrackScreenView
+import com.subhajit.mulberry.analytics.WallpaperSetupOutcome
+import com.subhajit.mulberry.analytics.WallpaperSetupStep
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -94,6 +100,13 @@ fun OnboardingWallpaperRoute(
     onNavigateToWallpaperHelp: () -> Unit,
     viewModel: OnboardingWallpaperViewModel = hiltViewModel()
 ) {
+    TrackOnboardingStep(OnboardingStep.WALLPAPER_SETUP)
+    TrackScreenView(key = "onboarding_wallpaper:choose_background") {
+        AnalyticsEvent.WallpaperSetupStepChanged(
+            step = WallpaperSetupStep.CHOOSE_BACKGROUND,
+            outcome = WallpaperSetupOutcome.VIEWED
+        )
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current

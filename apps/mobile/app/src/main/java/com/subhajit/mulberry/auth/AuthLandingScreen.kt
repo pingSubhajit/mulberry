@@ -1,5 +1,7 @@
 package com.subhajit.mulberry.auth
 
+import com.subhajit.mulberry.analytics.OnboardingStep
+import com.subhajit.mulberry.analytics.TrackOnboardingStep
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -68,6 +70,7 @@ fun AuthLandingRoute(
     onNavigateToBootstrap: () -> Unit,
     viewModel: AuthLandingViewModel = hiltViewModel()
 ) {
+    TrackOnboardingStep(OnboardingStep.WELCOME)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = context as? ComponentActivity

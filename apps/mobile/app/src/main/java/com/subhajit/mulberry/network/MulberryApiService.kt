@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.network
 
+import com.subhajit.mulberry.analytics.AnalyticsEventsRequest
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.HTTP
@@ -150,4 +151,7 @@ interface MulberryApiService {
 
     @GET("/feedback/canny-sso-token")
     suspend fun getCannySsoToken(): CannySsoTokenResponse
+
+    @POST("/analytics/events")
+    suspend fun sendAnalyticsEvents(@Body request: AnalyticsEventsRequest): Response<ResponseBody>
 }
