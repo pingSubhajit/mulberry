@@ -577,6 +577,10 @@ fun CanvasHomeRoute(
                     if (!editorOpen && uiState.toolState.activeTool == DrawingTool.PHOTO) {
                         onBrushToggle()
                     } else if (!editorOpen) {
+                        // The camera opens with the tool, so nothing waits for a first editor.
+                        autoOpenOnNextToolSelect = null
+                        awaitingInitialDismissForTool = null
+                        openedInitialEditorForTool = null
                         onCameraToolSelected()
                         photoSession = CanvasPhotoSession.new()
                     }
@@ -711,23 +715,15 @@ fun CanvasHomeRoute(
 
             LaunchedEffect(uiState.toolState.activeTool, editorOpen, awaitingInitialDismissForTool) {
                 if (editorOpen) return@LaunchedEffect
-                val active = uiState.toolState.activeTool
-                val awaiting = awaitingInitialDismissForTool
-                if (awaiting != null) {
-                    if (active == awaiting && openedInitialEditorForTool == awaiting) {
-                        // Initial editor for this tool has been handled (even if "cancelled") and dismissed.
-                        allowToolTapPlacement = true
-                        awaitingInitialDismissForTool = null
-                        openedInitialEditorForTool = null
-                    } else if (active != DrawingTool.TEXT && active != DrawingTool.STICKER) {
-                        // User exited the tool before dismissal; reset.
-                        allowToolTapPlacement = false
-                        awaitingInitialDismissForTool = null
-                        openedInitialEditorForTool = null
-                    }
-                    return@LaunchedEffect
-                }
-                allowToolTapPlacement = active == DrawingTool.TEXT || active == DrawingTool.STICKER
+                val current = ToolTapPlacement(
+                    allowsEmptyTap = allowToolTapPlacement,
+                    awaitingInitialDismissForTool = awaitingInitialDismissForTool,
+                    openedInitialEditorForTool = openedInitialEditorForTool
+                )
+                val settled = current.settled(uiState.toolState.activeTool)
+                allowToolTapPlacement = settled.allowsEmptyTap
+                awaitingInitialDismissForTool = settled.awaitingInitialDismissForTool
+                openedInitialEditorForTool = settled.openedInitialEditorForTool
             }
 
         val headerUserName = uiState.bootstrapState.userDisplayName

@@ -243,6 +243,8 @@ fun CanvasTextOverlay(
         textLayoutCache.clear()
     }
     val latestViewportTransform by rememberUpdatedState(viewportTransform)
+    // The gesture handler outlives a recomposition, so it reads the latest value.
+    val latestAllowCreateOnEmptyTap by rememberUpdatedState(allowCreateOnEmptyTap)
 
     LaunchedEffect(activeTool) {
         if (activeTool != DrawingTool.TEXT && activeTool != DrawingTool.STICKER) {
@@ -730,7 +732,7 @@ fun CanvasTextOverlay(
 	                        liveTransformPreview = null
 	                        return@awaitEachGesture
 	                    }
-                        if (!allowCreateOnEmptyTap) {
+                        if (!latestAllowCreateOnEmptyTap) {
                             liveTransformPreview = null
                             return@awaitEachGesture
                         }
@@ -758,7 +760,7 @@ fun CanvasTextOverlay(
                         liveTransformPreview = null
                         return@awaitEachGesture
                     }
-                    if (!allowCreateOnEmptyTap) {
+                    if (!latestAllowCreateOnEmptyTap) {
                         liveTransformPreview = null
                         return@awaitEachGesture
                     }
@@ -769,7 +771,7 @@ fun CanvasTextOverlay(
                 } else if (lockedElementId == null && activeTool == DrawingTool.PHOTO) {
                     // The Camera tool on empty canvas opens the camera for another photo.
                     liveTransformPreview = null
-                    if (sawMultiTouch || !allowCreateOnEmptyTap) return@awaitEachGesture
+                    if (sawMultiTouch || !latestAllowCreateOnEmptyTap) return@awaitEachGesture
                     onRequestNewPhoto()
                     onEmptyTapCreationHandled()
                     return@awaitEachGesture
