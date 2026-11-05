@@ -8,6 +8,7 @@ import ProductCore
 import Stickers
 import Sync
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Where the canvas editor is shown: the main window, with its toolbars, or Quick Draw, on the
 /// desktop overlay with its tools in a panel beside it.
@@ -100,6 +101,8 @@ struct FullAppCanvasEditor: View {
     @State private var photoPreview: CanvasPhotoElement?
     /// The photo whose sticker cut-out is being made.
     @State private var cuttingOutPhotoID: String?
+    /// Something droppable is over the canvas.
+    @State private var dropTargeted = false
     /// Photos with no clear subject to cut out, by photo id.
     @State private var photosWithoutSubject: Set<String> = []
     /// Cut-outs already made and uploaded, by photo id, so choosing Sticker again reuses them.
@@ -189,6 +192,8 @@ struct FullAppCanvasEditor: View {
                         .padding(.bottom, 14)
                 }
             }
+            // Photos held over the canvas light the window from its edges inward.
+            .overlay { DropGlow(shape: Rectangle(), active: dropTargeted && editingIsEnabled).ignoresSafeArea() }
             .toolbar {
                 ToolbarItemGroup(placement: .navigation) {
                     Button(action: model.undo) { Image(systemName: "arrow.uturn.backward") }
@@ -213,6 +218,8 @@ struct FullAppCanvasEditor: View {
                         .fill(colorScheme == .dark ? Color.black.opacity(0.35) : Color(nsColor: .windowBackgroundColor).opacity(0.3))
                         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                 }
+                // Photos held over the canvas light it from its edges inward.
+                .overlay { DropGlow(shape: RoundedRectangle(cornerRadius: 24, style: .continuous), active: dropTargeted && editingIsEnabled) }
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
     }
@@ -370,11 +377,11 @@ struct FullAppCanvasEditor: View {
                 }
             }
             .coordinateSpace(name: CanvasSpace.name)
-            // A sticker dragged from the panel lands where it is dropped.
-            .dropDestination(for: String.self) { items, location in
-                guard editingIsEnabled, let sticker = items.lazy.compactMap(StickerReference.init(dragString:)).first else { return false }
-                placeSticker(sticker, at: normalized(location, canvasSize: proxy.size))
-                return true
+            // A sticker dragged from the panel, or photos dragged from Finder, Photos or a browser,
+            // land where they are dropped.
+            .onDrop(of: CanvasDrop.types, isTargeted: $dropTargeted) { providers, location in
+                guard editingIsEnabled else { return false }
+                return acceptDrop(providers, at: normalized(location, canvasSize: proxy.size))
             }
 
             // The canvas keeps its 9:20 geometry from the window's top, cropped under the title bar.
@@ -1032,10 +1039,15 @@ struct FullAppCanvasEditor: View {
 
     /// A taken or chosen photo: uploaded, then in the middle of the canvas, selected, as on iPad.
     private func addPhoto(_ image: CGImage) async throws {
+        try await addPhoto(image, at: DrawingPoint(x: 0.5, y: 0.5))
+    }
+
+    /// A photo uploaded, then placed at `center` and selected.
+    private func addPhoto(_ image: CGImage, at center: DrawingPoint) async throws {
         guard let userID, let data = CanvasPhotoProcessing.jpeg(image) else { throw CocoaError(.fileWriteUnknown) }
         let upload = try await stickerLoader.uploadPhoto(data, contentType: "image/jpeg", image: NSImage(canvasPhoto: image), user: userID)
         let photo = CanvasPhotoElement(
-            center: DrawingPoint(x: 0.5, y: 0.5),
+            center: center,
             photoId: upload.photoId,
             aspectRatio: Double(image.width) / Double(max(1, image.height))
         )
@@ -1045,6 +1057,38 @@ struct FullAppCanvasEditor: View {
         selectedStickerID = nil
         selectPhoto(photo.id)
         Haptics.select()
+    }
+
+    /// Photos land where they are dropped, a few at a time, each a little below and right of the
+    /// last; a sticker from the panel lands as before. An image that can't be read or uploaded
+    /// beeps, as a failed camera photo does.
+    private func acceptDrop(_ providers: [NSItemProvider], at point: DrawingPoint) -> Bool {
+        let photos = providers.filter(CanvasDrop.carriesImage).prefix(CanvasDrop.maxPhotos)
+        if photos.isEmpty {
+            guard let text = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else { return false }
+            _ = text.loadObject(ofClass: NSString.self) { object, _ in
+                guard let string = object as? String, let sticker = StickerReference(dragString: string) else { return }
+                Task { @MainActor in placeSticker(sticker, at: point) }
+            }
+            return true
+        }
+        let loads = photos.map(CanvasDrop.imageData)
+        Task { @MainActor in
+            for (index, load) in loads.enumerated() {
+                let step = Double(index) * 0.04
+                var read: Data?
+                for await value in load { read = value }
+                guard let data = read,
+                      let image = await Task.detached(priority: .userInitiated, operation: { CanvasPhotoProcessing.prepared(data: data) }).value
+                else { NSSound.beep(); continue }
+                do {
+                    try await addPhoto(image, at: DrawingPoint(x: min(1, point.x + step), y: min(1, point.y + step)))
+                } catch {
+                    NSSound.beep()
+                }
+            }
+        }
+        return true
     }
 
     /// Closing the camera without a photo leaves the tool, unless there are photos to move, as on
@@ -1750,5 +1794,55 @@ private struct EyedropperLoupe: View {
             .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
             .animation(.easeOut(duration: 0.08), value: colour)
             .accessibilityHidden(true)
+    }
+}
+
+/// A soft glow in the accent colour around the inside of `shape`, shown while something droppable
+/// is held over the canvas: the whole window, whose rounded corners clip it, or Quick Draw's canvas.
+private struct DropGlow<GlowShape: InsettableShape>: View {
+    let shape: GlowShape
+    let active: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        shape
+            .strokeBorder(Color.accentColor, lineWidth: 14)
+            .blur(radius: 16)
+            .opacity(active ? 0.9 : 0)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: active)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+/// What the canvas takes from a drop: image files, images, or a sticker from the panel.
+enum CanvasDrop {
+    static let types: [UTType] = [.fileURL, .image, .plainText]
+    /// Photos placed from one drop, so a whole folder never floods the canvas.
+    static let maxPhotos = 10
+
+    static func carriesImage(_ provider: NSItemProvider) -> Bool {
+        provider.hasItemConformingToTypeIdentifier(UTType.image.identifier)
+            || provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+    }
+
+    /// Starts reading the provider's image now, while the drop still grants access: a Finder file's
+    /// bytes, if it is an image, or the image itself. The stream gives one value, nil if unreadable.
+    static func imageData(_ provider: NSItemProvider) -> AsyncStream<Data?> {
+        AsyncStream { continuation in
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                _ = provider.loadObject(ofClass: NSURL.self) { object, _ in
+                    let url = (object as? NSURL) as URL?
+                    let isImage = url.flatMap { UTType(filenameExtension: $0.pathExtension) }?.conforms(to: .image) == true
+                    continuation.yield(isImage ? url.flatMap { try? Data(contentsOf: $0) } : nil)
+                    continuation.finish()
+                }
+            } else {
+                _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
+                    continuation.yield(data)
+                    continuation.finish()
+                }
+            }
+        }
     }
 }
