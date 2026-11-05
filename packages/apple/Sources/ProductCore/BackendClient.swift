@@ -336,12 +336,17 @@ public actor BackendClient {
         return try await decode(request)
     }
 
-    /// A canvas photo's bytes.
+    /// A canvas photo's bytes: a short-lived signed link from the server, then the file from
+    /// storage, as sticker artwork is fetched. Storage gets no Mulberry sign-in token.
     public func canvasPhoto(_ photoId: String) async throws -> Data {
-        var request = makeRequest("canvas/photos/\(try pathID(photoId))")
-        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        let link: CanvasPhotoURL = try await get("canvas/photos/\(try pathID(photoId))/url")
+        guard let url = URL(string: link.url) else { throw BackendError.invalidResponse }
+        var request = URLRequest(url: url)
         request.timeoutInterval = 60
-        return try await send(request).0
+        let (data, response) = try await transport.data(for: request)
+        try Self.validate(data, response)
+        guard !data.isEmpty else { throw BackendError.invalidResponse }
+        return data
     }
 
     private func get<Response: Decodable & Sendable>(_ path: String, query: [URLQueryItem] = [], authenticated: Bool = true, quick: Bool = false) async throws -> Response {

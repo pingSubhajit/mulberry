@@ -260,3 +260,36 @@ private actor UpgradeRequiredTransport: BackendTransport {
     #expect(UserFacingError.message(for: CancellationError(), fallback: "x") == nil)
     #expect(UserFacingError.message(for: CocoaError(.fileReadCorruptFile), fallback: "Couldn’t open that.") == "Couldn’t open that.")
 }
+
+private actor PhotoStorageTransport: BackendTransport {
+    var requests: [URLRequest] = []
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        let url = request.url!
+        let body: Data
+        if url.host == "storage.example" {
+            body = Data([0xFF, 0xD8, 0xFF])
+        } else if url.path.hasSuffix("/url") {
+            body = Data(#"{"url":"https://storage.example/pairs/p/photo.jpg?token=signed","expiresInSeconds":3600}"#.utf8)
+        } else {
+            return (Data(), HTTPURLResponse(url: url, statusCode: 404, httpVersion: nil, headerFields: nil)!)
+        }
+        return (body, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
+/// A photo comes from storage through a signed link, and storage never sees the sign-in token.
+@Test func canvasPhotosDownloadFromASignedLinkWithoutTheSessionToken() async throws {
+    let transport = PhotoStorageTransport()
+    let fresh = SessionTokens(accessToken: "fresh", refreshToken: "refresh", userId: savedSession.userId)
+    let client = BackendClient(baseURL: URL(string: "https://api.example.invalid")!, tokenStore: TestTokenStore(fresh), session: fresh, transport: transport)
+    let photoID = "8d1c5e9a-0c55-4c39-9f0e-0d6f5f3b2a11"
+    #expect(try await client.canvasPhoto(photoID) == Data([0xFF, 0xD8, 0xFF]))
+    let requests = await transport.requests
+    #expect(requests.map { $0.url!.absoluteString } == [
+        "https://api.example.invalid/canvas/photos/\(photoID)/url",
+        "https://storage.example/pairs/p/photo.jpg?token=signed"
+    ])
+    #expect(requests[0].value(forHTTPHeaderField: "Authorization") == "Bearer fresh")
+    #expect(requests[1].value(forHTTPHeaderField: "Authorization") == nil)
+}

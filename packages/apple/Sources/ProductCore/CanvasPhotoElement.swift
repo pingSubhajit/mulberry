@@ -77,6 +77,12 @@ public struct CanvasPhotoUpload: Codable, Equatable, Sendable {
     public let contentType: String
 }
 
+/// A short-lived signed link to a canvas photo in storage.
+public struct CanvasPhotoURL: Codable, Equatable, Sendable {
+    public let url: String
+    public let expiresInSeconds: Int
+}
+
 /// Tells the server which canvas content this app can show, so it translates the rest for apps
 /// released before that content existed.
 public enum CanvasFeatures {
