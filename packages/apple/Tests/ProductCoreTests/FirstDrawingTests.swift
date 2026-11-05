@@ -82,7 +82,11 @@ private let stroke = DrawingOperation(type: "FINISH_STROKE", strokeId: "s")
     model.saved([stroke], paired: true, streaks: StreakModel(defaults: defaults)) { looked += 1 }
     // Waits on the streak first.
     #expect(model.confettiToken == nil)
-    try await Task.sleep(for: .milliseconds(200))
+    // Both looks, then the celebration: waited for, not timed, so a busy machine can't fail it.
+    let deadline = ContinuousClock.now + .seconds(3)
+    while (looked < 2 || model.confettiToken == nil) && ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
     #expect(looked == 2)
     #expect(model.confettiToken != nil)
 }
