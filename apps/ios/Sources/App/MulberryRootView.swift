@@ -21,6 +21,10 @@ struct MulberryRootView: View {
     @State private var profilePhoto: UIImage?
     @State private var wallpaperOpen = false
     @State private var pairingConfirmationOpen = false
+    @ObservedObject private var whatsNew = WhatsNewModel.app
+    @ObservedObject private var updates = AppUpdateGate.shared
+    /// This version's note, shown once over the canvas.
+    @State private var whatsNewEntry: WhatsNewEntry?
 
     init(model: MulberryModel, wallpapers: WallpaperLibrary) {
         self.model = model; self.wallpapers = wallpapers
@@ -135,6 +139,17 @@ struct MulberryRootView: View {
                 .navigationTransition(.zoom(sourceID: ToolbarZoomSource.settings, in: toolbarZoom))
         }
         .sheet(isPresented: $setupOpen) { WallpaperSetupView(setup: setup, onDone: finishSetup) }
+        // A new version's note, once the canvas is on screen with nothing over it.
+        .task(id: whatsNewCanShow) {
+            guard whatsNewCanShow else { return }
+            // Let the canvas settle, and anything about to open over it go first.
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, whatsNewCanShow, let entry = await whatsNew.dueNote(), whatsNewCanShow else { return }
+            whatsNewEntry = entry
+        }
+        .sheet(item: $whatsNewEntry, onDismiss: { whatsNew.markSeen(whatsNew.version) }) { entry in
+            WhatsNewSheet(entry: entry) { whatsNewEntry = nil }
+        }
         .alert(model.inviteNotice?.title ?? "", isPresented: Binding(
             get: { model.inviteNotice != nil },
             set: { if !$0 { model.inviteNotice = nil } }
@@ -184,9 +199,9 @@ struct MulberryRootView: View {
     /// A new invite link closes what's open over the app, so the invite screen or a notice can show.
     private func openInviteLink() {
         guard model.bootstrap != nil else { return }
-        let covered = model.showSettings || model.showStreak || model.showInviteEntry || setupOpen || pairingConfirmationOpen
+        let covered = model.showSettings || model.showStreak || model.showInviteEntry || setupOpen || pairingConfirmationOpen || whatsNewEntry != nil
         model.showSettings = false; model.showStreak = false; model.showInviteEntry = false
-        setupOpen = false; settingsSetupOpen = false; wallpaperOpen = false; pairingConfirmationOpen = false
+        setupOpen = false; settingsSetupOpen = false; wallpaperOpen = false; pairingConfirmationOpen = false; whatsNewEntry = nil
         Task {
             if covered { try? await Task.sleep(for: .milliseconds(450)) }
             await model.redeemLinkedInvite()
@@ -197,6 +212,17 @@ struct MulberryRootView: View {
     private func handleInviteLink() {
         guard inviteLinks.pending != nil else { return }
         Task { await model.redeemLinkedInvite() }
+    }
+
+    /// The canvas is on screen, in front, with nothing over it or about to open: no sheet, no
+    /// alert and no update prompt.
+    private var whatsNewCanShow: Bool {
+        phase == .active && !model.restoring && model.bootstrap?.onboardingCompleted == true
+            && model.bootstrap?.pairingStatus != "INVITE_PENDING_ACCEPTANCE" && !model.showWallpaperOnboarding
+            && !model.showSettings && !model.showStreak && !model.showInviteEntry && !model.showPairingConfirmation
+            && !pairingConfirmationOpen && !setupShowing && !wallpaperOpen && !quickClearConfirmation
+            && model.inviteNotice == nil && model.pairedInvite == nil && inviteLinks.pending == nil
+            && routes.pending == nil && quickActions.pending == nil && !updates.asksToUpdate
     }
 
     /// Wallpaper setup is on screen, on its own or over Settings.
@@ -219,9 +245,9 @@ struct MulberryRootView: View {
         guard !model.restoring, model.bootstrap?.onboardingCompleted == true,
               !model.showWallpaperOnboarding, let route = routes.pending else { return }
         routes.pending = nil
-        let covered = model.showSettings || model.showStreak || model.showInviteEntry || setupOpen
+        let covered = model.showSettings || model.showStreak || model.showInviteEntry || setupOpen || whatsNewEntry != nil
         model.showSettings = false; model.showStreak = false; model.showInviteEntry = false
-        setupOpen = false; settingsSetupOpen = false; wallpaperOpen = false
+        setupOpen = false; settingsSetupOpen = false; wallpaperOpen = false; whatsNewEntry = nil
         Task {
             await model.refresh()
             // Let a sheet that was open finish closing before another opens.
@@ -238,7 +264,7 @@ struct MulberryRootView: View {
         guard !model.restoring, model.bootstrap?.onboardingCompleted == true,
               !model.showWallpaperOnboarding, let action = quickActions.pending else { return }
         quickActions.pending = nil
-        model.showSettings = false; model.showInviteEntry = false
+        model.showSettings = false; model.showInviteEntry = false; whatsNewEntry = nil
         switch action {
         case .wallpaper: wallpaperOpen = true
         case .react:

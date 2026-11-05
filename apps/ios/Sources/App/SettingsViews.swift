@@ -14,6 +14,8 @@ struct SettingsView: View {
     @State private var streakOpen = false
     @State private var inviteOpen = false
     @State private var visibilityOpen = false
+    @State private var whatsNewOpen = false
+    @ObservedObject private var whatsNew = WhatsNewModel.app
 
     private var profile: BootstrapState? { model.bootstrap }
     private var paired: Bool { profile?.isPaired == true }
@@ -74,6 +76,19 @@ struct SettingsView: View {
 
                 Section {
                     NavigationLink { AboutView() } label: { SettingsRow("About", symbol: "info", tint: .gray) }
+                    Button { whatsNewOpen = true } label: {
+                        HStack {
+                            SettingsRow("What’s new", symbol: "megaphone.fill", tint: .red)
+                            Spacer()
+                            // This version has a note, as Android marks it.
+                            if whatsNew.currentVersionHasNote {
+                                Circle().fill(MulberryDesign.accent).frame(width: 9, height: 9).accessibilityHidden(true)
+                            }
+                        }
+                        .contentShape(.rect)
+                    }
+                    .foregroundStyle(MulberryDesign.ink)
+                    .accessibilityValue(whatsNew.currentVersionHasNote ? "New" : "")
                     NavigationLink { FeedbackView() } label: { SettingsRow("Send feedback", symbol: "bubble.left.fill", tint: .purple) }
                     #if MULBERRY_DEV
                     if developerOptions {
@@ -106,6 +121,8 @@ struct SettingsView: View {
             }
         }
         .sheet(isPresented: $inviteOpen) { InviteShareView(model: model) }
+        .sheet(isPresented: $whatsNewOpen) { WhatsNewHistorySheet(model: whatsNew) }
+        .task { await whatsNew.refreshCurrentNote() }
         .sheet(isPresented: $visibilityOpen) {
             if let visibility = PartnerVisibility(paired: paired, status: profile?.partnerWallpaperStatus) {
                 PartnerVisibilitySheet(visibility: visibility, partnerName: partnerName) { visibilityOpen = false }
