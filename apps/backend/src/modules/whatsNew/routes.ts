@@ -1,7 +1,14 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { resolve, join, dirname, extname } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyReply } from "fastify"
+
+/** Each app ships on its own schedule with its own version numbers, so each has its own notes. */
+export const WHATS_NEW_PLATFORMS = ["android", "ios", "macos"] as const
+export type WhatsNewPlatform = (typeof WHATS_NEW_PLATFORMS)[number]
+
+/** Android builds from before the per-platform folders call the routes without a platform. */
+const LEGACY_PLATFORM: WhatsNewPlatform = "android"
 
 type WhatsNewFrontmatter = {
   version?: string
@@ -14,82 +21,121 @@ type WhatsNewEntryFile = {
   frontmatter: WhatsNewFrontmatter
 }
 
+type ListQuery = { cursor?: string; limit?: string }
+type PlatformParams = { platform: string }
+type VersionParams = { version: string }
+type AssetParams = { "*": string }
+type IfNoneMatch = string | string[] | undefined
+
+/**
+ * Serves the "What's new" notes in `whats-new/<platform>/<version>.md`, with their images in
+ * `whats-new/<platform>/assets/`. Every route is under `/whats-new/:platform`; the same routes
+ * without a platform serve Android, for the builds already installed.
+ */
 export function registerWhatsNewRoutes(
   app: FastifyInstance,
   options: { baseDir?: string } = {},
 ): void {
-  const backendRoot = resolveBackendRoot()
-  const baseDir = options.baseDir ?? join(backendRoot, "whats-new")
-  const assetsDir = join(baseDir, "assets")
+  const baseDir = options.baseDir ?? join(resolveBackendRoot(), "whats-new")
+  const platformDir = (platform: WhatsNewPlatform) => join(baseDir, platform)
 
-  app.get("/whats-new", async (request, reply) => {
-    const query = request.query as { cursor?: string; limit?: string }
-    const entries = listWhatsNewEntries(baseDir)
-    const offset = parseCursor(query.cursor)
-    const limit = parseLimit(query.limit)
-    const page = entries.slice(offset, offset + limit)
-    const nextOffset = offset + page.length
-
-    reply
-      .header("Cache-Control", "public, max-age=3600")
-      .send({
-        items: page.map((entry) => ({
-          version: entry.version,
-          rawMarkdown: readFileSync(entry.path, "utf8"),
-        })),
-        nextCursor: nextOffset < entries.length ? String(nextOffset) : null,
-      })
+  app.get<{ Params: PlatformParams; Querystring: ListQuery }>("/whats-new/:platform", async (request, reply) => {
+    const platform = parsePlatform(request.params.platform)
+    if (!platform) return replyUnknownPlatform(reply)
+    return sendList(reply, platformDir(platform), request.query)
+  })
+  app.get<{ Params: PlatformParams }>("/whats-new/:platform/latest.md", async (request, reply) => {
+    const platform = parsePlatform(request.params.platform)
+    if (!platform) return replyUnknownPlatform(reply)
+    return sendLatest(reply, platformDir(platform), request.headers["if-none-match"])
+  })
+  app.get<{ Params: PlatformParams & VersionParams }>("/whats-new/:platform/:version.md", async (request, reply) => {
+    const platform = parsePlatform(request.params.platform)
+    if (!platform) return replyUnknownPlatform(reply)
+    return sendVersion(reply, platformDir(platform), request.params.version, request.headers["if-none-match"])
+  })
+  app.get<{ Params: PlatformParams & AssetParams }>("/whats-new/:platform/assets/*", async (request, reply) => {
+    const platform = parsePlatform(request.params.platform)
+    if (!platform) return replyUnknownPlatform(reply)
+    return sendAsset(reply, join(platformDir(platform), "assets"), request.params["*"], request.headers["if-none-match"])
   })
 
+  // The routes Android used before notes were split by platform.
+  const legacyDir = platformDir(LEGACY_PLATFORM)
+  app.get<{ Querystring: ListQuery }>("/whats-new", async (request, reply) => {
+    return sendList(reply, legacyDir, request.query)
+  })
   app.get("/whats-new/latest.md", async (request, reply) => {
-    const latest = findLatestWhatsNewVersion(baseDir)
-    if (!latest) {
-      reply.code(404).send("No whats-new entries are configured.")
-      return
-    }
-    return serveMarkdownFile(reply, join(baseDir, `${latest}.md`), request.headers["if-none-match"])
+    return sendLatest(reply, legacyDir, request.headers["if-none-match"])
   })
+  app.get<{ Params: VersionParams }>("/whats-new/:version.md", async (request, reply) => {
+    return sendVersion(reply, legacyDir, request.params.version, request.headers["if-none-match"])
+  })
+  app.get<{ Params: AssetParams }>("/whats-new/assets/*", async (request, reply) => {
+    return sendAsset(reply, join(legacyDir, "assets"), request.params["*"], request.headers["if-none-match"])
+  })
+}
 
-  app.get("/whats-new/:version.md", async (request, reply) => {
-    const rawVersion = (request.params as { version?: string }).version ?? ""
-    const version = sanitizeVersionKey(rawVersion)
-    if (!version) {
-      reply.code(400).send("Invalid version key.")
-      return
-    }
-    const path = join(baseDir, `${version}.md`)
-    if (!existsSync(path)) {
-      reply.code(404).send("Not found.")
-      return
-    }
-    return serveMarkdownFile(reply, path, request.headers["if-none-match"])
-  })
+function sendList(reply: FastifyReply, dir: string, query: ListQuery): FastifyReply {
+  const entries = listWhatsNewEntries(dir)
+  const offset = parseCursor(query.cursor)
+  const limit = parseLimit(query.limit)
+  const page = entries.slice(offset, offset + limit)
+  const nextOffset = offset + page.length
 
-  app.get("/whats-new/assets/*", async (request, reply) => {
-    const assetPath = (request.params as Record<string, string | undefined>)["*"] ?? ""
-    const normalized = sanitizeAssetPath(assetPath)
-    if (!normalized) {
-      reply.code(400).send("Invalid asset path.")
-      return
-    }
-    const candidate = resolve(assetsDir, normalized)
-    if (!isWithinDir(candidate, assetsDir) || !existsSync(candidate)) {
-      reply.code(404).send("Not found.")
-      return
-    }
-    const contentType = inferContentType(candidate)
-    if (!contentType) {
-      reply.code(415).send("Unsupported asset type.")
-      return
-    }
-    return serveBinaryFile(
-      reply,
-      candidate,
-      contentType,
-      request.headers["if-none-match"],
-      "public, max-age=31536000, immutable",
-    )
-  })
+  return reply
+    .header("Cache-Control", "public, max-age=3600")
+    .send({
+      items: page.map((entry) => ({
+        version: entry.version,
+        rawMarkdown: readFileSync(entry.path, "utf8"),
+      })),
+      nextCursor: nextOffset < entries.length ? String(nextOffset) : null,
+    })
+}
+
+function sendLatest(reply: FastifyReply, dir: string, ifNoneMatch: IfNoneMatch): FastifyReply {
+  const latest = listWhatsNewEntries(dir)[0]
+  if (!latest) {
+    return reply.code(404).send("No whats-new entries are configured.")
+  }
+  return serveMarkdownFile(reply, latest.path, ifNoneMatch)
+}
+
+function sendVersion(reply: FastifyReply, dir: string, rawVersion: string, ifNoneMatch: IfNoneMatch): FastifyReply {
+  const version = sanitizeVersionKey(rawVersion)
+  if (!version) {
+    return reply.code(400).send("Invalid version key.")
+  }
+  const path = join(dir, `${version}.md`)
+  if (!existsSync(path)) {
+    return reply.code(404).send("Not found.")
+  }
+  return serveMarkdownFile(reply, path, ifNoneMatch)
+}
+
+function sendAsset(reply: FastifyReply, assetsDir: string, rawPath: string, ifNoneMatch: IfNoneMatch): FastifyReply {
+  const normalized = sanitizeAssetPath(rawPath)
+  if (!normalized) {
+    return reply.code(400).send("Invalid asset path.")
+  }
+  const candidate = resolve(assetsDir, normalized)
+  if (!isWithinDir(candidate, assetsDir) || !existsSync(candidate)) {
+    return reply.code(404).send("Not found.")
+  }
+  const contentType = inferContentType(candidate)
+  if (!contentType) {
+    return reply.code(415).send("Unsupported asset type.")
+  }
+  return serveBinaryFile(reply, candidate, contentType, ifNoneMatch, "public, max-age=31536000, immutable")
+}
+
+function parsePlatform(value: string): WhatsNewPlatform | null {
+  return WHATS_NEW_PLATFORMS.find((platform) => platform === value) ?? null
+}
+
+function replyUnknownPlatform(reply: FastifyReply): FastifyReply {
+  return reply.code(404).send(`Unknown platform. Use one of: ${WHATS_NEW_PLATFORMS.join(", ")}.`)
 }
 
 function resolveBackendRoot(): string {
@@ -137,7 +183,7 @@ function computeWeakEtag(path: string): string {
   return `W/\"${stat.size}-${Math.floor(stat.mtimeMs)}\"`
 }
 
-function maybeReplyNotModified(reply: any, etag: string, ifNoneMatch: string | string[] | undefined): boolean {
+function maybeReplyNotModified(reply: FastifyReply, etag: string, ifNoneMatch: IfNoneMatch): boolean {
   if (typeof ifNoneMatch === "string" && ifNoneMatch === etag) {
     reply.code(304).header("ETag", etag).send()
     return true
@@ -145,15 +191,11 @@ function maybeReplyNotModified(reply: any, etag: string, ifNoneMatch: string | s
   return false
 }
 
-function serveMarkdownFile(
-  reply: any,
-  path: string,
-  ifNoneMatch: string | string[] | undefined,
-): void {
+function serveMarkdownFile(reply: FastifyReply, path: string, ifNoneMatch: IfNoneMatch): FastifyReply {
   const etag = computeWeakEtag(path)
-  if (maybeReplyNotModified(reply, etag, ifNoneMatch)) return
+  if (maybeReplyNotModified(reply, etag, ifNoneMatch)) return reply
   const body = readFileSync(path, "utf8")
-  reply
+  return reply
     .header("Content-Type", "text/markdown; charset=utf-8")
     .header("Cache-Control", "public, max-age=3600")
     .header("ETag", etag)
@@ -161,24 +203,20 @@ function serveMarkdownFile(
 }
 
 function serveBinaryFile(
-  reply: any,
+  reply: FastifyReply,
   path: string,
   contentType: string,
-  ifNoneMatch: string | string[] | undefined,
+  ifNoneMatch: IfNoneMatch,
   cacheControl: string,
-): void {
+): FastifyReply {
   const etag = computeWeakEtag(path)
-  if (maybeReplyNotModified(reply, etag, ifNoneMatch)) return
+  if (maybeReplyNotModified(reply, etag, ifNoneMatch)) return reply
   const body = readFileSync(path)
-  reply
+  return reply
     .header("Content-Type", contentType)
     .header("Cache-Control", cacheControl)
     .header("ETag", etag)
     .send(body)
-}
-
-function findLatestWhatsNewVersion(baseDir: string): string | null {
-  return listWhatsNewEntries(baseDir)[0]?.version ?? null
 }
 
 function listWhatsNewEntries(baseDir: string): WhatsNewEntryFile[] {
@@ -194,8 +232,6 @@ function listWhatsNewEntries(baseDir: string): WhatsNewEntryFile[] {
       frontmatter: readFrontmatter(join(baseDir, name)),
     }))
 
-  if (entries.length === 0) return []
-
   entries.sort((a, b) => {
     const dateA = parseDateMs(a.frontmatter.released_at)
     const dateB = parseDateMs(b.frontmatter.released_at)
@@ -207,9 +243,7 @@ function listWhatsNewEntries(baseDir: string): WhatsNewEntryFile[] {
 }
 
 function readFrontmatter(path: string): WhatsNewFrontmatter {
-  const content = readFileSync(path, "utf8")
-  const parsed = parseFrontmatter(content)
-  return parsed
+  return parseFrontmatter(readFileSync(path, "utf8"))
 }
 
 function parseFrontmatter(raw: string): WhatsNewFrontmatter {
