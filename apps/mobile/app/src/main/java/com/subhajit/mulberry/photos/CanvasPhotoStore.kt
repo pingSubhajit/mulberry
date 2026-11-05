@@ -33,6 +33,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 class CanvasPhotoStore @Inject constructor(
     @ApplicationContext private val context: Context,
     private val apiService: MulberryApiService,
+    private val downloader: CanvasPhotoDownloader,
     private val sessionBootstrapRepository: SessionBootstrapRepository
 ) {
     private val files = CanvasPhotoFiles(File(context.cacheDir, "CanvasPhotos"))
@@ -107,16 +108,15 @@ class CanvasPhotoStore @Inject constructor(
     private suspend fun file(photoId: String, generation: Long): File? {
         val destination = destination(photoId) ?: return null
         if (destination.isFile && destination.length() > 0) return destination
+        val bytes = downloader.download(photoId) ?: return null
+        // Signed out while it downloaded: nothing is kept.
+        if (generation != bitmaps.generation) return null
         return runCatching {
-            val bytes = apiService.getCanvasPhoto(photoId).use { body -> body.bytes() }
-            if (bytes.isEmpty()) return null
-            // Signed out while it downloaded: nothing is kept.
-            if (generation != bitmaps.generation) return null
             destination.parentFile?.mkdirs()
             writeAtomically(destination, bytes)
             destination
         }.onFailure { error ->
-            Log.w(TAG, "Canvas photo download failed photoId=$photoId", error)
+            Log.w(TAG, "Canvas photo save failed photoId=$photoId", error)
         }.getOrNull()
     }
 

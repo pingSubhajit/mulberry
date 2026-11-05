@@ -1038,7 +1038,8 @@ private class FakeMulberryApiService : MulberryApiService {
     override suspend fun uploadCanvasPhoto(image: okhttp3.MultipartBody.Part): com.subhajit.mulberry.network.CanvasPhotoUploadResponse =
         error("Not used")
 
-    override suspend fun getCanvasPhoto(photoId: String): okhttp3.ResponseBody = error("Not used")
+    override suspend fun getCanvasPhotoUrl(photoId: String): com.subhajit.mulberry.network.CanvasPhotoUrlResponse =
+        error("Not used")
 
     override suspend fun getCanvasSnapshot(): CanvasSnapshotResponse = CanvasSnapshotResponse(
         pairSessionId = "pair-1",

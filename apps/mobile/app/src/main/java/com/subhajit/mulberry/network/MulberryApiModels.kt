@@ -225,6 +225,12 @@ data class CanvasPhotoUploadResponse(
     val contentType: String
 )
 
+/** `GET /canvas/photos/{photoId}/url`. */
+data class CanvasPhotoUrlResponse(
+    val url: String,
+    val expiresInSeconds: Int
+)
+
 data class CanvasOperationEnvelopeResponse(
     val clientOperationId: String,
     val actorUserId: String,
