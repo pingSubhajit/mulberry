@@ -1,7 +1,8 @@
 import Combine
+import OSLog
 import SwiftUI
 
-enum DoodleTool: String, Codable { case brush, eyedropper, eraser, text, sticker }
+enum DoodleTool: String, Codable { case brush, eyedropper, eraser, text, sticker, photo }
 
 /// Mirrors Android's canvas metadata: brush colour, text colour, width and tool
 /// survive restarts, and start fresh for a new user or pair session.
@@ -51,7 +52,7 @@ struct CanvasStickerSession: Identifiable, Equatable {
         settings.width = min(widths.upperBound, max(widths.lowerBound, settings.width))
         // The eyedropper is a one-shot sampling mode, not a resting tool. Text
         // placement also starts cold in the brush, as Android starts with no tool.
-        if [.eyedropper, .text, .sticker].contains(settings.tool) { settings.tool = .brush }
+        if [.eyedropper, .text, .sticker, .photo].contains(settings.tool) { settings.tool = .brush }
         return settings
     }
 
@@ -107,12 +108,23 @@ final class DoodleEditor: ObservableObject {
     }
     @Published var textSession: CanvasTextSession?
     @Published var stickerSession: CanvasStickerSession?
+    /// The Camera tool's camera and photo editor.
+    @Published var photoSession: CanvasPhotoSession?
+    /// Where the canvas is on screen, so a photo is edited exactly where it will land. The open
+    /// photo editor follows it, so turning the iPad keeps the photo on the canvas.
+    var canvasScreenFrame: CGRect = .zero {
+        didSet {
+            guard canvasScreenFrame != .zero, let session = photoSession,
+                  session.canvasFrame != canvasScreenFrame else { return }
+            photoSession?.canvasFrame = canvasScreenFrame
+        }
+    }
 
-    /// On iPad, text and stickers are edited in place, as on the Mac: a tap selects one in a frame
-    /// with handles, a bar floating above it styles it, and text is typed on the canvas. The
-    /// iPhone keeps its full-screen editors.
+    /// On iPad, text, stickers and photos are edited in place, as on the Mac: a tap selects one in
+    /// a frame with handles, a bar floating above it styles it, and text is typed on the canvas.
+    /// The iPhone keeps its full-screen editors.
     let editsInPlace = UIDevice.current.userInterfaceIdiom == .pad
-    /// The text or sticker selected in its frame.
+    /// The text, sticker or photo selected in its frame.
     @Published private(set) var selectedElementID: String?
     /// A gesture's live position for the selection, so its frame and bar follow the fingers.
     @Published var elementPreview: CanvasElement?
@@ -131,6 +143,8 @@ final class DoodleEditor: ObservableObject {
     let stickers: StickerCatalog
     /// Artwork the canvas has loaded, so the eyedropper samples stickers too.
     var stickerImages: [StickerReference: UIImage] = [:]
+    /// Photos the canvas has loaded, by photo id.
+    var photoImages: [String: UIImage] = [:]
     @Published private(set) var history = DrawingHistory()
     @Published var errorMessage: String? {
         didSet { if validSession { model.canvasSaveError = errorMessage } }
@@ -203,7 +217,7 @@ final class DoodleEditor: ObservableObject {
             publishScene()
         case .eraser: erase(at: point, size: size)
         case .eyedropper: eyedropperPreview = sample(at: point, size: size)
-        case .text, .sticker: break
+        case .text, .sticker, .photo: break
         }
     }
 
@@ -306,7 +320,7 @@ final class DoodleEditor: ObservableObject {
     // MARK: Text and stickers
 
     var canEditElements: Bool { validSession && errorMessage == nil }
-    private var editorOpen: Bool { textSession != nil || stickerSession != nil }
+    private var editorOpen: Bool { textSession != nil || stickerSession != nil || photoSession != nil }
 
     /// Selecting the tool opens a new centered text, as on Android; selecting
     /// it again returns to the brush.
@@ -388,6 +402,54 @@ final class DoodleEditor: ObservableObject {
         if !session.isNew { deleteElement(session.id) }
     }
 
+    /// The Camera tool opens the camera; choosing it again returns to the brush. While it is
+    /// chosen, photos on the canvas move, and a tap on one restyles it: in its editor on iPhone,
+    /// and on iPad by selecting it in place.
+    func toggleCamera() {
+        if tool == .photo { tool = .brush; return }
+        end()
+        tool = .photo
+        startPhoto()
+    }
+
+    /// On iPad the camera hands its photo straight to the canvas, where it is styled in place.
+    func startPhoto() {
+        guard canEditElements, !editorOpen else { return }
+        present { $0.photoSession = .init(id: UUID().uuidString, element: nil, canvasFrame: self.photoCanvasFrame,
+                                          placesDirectly: self.editsInPlace) }
+    }
+
+    /// A new photo on iPad arrives selected, as a newly placed sticker does.
+    func commitPhoto(_ element: CanvasPhotoElement) {
+        guard let session = photoSession else { return }
+        present { $0.photoSession = nil }
+        if session.isNew {
+            addElement(.photo(element))
+            if editsInPlace { select(element.id) }
+        } else {
+            updateElement(.photo(element))
+        }
+    }
+
+    func deleteEditingPhoto() {
+        guard let session = photoSession else { return }
+        present { $0.photoSession = nil }
+        if let element = session.element { deleteElement(element.id) }
+    }
+
+    /// Closing the camera without a photo leaves the tool, unless there are photos to move.
+    func cancelPhoto() {
+        guard photoSession != nil else { return }
+        present { $0.photoSession = nil }
+        if tool == .photo, !elements.contains(where: { $0.photo != nil }) { tool = .brush }
+    }
+
+    private var photoCanvasFrame: CGRect {
+        canvasScreenFrame == .zero
+            ? UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.bounds ?? .zero
+            : canvasScreenFrame
+    }
+
     /// Tapping existing text or a sticker reopens its editor.
     func edit(_ element: CanvasElement) {
         guard canEditElements, !editorOpen else { return }
@@ -396,13 +458,15 @@ final class DoodleEditor: ObservableObject {
         case .sticker(let sticker):
             stickers.load()
             present { $0.stickerSession = .init(element: sticker, isNew: false) }
+        case .photo(let photo):
+            present { $0.photoSession = .init(id: photo.id, element: photo, canvasFrame: self.photoCanvasFrame) }
         }
     }
 
     // MARK: Editing in place (iPad)
 
     /// The element shown only in its editor, or typed on the canvas, until it is done.
-    var hiddenElementID: String? { textSession?.id ?? stickerSession?.id ?? typing?.id }
+    var hiddenElementID: String? { textSession?.id ?? stickerSession?.id ?? photoSession?.element?.id ?? typing?.id }
 
     var selectedElement: CanvasElement? {
         guard let selectedElementID else { return nil }
@@ -428,6 +492,7 @@ final class DoodleEditor: ObservableObject {
         stickerPlacement = nil
         if let selected = selectedElement {
             let kept = (tool == .text && selected.text != nil) || (tool == .sticker && selected.sticker != nil)
+                || (tool == .photo && selected.photo != nil)
             if !kept { select(nil) }
         }
     }
@@ -510,15 +575,73 @@ final class DoodleEditor: ObservableObject {
         updateElement(element)
     }
 
-    /// A copy a little down and to the right, selected, as the Mac's duplicate.
+    /// The photo whose subject is being cut out for the sticker style.
+    @Published private(set) var cuttingOutPhotoID: String?
+    /// Photos, by photo id, with no clear subject to cut out.
+    @Published private(set) var photosWithoutSubject: Set<String> = []
+    /// Cut-outs already uploaded, by photo id, so the sticker style after an undo reuses its own.
+    private var cutoutIDs: [String: String] = [:]
+
+    /// Restyles the selected photo. The sticker style needs the subject cut out first: it is made
+    /// and uploaded once, as the photo editor does, and the photo turns into a sticker when it is in.
+    func stylePhotoSelection(_ style: CanvasPhotoStyle) {
+        guard case .photo(var photo) = selectedElement, photo.style != style, cuttingOutPhotoID == nil else { return }
+        if style == .sticker, photo.cutoutPhotoId == nil { photo.cutoutPhotoId = cutoutIDs[photo.photoId] }
+        guard style == .sticker, photo.cutoutPhotoId == nil else {
+            photo.style = style
+            return updateElement(.photo(photo))
+        }
+        guard let user, !photosWithoutSubject.contains(photo.photoId) else { return }
+        cuttingOutPhotoID = photo.id
+        Task {
+            defer { cuttingOutPhotoID = nil }
+            guard let image = await CanvasPhotoStore.shared.image(photo.photoId, user: user) else {
+                return UINotificationFeedbackGenerator().notificationOccurred(.error)
+            }
+            guard let cutout = await Task.detached(priority: .userInitiated, operation: { CanvasPhotoProcessing.cutout(image) }).value else {
+                photosWithoutSubject.insert(photo.photoId)
+                return UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            }
+            do {
+                guard let data = CanvasPhotoProcessing.png(cutout) else { throw CancellationError() }
+                let result = try await CanvasPhotoStore.shared.upload(data, contentType: "image/png", user: user)
+                CanvasPhotoStore.shared.remember(cutout, photoId: result.photoId, user: user)
+                cutoutIDs[photo.photoId] = result.photoId
+                // Moved or restyled meanwhile, or by the partner: the photo as it is now.
+                guard case .photo(var current) = elements.first(where: { $0.id == photo.id }) else { return }
+                current.cutoutPhotoId = result.photoId
+                current.style = .sticker
+                updateElement(.photo(current))
+            } catch {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+            }
+        }
+    }
+
+    /// A copy of a sticker or photo a little down and to the right, selected, as the Mac's duplicate.
     func duplicateSelection() {
-        guard case .sticker(let sticker) = selectedElement else { return }
-        let copy = CanvasStickerElement(
-            center: DrawingPoint(x: min(1, sticker.center.x + 0.04), y: min(1, sticker.center.y + 0.025)),
-            rotationRad: sticker.rotationRad, scale: sticker.scale, sticker: sticker.sticker
-        )
-        addElement(.sticker(copy))
-        select(copy.id)
+        switch selectedElement {
+        case .sticker(let sticker):
+            let copy = CanvasStickerElement(
+                center: Self.duplicateCenter(sticker.center),
+                rotationRad: sticker.rotationRad, scale: sticker.scale, sticker: sticker.sticker
+            )
+            addElement(.sticker(copy))
+            select(copy.id)
+        case .photo(let photo):
+            // The same uploads: a photo never changes once uploaded, so the copy shares them.
+            let copy = CanvasPhotoElement(
+                center: Self.duplicateCenter(photo.center), rotationRad: photo.rotationRad, scale: photo.scale,
+                photoId: photo.photoId, cutoutPhotoId: photo.cutoutPhotoId, aspectRatio: photo.aspectRatio, style: photo.style
+            )
+            addElement(.photo(copy))
+            select(copy.id)
+        default: return
+        }
+    }
+
+    private static func duplicateCenter(_ center: DrawingPoint) -> DrawingPoint {
+        DrawingPoint(x: min(1, center.x + 0.04), y: min(1, center.y + 0.025))
     }
 
     /// The arrow keys move the selection by a point, or ten with Shift.
@@ -563,6 +686,8 @@ final class DoodleEditor: ObservableObject {
             .text(text, layout: layouts.layout(for: text, canvasWidth: canvasSize.width), canvasSize: canvasSize)
         case .sticker(let sticker):
             .sticker(sticker, image: stickerImages[sticker.sticker], canvasSize: canvasSize)
+        case .photo(let photo):
+            .photo(photo, cutout: photo.cutoutPhotoId.flatMap { photoImages[$0] }, canvasSize: canvasSize)
         }
     }
 
@@ -612,6 +737,11 @@ final class DoodleEditor: ObservableObject {
             }
             lastAppend = .now
         } catch { errorMessage = UserFacingError.message(for: error, fallback: "That doodle couldn’t be saved. Try again.") }
+    }
+
+    /// Whether a finished stroke lies under the point.
+    func strokeIsUnder(_ point: CGPoint, size: CGSize) -> Bool {
+        scene.settled.contains { Self.hits($0, at: point, size: size) }
     }
 
     private func erase(at point: CGPoint, size: CGSize) {
@@ -692,7 +822,7 @@ final class DoodleEditor: ObservableObject {
 
     /// The colour at a point. The canvas is transparent, so an empty spot gives the screen behind it.
     private func sample(at point: CGPoint, size: CGSize) -> UInt32? {
-        DoodleRenderer.color(at: point, strokes: scene.settled + scene.inProgress, elements: elements, stickerImages: stickerImages,
+        DoodleRenderer.color(at: point, strokes: scene.settled + scene.inProgress, elements: elements, renderer: layouts,
                              dry: model.bootstrap?.canvasStrokeRenderMode == "dry", size: size, background: UIColor(MulberryDesign.background))
     }
 
@@ -726,7 +856,7 @@ struct DoodleSurface: UIViewRepresentable {
     }
     func updateUIView(_ view: DoodleTouchView, context: Context) {
         view.editor = editor; view.strokeCanvas.dry = dry
-        view.elementTool = editor.tool == .text || editor.tool == .sticker ? editor.tool : nil
+        view.elementTool = [.text, .sticker, .photo].contains(editor.tool) ? editor.tool : nil
         // The element being edited is shown only in its editor until Done.
         view.elementLayer.user = editor.user
         view.elementLayer.update(elements: editor.elements, hidden: editor.hiddenElementID)
@@ -742,6 +872,9 @@ final class CanvasElementLayerView: UIView {
     var user: String?
     /// Called when sticker artwork arrives, for the eyedropper.
     var onImagesChanged: (([StickerReference: UIImage]) -> Void)?
+    /// Called when a photo arrives.
+    var onPhotosChanged: (([String: UIImage]) -> Void)?
+    private var loadingPhotos: Set<String> = []
     private(set) var elements: [CanvasElement] = []
     private var hiddenID: String?
     /// A gesture's live position, drawn in place of the saved element.
@@ -749,12 +882,18 @@ final class CanvasElementLayerView: UIView {
     private var loading: Set<StickerReference> = []
     /// Runs while stickers fade in or a slow download's placeholder pulses.
     private var displayLink: CADisplayLink?
+    /// The element under the fingers, drawn once into its own layer at the gesture's start and then
+    /// moved, turned and scaled by Core Animation, so a drag never redraws the canvas.
+    private let liftLayer = CALayer()
+    private var lifted: CanvasElement?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isOpaque = false; backgroundColor = .clear; isUserInteractionEnabled = false
         contentMode = .redraw
         renderer.stickerTimeline = StickerArtworkTimeline()
+        liftLayer.contentsGravity = .resize
+        layer.addSublayer(liftLayer)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
@@ -762,6 +901,12 @@ final class CanvasElementLayerView: UIView {
         elements.compactMap { element in
             element.id == hiddenID ? nil : element.id == preview?.id ? preview : element
         }
+    }
+
+    /// What the layer itself draws: everything but a lifted element.
+    private var drawn: [CanvasElement] {
+        guard let lifted else { return visible }
+        return visible.filter { $0.id != lifted.id }
     }
 
     func update(elements: [CanvasElement], hidden: String?) {
@@ -775,17 +920,113 @@ final class CanvasElementLayerView: UIView {
     func show(preview: CanvasElement?) {
         guard preview != self.preview else { return }
         self.preview = preview
+        guard let preview, bounds.width > 0, bounds.height > 0 else { return drop() }
+        if lifted?.id != preview.id {
+            let base = elements.first { $0.id == preview.id } ?? preview
+            lift(base)
+        }
+        place(preview)
+    }
+
+    /// Draws the element alone into the lift layer and the rest of the canvas without it.
+    private func lift(_ element: CanvasElement) {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = window?.screen.scale ?? traitCollection.displayScale
+        let size = bounds.size
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            renderer.draw([element], in: context.cgContext, canvasSize: size)
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        liftLayer.contents = image.cgImage
+        liftLayer.contentsScale = format.scale
+        liftLayer.bounds = CGRect(origin: .zero, size: size)
+        liftLayer.anchorPoint = CGPoint(x: element.center.x, y: element.center.y)
+        liftLayer.position = CGPoint(x: element.center.x * size.width, y: element.center.y * size.height)
+        liftLayer.transform = CATransform3DIdentity
+        liftLayer.isHidden = false
+        CATransaction.commit()
+        lifted = element
         setNeedsDisplay()
+    }
+
+    /// Moves the lifted drawing from where it was lifted to where the gesture has it now.
+    private func place(_ current: CanvasElement) {
+        guard let base = lifted else { return }
+        let size = bounds.size
+        let shift = CGAffineTransform(translationX: (current.center.x - base.center.x) * size.width,
+                                      y: (current.center.y - base.center.y) * size.height)
+        let ratio = Self.drawnScale(current) / max(0.0001, Self.drawnScale(base))
+        let transform = shift.rotated(by: current.rotationRad - base.rotationRad).scaledBy(x: ratio, y: ratio)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        liftLayer.setAffineTransform(transform)
+        CATransaction.commit()
+    }
+
+    /// Puts the element back into the layer's own drawing, in the same frame as the lift goes.
+    private func drop() {
+        guard lifted != nil else { return setNeedsDisplay() }
+        lifted = nil
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        liftLayer.isHidden = true
+        liftLayer.contents = nil
+        CATransaction.commit()
+        setNeedsDisplay()
+    }
+
+    private static func drawnScale(_ element: CanvasElement) -> Double {
+        switch element {
+        case .text(let text): text.scale
+        case .sticker(let sticker): sticker.renderScale
+        case .photo(let photo): photo.renderScale
+        }
     }
 
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
-        renderer.draw(visible, in: context, canvasSize: bounds.size)
+        let state = Self.signposter.beginInterval("drawElements")
+        let start = CACurrentMediaTime()
+        renderer.draw(drawn, in: context, canvasSize: bounds.size)
+        Self.signposter.endInterval("drawElements", state)
+        let elapsed = (CACurrentMediaTime() - start) * 1000
+        if elapsed > 8 { Self.log.info("element layer draw \(Int(elapsed), privacy: .public) ms for \(self.visible.count, privacy: .public) elements") }
     }
+
+    private static let log = Logger(subsystem: "com.subhajit.mulberry", category: "CanvasPerformance")
+    private static let signposter = OSSignposter(logger: log)
 
     /// Full artwork, downsampled for the screen. Artwork already in memory draws in the first
     /// frame; the rest fades in as it decodes, with a placeholder only if a download runs long.
+    /// Photos come from memory when taken here or seen before, or else load and appear.
+    private func loadPhotos() {
+        guard let user else { return }
+        let needed = Set(elements.compactMap(\.photo).flatMap { [$0.photoId, $0.cutoutPhotoId].compactMap { $0 } })
+        renderer.photoImages = renderer.photoImages.filter { needed.contains($0.key) }
+        var found = false
+        for id in needed.subtracting(renderer.photoImages.keys).subtracting(loadingPhotos) {
+            if let image = CanvasPhotoStore.shared.cachedImage(id, user: user) {
+                renderer.photoImages[id] = image
+                found = true
+                continue
+            }
+            loadingPhotos.insert(id)
+            Task { [weak self] in
+                let image = await CanvasPhotoStore.shared.image(id, user: user)
+                guard let self else { return }
+                self.loadingPhotos.remove(id)
+                guard let image, self.user == user else { return }
+                self.renderer.photoImages[id] = image
+                self.onPhotosChanged?(self.renderer.photoImages)
+                self.setNeedsDisplay()
+            }
+        }
+        if found { onPhotosChanged?(renderer.photoImages) }
+    }
+
     private func loadArtwork() {
+        loadPhotos()
         guard let user else { return }
         let missing = Set(elements.compactMap(\.sticker?.sticker)).subtracting(renderer.stickerImages.keys).subtracting(loading)
         var found = false
@@ -846,7 +1087,8 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             guard editor !== oldValue else { return }
             editor?.updateViewport(bounds.size)
             editor?.display = strokeCanvas
-            elementLayer.onImagesChanged = { [weak editor] images in editor?.stickerImages = images }
+            elementLayer.onImagesChanged = { [weak editor] images in editor?.stickerImages = images; editor?.layouts.stickerImages = images }
+            elementLayer.onPhotosChanged = { [weak editor] images in editor?.photoImages = images; editor?.layouts.photoImages = images }
         }
     }
     let strokeCanvas = StrokeCanvasView()
@@ -902,12 +1144,13 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         // Every contact, not only the first: the Pencil must reach the canvas past a resting palm,
         // and palm rejection counts the hand's other contacts.
         isMultipleTouchEnabled = true
-        strokeCanvas.frame = bounds
-        strokeCanvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        addSubview(strokeCanvas)
+        // Strokes sit above every element, as on every platform.
         elementLayer.frame = bounds
         elementLayer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(elementLayer)
+        strokeCanvas.frame = bounds
+        strokeCanvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(strokeCanvas)
         hoverLayer.isHidden = true
         layer.addSublayer(hoverLayer)
         loupeLayer.isHidden = true
@@ -1129,9 +1372,11 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
 
     // MARK: Marking
 
-    /// With the eraser, a press on text or a sticker deletes it on release, unless it moves off.
+    /// With the eraser, a press on text, a sticker or a photo deletes it on release, unless it moves
+    /// off. Strokes sit on top, so a stroke over an element is erased first.
     private func beginErasingElement(at point: CGPoint) -> Bool {
-        guard editor?.tool == .eraser, let hit = elementLayer.renderer.hit(elementLayer.visible, at: point, canvasSize: bounds.size) else {
+        guard editor?.tool == .eraser, editor?.strokeIsUnder(point, size: bounds.size) == false,
+              let hit = elementLayer.renderer.hit(elementLayer.visible, at: point, canvasSize: bounds.size) else {
             return false
         }
         elementToErase = (hit.id, point)
@@ -1287,9 +1532,9 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
 
     // UIView's own hook, which also answers as these recognizers' delegate.
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        if gestureRecognizer === reactionPress { return editor?.textSession == nil && editor?.stickerSession == nil }
+        if gestureRecognizer === reactionPress { return editor?.textSession == nil && editor?.stickerSession == nil && editor?.photoSession == nil }
         guard elementGestures.contains(gestureRecognizer) else { return super.gestureRecognizerShouldBegin(gestureRecognizer) }
-        guard elementTool != nil, editor?.textSession == nil, editor?.stickerSession == nil else { return false }
+        guard elementTool != nil, editor?.textSession == nil, editor?.stickerSession == nil, editor?.photoSession == nil else { return false }
         // Moving needs a target; a tap on empty canvas still places a new element.
         guard !(gestureRecognizer is UITapGestureRecognizer) else { return true }
         // While typing, a tap away finishes the text; nothing moves.
@@ -1318,6 +1563,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
         if let hit = hitElement(at: point) { editor.edit(hit) }
         else if elementTool == .text { editor.startText(at: normalized(point)) }
         else if elementTool == .sticker { editor.startSticker(at: normalized(point)) }
+        else if elementTool == .photo { editor.startPhoto() }
     }
 
     @objc private func elementPan(_ gesture: UIPanGestureRecognizer) {
@@ -1397,10 +1643,10 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
 
     // MARK: Editing in place (iPad)
 
-    /// A tap with the Text or Sticker tool, as on the Mac. While typing, it finishes the text. On a
-    /// text or sticker it selects it, and on the selected text it starts typing into it. On empty
-    /// canvas the Text tool starts a new text there; the Sticker tool lets go of the selection, or
-    /// with nothing selected, opens the sticker picker there to place a new one.
+    /// A tap with the Text, Sticker or Camera tool, as on the Mac. While typing, it finishes the
+    /// text. On a text, sticker or photo it selects it, and on the selected text it starts typing
+    /// into it. On empty canvas the Text tool starts a new text there; the Sticker and Camera tools
+    /// let go of the selection, or with nothing selected, open the sticker picker there or the camera.
     private func tapInPlace(at point: CGPoint, editor: DoodleEditor) {
         if editor.typing != nil { return editor.finishTyping(keepSelection: false) }
         if let hit = hitElement(at: point) {
@@ -1408,6 +1654,9 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             return
         }
         if elementTool == .text { return editor.beginNewText(at: normalized(point)) }
+        if elementTool == .photo {
+            return editor.selectedElementID != nil ? editor.select(nil) : editor.startPhoto()
+        }
         if editor.selectedElementID != nil || editor.stickerPanelOpen || editor.stickerPlacement != nil {
             editor.select(nil)
             editor.stickerPanelOpen = false
@@ -1595,6 +1844,7 @@ final class DoodleTouchView: UIView, UIGestureRecognizerDelegate, UIPencilIntera
             switch element {
             case .text: tool == .text
             case .sticker: tool == .sticker
+            case .photo: tool == .photo
             }
         }
     }

@@ -3,7 +3,7 @@ import UIKit
 /// The iPhone and iPad's wallpaper export and colour sampling, on the shared canvas renderer.
 extension DoodleRenderer {
     static func wallpaper(background: UIImage, strokes: [DrawingStroke], elements: [CanvasElement] = [],
-                          stickerImages: [StickerReference: UIImage] = [:], dry: Bool, pixelSize: CGSize, displayScale: CGFloat, canvasSize: CGSize? = nil,
+                          stickerImages: [StickerReference: UIImage] = [:], photoImages: [String: UIImage] = [:], dry: Bool, pixelSize: CGSize, displayScale: CGFloat, canvasSize: CGSize? = nil,
                           canvasRegion: CGSize? = nil) -> UIImage {
         // UIKit draws the canvas in points, then rasterizes at the screen scale.
         // Keep that coordinate space here too: using pixels as points changes
@@ -29,7 +29,7 @@ extension DoodleRenderer {
             let source = canvasSize.flatMap { CanvasGeometry.valid($0) ? $0 : nil } ?? size
             let strokeScale = placement.width / source.width
             renderer.cgContext.scaleBy(x: strokeScale, y: strokeScale)
-            draw(strokes, elements: elements, stickerImages: stickerImages, dry: dry, in: renderer.cgContext, size: source)
+            draw(strokes, elements: elements, stickerImages: stickerImages, photoImages: photoImages, dry: dry, in: renderer.cgContext, size: source)
             renderer.cgContext.restoreGState()
         }
         // Export pixels, not UIKit's point-size/DPI hint. This changes metadata
@@ -37,7 +37,9 @@ extension DoodleRenderer {
         return UIImage(cgImage: rendered.cgImage!, scale: 1, orientation: .up)
     }
 
-    static func color(at point: CGPoint, strokes: [DrawingStroke], elements: [CanvasElement] = [], stickerImages: [StickerReference: UIImage] = [:],
+    /// The colour at a point. `renderer` is the canvas's own, so text stays laid out and photos
+    /// rendered while the eyedropper moves.
+    static func color(at point: CGPoint, strokes: [DrawingStroke], elements: [CanvasElement] = [], renderer: CanvasElementRenderer,
                       dry: Bool, size: CGSize, background: UIColor) -> UInt32? {
         var pixel = [UInt8](repeating: 0, count: 4)
         let success = pixel.withUnsafeMutableBytes { bytes -> Bool in
@@ -47,7 +49,7 @@ extension DoodleRenderer {
             // Use UIKit's top-left origin so glyphs are sampled upright.
             context.translateBy(x: 0, y: 1); context.scaleBy(x: 1, y: -1)
             context.translateBy(x: -point.x, y: -point.y)
-            draw(strokes, elements: elements, stickerImages: stickerImages, dry: dry, in: context, size: size)
+            draw(strokes, elements: elements, elementRenderer: renderer, dry: dry, in: context, size: size)
             return true
         }
         guard success else { return nil }

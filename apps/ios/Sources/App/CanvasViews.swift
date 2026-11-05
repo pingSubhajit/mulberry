@@ -57,6 +57,10 @@ struct DoodleCanvasView: View {
             Group {
                 if sizeClass == .regular { regularLayout(geometry) } else { compactLayout(geometry) }
             }
+            .fullScreenCover(item: $editor.photoSession) { session in
+                CanvasPhotoFlow(session: session, user: editor.user, onDone: editor.commitPhoto,
+                                onDelete: editor.deleteEditingPhoto, onCancel: editor.cancelPhoto)
+            }
             .fullScreenCover(item: $editor.stickerSession) { session in
                 CanvasStickerEditorView(session: session, catalog: editor.stickers,
                                         onDone: editor.commitSticker, onDelete: editor.deleteEditingSticker)
@@ -148,6 +152,7 @@ struct DoodleCanvasView: View {
                 .modifier(PencilPalettePopover(request: $pencilPalette) { pencilPaletteContent })
                 .modifier(EditsInPlace(editor: editor, size: size, visibleTop: -canvasTop, visibleBottom: tools.minY - canvasTop))
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.pencilSpace)) } action: { surfaceFrame = $0 }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { editor.canvasScreenFrame = $0 }
                 // Centred between the middles of the navigation bar and the tools, so it runs under both.
                 .position(x: geometry.size.width / 2, y: canvasMiddle)
                 .offset(y: -lift)
@@ -216,6 +221,7 @@ struct DoodleCanvasView: View {
                 .modifier(PencilPalettePopover(request: $pencilPalette) { pencilPaletteContent })
                 .modifier(EditsInPlace(editor: editor, size: size, visibleTop: visibleTop - canvasTop, visibleBottom: visibleBottom - canvasTop))
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.pencilSpace)) } action: { surfaceFrame = $0 }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { editor.canvasScreenFrame = $0 }
                 .position(center)
                 .offset(y: -lift)
                 .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: lift)
@@ -531,7 +537,7 @@ struct DoodleCanvasView: View {
 
     /// Coming soon.
     private var cameraButton: some View {
-        toolButton("Camera", image: "CanvasCamera", enabled: false) {}
+        toolButton("Camera", image: "CanvasCamera", selected: editor.tool == .photo, enabled: editor.canEditElements) { editor.toggleCamera() }
     }
 
     private func clearButton(glass: Glass = .regular) -> some View {

@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// On iPad, text and stickers are edited in place, as on the Mac: a tap selects one in a frame with
+// On iPad, text, stickers and photos are edited in place, as on the Mac: a tap selects one in a frame with
 // handles, a bar floating above it styles it, and text is typed on the canvas itself, laid out
 // exactly as the canvas draws it. The canvas's touch view draws the frame and handles its
 // gestures; this layer, over the canvas in the canvas's own coordinates, holds the floating bars,
@@ -25,6 +25,7 @@ struct InPlaceEditingLayer: View {
         switch selection {
         case .text: return editor.tool == .text ? selection : nil
         case .sticker: return editor.tool == .sticker ? selection : nil
+        case .photo: return editor.tool == .photo ? selection : nil
         }
     }
 
@@ -74,6 +75,13 @@ struct InPlaceEditingLayer: View {
                 onReplace: editor.replaceSticker, onStraighten: editor.straightenSelection,
                 onDuplicate: editor.duplicateSelection, onDelete: editor.deleteSelection
             )
+        case .photo(let photo):
+            CanvasPhotoBar(
+                photo: photo, cuttingOut: editor.cuttingOutPhotoID == photo.id,
+                noSubject: editor.photosWithoutSubject.contains(photo.photoId),
+                onStyle: editor.stylePhotoSelection, onStraighten: editor.straightenSelection,
+                onDuplicate: editor.duplicateSelection, onDelete: editor.deleteSelection
+            )
         }
     }
 
@@ -96,7 +104,7 @@ struct InPlaceEditingLayer: View {
 // MARK: Keyboard shortcuts
 
 /// With a hardware keyboard, as on the Mac: Delete removes the selection, Return types into a text
-/// or opens a sticker's Replace picker, Command-D duplicates a sticker, Esc lets go, the arrow keys
+/// or opens a sticker's Replace picker, Command-D duplicates a sticker or photo, Esc lets go, the arrow keys
 /// nudge by a point (ten with Shift), and Command-Z and Shift-Command-Z undo and redo. While
 /// typing, the text takes the keys, and Esc only finishes it.
 private struct InPlaceEditingShortcuts: View {
@@ -108,14 +116,14 @@ private struct InPlaceEditingShortcuts: View {
     var body: some View {
         ZStack {
             shortcut("Delete", .delete, enabled: selected) { editor.deleteSelection() }
-            shortcut("Edit", .return, enabled: selected) {
+            shortcut("Edit", .return, enabled: selected && editor.selectedElement?.photo == nil) {
                 switch editor.selectedElement {
                 case .text(let text): editor.beginTyping(text)
                 case .sticker: editor.replacingSticker = true
-                case nil: break
+                case .photo, nil: break
                 }
             }
-            shortcut("Duplicate", "d", modifiers: .command, enabled: selected && editor.selectedElement?.sticker != nil) { editor.duplicateSelection() }
+            shortcut("Duplicate", "d", modifiers: .command, enabled: selected && (editor.selectedElement?.sticker != nil || editor.selectedElement?.photo != nil)) { editor.duplicateSelection() }
             shortcut("Done", .escape, enabled: editor.typing != nil || editor.selectedElement != nil) {
                 if editor.typing != nil { editor.finishTyping(keepSelection: true) } else { editor.select(nil) }
             }
@@ -383,6 +391,52 @@ struct CanvasStickerBar: View {
         .glassEffect(.regular, in: .capsule)
         .fixedSize()
         .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: tilted)
+    }
+}
+
+// MARK: Photo bar
+
+/// The selected photo's actions, floating above it: its three styles, as in the phone's photo
+/// editor, straighten when tilted, and delete. The sticker style shows progress while the
+/// subject is cut out, and is off for a photo with no clear subject.
+struct CanvasPhotoBar: View {
+    let photo: CanvasPhotoElement
+    let cuttingOut: Bool
+    let noSubject: Bool
+    let onStyle: (CanvasPhotoStyle) -> Void
+    let onStraighten: () -> Void
+    let onDuplicate: () -> Void
+    let onDelete: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var tilted: Bool { abs(photo.rotationRad.remainder(dividingBy: 2 * .pi)) > 0.001 }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(CanvasPhotoStyle.allCases, id: \.self) { style in
+                if style == .sticker, cuttingOut {
+                    ProgressView()
+                        .frame(width: 44, height: 44)
+                        .accessibilityLabel(CanvasPhotoFlow.title(style))
+                } else {
+                    BarButton(title: CanvasPhotoFlow.title(style), symbol: CanvasPhotoFlow.symbol(style), selected: photo.style == style,
+                              enabled: !cuttingOut && (style != .sticker || photo.cutoutPhotoId != nil || !noSubject)) { onStyle(style) }
+                }
+            }
+            if tilted {
+                BarButton(title: "Straighten", symbol: "level", action: onStraighten)
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+            }
+            BarButton(title: "Duplicate", symbol: "plus.square.on.square", action: onDuplicate)
+            Divider().frame(height: 22).padding(.horizontal, 4)
+            BarButton(title: "Delete", symbol: "trash", action: onDelete)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .glassEffect(.regular, in: .capsule)
+        .fixedSize()
+        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: tilted)
+        .sensoryFeedback(.selection, trigger: photo.style)
     }
 }
 

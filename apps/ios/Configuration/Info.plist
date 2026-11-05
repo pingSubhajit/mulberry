@@ -53,6 +53,8 @@
 	<string>$(MULBERRY_APP_GROUP)</string>
 	<key>MulberryAppEnvironment</key>
 	<string>$(MULBERRY_APP_ENVIRONMENT)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Snap photos to put on your shared canvas.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIAppFonts</key>

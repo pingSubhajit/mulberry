@@ -123,7 +123,7 @@ struct WallpaperRenderingChecks {
         let wide = CanvasStickerGeometry.size(.init(center: .init(x: 0.5, y: 0.5), scale: 0.5, sticker: kitten), image: images[kitten], canvasWidth: 400)
         precondition(wide == CGSize(width: 200, height: 200 / 1.5), "Sticker size must follow Android's long-edge rule")
         let placed = CanvasStickerElement(center: .init(x: 0.5, y: 0.5), rotationRad: .pi / 2, scale: 0.5, sticker: kitten)
-        precondition(DoodleRenderer.color(at: CGPoint(x: 201, y: 300), strokes: [], elements: [.sticker(placed)], stickerImages: images,
+        precondition(DoodleRenderer.color(at: CGPoint(x: 201, y: 300), strokes: [], elements: [.sticker(placed)], renderer: CanvasElementRenderer(stickerImages: images),
                                           dry: false, size: canvasSize, background: .black) != 0xFF000000, "Eyedropper must sample stickers")
         precondition(CanvasElementRenderer(stickerImages: images).hit([.sticker(placed)], at: CGPoint(x: 201, y: 300 + 90), canvasSize: canvasSize) != nil,
                      "Rotated sticker hit area follows its rotation")
@@ -131,7 +131,7 @@ struct WallpaperRenderingChecks {
         let layout = CanvasTextLayout(element: pill, canvasWidth: 402)
         let body = layout.bodyRect(pill: true)
         let edge = CGPoint(x: 201 + body.minX + 4, y: 300)
-        precondition(DoodleRenderer.color(at: edge, strokes: [], elements: [.text(pill)], dry: false, size: canvasSize, background: .black) == 0xFF2457D6,
+        precondition(DoodleRenderer.color(at: edge, strokes: [], elements: [.text(pill)], renderer: CanvasElementRenderer(), dry: false, size: canvasSize, background: .black) == 0xFF2457D6,
                      "Eyedropper must sample text pills")
         precondition(CanvasElementRenderer().hit([.text(pill)], at: CGPoint(x: 201 + body.midX, y: 300), canvasSize: canvasSize)?.id == pill.id)
         precondition(CanvasElementRenderer().hit([.text(pill)], at: CGPoint(x: 20, y: 20), canvasSize: canvasSize) == nil)

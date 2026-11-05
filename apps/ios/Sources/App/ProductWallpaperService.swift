@@ -75,9 +75,14 @@ final class ProductWallpaperService {
         for sticker in Set(elements.compactMap(\.sticker?.sticker)) {
             stickerImages[sticker] = await StickerAssetStore.shared.image(sticker, variant: .full, user: user)
         }
+        var photoImages: [String: UIImage] = [:]
+        for id in Set(elements.compactMap(\.photo).flatMap { [$0.photoId, $0.cutoutPhotoId].compactMap { $0 } }) {
+            photoImages[id] = await CanvasPhotoStore.shared.image(id, user: user)
+        }
         let missingArtwork = elements.contains { $0.sticker.map { stickerImages[$0.sticker] == nil } ?? false }
+            || elements.contains { $0.photo.map { photoImages[$0.shownPhotoId] == nil } ?? false }
         let rendered = DoodleRenderer.wallpaper(background: background.image, strokes: background.showDrawings ? canvas.strokes : [],
-                                                elements: elements, stickerImages: stickerImages,
+                                                elements: elements, stickerImages: stickerImages, photoImages: photoImages,
                                                 dry: state.canvasStrokeRenderMode == "dry", pixelSize: size,
                                                 displayScale: try WallpaperRenderSize.displayScale(),
                                                 canvasSize: CanvasViewportStore.load(user: user, pair: state.pairSessionId),
