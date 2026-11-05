@@ -12,11 +12,9 @@ import android.opengl.EGLDisplay
 import android.opengl.EGLSurface
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
-import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
-import android.view.HapticFeedbackConstants
 import android.view.Surface
 import android.view.TextureView
 import androidx.annotation.RawRes
@@ -26,6 +24,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.subhajit.mulberry.R
+import com.subhajit.mulberry.core.ui.MulberryHaptic
+import com.subhajit.mulberry.core.ui.performMulberryHaptic
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -63,13 +63,7 @@ fun StreakBreakFilm(
             AlphaFilmView(context, R.raw.streak_bolt_break).apply {
                 moments = AlphaFilmView.Moments(
                     crack = {
-                        performHapticFeedback(
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                HapticFeedbackConstants.REJECT
-                            } else {
-                                HapticFeedbackConstants.LONG_PRESS
-                            }
-                        )
+                        performMulberryHaptic(MulberryHaptic.Reject)
                         crack()
                     },
                     reveal = { reveal() },

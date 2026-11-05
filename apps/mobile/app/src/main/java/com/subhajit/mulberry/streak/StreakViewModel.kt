@@ -22,7 +22,9 @@ data class StreakUiState(
     val streak: StreakResponse? = null,
     val errorMessage: String? = null,
     /** The streak was just lost and this account hasn't watched its bolt break, here or elsewhere. */
-    val breakPending: Boolean = false
+    val breakPending: Boolean = false,
+    /** The count to tick up from to today's, when today's drawing raised it since the screen last showed it. */
+    val celebrationStart: Int? = null
 )
 
 /** Lost yesterday: the last activity was the day before, and there was a streak to lose. */
@@ -39,6 +41,7 @@ class StreakViewModel @Inject constructor(
     private val streakSimulationRepository: StreakSimulationRepository,
     private val sessionBootstrapRepository: SessionBootstrapRepository,
     private val lostStreakSeenRepository: LostStreakSeenRepository,
+    private val streakShownRepository: StreakShownRepository,
     @ApplicationScope private val applicationScope: CoroutineScope
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(StreakUiState())
@@ -56,11 +59,19 @@ class StreakViewModel @Inject constructor(
             if (simulation != null) {
                 simulated = true
                 // A simulated loss breaks every time the screen opens.
+                // A simulated day already done celebrates every time, to try the tick-up.
+                val streak = simulation.streak
                 _uiState.value = StreakUiState(
                     isLoading = false,
-                    streak = simulation.streak,
+                    streak = streak,
                     errorMessage = null,
-                    breakPending = simulation.streak.isLostRecently()
+                    breakPending = streak.isLostRecently(),
+                    celebrationStart = celebrationStart(
+                        currentStreakDays = streak.currentStreakDays,
+                        hasActivityToday = streak.hasActivityToday,
+                        lostRecently = streak.isLostRecently(),
+                        shownDays = (streak.currentStreakDays - 1).coerceAtLeast(0)
+                    )
                 )
                 return@launch
             }
@@ -71,7 +82,13 @@ class StreakViewModel @Inject constructor(
                         isLoading = false,
                         streak = streak,
                         errorMessage = null,
-                        breakPending = breakPending(streak)
+                        breakPending = breakPending(streak),
+                        celebrationStart = celebrationStart(
+                            currentStreakDays = streak.currentStreakDays,
+                            hasActivityToday = streak.hasActivityToday,
+                            lostRecently = streak.isLostRecently(),
+                            shownDays = shownDays()
+                        )
                     )
                 }
                 .onFailure { error ->
@@ -95,6 +112,29 @@ class StreakViewModel @Inject constructor(
             lostStreakSeenRepository.markSeen(userId, day)
             runCatching { apiService.markLostStreakSeen(LostStreakSeenRequest(day)) }
         }
+    }
+
+    /** The screen has shown today's count, and celebrated any rise to it. */
+    fun streakShown() {
+        val streak = _uiState.value.streak ?: return
+        if (simulated) return
+        applicationScope.launch {
+            val (userId, pairSessionId) = account() ?: return@launch
+            if (streakShownRepository.shownDays(userId, pairSessionId) == streak.currentStreakDays) return@launch
+            streakShownRepository.markShown(userId, pairSessionId, streak.currentStreakDays)
+        }
+    }
+
+    private suspend fun shownDays(): Int? {
+        val (userId, pairSessionId) = account() ?: return null
+        return streakShownRepository.shownDays(userId, pairSessionId)
+    }
+
+    private suspend fun account(): Pair<String, String>? {
+        val state = sessionBootstrapRepository.state.first()
+        val userId = state.userId ?: return null
+        val pairSessionId = state.pairSessionId ?: return null
+        return userId to pairSessionId
     }
 
     private suspend fun breakPending(streak: StreakResponse): Boolean {

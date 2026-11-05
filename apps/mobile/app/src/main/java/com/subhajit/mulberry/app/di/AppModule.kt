@@ -96,6 +96,8 @@ import com.subhajit.mulberry.streak.DataStoreLostStreakSeenRepository
 import com.subhajit.mulberry.streak.InMemoryStreakSimulationRepository
 import com.subhajit.mulberry.streak.LostStreakSeenRepository
 import com.subhajit.mulberry.streak.StreakSimulationRepository
+import com.subhajit.mulberry.streak.DataStoreStreakShownRepository
+import com.subhajit.mulberry.streak.StreakShownRepository
 import com.subhajit.mulberry.widget.relationship.DataStoreRelationshipWidgetSimulationRepository
 import com.subhajit.mulberry.widget.relationship.RelationshipWidgetSimulationRepository
 import com.subhajit.mulberry.update.DataStoreInAppUpdatePromptStateStore
@@ -325,6 +327,12 @@ abstract class AppBindingsModule {
     abstract fun bindLostStreakSeenRepository(
         implementation: DataStoreLostStreakSeenRepository
     ): LostStreakSeenRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindStreakShownRepository(
+        implementation: DataStoreStreakShownRepository
+    ): StreakShownRepository
 
     @Binds
     @Singleton

@@ -250,9 +250,14 @@ fun MulberryNavHost(
             )
         }
 
-        composable(AppRoute.CanvasHome.route) {
+        composable(AppRoute.CanvasHome.route) { entry ->
             ReleaseStartupGateAfterFirstFrame()
+            val streakJustClosed by entry.savedStateHandle
+                .getStateFlow(STREAK_CLOSED_KEY, false)
+                .collectAsStateWithLifecycle()
             CanvasHomeRoute(
+                streakJustClosed = streakJustClosed,
+                onStreakClosingSeen = { entry.savedStateHandle[STREAK_CLOSED_KEY] = false },
                 shortcutAction = shortcutAction,
                 onShortcutActionHandled = AppShortcutActionController::markHandled,
                 onNavigateToCanvas = {
@@ -325,7 +330,10 @@ fun MulberryNavHost(
         composable(AppRoute.Streak.route) {
             ReleaseStartupGateAfterFirstFrame()
             StreakRoute(
-                onClose = { navController.popBackStack() }
+                onClose = {
+                    navController.previousBackStackEntry?.savedStateHandle?.set(STREAK_CLOSED_KEY, true)
+                    navController.popBackStack()
+                }
             )
         }
 
@@ -388,3 +396,6 @@ private fun NavHostController.navigateToCanvasHomeClearingTransientRoutes() {
         launchSingleTop = true
     }
 }
+
+/** Set on the canvas's back stack entry as the streak screen closes, so its bolt hops once. */
+private const val STREAK_CLOSED_KEY = "streakClosed"
