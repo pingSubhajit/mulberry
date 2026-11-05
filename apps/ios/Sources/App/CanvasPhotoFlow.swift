@@ -189,8 +189,7 @@ struct CanvasPhotoFlow: View {
                         UIApplication.shared.open(url)
                     }
                 }
-                .buttonStyle(.glassProminent)
-                .tint(MulberryDesign.accent)
+                .prominentButtonStyle()
             }
             .background(Color(white: 0.08))
         } else if let reason = camera.interruption {
@@ -416,10 +415,9 @@ struct CanvasPhotoFlow: View {
                     }
                     .frame(width: 24, height: 24)
                 }
-                .buttonStyle(.glassProminent)
+                .prominentButtonStyle()
                 .buttonBorderShape(.circle)
                 .controlSize(.large)
-                .tint(MulberryDesign.accent)
                 .disabled(saving || photo == nil)
                 .accessibilityLabel("Done")
                 .accessibilityIdentifier("photoEditorDone")

@@ -473,7 +473,7 @@ private struct RowButtonStyle: ViewModifier {
     let prominent: Bool
     func body(content: Content) -> some View {
         if prominent {
-            content.buttonStyle(.glassProminent).tint(MulberryDesign.accent).controlSize(.small)
+            content.prominentButtonStyle().controlSize(.small)
         } else {
             content.buttonStyle(.glass).controlSize(.small)
         }

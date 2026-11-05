@@ -179,9 +179,9 @@ private struct SettingsHero: View {
                 }
             } else {
                 Button(action: onInvite) {
-                    Label("Invite your partner", systemImage: "person.badge.plus").foregroundStyle(.white)
+                    Label("Invite your partner", systemImage: "person.badge.plus")
                 }
-                .buttonStyle(.glassProminent).tint(MulberryDesign.accent).controlSize(.large)
+                .prominentButtonStyle().controlSize(.large)
             }
         }
         .frame(maxWidth: .infinity)

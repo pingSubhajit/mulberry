@@ -163,7 +163,7 @@ struct StreakSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, minHeight: typeSize.isAccessibilitySize ? 64 : 44)
                     }.buttonStyle(.borderedProminent).buttonBorderShape(.roundedRectangle(radius: 16))
-                        .tint(MulberryDesign.accent)
+                        .tint(MulberryDesign.accent).foregroundStyle(.white)
                         .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 16)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { actionHeight = $0 }
                 }
@@ -330,7 +330,7 @@ struct PairingConfirmedSheet: View {
                     Button(action: onContinue) {
                         Text("Continue").font(MulberryDesign.font(17, weight: "SemiBold"))
                             .frame(maxWidth: .infinity, minHeight: 44)
-                    }.buttonStyle(.glassProminent).tint(MulberryDesign.accent)
+                    }.prominentButtonStyle()
                     .disabled(unpairing)
                     // Quiet, under Continue: the way out for someone who joined the wrong invite.
                     Button { confirmingUnpair = true } label: {

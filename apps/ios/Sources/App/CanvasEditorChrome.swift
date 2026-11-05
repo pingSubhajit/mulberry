@@ -31,10 +31,9 @@ struct CanvasEditorDoneButton: View {
                     .font(.system(size: 19, weight: .semibold))
                     .frame(width: 24, height: 24)
             }
-            .buttonStyle(.glassProminent)
+            .prominentButtonStyle()
             .buttonBorderShape(.circle)
             .controlSize(.large)
-            .tint(MulberryDesign.accent)
             .accessibilityLabel("Done")
             .accessibilityIdentifier(identifier)
         }

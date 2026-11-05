@@ -123,4 +123,10 @@ extension View {
     func readableColumn(_ width: CGFloat = 560) -> some View {
         frame(maxWidth: width).frame(maxWidth: .infinity)
     }
+
+    /// Mulberry's filled button: white on the accent glass. The app's ink foreground would
+    /// otherwise reach the label and darken it in light mode.
+    func prominentButtonStyle() -> some View {
+        buttonStyle(.glassProminent).tint(MulberryDesign.accent).foregroundStyle(.white)
+    }
 }
