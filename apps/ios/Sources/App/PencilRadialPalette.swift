@@ -16,7 +16,7 @@ struct PencilRadialPalette: View {
     @AccessibilityFocusState private var focus: Item?
     /// False until the first frame, so the band and items bloom out of the tip.
     @State private var opened = false
-    // The colour and size items open their own popovers over the arc, which stays open.
+    // The colour and width items open their own popovers over the arc, which stays open.
     @State private var coloursOpen = false
     @State private var widthOpen = false
     @State private var customColourOpen = false
@@ -103,18 +103,16 @@ struct PencilRadialPalette: View {
             .accessibilityLabel("Colour").accessibilityHint("Shows every colour")
             .popover(isPresented: $coloursOpen) { colours.presentationCompactAdaptation(.popover) }
         case .width:
+            // The toolbar's width button and slider, so the two never drift apart.
             Button { widthOpen = true } label: {
-                Circle().fill(Color(uiColor: UIColor(argb: editor.color)))
-                    .frame(width: 8 + (editor.width - 4) / 38 * 30, height: 8 + (editor.width - 4) / 38 * 30)
+                BrushWidthMark(width: editor.width, in: CanvasToolStore.widths, color: MulberryDesign.ink, size: 34)
                     .itemFrame()
             }
             .buttonStyle(RadialItemStyle())
-            .accessibilityLabel("Brush size").accessibilityValue("\(Int(editor.width))")
-            .accessibilityHint("Shows the size slider")
+            .accessibilityLabel("Brush width").accessibilityValue("\(Int(editor.width))")
+            .accessibilityHint("Shows the width slider")
             .popover(isPresented: $widthOpen) {
-                Slider(value: $editor.width, in: CanvasToolStore.widths, step: 1)
-                    .tint(Color(uiColor: UIColor(argb: editor.color))).accessibilityLabel("Brush size")
-                    .frame(width: 240).padding(20)
+                BrushWidthSlider(width: $editor.width, color: Color(uiColor: UIColor(argb: editor.color)))
                     .presentationCompactAdaptation(.popover)
             }
         }

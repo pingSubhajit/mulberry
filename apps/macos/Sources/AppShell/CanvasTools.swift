@@ -1,6 +1,7 @@
 import AppKit
 import CanvasEditing
 import ProductCore
+import ProductUI
 import SwiftUI
 
 /// The editing state a canvas and its toolbars share. The window and Quick Draw each have their
@@ -219,7 +220,8 @@ struct CanvasColourButton: View {
     }
 }
 
-/// The brush width: a dot as wide as the brush, opening AppKit's vertical slider.
+/// The brush width: the scribble the iPhone and iPad draw, as thick as the brush, opening AppKit's
+/// vertical slider.
 struct CanvasWidthButton: View {
     @ObservedObject var model: CanvasEditorModel
     let size: CGFloat
@@ -229,11 +231,13 @@ struct CanvasWidthButton: View {
 
     var body: some View {
         let range = CanvasEditingDefaults.minBrushWidthPx...CanvasEditingDefaults.maxBrushWidthPx
-        let width = CGFloat(model.engine.toolState.selectedBrushWidthPx)
-        let dot = size * (0.15 + 0.55 * (width - CGFloat(range.lowerBound)) / CGFloat(range.upperBound - range.lowerBound))
         Button { open = true } label: {
-            Circle().fill(Color(argb: model.eyedropperPreview ?? model.engine.toolState.brushColorArgb))
-                .frame(width: dot, height: dot)
+            BrushWidthMark(
+                width: Double(model.engine.toolState.selectedBrushWidthPx),
+                in: Double(range.lowerBound)...Double(range.upperBound),
+                color: .primary,
+                size: size * 30 / 56
+            )
                 .frame(width: size, height: size)
                 .contentShape(Circle())
         }

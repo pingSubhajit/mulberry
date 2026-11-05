@@ -544,13 +544,7 @@ struct DoodleCanvasView: View {
 
     private func widthButton(edge: Edge, glass: Glass = .regular) -> some View {
         Button { widthOpen.toggle() } label: {
-            // A scribble at the brush's thickness, in ink: it says "line weight", where a dot in the
-            // brush's colour read as a second colour button.
-            WidthScribble()
-                .stroke(MulberryDesign.ink, style: StrokeStyle(lineWidth: WidthScribble.lineWidth(for: editor.width),
-                                                               lineCap: .round, lineJoin: .round))
-                .frame(width: 30, height: 30)
-                .animation(.snappy(duration: 0.15), value: editor.width)
+            BrushWidthMark(width: editor.width, in: CanvasToolStore.widths, color: MulberryDesign.ink)
                 .frame(width: 56, height: 56)
                 // The whole glass circle opens the slider, not only the dot.
                 .contentShape(Circle())
@@ -652,19 +646,19 @@ struct DoodleCanvasView: View {
                     .accessibilityAddTraits(editor.selectedColor == color ? .isSelected : [])
                 }
             }
-            Slider(value: $editor.width, in: CanvasToolStore.widths, step: 1)
-                .tint(brushColor).accessibilityLabel("Brush width")
+            HStack(spacing: 12) {
+                BrushWidthMark(width: editor.width, in: CanvasToolStore.widths, color: MulberryDesign.ink, size: 24)
+                    .accessibilityHidden(true)
+                Slider(value: $editor.width, in: CanvasToolStore.widths, step: 1)
+                    .tint(brushColor).accessibilityLabel("Brush width")
+            }
         }
         .padding(20)
         .frame(width: 6 * 36 + 5 * 10 + 40)
     }
 
     private var widthPicker: some View {
-        Slider(value: $editor.width, in: CanvasToolStore.widths, step: 1)
-            .tint(brushColor).accessibilityLabel("Brush width")
-            .frame(width: 200, height: 44)
-            .rotationEffect(.degrees(-90))
-            .frame(width: 52, height: 220).padding(10)
+        BrushWidthSlider(width: $editor.width, color: brushColor)
     }
 
     private var colorPicker: some View {
@@ -843,32 +837,16 @@ private struct SelectionPop: ViewModifier {
     }
 }
 
-/// The width button's mark: Apple's scribble (SF Symbols' `scribble`), traced as a path so its line
-/// can be as thick as the brush. Android draws the same path.
-private struct WidthScribble: Shape {
-    /// The brush's widths, 4...42, drawn 1.25...4 pt thick: every width looks different, and the
-    /// scribble's loops stay open at the thickest.
-    static func lineWidth(for width: Double) -> CGFloat {
-        let range = CanvasToolStore.widths
-        let fraction = (width - range.lowerBound) / (range.upperBound - range.lowerBound)
-        return 1.25 + 2.75 * CGFloat(min(max(fraction, 0), 1))
-    }
+/// The brush width's slider, wherever a width button opens it: upright, as on the Mac.
+struct BrushWidthSlider: View {
+    @Binding var width: Double
+    let color: Color
 
-    func path(in rect: CGRect) -> Path {
-        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: rect.minX + rect.width * x, y: rect.minY + rect.height * y)
-        }
-        var path = Path()
-        path.move(to: point(0.095, 0.612))
-        path.addLine(to: point(0.45, 0.262))
-        path.addCurve(to: point(0.68, 0.18), control1: point(0.55, 0.165), control2: point(0.63, 0.13))
-        path.addCurve(to: point(0.565, 0.43), control1: point(0.73, 0.23), control2: point(0.67, 0.32))
-        path.addLine(to: point(0.39, 0.645))
-        path.addCurve(to: point(0.40, 0.83), control1: point(0.30, 0.76), control2: point(0.33, 0.83))
-        path.addCurve(to: point(0.70, 0.61), control1: point(0.48, 0.83), control2: point(0.60, 0.70))
-        path.addCurve(to: point(0.85, 0.59), control1: point(0.78, 0.535), control2: point(0.84, 0.53))
-        path.addCurve(to: point(0.76, 0.80), control1: point(0.86, 0.65), control2: point(0.79, 0.73))
-        path.addCurve(to: point(0.90, 0.79), control1: point(0.73, 0.88), control2: point(0.78, 0.92))
-        return path
+    var body: some View {
+        Slider(value: $width, in: CanvasToolStore.widths, step: 1)
+            .tint(color).accessibilityLabel("Brush width")
+            .frame(width: 200, height: 44)
+            .rotationEffect(.degrees(-90))
+            .frame(width: 52, height: 220).padding(10)
     }
 }
