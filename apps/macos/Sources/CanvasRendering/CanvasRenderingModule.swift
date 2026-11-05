@@ -65,6 +65,8 @@ public struct CanvasRenderInput: @unchecked Sendable {
     public var stickerImages: [StickerReference: CanvasImage]
     /// Set on a live canvas, so stickers fade in as their artwork arrives instead.
     public var stickerTimeline: StickerArtworkTimeline?
+    /// Decoded photos and cut-outs by photo id; a photo not loaded yet draws its paper with grey.
+    public var photoImages: [String: CanvasImage]
 
     public init(
         state: DrawingState,
@@ -75,7 +77,8 @@ public struct CanvasRenderInput: @unchecked Sendable {
         showsEditingBackground: Bool = false,
         selectedElementID: String? = nil,
         stickerImages: [StickerReference: CanvasImage] = [:],
-        stickerTimeline: StickerArtworkTimeline? = nil
+        stickerTimeline: StickerArtworkTimeline? = nil,
+        photoImages: [String: CanvasImage] = [:]
     ) {
         self.state = state
         self.viewport = viewport
@@ -86,6 +89,7 @@ public struct CanvasRenderInput: @unchecked Sendable {
         self.selectedElementID = selectedElementID
         self.stickerImages = stickerImages
         self.stickerTimeline = stickerTimeline
+        self.photoImages = photoImages
     }
 }
 
@@ -122,6 +126,7 @@ public final class CanvasRenderer {
             elements: elements,
             stickerImages: input.stickerImages,
             stickerTimeline: input.stickerTimeline,
+            photoImages: input.photoImages,
             dry: input.strokeRenderMode == .dryBrush,
             in: context,
             size: size
@@ -170,6 +175,8 @@ public final class CanvasRenderModel: ObservableObject {
     @Published public var stickerImages: [StickerReference: CanvasImage]
     /// Assigned again on each frame of a sticker fade, which draws the stickers again.
     @Published public var stickerTimeline: StickerArtworkTimeline?
+    /// Decoded photos and cut-outs by photo id.
+    @Published public var photoImages: [String: CanvasImage] = [:]
     /// The stroke being drawn on this Mac, shown at every point. Its operations are saved in
     /// batches of points, so `state` has it only as far as the last batch.
     @Published public var activeStroke: DrawingStroke?
@@ -235,6 +242,10 @@ public final class CanvasRenderView: NSView {
             .removeDuplicates()
             .sink { [weak self] images in MainActor.assumeIsolated { self?.show(stickerImages: images) } }
             .store(in: &cancellables)
+        model.$photoImages
+            .removeDuplicates()
+            .sink { [weak self] images in MainActor.assumeIsolated { self?.show(photoImages: images) } }
+            .store(in: &cancellables)
         model.$stickerTimeline
             .sink { [weak self] timeline in MainActor.assumeIsolated { self?.show(stickerTimeline: timeline) } }
             .store(in: &cancellables)
@@ -297,6 +308,11 @@ public final class CanvasRenderView: NSView {
 
     private func show(stickerImages: [StickerReference: CanvasImage]) {
         elementsView.stickerImages = stickerImages
+        elementsView.needsDisplay = true
+    }
+
+    private func show(photoImages: [String: CanvasImage]) {
+        elementsView.photoImages = photoImages
         elementsView.needsDisplay = true
     }
 
@@ -405,7 +421,7 @@ private final class LiveStrokesView: NSView {
     }
 }
 
-/// Text and stickers, above every stroke.
+/// Text, stickers and photos, under every stroke.
 private final class CanvasElementsView: NSView {
     var elements: [CanvasElement] = [] { didSet { renderer.retain(elements) } }
     var stickerImages: [StickerReference: CanvasImage] {
@@ -415,6 +431,10 @@ private final class CanvasElementsView: NSView {
     var stickerTimeline: StickerArtworkTimeline? {
         get { renderer.stickerTimeline }
         set { renderer.stickerTimeline = newValue }
+    }
+    var photoImages: [String: CanvasImage] {
+        get { renderer.photoImages }
+        set { renderer.photoImages = newValue }
     }
     /// Kept between draws, so text stays laid out and photos rendered while only positions change.
     private let renderer = CanvasElementRenderer()

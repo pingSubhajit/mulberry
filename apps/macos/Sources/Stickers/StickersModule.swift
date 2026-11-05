@@ -10,12 +10,17 @@ public enum StickersModule {
 }
 
 /// Loads the artwork for the stickers on the canvas through the store the iPhone and iPad use,
-/// so the overlay and canvas window draw real stickers. Artwork already in memory shows at once;
+/// so the overlay and canvas window draw real stickers, and the canvas's photos. Artwork already in memory shows at once;
 /// the rest fades in as it decodes, with a soft placeholder only while a download runs long, or
 /// while offline without it.
 @MainActor
 public final class StickerImageLoader: ObservableObject {
     @Published public private(set) var images: [StickerReference: CanvasImage] = [:]
+    /// The canvas's photos and their cut-outs, decoded, by photo id.
+    @Published public private(set) var photoImages: [String: CanvasImage] = [:]
+    private var loadingPhotos: Set<String> = []
+    private var unavailablePhotos: Set<String> = []
+    private let api: StickerBackend
     /// When each sticker's artwork was asked for and arrived, for the live canvases to draw.
     @Published public private(set) var timeline = StickerArtworkTimeline()
     /// Redraws the canvases while artwork fades in or a placeholder pulses.
@@ -28,6 +33,7 @@ public final class StickerImageLoader: ObservableObject {
     private var catalogs: [String: StickerCatalog] = [:]
 
     public init(api: @escaping StickerBackend) {
+        self.api = api
         store = StickerAssetStore(api: api)
     }
 
@@ -49,9 +55,13 @@ public final class StickerImageLoader: ObservableObject {
             images = [:]
             loading = []
             unavailable = []
+            photoImages = [:]
+            loadingPhotos = []
+            unavailablePhotos = []
             timeline.reset()
         }
         guard let user else { return }
+        loadPhotos(for: state, user: user)
         let needed = Set(state.canvasElements.compactMap(\.sticker?.sticker))
             .subtracting(images.keys).subtracting(loading).subtracting(unavailable)
         for sticker in needed {
@@ -97,9 +107,46 @@ public final class StickerImageLoader: ObservableObject {
         ticker = nil
     }
 
-    /// Lets stickers that failed while offline try again, such as after reconnecting.
+    /// Lets stickers and photos that failed while offline try again, such as after reconnecting.
     public func retryUnavailable() {
         unavailable = []
+        unavailablePhotos = []
+    }
+
+    // MARK: Photos
+
+    private func loadPhotos(for state: DrawingState, user: String) {
+        let needed = Set(state.canvasElements.compactMap(\.photo).flatMap { [$0.photoId, $0.cutoutPhotoId].compactMap { $0 } })
+            .subtracting(photoImages.keys).subtracting(loadingPhotos).subtracting(unavailablePhotos)
+        for photoId in needed {
+            loadingPhotos.insert(photoId)
+            let api = self.api
+            Task {
+                let image = await Self.photo(photoId, user: user, api: api)
+                guard self.user == user else { return }
+                loadingPhotos.remove(photoId)
+                if let image { photoImages[photoId] = image } else { unavailablePhotos.insert(photoId) }
+            }
+        }
+    }
+
+    /// The photo from disk, or downloaded and kept first. Nil while offline.
+    private nonisolated static func photo(_ photoId: String, user: String, api: StickerBackend) async -> NSImage? {
+        guard let file = CanvasPhotoFiles.file(photoId, user: user) else { return nil }
+        if !FileManager.default.fileExists(atPath: file.path) {
+            guard let data = try? await api().canvasPhoto(photoId), !data.isEmpty else { return nil }
+            CanvasPhotoFiles.save(data, to: file)
+        }
+        return await Task.detached(priority: .userInitiated) { CanvasPhotoFiles.decode(file) }.value
+    }
+
+    /// Uploads a photo taken or picked on this Mac and keeps it, so the canvas shows it at once.
+    /// `image` is what `data` decodes to.
+    public func uploadPhoto(_ data: Data, contentType: String, image: NSImage, user: String) async throws -> CanvasPhotoUpload {
+        let upload = try await api().uploadCanvasPhoto(data, contentType: contentType)
+        if let file = CanvasPhotoFiles.file(upload.photoId, user: user) { CanvasPhotoFiles.save(data, to: file) }
+        if self.user == user { photoImages[upload.photoId] = image }
+        return upload
     }
 }
 

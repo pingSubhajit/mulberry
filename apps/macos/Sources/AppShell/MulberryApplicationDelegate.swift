@@ -324,7 +324,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
                 rawBackendValue: appStateController.loadState.bootstrap?.canvasStrokeRenderMode
             ),
             stickerImages: stickerLoader.images,
-            stickerTimeline: stickerLoader.timeline
+            stickerTimeline: stickerLoader.timeline,
+            photoImages: stickerLoader.photoImages
         )
         refreshLockScreen()
     }
@@ -419,7 +420,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             state: syncController.drawing,
             viewport: CGRect(x: 0, y: 0, width: 1080, height: 2400),
             strokeRenderMode: CanvasStrokeRenderMode(rawBackendValue: appStateController.loadState.bootstrap?.canvasStrokeRenderMode),
-            stickerImages: stickerLoader.images
+            stickerImages: stickerLoader.images,
+            photoImages: stickerLoader.photoImages
         )
         do {
             guard let png = CanvasOffscreenRenderer.renderPNG(input: input)?.data else { throw CocoaError(.fileWriteUnknown) }
@@ -894,11 +896,12 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         if model.updatedAt != updated { model.updatedAt = updated }
         // Drawn again only when the drawing, its stroke style or its sticker artwork changes.
         let mode = CanvasStrokeRenderMode(rawBackendValue: bootstrap?.canvasStrokeRenderMode)
-        let key = LockScreenDrawingKey(drawing: drawing, mode: mode, stickers: stickerLoader.images.count)
+        let key = LockScreenDrawingKey(drawing: drawing, mode: mode, stickers: stickerLoader.images.count + stickerLoader.photoImages.count)
         guard key != lockScreenDrawingKey else { return }
         lockScreenDrawingKey = key
         let input = CanvasRenderInput(state: drawing, viewport: .zero, strokeRenderMode: mode,
-                                      surface: .passiveOverlay, stickerImages: stickerLoader.images)
+                                      surface: .passiveOverlay, stickerImages: stickerLoader.images,
+                                      photoImages: stickerLoader.photoImages)
         model.drawing = CanvasOffscreenRenderer.renderImage(input: input, size: LockScreenView.canvasSize,
                                                             scale: statusItem?.button?.window?.backingScaleFactor ?? 2)
     }

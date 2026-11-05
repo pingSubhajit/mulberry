@@ -81,11 +81,13 @@ public final class OverlayController: NSObject, ObservableObject {
         _ state: DrawingState,
         strokeRenderMode: CanvasStrokeRenderMode,
         stickerImages: [StickerReference: CanvasImage],
-        stickerTimeline: StickerArtworkTimeline?
+        stickerTimeline: StickerArtworkTimeline?,
+        photoImages: [String: CanvasImage] = [:]
     ) {
         canvasModel.state = state
         canvasModel.strokeRenderMode = strokeRenderMode
         canvasModel.stickerImages = stickerImages
+        if canvasModel.photoImages != photoImages { canvasModel.photoImages = photoImages }
         canvasModel.stickerTimeline = stickerTimeline
     }
 
