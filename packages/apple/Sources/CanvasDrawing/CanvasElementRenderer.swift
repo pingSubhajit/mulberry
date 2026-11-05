@@ -313,10 +313,26 @@ public final class CanvasElementRenderer {
     /// Set on a live canvas: stickers fade in as their artwork arrives, and show a placeholder
     /// only while a download runs long, instead of Android's placeholder.
     public var stickerTimeline: StickerArtworkTimeline?
+    /// Decoded photos by photo id, originals and cut-outs alike.
+    public var photoImages: [String: CanvasImage] = [:]
+    /// Each photo rendered with its shadow, by element id, kept while only its place or angle changes.
+    private var renderedPhotos: [String: RenderedPhoto] = [:]
 
-    public init(stickerImages: [StickerReference: CanvasImage] = [:], stickerTimeline: StickerArtworkTimeline? = nil) {
+    private struct RenderedPhoto {
+        struct Key: Equatable {
+            var photoId: String, cutoutPhotoId: String?, style: CanvasPhotoStyle, aspectRatio: Double
+            var long: CGFloat, pixelsPerPoint: CGFloat, hasPhoto: Bool, hasCutout: Bool
+        }
+        let key: Key
+        let image: CanvasImage
+        let size: CGSize
+    }
+
+    public init(stickerImages: [StickerReference: CanvasImage] = [:], stickerTimeline: StickerArtworkTimeline? = nil,
+                photoImages: [String: CanvasImage] = [:]) {
         self.stickerImages = stickerImages
         self.stickerTimeline = stickerTimeline
+        self.photoImages = photoImages
     }
 
     public func layout(for element: CanvasTextElement, canvasWidth: CGFloat) -> CanvasTextLayout {
@@ -329,11 +345,45 @@ public final class CanvasElementRenderer {
     public func retain(_ elements: [CanvasElement]) {
         let ids = Set(elements.compactMap { $0.text?.id })
         layouts = layouts.filter { ids.contains($0.key) }
+        let photos = Set(elements.compactMap { $0.photo?.id })
+        renderedPhotos = renderedPhotos.filter { photos.contains($0.key) }
+    }
+
+    /// Copies the photo's rendering onto the canvas, rendering it first if it changed.
+    private func drawPhoto(_ photo: CanvasPhotoElement, in context: CGContext, canvasSize: CGSize) {
+        let device = context.userSpaceToDeviceSpaceTransform
+        let pixelsPerPoint = max(1, (hypot(device.a, device.b) * 2).rounded() / 2)
+        let key = RenderedPhoto.Key(photoId: photo.photoId, cutoutPhotoId: photo.cutoutPhotoId, style: photo.style,
+                                    aspectRatio: photo.aspectRatio, long: (CGFloat(photo.renderScale) * canvasSize.width * 2).rounded() / 2,
+                                    pixelsPerPoint: pixelsPerPoint, hasPhoto: photoImages[photo.photoId] != nil,
+                                    hasCutout: photo.cutoutPhotoId.map { photoImages[$0] != nil } ?? false)
+        var rendered = renderedPhotos[photo.id]
+        if rendered?.key != key {
+            rendered = CanvasPhotoGeometry.rendered(photo, images: photoImages, canvasWidth: canvasSize.width, pixelsPerPoint: pixelsPerPoint)
+                .map { RenderedPhoto(key: key, image: $0.image, size: $0.size) }
+            renderedPhotos[photo.id] = rendered
+        }
+        guard let rendered else {
+            return CanvasPhotoGeometry.draw(photo, images: photoImages, in: context, canvasSize: canvasSize)
+        }
+        context.saveGState()
+        context.translateBy(x: photo.center.x * canvasSize.width, y: photo.center.y * canvasSize.height)
+        context.rotate(by: photo.rotationRad)
+        context.interpolationQuality = .high
+        CanvasGraphics.draw(rendered.image, in: CGRect(x: -rendered.size.width / 2, y: -rendered.size.height / 2,
+                                                       width: rendered.size.width, height: rendered.size.height), context: context)
+        context.restoreGState()
+    }
+
+    /// The order every platform paints elements in: stickers and photos in one stack, then text
+    /// above them; within each, the element added or changed last is on top. Strokes go over all.
+    public static func paintOrder(_ elements: [CanvasElement]) -> [CanvasElement] {
+        elements.filter { $0.text == nil } + elements.filter { $0.text != nil }
     }
 
     public func draw(_ elements: [CanvasElement], in context: CGContext, canvasSize: CGSize,
                      now: TimeInterval = StickerArtworkTimeline.now) {
-        for element in elements {
+        for element in Self.paintOrder(elements) {
             switch element {
             case .text(let text) where !text.text.isEmpty:
                 layout(for: text, canvasWidth: canvasSize.width).draw(text, in: context, canvasSize: canvasSize)
@@ -341,6 +391,8 @@ public final class CanvasElementRenderer {
                 let image = stickerImages[sticker.sticker]
                 let appearance = stickerTimeline?.appearance(sticker.sticker, hasArtwork: image != nil, at: now)
                 CanvasStickerGeometry.draw(sticker, image: image, in: context, canvasSize: canvasSize, appearance: appearance)
+            case .photo(let photo):
+                drawPhoto(photo, in: context, canvasSize: canvasSize)
             default: break
             }
         }
@@ -348,13 +400,15 @@ public final class CanvasElementRenderer {
 
     /// The topmost element under `point`, optionally limited to one kind.
     public func hit(_ elements: [CanvasElement], at point: CGPoint, canvasSize: CGSize, where include: (CanvasElement) -> Bool = { _ in true }) -> CanvasElement? {
-        elements.reversed().first { element in
+        Self.paintOrder(elements).reversed().first { element in
             guard include(element) else { return false }
             switch element {
             case .text(let text):
                 return !text.text.isEmpty && layout(for: text, canvasWidth: canvasSize.width).contains(point, placed: text, canvasSize: canvasSize)
             case .sticker(let sticker):
                 return CanvasStickerGeometry.contains(point, sticker: sticker, image: stickerImages[sticker.sticker], canvasSize: canvasSize)
+            case .photo(let photo):
+                return CanvasPhotoGeometry.contains(point, photo: photo, cutout: photo.cutoutPhotoId.flatMap { photoImages[$0] }, canvasSize: canvasSize)
             }
         }
     }

@@ -60,12 +60,15 @@ public struct CanvasStickerElement: Equatable, Identifiable, Sendable {
 
 /// A text or sticker element in the canvas's shared paint order.
 public enum CanvasElement: Equatable, Identifiable, Sendable {
-    case text(CanvasTextElement), sticker(CanvasStickerElement)
+    case text(CanvasTextElement), sticker(CanvasStickerElement), photo(CanvasPhotoElement)
 
     public init?(json: JSONValue) {
         switch json["kind"]?.string {
         case "STICKER": guard let sticker = CanvasStickerElement(json: json) else { return nil }; self = .sticker(sticker)
-        default: guard let text = CanvasTextElement(json: json) else { return nil }; self = .text(text)
+        case "PHOTO": guard let photo = CanvasPhotoElement(json: json) else { return nil }; self = .photo(photo)
+        case "TEXT", nil: guard let text = CanvasTextElement(json: json) else { return nil }; self = .text(text)
+        // A kind from a newer app is skipped.
+        case .some: return nil
         }
     }
 
@@ -73,6 +76,7 @@ public enum CanvasElement: Equatable, Identifiable, Sendable {
         switch self {
         case .text(let element): element.id
         case .sticker(let element): element.id
+        case .photo(let element): element.id
         }
     }
 
@@ -81,12 +85,14 @@ public enum CanvasElement: Equatable, Identifiable, Sendable {
             switch self {
             case .text(let element): element.center
             case .sticker(let element): element.center
+            case .photo(let element): element.center
             }
         }
         set {
             switch self {
             case .text(var element): element.center = newValue; self = .text(element)
             case .sticker(var element): element.center = newValue; self = .sticker(element)
+            case .photo(var element): element.center = newValue; self = .photo(element)
             }
         }
     }
@@ -96,12 +102,14 @@ public enum CanvasElement: Equatable, Identifiable, Sendable {
             switch self {
             case .text(let element): element.rotationRad
             case .sticker(let element): element.rotationRad
+            case .photo(let element): element.rotationRad
             }
         }
         set {
             switch self {
             case .text(var element): element.rotationRad = newValue; self = .text(element)
             case .sticker(var element): element.rotationRad = newValue; self = .sticker(element)
+            case .photo(var element): element.rotationRad = newValue; self = .photo(element)
             }
         }
     }
@@ -115,11 +123,15 @@ public enum CanvasElement: Equatable, Identifiable, Sendable {
         case .sticker(var element):
             element.scale = min(CanvasStickerElement.scaleRange.upperBound, max(CanvasStickerElement.scaleRange.lowerBound, element.scale * factor))
             self = .sticker(element)
+        case .photo(var element):
+            element.scale = min(CanvasPhotoElement.scaleRange.upperBound, max(CanvasPhotoElement.scaleRange.lowerBound, element.scale * factor))
+            self = .photo(element)
         }
     }
 
     public var text: CanvasTextElement? { if case .text(let element) = self { element } else { nil } }
     public var sticker: CanvasStickerElement? { if case .sticker(let element) = self { element } else { nil } }
+    public var photo: CanvasPhotoElement? { if case .photo(let element) = self { element } else { nil } }
 }
 
 public extension DrawingOperation {
@@ -127,18 +139,21 @@ public extension DrawingOperation {
         switch element {
         case .text(let text): .addText(text)
         case .sticker(let sticker): .init(type: "ADD_STICKER_ELEMENT", strokeId: sticker.id, payload: sticker.json)
+        case .photo(let photo): .init(type: "ADD_PHOTO_ELEMENT", strokeId: photo.id, payload: photo.json)
         }
     }
     static func update(_ element: CanvasElement) -> DrawingOperation {
         switch element {
         case .text(let text): .updateText(text)
         case .sticker(let sticker): .init(type: "UPDATE_STICKER_ELEMENT", strokeId: sticker.id, payload: sticker.json)
+        case .photo(let photo): .init(type: "UPDATE_PHOTO_ELEMENT", strokeId: photo.id, payload: photo.json)
         }
     }
     static func delete(_ element: CanvasElement) -> DrawingOperation {
         switch element {
         case .text(let text): .deleteText(text.id)
         case .sticker(let sticker): .init(type: "DELETE_STICKER_ELEMENT", strokeId: sticker.id)
+        case .photo(let photo): .init(type: "DELETE_PHOTO_ELEMENT", strokeId: photo.id)
         }
     }
 }

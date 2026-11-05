@@ -123,6 +123,7 @@ public extension DrawingOperation {
     /// toward the streak and the account's first drawing.
     static let drawingTypes: Set<String> = [
         "FINISH_STROKE", "ADD_TEXT_ELEMENT", "UPDATE_TEXT_ELEMENT", "ADD_STICKER_ELEMENT", "UPDATE_STICKER_ELEMENT",
+        "ADD_PHOTO_ELEMENT", "UPDATE_PHOTO_ELEMENT",
     ]
 
     /// Whether the edits draw something. A stroke finished and deleted together, such as a palm's,

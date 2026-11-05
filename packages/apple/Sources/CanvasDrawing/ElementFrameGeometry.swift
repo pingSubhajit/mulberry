@@ -14,6 +14,7 @@ public protocol CanvasTransformable: Equatable {
 
 extension CanvasTextElement: CanvasTransformable {}
 extension CanvasStickerElement: CanvasTransformable {}
+extension CanvasPhotoElement: CanvasTransformable {}
 
 /// Where a text or sticker sits on screen: its centre, its visible body around that centre
 /// before rotation (already scaled to screen points), and its rotation. The Mac's and the iPad's
@@ -54,6 +55,18 @@ public struct ElementFrameGeometry: Equatable, Sendable {
             center: CGPoint(x: sticker.center.x * canvasSize.width * zoom + offset.x, y: sticker.center.y * canvasSize.height * zoom + offset.y),
             body: CGRect(x: -width / 2, y: -height / 2, width: width, height: height),
             angle: sticker.rotationRad
+        )
+    }
+
+    /// Where a photo sits, at its drawn size.
+    public static func photo(_ photo: CanvasPhotoElement, cutout: CanvasImage?, canvasSize: CGSize,
+                             zoom: CGFloat = 1, offset: CGPoint = .zero) -> ElementFrameGeometry {
+        let size = CanvasPhotoGeometry.size(photo, cutout: cutout, canvasWidth: canvasSize.width)
+        let width = size.width * zoom, height = size.height * zoom
+        return ElementFrameGeometry(
+            center: CGPoint(x: photo.center.x * canvasSize.width * zoom + offset.x, y: photo.center.y * canvasSize.height * zoom + offset.y),
+            body: CGRect(x: -width / 2, y: -height / 2, width: width, height: height),
+            angle: photo.rotationRad
         )
     }
 

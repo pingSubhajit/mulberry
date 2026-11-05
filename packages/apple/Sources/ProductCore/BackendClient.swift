@@ -321,6 +321,29 @@ public actor BackendClient {
         return (200..<500).contains(response.statusCode) ? .drop : .keep
     }
 
+    /// Uploads a photo for the canvas: a JPEG, or a PNG for a cut-out with transparency.
+    public func uploadCanvasPhoto(_ data: Data, contentType: String) async throws -> CanvasPhotoUpload {
+        let boundary = "mulberry-\(UUID().uuidString)"
+        let filename = contentType == "image/png" ? "photo.png" : "photo.jpg"
+        var body = Data()
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"image\"; filename=\"\(filename)\"\r\nContent-Type: \(contentType)\r\n\r\n".utf8))
+        body.append(data)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+        var request = makeRequest("canvas/photos", method: "POST")
+        request.timeoutInterval = 90
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        return try await decode(request)
+    }
+
+    /// A canvas photo's bytes.
+    public func canvasPhoto(_ photoId: String) async throws -> Data {
+        var request = makeRequest("canvas/photos/\(try pathID(photoId))")
+        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 60
+        return try await send(request).0
+    }
+
     private func get<Response: Decodable & Sendable>(_ path: String, query: [URLQueryItem] = [], authenticated: Bool = true, quick: Bool = false) async throws -> Response {
         try await decode(makeRequest(path, query: query), authenticated: authenticated, quick: quick)
     }
@@ -349,6 +372,12 @@ public actor BackendClient {
     }
 
     private func decode<Response: Decodable & Sendable>(_ request: URLRequest, authenticated: Bool = true, quick: Bool = false) async throws -> Response {
+        let (data, response) = try await send(request, authenticated: authenticated, quick: quick)
+        return try JSONDecoder().decode(Response.self, from: response.statusCode == 204 ? Data("null".utf8) : data)
+    }
+
+    /// Sends a request, signing it in and refreshing the session once if it has lapsed.
+    private func send(_ request: URLRequest, authenticated: Bool = true, quick: Bool = false) async throws -> (Data, HTTPURLResponse) {
         let transport = quick ? shortTransport : transport
         let epoch = generation
         var authorized = request
@@ -368,7 +397,7 @@ public actor BackendClient {
             guard generation == epoch else { throw BackendError.sessionChanged }
         }
         try Self.validate(data, response)
-        return try JSONDecoder().decode(Response.self, from: response.statusCode == 204 ? Data("null".utf8) : data)
+        return (data, response)
     }
 
     private func refresh(rejectedAccessToken: String, transport: any BackendTransport) async throws -> String {
@@ -428,6 +457,7 @@ public actor BackendClient {
         }
         // Read per request, so the server learns of a change as soon as the device moves zones.
         request.setValue(TimeZone.autoupdatingCurrent.identifier, forHTTPHeaderField: "X-Time-Zone")
+        request.setValue(CanvasFeatures.supported, forHTTPHeaderField: CanvasFeatures.header)
         return request
     }
     private func pathID(_ id: String) throws -> String {

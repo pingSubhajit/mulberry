@@ -5,12 +5,19 @@ import ProductCore
 
 /// Stroke math follows Android's RoundStrokeRenderer and DryBrushStrokeRenderer.
 /// The iPhone, iPad and Mac draw the canvas, its wallpaper and its overlay with this
-/// renderer. Text and stickers paint above every stroke, as Android's element overlay does.
+/// renderer. Stickers and photos paint at the bottom, text above them, and every stroke on top.
 public enum DoodleRenderer {
     public static func draw(_ strokes: [DrawingStroke], elements: [CanvasElement] = [], stickerImages: [StickerReference: CanvasImage] = [:],
-                     stickerTimeline: StickerArtworkTimeline? = nil, dry: Bool, in context: CGContext, size: CGSize) {
+                     stickerTimeline: StickerArtworkTimeline? = nil, photoImages: [String: CanvasImage] = [:],
+                     elementRenderer: CanvasElementRenderer? = nil, dry: Bool, in context: CGContext, size: CGSize) {
         context.saveGState()
         context.clip(to: CGRect(origin: .zero, size: size))
+        // Elements first, then every stroke over them, as on every platform.
+        // A long-lived renderer keeps text laid out and photos rendered between draws.
+        if !elements.isEmpty {
+            let renderer = elementRenderer ?? CanvasElementRenderer(stickerImages: stickerImages, stickerTimeline: stickerTimeline, photoImages: photoImages)
+            renderer.draw(elements, in: context, canvasSize: size)
+        }
         for stroke in strokes {
             let rendered = RenderStroke(id: stroke.id, colorArgb: stroke.colorArgb,
                 width: CGFloat(stroke.width) * min(max(size.width, 1), max(size.height, 1)),
@@ -18,7 +25,6 @@ public enum DoodleRenderer {
             if dry { DryBrushStrokeRenderer.draw(stroke: rendered, in: context) }
             else { RoundStrokeRenderer.draw(stroke: rendered, in: context) }
         }
-        if !elements.isEmpty { CanvasElementRenderer(stickerImages: stickerImages, stickerTimeline: stickerTimeline).draw(elements, in: context, canvasSize: size) }
         context.restoreGState()
     }
 }

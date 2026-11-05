@@ -140,13 +140,12 @@ public struct DrawingSnapshotPayload: Decodable, Sendable {
 }
 
 public enum DrawingError: Error, Equatable, PresentableError {
-    case wrongSession, invalidStroke, missingStroke(String), revisionGap(expected: Int64, actual: Int64), unsupportedOperation(String)
+    case wrongSession, invalidStroke, missingStroke(String), revisionGap(expected: Int64, actual: Int64)
     public var errorDescription: String? {
         switch self {
         case .wrongSession: "These doodles belong to a different pairing."
         case .invalidStroke: "This doodle couldn’t be read."
         case .missingStroke, .revisionGap: "The canvas needs to sync again."
-        case .unsupportedOperation: "Update Mulberry to see these doodles."
         }
     }
 }
@@ -189,13 +188,17 @@ public struct DrawingState: Codable, Equatable, Sendable {
             }
         case "DELETE_STROKE": strokes.removeAll { $0.id == operation.strokeId }
         case "CLEAR_CANVAS": strokes = []; elements = []
-        case "ADD_TEXT_ELEMENT", "UPDATE_TEXT_ELEMENT", "ADD_STICKER_ELEMENT", "UPDATE_STICKER_ELEMENT":
+        case "ADD_TEXT_ELEMENT", "UPDATE_TEXT_ELEMENT", "ADD_STICKER_ELEMENT", "UPDATE_STICKER_ELEMENT",
+             "ADD_PHOTO_ELEMENT", "UPDATE_PHOTO_ELEMENT":
             guard case .object(var fields) = operation.payload, let id = fields["id"]?.string else { throw DrawingError.invalidStroke }
-            fields["kind"] = .string(operation.type.contains("TEXT") ? "TEXT" : "STICKER")
+            fields["kind"] = .string(operation.type.contains("TEXT") ? "TEXT" : operation.type.contains("PHOTO") ? "PHOTO" : "STICKER")
             elements.removeAll { $0["id"]?.string == id }
             elements.append(.object(fields))
-        case "DELETE_TEXT_ELEMENT", "DELETE_STICKER_ELEMENT": elements.removeAll { $0["id"]?.string == operation.strokeId }
-        default: throw DrawingError.unsupportedOperation(operation.type)
+        case "DELETE_TEXT_ELEMENT", "DELETE_STICKER_ELEMENT", "DELETE_PHOTO_ELEMENT":
+            elements.removeAll { $0["id"]?.string == operation.strokeId }
+        // A change from a newer app is skipped, while its revision still counts, so the canvas
+        // keeps syncing; the server translates anything that would change what is shown.
+        default: break
         }
         if let revision = operation.serverRevision { self.revision = revision }
     }
