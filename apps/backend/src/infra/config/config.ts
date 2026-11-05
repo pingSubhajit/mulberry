@@ -14,6 +14,8 @@ export interface AppConfig {
   allowDevAppleTokens?: boolean
   /** A Sign in with Apple key, to revoke Apple's tokens when an account is deleted. */
   appleSignInKey?: AppleSignInKey
+  /** Sign in with Apple on the web, which the Android app uses through a Custom Tab. */
+  appleWebSignIn?: AppleWebSignIn
   /** The developer menus' test pushes and streak reset. Off by default in production. */
   enableDebugRoutes: boolean
   firebaseServiceAccountPath?: string
@@ -82,6 +84,20 @@ export interface AppleSignInKey {
   privateKey: string
 }
 
+/**
+ * Sign in with Apple's web flow: a Services ID, and the return URL registered for it, where Apple
+ * posts the result. Exchanging the web flow's authorization code needs the same return URL.
+ */
+export interface AppleWebSignIn {
+  clientId: string
+  redirectUri: string
+}
+
+const DEFAULT_APPLE_WEB_SIGN_IN: AppleWebSignIn = {
+  clientId: "com.subhajit.mulberry.web",
+  redirectUri: "https://api.mulberry.my/auth/apple/callback",
+}
+
 /** Mulberry's production and development bundle IDs, on iPhone, iPad and Mac. */
 const DEFAULT_APPLE_CLIENT_IDS = ["com.subhajit.mulberry.beta", "com.subhajit.mulberry.beta.dev"]
 
@@ -95,6 +111,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const posthogHost = env.POSTHOG_HOST
   const posthogEnvironment = env.POSTHOG_ENVIRONMENT ?? (isProduction ? "production" : "development")
   const posthogDisabled = env.POSTHOG_DISABLED?.trim() ? env.POSTHOG_DISABLED.trim() === "true" : undefined
+
+  const appleWeb = appleWebSignIn(env)
 
   if (isProduction && databaseUrl.trim() === "") {
     throw new Error("DATABASE_URL is required when NODE_ENV=production")
@@ -110,9 +128,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     googleClientId,
     googleAllowedClientIds,
     allowDevGoogleTokens: (env.ALLOW_DEV_GOOGLE_TOKENS ?? (isProduction ? "false" : "true")) === "true",
-    appleClientIds: env.APPLE_CLIENT_IDS === undefined ? DEFAULT_APPLE_CLIENT_IDS : parseCsvList(env.APPLE_CLIENT_IDS),
+    appleClientIds: appleClientIds(env, appleWeb),
     allowDevAppleTokens: (env.ALLOW_DEV_APPLE_TOKENS ?? (isProduction ? "false" : "true")) === "true",
     appleSignInKey: appleSignInKey(env),
+    appleWebSignIn: appleWeb,
     enableDebugRoutes: (env.ENABLE_DEBUG_ROUTES ?? (isProduction ? "false" : "true")) === "true",
     firebaseServiceAccountPath: env.FIREBASE_SERVICE_ACCOUNT_PATH,
     firebaseServiceAccountJson: env.FIREBASE_SERVICE_ACCOUNT_JSON,
@@ -158,6 +177,19 @@ function apnsKeys(env: NodeJS.ProcessEnv): ApnsKeys | undefined {
   const production = key("APNS_PRODUCTION")
   if (!teamId || (!sandbox && !production)) return undefined
   return { teamId, sandbox, production }
+}
+
+function appleWebSignIn(env: NodeJS.ProcessEnv): AppleWebSignIn {
+  return {
+    clientId: env.APPLE_WEB_CLIENT_ID?.trim() || DEFAULT_APPLE_WEB_SIGN_IN.clientId,
+    redirectUri: env.APPLE_WEB_REDIRECT_URI?.trim() || DEFAULT_APPLE_WEB_SIGN_IN.redirectUri,
+  }
+}
+
+/** The apps' bundle IDs, and the web flow's Services ID, which Android's tokens are issued to. */
+function appleClientIds(env: NodeJS.ProcessEnv, web: AppleWebSignIn): string[] {
+  const ids = env.APPLE_CLIENT_IDS === undefined ? DEFAULT_APPLE_CLIENT_IDS : parseCsvList(env.APPLE_CLIENT_IDS)
+  return ids.includes(web.clientId) ? ids : [...ids, web.clientId]
 }
 
 function appleSignInKey(env: NodeJS.ProcessEnv): AppleSignInKey | undefined {

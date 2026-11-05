@@ -3,8 +3,11 @@ import type { AppleSignInRequest } from "../../contracts/auth.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import { requireBearerToken } from "../../infra/http/auth.js"
 import type { AuthService } from "./service.js"
+import { registerAppleWebCallbackRoute } from "./appleWebCallback.js"
 
 export function registerAuthRoutes(app: FastifyInstance, service: AuthService): void {
+  registerAppleWebCallbackRoute(app)
+
   app.post("/auth/google", async (request) => {
     return service.authenticateWithGoogle(googleIdToken(request.body))
   })

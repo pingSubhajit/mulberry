@@ -273,6 +273,25 @@ describe("DefaultAppleCredentialClient", () => {
     })
   })
 
+  it("sends the web flow's return URL with its code, and only with its code", async () => {
+    const { privateKey } = await generateKeyPair("ES256", { extractable: true })
+    const requests: URLSearchParams[] = []
+    const client = new DefaultAppleCredentialClient(
+      { teamId: "TEAM123456", keyId: "KEY1234567", privateKey: await exportPKCS8(privateKey) },
+      async (_url, init) => {
+        requests.push(new URLSearchParams(String(init.body)))
+        return new Response(JSON.stringify({ refresh_token: "apple-refresh" }), { status: 200 })
+      },
+      { clientId: "com.subhajit.mulberry.web", redirectUri: "https://api.mulberry.my/auth/apple/callback" },
+    )
+
+    await client.exchangeAuthorizationCode("web-code", "com.subhajit.mulberry.web")
+    await client.exchangeAuthorizationCode("app-code", "com.subhajit.mulberry.beta")
+
+    expect(requests[0].get("redirect_uri")).toBe("https://api.mulberry.my/auth/apple/callback")
+    expect(requests[1].has("redirect_uri")).toBe(false)
+  })
+
   it("throws when Apple refuses", async () => {
     const { privateKey } = await generateKeyPair("ES256", { extractable: true })
     const client = new DefaultAppleCredentialClient(
@@ -316,3 +335,72 @@ function testConfig(): AppConfig {
 function bearer(accessToken: string) {
   return { authorization: `Bearer ${accessToken}` }
 }
+
+describe("Sign in with Apple's web callback", () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    const pool = new (newDb({ autoCreateForeignKeyIndices: true }).adapters.createPg().Pool)()
+    await runMigrations(pool)
+    const db: Database = {
+      query: pool.query.bind(pool),
+      transaction: async (fn) => fn({ query: pool.query.bind(pool) }),
+      end: async () => {
+        await pool.end()
+      },
+    }
+    app = await createApp({ db, appleCredentials: new RecordingAppleCredentials(), config: testConfig() })
+    await app.ready()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  function post(fields: Record<string, string>) {
+    return app.inject({
+      method: "POST",
+      url: "/auth/apple/callback",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      payload: new URLSearchParams(fields).toString(),
+    })
+  }
+
+  function intentQuery(location: string): URLSearchParams {
+    return new URLSearchParams(location.slice(location.indexOf("?") + 1, location.indexOf("#")))
+  }
+
+  it("hands Apple's token, code and first-time name to the Android app named in the state", async () => {
+    const response = await post({
+      state: "com.subhajit.mulberry.dev:abc",
+      id_token: "token",
+      code: "code",
+      user: JSON.stringify({ name: { firstName: "Riya", lastName: "Sen" }, email: "riya@icloud.com" }),
+    })
+
+    expect(response.statusCode).toBe(303)
+    const location = String(response.headers.location)
+    expect(location.startsWith("intent://callback?")).toBe(true)
+    expect(location.endsWith("#Intent;scheme=mulberry-apple;package=com.subhajit.mulberry.dev;end")).toBe(true)
+    const query = intentQuery(location)
+    expect(query.get("state")).toBe("com.subhajit.mulberry.dev:abc")
+    expect(query.get("id_token")).toBe("token")
+    expect(query.get("code")).toBe("code")
+    expect(query.get("name")).toBe("Riya Sen")
+  })
+
+  it("passes on Apple's error, as when the person cancels", async () => {
+    const response = await post({ state: "com.subhajit.mulberry:abc", error: "user_cancelled_authorize" })
+
+    expect(response.statusCode).toBe(303)
+    const query = intentQuery(String(response.headers.location))
+    expect(query.get("error")).toBe("user_cancelled_authorize")
+    expect(query.has("id_token")).toBe(false)
+  })
+
+  it("refuses a state naming an app that isn't Mulberry", async () => {
+    const response = await post({ state: "com.example.other:abc", id_token: "token" })
+
+    expect(response.statusCode).toBe(400)
+  })
+})

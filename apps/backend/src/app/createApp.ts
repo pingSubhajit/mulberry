@@ -92,7 +92,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const db = options.db ?? (await createDatabase(config.databaseUrl))
   const googleVerifier = options.googleVerifier ?? new DefaultGoogleTokenVerifier(config)
   const appleVerifier = options.appleVerifier ?? new DefaultAppleTokenVerifier(config)
-  const appleCredentials = options.appleCredentials ?? createAppleCredentialClient(config.appleSignInKey)
+  const appleCredentials = options.appleCredentials ?? createAppleCredentialClient(config.appleSignInKey, config.appleWebSignIn)
   const { analytics, worker: analyticsWorker } = createAnalyticsRuntime(config, db, {
     transport: options.analyticsTransport,
     worker: options.analyticsWorker,

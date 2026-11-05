@@ -1,5 +1,5 @@
 import { importPKCS8, SignJWT } from "jose"
-import type { AppleSignInKey } from "../config/config.js"
+import type { AppleSignInKey, AppleWebSignIn } from "../config/config.js"
 import { APPLE_ISSUER } from "./appleTokenVerifier.js"
 
 /**
@@ -23,15 +23,19 @@ export class DefaultAppleCredentialClient implements AppleCredentialClient {
   constructor(
     private readonly key: AppleSignInKey,
     private readonly fetcher: Fetch = fetch,
+    /** The web flow's code is exchanged only with the return URL it was issued for. */
+    private readonly web?: AppleWebSignIn,
   ) {}
 
   async exchangeAuthorizationCode(code: string, clientId: string): Promise<string | null> {
-    const response = await this.post("/auth/token", {
+    const fields: Record<string, string> = {
       client_id: clientId,
       client_secret: await this.clientSecret(clientId),
       code,
       grant_type: "authorization_code",
-    })
+    }
+    if (this.web && clientId === this.web.clientId) fields.redirect_uri = this.web.redirectUri
+    const response = await this.post("/auth/token", fields)
     const body = (await response.json()) as AppleTokenResponse
     return body.refresh_token ?? null
   }
@@ -80,6 +84,9 @@ export class UnconfiguredAppleCredentialClient implements AppleCredentialClient 
   async revoke(): Promise<void> {}
 }
 
-export function createAppleCredentialClient(key: AppleSignInKey | undefined): AppleCredentialClient {
-  return key ? new DefaultAppleCredentialClient(key) : new UnconfiguredAppleCredentialClient()
+export function createAppleCredentialClient(
+  key: AppleSignInKey | undefined,
+  web?: AppleWebSignIn,
+): AppleCredentialClient {
+  return key ? new DefaultAppleCredentialClient(key, fetch, web) : new UnconfiguredAppleCredentialClient()
 }
