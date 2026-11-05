@@ -1,5 +1,4 @@
 import Combine
-import OSLog
 import SwiftUI
 
 enum DoodleTool: String, Codable { case brush, eyedropper, eraser, text, sticker, photo }
@@ -986,16 +985,8 @@ final class CanvasElementLayerView: UIView {
 
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
-        let state = Self.signposter.beginInterval("drawElements")
-        let start = CACurrentMediaTime()
         renderer.draw(drawn, in: context, canvasSize: bounds.size)
-        Self.signposter.endInterval("drawElements", state)
-        let elapsed = (CACurrentMediaTime() - start) * 1000
-        if elapsed > 8 { Self.log.info("element layer draw \(Int(elapsed), privacy: .public) ms for \(self.visible.count, privacy: .public) elements") }
     }
-
-    private static let log = Logger(subsystem: "com.subhajit.mulberry", category: "CanvasPerformance")
-    private static let signposter = OSSignposter(logger: log)
 
     /// Full artwork, downsampled for the screen. Artwork already in memory draws in the first
     /// frame; the rest fades in as it decodes, with a placeholder only if a download runs long.
