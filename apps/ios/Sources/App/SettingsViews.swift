@@ -11,8 +11,6 @@ struct SettingsView: View {
     @AppStorage("developerOptions") private var developerOptions = false
     #endif
     @State private var logout = false
-    @State private var deleteAccount = false
-    @State private var deletingAccount = false
     @State private var streakOpen = false
     @State private var inviteOpen = false
     @State private var visibilityOpen = false
@@ -91,16 +89,8 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity)
                         .disabled(model.busy)
                 } footer: {
-                    VStack(spacing: 14) {
-                        if deletingAccount { ProgressView().controlSize(.small) }
-                        else {
-                            Button("Delete your account") { deleteAccount = true }
-                                .font(.footnote).foregroundStyle(.red)
-                                .disabled(model.busy)
-                        }
-                        Text("Mulberry \(AppVersion.display)")
-                    }
-                    .frame(maxWidth: .infinity).padding(.top, 8)
+                    Text("Mulberry \(AppVersion.display)")
+                        .frame(maxWidth: .infinity).padding(.top, 8)
                 }
             }
             .listStyle(.insetGrouped)
@@ -109,15 +99,6 @@ struct SettingsView: View {
             .confirmationDialog("Sign out of Mulberry?", isPresented: $logout, titleVisibility: .visible) {
                 Button("Sign Out", role: .destructive) { Task { await model.signOut() } }
             } message: { Text("Your account and pairing stay saved.") }
-            .alert("Delete your Mulberry account?", isPresented: $deleteAccount) {
-                Button("Delete Account", role: .destructive) {
-                    deletingAccount = true
-                    Task { await model.deleteAccount(); deletingAccount = false }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text(paired ? "This also unpairs you from \(profile?.partnerDisplayName?.nonEmpty ?? "your partner") and erases your shared canvas and streak. This can’t be undone." : "This can’t be undone.")
-            }
         }
         .sheet(isPresented: $streakOpen) {
             StreakSheet(streaks: model.streaks, api: { try? model.api }) {
@@ -515,6 +496,8 @@ struct ProfileSettingsView: View {
     @State private var photo: PhotosPickerItem?
     @State private var processingPhoto = false
     @State private var photoError: String?
+    @State private var deleteAccount = false
+    @State private var deletingAccount = false
     @Environment(\.dismiss) private var dismiss
 
     private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -548,8 +531,25 @@ struct ProfileSettingsView: View {
                 }
             }
             if let error = photoError ?? model.errorMessage { Section { InlineError(message: error) }.listRowInsets(EdgeInsets()).listRowBackground(Color.clear) }
+            Section {
+                if deletingAccount {
+                    ProgressView().frame(maxWidth: .infinity)
+                } else {
+                    Button("Delete your account", role: .destructive) { deleteAccount = true }
+                        .frame(maxWidth: .infinity).disabled(model.busy)
+                }
+            }
         }
         .navigationTitle("Profile").navigationBarTitleDisplayMode(.inline)
+        .alert("Delete your Mulberry account?", isPresented: $deleteAccount) {
+            Button("Delete Account", role: .destructive) {
+                deletingAccount = true
+                Task { await model.deleteAccount(); deletingAccount = false }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(profile?.isPaired == true ? "This also unpairs you from \(profile?.partnerDisplayName?.nonEmpty ?? "your partner") and erases your shared canvas and streak. This can’t be undone." : "This can’t be undone.")
+        }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button(role: .confirm) {
