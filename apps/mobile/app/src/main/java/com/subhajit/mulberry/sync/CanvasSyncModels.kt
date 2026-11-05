@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.sync
 
+import com.subhajit.mulberry.drawing.model.CanvasPhotoElement
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.CanvasTextAlign
 import com.subhajit.mulberry.drawing.model.CanvasTextFont
@@ -26,7 +27,8 @@ data class ServerCanvasOperation(
     val clientOperationId: String,
     val actorUserId: String,
     val pairSessionId: String,
-    val type: DrawingOperationType,
+    /** Null for a type this build doesn't know; its payload is then [SyncOperationPayload.Unsupported]. */
+    val type: DrawingOperationType?,
     val strokeId: String?,
     val payload: SyncOperationPayload,
     val clientCreatedAt: String,
@@ -106,6 +108,18 @@ sealed interface SyncOperationPayload {
     ) : SyncOperationPayload
 
     data object DeleteStickerElement : SyncOperationPayload
+
+    data class AddPhotoElement(val element: CanvasPhotoElement) : SyncOperationPayload
+
+    data class UpdatePhotoElement(val element: CanvasPhotoElement) : SyncOperationPayload
+
+    data object DeletePhotoElement : SyncOperationPayload
+
+    /**
+     * A server operation of a type this build doesn't know, such as one a newer app sent. It changes
+     * nothing on the canvas but still takes up its revision, so sync moves past it.
+     */
+    data class Unsupported(val type: String) : SyncOperationPayload
 }
 
 fun Stroke.toAddStrokePayload(): SyncOperationPayload.AddStroke =

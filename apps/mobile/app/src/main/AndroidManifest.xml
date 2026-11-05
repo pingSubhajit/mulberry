@@ -8,6 +8,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- The live wallpaper has no view to play haptics through, so it vibrates when reactions arrive. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- The Camera tool; the canvas works without a camera, picking from the library instead. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-feature android:name="android.software.live_wallpaper" />
 
     <application
@@ -21,6 +24,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Mulberry"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
+        <!-- Downloads the subject cut-out model with the app, for the photo sticker style. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="subject_segment" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

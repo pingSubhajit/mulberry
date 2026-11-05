@@ -13,10 +13,11 @@ import com.subhajit.mulberry.sync.SyncOutboxEntity
         DrawingOperationEntity::class,
         CanvasTextElementEntity::class,
         CanvasStickerElementEntity::class,
+        CanvasPhotoElementEntity::class,
         CanvasMetadataEntity::class,
         SyncOutboxEntity::class
     ],
-    version = 10,
+    version = 12,
     exportSchema = false
 )
 @TypeConverters(RoomConverters::class)
@@ -25,6 +26,7 @@ abstract class DrawingDatabase : RoomDatabase() {
     abstract fun drawingOperationsDao(): DrawingOperationsDao
     abstract fun canvasTextElementDao(): CanvasTextElementDao
     abstract fun canvasStickerElementDao(): CanvasStickerElementDao
+    abstract fun canvasPhotoElementDao(): CanvasPhotoElementDao
     abstract fun canvasMetadataDao(): CanvasMetadataDao
     abstract fun syncOutboxDao(): SyncOutboxDao
 }

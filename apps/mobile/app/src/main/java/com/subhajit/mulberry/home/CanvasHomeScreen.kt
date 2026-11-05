@@ -357,6 +357,12 @@ fun CanvasHomeRoute(
         onStickerToggle = viewModel::onStickerToggle,
         onStickerPackSelected = viewModel::onStickerPackSelected,
         stickerAssetStore = viewModel.stickerAssetStore,
+        photoStore = viewModel.photoStore,
+        onCameraToolSelected = viewModel::onCameraToolSelected,
+        onPhotoElementAdded = viewModel::onPhotoElementAdded,
+        onPhotoElementUpdated = viewModel::onPhotoElementUpdated,
+        onPhotoElementDeleted = viewModel::onPhotoElementDeleted,
+        onPhotoCancelled = viewModel::onPhotoCancelled,
         onTextElementAdded = viewModel::onTextElementAdded,
         onTextElementUpdated = viewModel::onTextElementUpdated,
         onTextElementDeleted = viewModel::onTextElementDeleted,
@@ -425,6 +431,12 @@ fun CanvasHomeRoute(
     onStickerToggle: () -> Unit,
     onStickerPackSelected: (String, Int) -> Unit,
     stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
+    photoStore: com.subhajit.mulberry.photos.CanvasPhotoStore,
+    onCameraToolSelected: () -> Unit,
+    onPhotoElementAdded: (com.subhajit.mulberry.drawing.model.CanvasPhotoElement) -> Unit,
+    onPhotoElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasPhotoElement) -> Unit,
+    onPhotoElementDeleted: (String) -> Unit,
+    onPhotoCancelled: () -> Unit,
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
@@ -444,6 +456,8 @@ fun CanvasHomeRoute(
     var wallpaperOpen by rememberSaveable { mutableStateOf(false) }
 	    var textEditorSession by remember { mutableStateOf<CanvasTextEditorSession?>(null) }
 	    var stickerEditorSession by remember { mutableStateOf<CanvasStickerEditorSession?>(null) }
+	    var photoSession by remember { mutableStateOf<CanvasPhotoSession?>(null) }
+	    var canvasBoundsInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 	    var pendingNewStickerCenter by remember { mutableStateOf<StrokePoint?>(null) }
         var allowToolTapPlacement by remember { mutableStateOf(false) }
         var autoOpenOnNextToolSelect by remember { mutableStateOf<DrawingTool?>(null) }
@@ -555,7 +569,33 @@ fun CanvasHomeRoute(
     }
 
 	    Box(modifier = Modifier.fillMaxSize()) {
-	        val editorOpen = textEditorSession != null || stickerEditorSession != null
+	        val editorOpen = textEditorSession != null || stickerEditorSession != null || photoSession != null
+            // The Camera tool takes up the camera at once, as on iPhone; chosen again, it puts it down.
+            val photoHooks = CanvasPhotoHooks(
+                photoStore = photoStore,
+                onCameraToggle = {
+                    if (!editorOpen && uiState.toolState.activeTool == DrawingTool.PHOTO) {
+                        onBrushToggle()
+                    } else if (!editorOpen) {
+                        onCameraToolSelected()
+                        photoSession = CanvasPhotoSession.new()
+                    }
+                },
+                onPhotoElementUpdated = onPhotoElementUpdated,
+                onPhotoElementDeleted = onPhotoElementDeleted,
+                onPhotoEditRequested = { element ->
+                    textEditorSession = null
+                    stickerEditorSession = null
+                    photoSession = CanvasPhotoSession.edit(element)
+                },
+                onNewPhotoRequested = {
+                    textEditorSession = null
+                    stickerEditorSession = null
+                    photoSession = CanvasPhotoSession.new()
+                },
+                onCanvasBoundsChanged = { bounds -> canvasBoundsInRoot = bounds },
+                hiddenElementId = photoSession?.element?.id
+            )
             val toolSelectText: () -> Unit = {
                 if (!editorOpen && uiState.toolState.activeTool == DrawingTool.TEXT) {
                     onTextToggle()
@@ -739,6 +779,7 @@ fun CanvasHomeRoute(
                     onStickerToggle = toolSelectSticker,
                     onStickerPackSelected = onStickerPackSelected,
                     stickerAssetStore = stickerAssetStore,
+                    photo = photoHooks,
                     onTextElementAdded = onTextElementAdded,
                     onTextElementUpdated = onTextElementUpdated,
                     onTextElementDeleted = onTextElementDeleted,
@@ -856,6 +897,27 @@ fun CanvasHomeRoute(
 	                }
 	            )
 	        }
+
+	        val currentPhotoSession = photoSession
+	        if (currentPhotoSession != null) {
+	            CanvasPhotoFlow(
+	                session = currentPhotoSession,
+	                canvasBounds = canvasBoundsInRoot,
+	                photoStore = photoStore,
+	                onDone = { element ->
+	                    if (currentPhotoSession.isNew) onPhotoElementAdded(element) else onPhotoElementUpdated(element)
+	                    photoSession = null
+	                },
+	                onDelete = {
+	                    currentPhotoSession.element?.let { onPhotoElementDeleted(it.id) }
+	                    photoSession = null
+	                },
+	                onCancel = {
+	                    photoSession = null
+	                    onPhotoCancelled()
+	                }
+	            )
+	        }
 	    }
 }
 
@@ -927,6 +989,7 @@ private fun CanvasHomePane(
     onStickerToggle: () -> Unit,
     onStickerPackSelected: (String, Int) -> Unit,
     stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
+    photo: CanvasPhotoHooks,
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
@@ -1049,6 +1112,7 @@ private fun CanvasHomePane(
 	            onStickerToggle = onStickerToggle,
 	            onStickerPackSelected = onStickerPackSelected,
 	            stickerAssetStore = stickerAssetStore,
+	            photo = photo,
             onTextElementAdded = onTextElementAdded,
             onTextElementUpdated = onTextElementUpdated,
             onTextElementDeleted = onTextElementDeleted,
@@ -1089,6 +1153,7 @@ private fun CanvasHomePane(
 	    onStickerToggle: () -> Unit,
 	    onStickerPackSelected: (String, Int) -> Unit,
 	    stickerAssetStore: com.subhajit.mulberry.stickers.StickerAssetStore,
+	    photo: CanvasPhotoHooks,
     onTextElementAdded: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementUpdated: (com.subhajit.mulberry.drawing.model.CanvasTextElement) -> Unit,
     onTextElementDeleted: (String) -> Unit,
@@ -1245,6 +1310,7 @@ private fun CanvasHomePane(
                     .offset(y = canvasTop)
                     .size(width = paneWidth, height = canvasHeight)
                     .clipToBounds()
+                    .onGloballyPositioned { coordinates -> photo.onCanvasBoundsChanged(coordinates.boundsInRoot()) }
                     .holdForReactions(
                         enabled = { !isEditorOpen && !reactionRailOpen && reactionArc == null },
                         onHold = { position ->
@@ -1265,11 +1331,14 @@ private fun CanvasHomePane(
                     onEraseDrag = onCanvasEraseDrag,
                     onCanvasSizeChanged = onCanvasViewportChanged,
                     modifier = Modifier.fillMaxSize(),
-                    strokeRenderMode = uiState.canvasStrokeRenderMode
+                    strokeRenderMode = uiState.canvasStrokeRenderMode,
+                    drawsStrokes = false
                 )
 
+                // Stickers, then text: the element layers, under the strokes.
                 CanvasTextOverlay(
                     elements = uiState.canvasState.elements,
+                    strokes = uiState.canvasState.strokes,
                     activeTool = uiState.toolState.activeTool,
                     palette = uiState.palette,
                     selectedColorArgb = uiState.toolState.selectedColorArgb,
@@ -1284,6 +1353,12 @@ private fun CanvasHomePane(
                     onAddStickerElement = onStickerElementAdded,
                     onUpdateStickerElement = onStickerElementUpdated,
                     onDeleteStickerElement = onStickerElementDeleted,
+                    onUpdatePhotoElement = photo.onPhotoElementUpdated,
+                    onDeletePhotoElement = photo.onPhotoElementDeleted,
+                    photoStore = photo.photoStore,
+                    onRequestPhotoEdit = photo.onPhotoEditRequested,
+                    onRequestNewPhoto = photo.onNewPhotoRequested,
+                    hiddenElementId = photo.hiddenElementId,
                     onRequestTextEdit = onTextEditorRequested,
                     onRequestStickerEdit = onStickerEditorRequested,
                     onRequestNewStickerAt = onNewStickerRequestedAt,
@@ -1293,12 +1368,21 @@ private fun CanvasHomePane(
                     modifier = Modifier.fillMaxSize()
                 )
 
+                // Strokes cover every element. It takes no touches, so the gestures below still get them.
+                CanvasStrokesLayer(
+                    canvasState = uiState.canvasState,
+                    viewportTransform = viewportTransform,
+                    strokeRenderMode = uiState.canvasStrokeRenderMode,
+                    modifier = Modifier.fillMaxSize()
+                )
+
                 EyedropperOverlay(
                     armed = eyedropperArmed,
                     enabled = !isEditorOpen,
                     canvasState = uiState.canvasState,
                     viewportTransform = viewportTransform,
                     stickerAssetStore = stickerAssetStore,
+                    photoStore = photo.photoStore,
                     backgroundColorArgb = canvasBackgroundArgb,
                     onLiveColorArgbChanged = { colorArgb ->
                         eyedropperLiveColorArgb = colorArgb
@@ -1486,13 +1570,19 @@ private fun CanvasHomePane(
                             selected = !eyedropperArmed && shownTool == DrawingTool.STICKER
                         )
                     }
-                    // Coming soon.
                     CanvasChromeButton(
                         contentDescription = stringResource(R.string.home_canvas_camera_content_description),
-                        onClick = {},
-                        enabled = false
+                        onClick = {
+                            val next = if (!eyedropperArmed && shownTool == DrawingTool.PHOTO) DrawingTool.DRAW else DrawingTool.PHOTO
+                            chooseTool(next, photo.onCameraToggle)
+                        },
+                        selected = !eyedropperArmed && shownTool == DrawingTool.PHOTO,
+                        enabled = !isEditorOpen
                     ) {
-                        ChromeIllustration(R.drawable.canvas_action_camera, selected = false)
+                        ChromeIllustration(
+                            R.drawable.canvas_action_camera,
+                            selected = !eyedropperArmed && shownTool == DrawingTool.PHOTO
+                        )
                     }
                     CanvasChromeButton(
                         contentDescription = stringResource(R.string.home_canvas_erase_content_description),

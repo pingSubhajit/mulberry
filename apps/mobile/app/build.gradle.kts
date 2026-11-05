@@ -222,6 +222,13 @@ dependencies {
     implementation(libs.androidx.ink.rendering)
     implementation(libs.androidx.ink.nativeloader)
     implementation(libs.konfetti.compose)
+    // The Camera tool: CameraX for the camera, ML Kit to cut the subject out for the sticker style.
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.androidx.exifinterface)
+    implementation(libs.mlkit.subject.segmentation)
     kapt(libs.hilt.compiler)
     kapt(libs.androidx.hilt.compiler)
     kapt(libs.androidx.room.compiler)
@@ -229,6 +236,8 @@ dependencies {
     testImplementation(libs.androidx.datastore.preferences.core)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.androidx.room.testing)
+    // A real SQLite on the JVM, for the Room migrations and the queries they feed.
+    testImplementation(libs.sqlite.jdbc)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

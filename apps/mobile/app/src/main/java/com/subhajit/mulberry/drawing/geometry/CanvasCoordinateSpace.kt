@@ -87,7 +87,11 @@ fun SyncOperationPayload.hasLegacyGeometry(): Boolean = when (this) {
     SyncOperationPayload.DeleteTextElement,
     is SyncOperationPayload.AddStickerElement,
     is SyncOperationPayload.UpdateStickerElement,
-    SyncOperationPayload.DeleteStickerElement -> false
+    SyncOperationPayload.DeleteStickerElement,
+    is SyncOperationPayload.AddPhotoElement,
+    is SyncOperationPayload.UpdatePhotoElement,
+    SyncOperationPayload.DeletePhotoElement,
+    is SyncOperationPayload.Unsupported -> false
 }
 
 fun ServerCanvasOperation.hasLegacyGeometry(): Boolean = payload.hasLegacyGeometry()

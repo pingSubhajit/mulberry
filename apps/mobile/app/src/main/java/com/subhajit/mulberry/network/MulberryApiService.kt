@@ -6,6 +6,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.HTTP
 import retrofit2.http.Multipart
+import retrofit2.http.Streaming
 import retrofit2.http.POST
 import retrofit2.http.Part
 import retrofit2.http.PUT
@@ -120,6 +121,15 @@ interface MulberryApiService {
 
     @GET("/canvas/snapshot")
     suspend fun getCanvasSnapshot(): CanvasSnapshotResponse
+
+    /** A photo for the canvas, in the multipart `image` field: JPEG, or PNG for a cut-out. */
+    @Multipart
+    @POST("/canvas/photos")
+    suspend fun uploadCanvasPhoto(@Part image: MultipartBody.Part): CanvasPhotoUploadResponse
+
+    @Streaming
+    @GET("/canvas/photos/{photoId}")
+    suspend fun getCanvasPhoto(@Path("photoId") photoId: String): ResponseBody
 
     @GET("/wallpapers")
     suspend fun getWallpapers(

@@ -21,6 +21,7 @@ datastore = "1.1.1"
 coroutines = "1.9.0"
 kotlinxSerializationJson = "1.7.3"
 room = "2.8.4"
+camerax = "1.5.3"
 retrofit = "2.11.0"
 okhttp = "4.12.0"
 credentials = "1.6.0"
@@ -69,6 +70,13 @@ androidx-room-runtime = { group = "androidx.room", name = "room-runtime", versio
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
+androidx-camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax" }
+androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
+androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version = "1.3.7" }
+mlkit-subject-segmentation = { group = "com.google.android.gms", name = "play-services-mlkit-subject-segmentation", version = "16.0.0-beta1" }
+sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version = "3.41.2.2" }
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,63 +55,11 @@ fun DrawingCanvas(
     onEraseDrag: (StrokePoint, StrokePoint) -> Unit,
     onCanvasSizeChanged: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
-    strokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.DryBrush
+    strokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.DryBrush,
+    // False when a [CanvasStrokesLayer] above the text and stickers draws the strokes instead.
+    drawsStrokes: Boolean = true
 ) {
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    val context = LocalContext.current.applicationContext
-    val renderProfile = remember(context) { resolveDeviceRenderProfile(context) }
-    var committedStrokeCache by remember { mutableStateOf(CommittedCanvasBitmapCache()) }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            committedStrokeCache.recycle()
-        }
-    }
-
-    LaunchedEffect(canvasState.strokes, canvasSize, strokeRenderMode, renderProfile) {
-        val currentStrokeIds = canvasState.strokes.map { stroke -> stroke.id }
-        if (
-            !canUseCommittedCanvasCache(
-                width = canvasSize.width,
-                height = canvasSize.height,
-                profile = renderProfile
-            ) ||
-            canvasState.strokes.isEmpty()
-        ) {
-            committedStrokeCache = committedStrokeCache.replace(
-                bitmap = null,
-                strokeIds = currentStrokeIds,
-                canvasSize = canvasSize,
-                strokeRenderMode = strokeRenderMode
-            )
-            return@LaunchedEffect
-        }
-
-        if (committedStrokeCache.canAppend(canvasSize, strokeRenderMode, currentStrokeIds)) {
-            committedStrokeCache.bitmap?.let { bitmap ->
-                appendStrokeToCommittedCache(
-                    bitmap = bitmap,
-                    stroke = canvasState.strokes.last(),
-                    strokeRenderMode = strokeRenderMode
-                )
-                committedStrokeCache = committedStrokeCache.copy(
-                    strokeIds = currentStrokeIds,
-                    version = committedStrokeCache.version + 1
-                )
-            }
-            return@LaunchedEffect
-        }
-
-        val rebuiltBitmap = withContext(Dispatchers.Default) {
-            buildCommittedStrokeCacheBitmap(canvasSize, canvasState.strokes, strokeRenderMode)
-        }
-        committedStrokeCache = committedStrokeCache.replace(
-            bitmap = rebuiltBitmap,
-            strokeIds = currentStrokeIds,
-            canvasSize = canvasSize,
-            strokeRenderMode = strokeRenderMode
-        )
-    }
 
     val gestureModifier = when (activeTool) {
         DrawingTool.DRAW -> Modifier.pointerInput(activeTool) {
@@ -186,7 +135,7 @@ fun DrawingCanvas(
         else -> Modifier
     }
 
-    Canvas(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { size ->
@@ -195,6 +144,87 @@ fun DrawingCanvas(
             }
             .testTag(TestTags.DRAWING_CANVAS)
             .then(gestureModifier)
+    ) {
+        if (drawsStrokes) {
+            CanvasStrokesLayer(
+                canvasState = canvasState,
+                viewportTransform = viewportTransform,
+                strokeRenderMode = strokeRenderMode,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+/**
+ * The strokes, over every text and sticker: those finished, in the order they were finished, then
+ * those still being drawn. It takes no touches, so it can sit above the elements' own gestures.
+ */
+@Composable
+fun CanvasStrokesLayer(
+    canvasState: CanvasState,
+    viewportTransform: CanvasViewportTransform,
+    strokeRenderMode: CanvasStrokeRenderMode,
+    modifier: Modifier = Modifier
+) {
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    val context = LocalContext.current.applicationContext
+    val renderProfile = remember(context) { resolveDeviceRenderProfile(context) }
+    var committedStrokeCache by remember { mutableStateOf(CommittedCanvasBitmapCache()) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            committedStrokeCache.recycle()
+        }
+    }
+
+    LaunchedEffect(canvasState.strokes, canvasSize, strokeRenderMode, renderProfile) {
+        val currentStrokeIds = canvasState.strokes.map { stroke -> stroke.id }
+        if (
+            !canUseCommittedCanvasCache(
+                width = canvasSize.width,
+                height = canvasSize.height,
+                profile = renderProfile
+            ) ||
+            canvasState.strokes.isEmpty()
+        ) {
+            committedStrokeCache = committedStrokeCache.replace(
+                bitmap = null,
+                strokeIds = currentStrokeIds,
+                canvasSize = canvasSize,
+                strokeRenderMode = strokeRenderMode
+            )
+            return@LaunchedEffect
+        }
+
+        if (committedStrokeCache.canAppend(canvasSize, strokeRenderMode, currentStrokeIds)) {
+            committedStrokeCache.bitmap?.let { bitmap ->
+                appendStrokeToCommittedCache(
+                    bitmap = bitmap,
+                    stroke = canvasState.strokes.last(),
+                    strokeRenderMode = strokeRenderMode
+                )
+                committedStrokeCache = committedStrokeCache.copy(
+                    strokeIds = currentStrokeIds,
+                    version = committedStrokeCache.version + 1
+                )
+            }
+            return@LaunchedEffect
+        }
+
+        val rebuiltBitmap = withContext(Dispatchers.Default) {
+            buildCommittedStrokeCacheBitmap(canvasSize, canvasState.strokes, strokeRenderMode)
+        }
+        committedStrokeCache = committedStrokeCache.replace(
+            bitmap = rebuiltBitmap,
+            strokeIds = currentStrokeIds,
+            canvasSize = canvasSize,
+            strokeRenderMode = strokeRenderMode
+        )
+    }
+
+    Canvas(
+        modifier = modifier.onSizeChanged { size -> canvasSize = size }
     ) {
         val cacheVersion = committedStrokeCache.version
         val committedBitmap = committedStrokeCache.bitmap

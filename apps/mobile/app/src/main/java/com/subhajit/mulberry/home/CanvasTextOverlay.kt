@@ -51,6 +51,7 @@ import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -92,7 +93,15 @@ import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.DrawingTool
+import com.subhajit.mulberry.drawing.model.CanvasPhotoElement
+import com.subhajit.mulberry.drawing.model.Stroke
+import com.subhajit.mulberry.photos.CanvasPhotoRenderer
+import com.subhajit.mulberry.photos.CanvasPhotoStore
 import com.subhajit.mulberry.drawing.model.StrokePoint
+import com.subhajit.mulberry.drawing.model.inPaintOrder
+import com.subhajit.mulberry.drawing.model.topmostElement
+import com.subhajit.mulberry.drawing.engine.StrokeHitTester
+import com.subhajit.mulberry.drawing.geometry.denormalizeToSurface
 import com.subhajit.mulberry.drawing.text.canvasDisplayName
 import com.subhajit.mulberry.drawing.text.rememberCanvasFontResolver
 import com.subhajit.mulberry.stickers.StickerAssetStore
@@ -158,6 +167,8 @@ data class CanvasTextEditorSession(
 @Composable
 fun CanvasTextOverlay(
     elements: List<CanvasElement>,
+    // Strokes cover every element, so an eraser tap on one erases the stroke, not what's under it.
+    strokes: List<Stroke>,
     activeTool: DrawingTool,
     palette: List<Long>,
     selectedColorArgb: Long,
@@ -172,13 +183,20 @@ fun CanvasTextOverlay(
     onAddStickerElement: (CanvasStickerElement) -> Unit,
     onUpdateStickerElement: (CanvasStickerElement) -> Unit,
     onDeleteStickerElement: (String) -> Unit,
+    onUpdatePhotoElement: (CanvasPhotoElement) -> Unit,
+    onDeletePhotoElement: (String) -> Unit,
+    photoStore: CanvasPhotoStore,
     onRequestTextEdit: (CanvasTextEditorSession) -> Unit,
     onRequestStickerEdit: (CanvasStickerEditorSession) -> Unit,
     onRequestNewStickerAt: (StrokePoint) -> Unit,
+    onRequestPhotoEdit: (CanvasPhotoElement) -> Unit,
+    onRequestNewPhoto: () -> Unit,
     allowCreateOnEmptyTap: Boolean,
     onEmptyTapCreationHandled: () -> Unit,
     isEditorOpen: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // The element an editor has open, which shows in the editor instead.
+    hiddenElementId: String? = null
 ) {
     val density = LocalDensity.current
     val fontResolver = rememberCanvasFontResolver()
@@ -312,14 +330,16 @@ fun CanvasTextOverlay(
         ).also { textLayoutCache[element.id] = it }
     }
 
+    // A small photo is still easy to aim at, as on iOS.
+    val photoMinTargetPx = with(density) { 44.dp.toPx() }
+
     fun hitTestAtContentPosition(
         elementsForHitTest: List<CanvasElement>,
         pointPx: Offset
     ): String? {
         if (canvasSize.width <= 0 || canvasSize.height <= 0) return null
         val pillPaddingPx = with(density) { 12.dp.toPx() }
-        val reversed = elementsForHitTest.asReversed()
-        for (element in reversed) {
+        return elementsForHitTest.topmostElement { element ->
             val centerPx = element.center.denormalize(canvasSize)
             val dx = pointPx.x - centerPx.x
             val dy = pointPx.y - centerPx.y
@@ -346,9 +366,7 @@ fun CanvasTextOverlay(
                         right += pillPaddingPx
                         bottom += pillPaddingPx
                     }
-                    if (xLocal in left..right && yLocal in top..bottom) {
-                        return element.id
-                    }
+                    xLocal in left..right && yLocal in top..bottom
                 }
                 is CanvasStickerElement -> {
                     val bitmap = stickerBitmapFor(element)
@@ -367,15 +385,35 @@ fun CanvasTextOverlay(
                     }
                     val halfW = renderSize.widthPx / 2f
                     val halfH = renderSize.heightPx / 2f
-                    if (xRot in -halfW..halfW && yRot in -halfH..halfH) {
-                        return element.id
-                    }
+                    xRot in -halfW..halfW && yRot in -halfH..halfH
                 }
+                is CanvasPhotoElement -> CanvasPhotoRenderer.contains(
+                    x = pointPx.x,
+                    y = pointPx.y,
+                    photo = element,
+                    cutout = element.cutoutPhotoId?.let(photoStore::cachedBitmap),
+                    canvasWidth = canvasSize.width.toFloat(),
+                    canvasHeight = canvasSize.height.toFloat(),
+                    minTarget = photoMinTargetPx
+                )
             }
-        }
-        return null
+        }?.id
     }
 
+    val latestStrokes by rememberUpdatedState(strokes)
+    val strokeHitTester = remember { StrokeHitTester() }
+
+    fun isStrokeAt(contentPointPx: Offset): Boolean {
+        if (canvasSize.width <= 0 || canvasSize.height <= 0) return false
+        val width = canvasSize.width.toFloat()
+        val height = canvasSize.height.toFloat()
+        return strokeHitTester.findStrokeHit(
+            strokes = latestStrokes.map { stroke -> stroke.denormalizeToSurface(width, height) },
+            point = StrokePoint(x = contentPointPx.x, y = contentPointPx.y)
+        ) != null
+    }
+
+    val elementsInPaintOrder = remember(elements) { elements.inPaintOrder() }
     val stickerElements = remember(elements) { elements.filterIsInstance<CanvasStickerElement>() }
     // Keyed on the artwork rather than the elements, so moving a sticker doesn't restart its load.
     val stickerArtwork = remember(stickerElements) { stickerElements.map { it.artwork() }.distinct() }
@@ -445,7 +483,7 @@ fun CanvasTextOverlay(
     // Important: only install pointer handlers when needed; this overlay sits above the
     // drawing canvas so it must not block drawing/erase gestures unless it consumes them.
 	    val gestureModifier = when {
-	        (activeTool == DrawingTool.TEXT || activeTool == DrawingTool.STICKER) &&
+	        (activeTool == DrawingTool.TEXT || activeTool == DrawingTool.STICKER || activeTool == DrawingTool.PHOTO) &&
 	            !isEditorOpen ->
 	            Modifier.pointerInput(elements, canvasSize, selectedColorArgb, activeTool) {
 		            awaitEachGesture {
@@ -454,6 +492,7 @@ fun CanvasTextOverlay(
 		                val hittable = when (activeTool) {
 		                    DrawingTool.TEXT -> elements.filterIsInstance<CanvasTextElement>()
 		                    DrawingTool.STICKER -> elements.filterIsInstance<CanvasStickerElement>()
+		                    DrawingTool.PHOTO -> elements.filterIsInstance<CanvasPhotoElement>()
 		                    else -> elements
 		                }
 
@@ -630,6 +669,8 @@ fun CanvasTextOverlay(
                         val nextScale = when (current) {
                             is CanvasTextElement -> (current.scale * zoomChange).coerceIn(0.3f, 6f)
                             is CanvasStickerElement -> (current.scale * zoomChange).coerceIn(0.08f, 1.6f)
+                            is CanvasPhotoElement -> (current.renderScale * zoomChange)
+                                .coerceIn(CanvasPhotoElement.SCALE_MIN, CanvasPhotoElement.SCALE_MAX)
                         }
                         // Settles level, or on a quarter turn, within 3°, with a tick as it lands, as on iOS.
                         val nextRotation = if (beganTransform) {
@@ -654,6 +695,11 @@ fun CanvasTextOverlay(
                                 rotationRad = nextRotation
                             )
                             is CanvasStickerElement -> current.copy(
+                                center = nextCenterPx.toNormalizedPoint(canvasSize),
+                                scale = nextScale,
+                                rotationRad = nextRotation
+                            )
+                            is CanvasPhotoElement -> current.copy(
                                 center = nextCenterPx.toNormalizedPoint(canvasSize),
                                 scale = nextScale,
                                 rotationRad = nextRotation
@@ -720,6 +766,13 @@ fun CanvasTextOverlay(
                     onRequestNewStickerAt(toContentOffset(initialDown).toNormalizedPoint(canvasSize))
                     onEmptyTapCreationHandled()
                     return@awaitEachGesture
+                } else if (lockedElementId == null && activeTool == DrawingTool.PHOTO) {
+                    // The Camera tool on empty canvas opens the camera for another photo.
+                    liveTransformPreview = null
+                    if (sawMultiTouch || !allowCreateOnEmptyTap) return@awaitEachGesture
+                    onRequestNewPhoto()
+                    onEmptyTapCreationHandled()
+                    return@awaitEachGesture
                 } else if (lockedElementId == null) {
                     liveTransformPreview = null
                     return@awaitEachGesture
@@ -734,6 +787,7 @@ fun CanvasTextOverlay(
                         when (preview) {
                             is CanvasTextElement -> onUpdateTextElement(preview)
                             is CanvasStickerElement -> onUpdateStickerElement(preview)
+                            is CanvasPhotoElement -> onUpdatePhotoElement(preview)
                         }
                     }
                 } else {
@@ -743,6 +797,8 @@ fun CanvasTextOverlay(
                         onRequestTextEdit(CanvasTextEditorSession(element = target, isNew = false))
                     } else if (activeTool == DrawingTool.STICKER && target is CanvasStickerElement) {
                         onRequestStickerEdit(CanvasStickerEditorSession(element = target, isNew = false))
+                    } else if (activeTool == DrawingTool.PHOTO && target is CanvasPhotoElement) {
+                        onRequestPhotoEdit(target)
                     }
                 }
             }
@@ -811,12 +867,13 @@ fun CanvasTextOverlay(
 
                 if (movedBeyondSlop || heldForReactions) return@awaitEachGesture
 
-                if (hitId != null) {
+                if (hitId != null && !isStrokeAt(toContentOffset(initialDown))) {
                     val target = elements.firstOrNull { it.id == hitId }
                     when (target) {
                         is CanvasTextElement -> onDeleteTextElement(hitId)
                         is CanvasStickerElement -> onDeleteStickerElement(hitId)
-                        else -> onDeleteTextElement(hitId)
+                        is CanvasPhotoElement -> onDeletePhotoElement(hitId)
+                        null -> Unit
                     }
                 } else {
                     // Prefer the main transform math; fallback keeps behavior sensible if draw transform differs.
@@ -831,6 +888,39 @@ fun CanvasTextOverlay(
     // All gestures are handled in a single pointerInput block (`gestureModifier`) so
     // tap-to-edit and drag-to-reposition work in the same gesture without requiring
     // a prior selection or recomposition.
+
+    // Photos come from the photo store; the canvas redraws as each one is decoded.
+    val loadedPhotoIds by photoStore.loadedPhotoIds.collectAsState()
+    val photoIdsToLoad = remember(elements) {
+        elements.filterIsInstance<CanvasPhotoElement>()
+            .flatMap { listOfNotNull(it.photoId, it.cutoutPhotoId) }
+            .distinct()
+    }
+    LaunchedEffect(photoIdsToLoad) {
+        photoIdsToLoad.forEach { photoId -> launch { photoStore.loadBitmap(photoId) } }
+    }
+    // Each photo drawn once with its shadow, then copied while only its place or angle changes.
+    val renderedPhotos = remember { mutableMapOf<String, RenderedCanvasPhoto>() }
+    LaunchedEffect(elements) {
+        val photoIds = elements.filterIsInstance<CanvasPhotoElement>().map { it.id }.toSet()
+        renderedPhotos.keys.toList().forEach { id -> if (id !in photoIds) renderedPhotos.remove(id) }
+    }
+
+    fun renderedPhotoFor(element: CanvasPhotoElement, canvasWidth: Float): RenderedCanvasPhoto? {
+        val image = photoStore.cachedBitmap(element.photoId)
+        val cutout = element.cutoutPhotoId?.let(photoStore::cachedBitmap)
+        val content = listOf(
+            element.style, element.aspectRatio, element.photoId, image != null, element.cutoutPhotoId, cutout != null
+        ).joinToString("|")
+        val long = CanvasPhotoRenderer.longEdge(element, canvasWidth)
+        val cached = renderedPhotos[element.id]
+        // While pinched, the copy is scaled; it's drawn afresh at its new size once let go.
+        if (cached != null && cached.content == content && (isTransformInProgress || kotlin.math.abs(cached.long - long) < 0.5f)) {
+            return cached
+        }
+        val rendered = CanvasPhotoRenderer.render(element, image, cutout, canvasWidth) ?: return cached
+        return RenderedCanvasPhoto(content, long, rendered).also { renderedPhotos[element.id] = it }
+    }
 
     Box(
         modifier = modifier
@@ -854,8 +944,11 @@ fun CanvasTextOverlay(
                         textPillBoundsPaint.strokeWidth = debugStrokeWidthPx
                         stickerBoundsPaint.strokeWidth = debugStrokeWidthPx
 
+	                    // While dragged, an element keeps its place in its own layer, under the strokes.
 	                    val preview = liveTransformPreview
-	                    elements.forEach { baseElement ->
+	                    loadedPhotoIds
+	                    elementsInPaintOrder.forEach { baseElement ->
+	                        if (baseElement.id == hiddenElementId) return@forEach
 	                        val element = if (preview != null && preview.id == baseElement.id) preview else baseElement
 	                        when (element) {
 	                        is CanvasTextElement -> {
@@ -952,6 +1045,25 @@ fun CanvasTextOverlay(
                             }
 
 	                            native.restore()
+	                        }
+	                        is CanvasPhotoElement -> {
+	                            val canvasWidth = canvasSize.width.toFloat()
+	                            val photo = renderedPhotoFor(element, canvasWidth)
+	                            if (photo != null) {
+	                                val center = element.center.denormalize(canvasSize)
+	                                val grow = CanvasPhotoRenderer.longEdge(element, canvasWidth) / photo.long
+	                                native.save()
+	                                native.translate(center.x, center.y)
+	                                native.rotate((element.rotationRad * 180f / Math.PI).toFloat())
+	                                native.scale(grow, grow)
+	                                native.drawBitmap(
+	                                    photo.rendered.bitmap,
+	                                    -photo.rendered.width / 2f,
+	                                    -photo.rendered.height / 2f,
+	                                    stickerBitmapPaint
+	                                )
+	                                native.restore()
+	                            }
 	                        }
 	                        }
 	                    }
@@ -1581,3 +1693,10 @@ private const val ROTATION_MAX_DEG = 180f
 private fun radToDeg(rad: Float): Float = (rad * 180f / PI.toFloat())
 
 private fun degToRad(deg: Float): Float = (deg * PI.toFloat() / 180f)
+
+/** A photo drawn with its shadow, at [long] canvas pixels on its long edge, for content [content]. */
+private class RenderedCanvasPhoto(
+    val content: String,
+    val long: Float,
+    val rendered: CanvasPhotoRenderer.Rendered
+)

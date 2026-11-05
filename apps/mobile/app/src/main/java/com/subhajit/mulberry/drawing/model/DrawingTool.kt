@@ -9,7 +9,9 @@ enum class DrawingTool {
     DRAW,
     ERASE,
     TEXT,
-    STICKER
+    STICKER,
+    /** The camera: places photos, and moves and edits the ones already there. */
+    PHOTO
 }
 
 /** The tool in effect: an old "no tool" is the brush. */

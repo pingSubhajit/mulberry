@@ -192,4 +192,26 @@
     <string name="widget_relationship_wow_days_now">Wow, %1$s now!!</string>
     <string name="widget_relationship_wow_months_now">Wow, %1$s now!!</string>
     <string name="widget_relationship_wow_days_to">Wow, %1$s to %2$d!!</string>
+    <!-- The Camera tool and photo editor; the same copy as iOS. -->
+    <string name="photo_camera_close">Close</string>
+    <string name="photo_camera_flash_on">Flash on</string>
+    <string name="photo_camera_flash_off">Flash off</string>
+    <string name="photo_camera_library">Photo library</string>
+    <string name="photo_camera_take">Take photo</string>
+    <string name="photo_camera_switch">Switch camera</string>
+    <string name="photo_camera_access_off_title">Camera access is off</string>
+    <string name="photo_camera_access_off_body">Allow it to snap photos for your canvas.</string>
+    <string name="photo_camera_allow_access">Allow Access</string>
+    <string name="photo_camera_unavailable_title">Camera unavailable</string>
+    <string name="photo_camera_unavailable_body">Try again in a moment.</string>
+    <string name="photo_editor_retake">Retake</string>
+    <string name="photo_editor_done">Done</string>
+    <string name="photo_editor_failed">Couldn’t add the photo. Try again.</string>
+    <string name="photo_editor_style_simple">Simple</string>
+    <string name="photo_editor_style_polaroid">Polaroid</string>
+    <string name="photo_editor_style_sticker">Sticker</string>
+    <string name="photo_editor_size">Size</string>
+    <string name="photo_editor_rotation">Rotation</string>
+    <string name="photo_editor_delete">Delete</string>
+    <string name="photo_editor_photo">Photo</string>
 </resources>

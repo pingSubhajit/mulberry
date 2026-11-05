@@ -8,6 +8,7 @@ import com.subhajit.mulberry.drawing.geometry.denormalizeStrokeWidth
 import com.subhajit.mulberry.drawing.geometry.denormalizeToSurface
 import com.subhajit.mulberry.drawing.geometry.normalizeStrokeWidth
 import com.subhajit.mulberry.drawing.model.CanvasElement
+import com.subhajit.mulberry.drawing.model.CanvasPhotoElement
 import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.BrushStyle
@@ -17,6 +18,7 @@ import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.drawing.model.drawsSomething
 import com.subhajit.mulberry.sync.CanvasSyncOperation
+import com.subhajit.mulberry.sync.LocalCanvasOperationIds
 import com.subhajit.mulberry.sync.ServerCanvasOperation
 import com.subhajit.mulberry.sync.SyncOperationPayload
 import com.subhajit.mulberry.sync.SyncState
@@ -64,6 +66,7 @@ class DefaultCanvasRuntime @Inject constructor(
     private val drawingRepository: DrawingRepository,
     private val strokeBuilder: StrokeBuilder,
     private val strokeHitTester: StrokeHitTester,
+    private val operationIds: LocalCanvasOperationIds,
     @ApplicationScope private val applicationScope: CoroutineScope
 ) : CanvasRuntime {
     private val events = Channel<RuntimeEventEnvelope>(Channel.UNLIMITED)
@@ -221,6 +224,9 @@ class DefaultCanvasRuntime @Inject constructor(
             is CanvasRuntimeEvent.AddStickerElement -> handleAddStickerElement(event.element)
             is CanvasRuntimeEvent.UpdateStickerElement -> handleUpdateStickerElement(event.element)
             is CanvasRuntimeEvent.DeleteStickerElement -> handleDeleteStickerElement(event.elementId)
+            is CanvasRuntimeEvent.AddPhotoElement -> handleAddElement(event.element)
+            is CanvasRuntimeEvent.UpdatePhotoElement -> handleUpdateElement(event.element)
+            is CanvasRuntimeEvent.DeletePhotoElement -> handleDeleteElement(event.elementId)
         }
     }
 
@@ -242,7 +248,7 @@ class DefaultCanvasRuntime @Inject constructor(
             next.withUndoRedoAvailability()
         }
         outbound.send(
-            newClientOperation(
+            localOperation(
                 type = DrawingOperationType.ADD_STROKE,
                 strokeId = stroke.id,
                 payload = stroke.toAddStrokePayload()
@@ -281,7 +287,7 @@ class DefaultCanvasRuntime @Inject constructor(
             next.withUndoRedoAvailability()
         }
         outbound.send(
-            newClientOperation(
+            localOperation(
                 type = DrawingOperationType.FINISH_STROKE,
                 strokeId = finished.id,
                 payload = SyncOperationPayload.FinishStroke
@@ -332,7 +338,7 @@ class DefaultCanvasRuntime @Inject constructor(
         }
         for (stroke in erased) {
             outbound.send(
-                newClientOperation(
+                localOperation(
                     type = DrawingOperationType.DELETE_STROKE,
                     strokeId = stroke.id,
                     payload = SyncOperationPayload.DeleteStroke
@@ -355,7 +361,7 @@ class DefaultCanvasRuntime @Inject constructor(
             next.withUndoRedoAvailability()
         }
         outbound.send(
-            newClientOperation(
+            localOperation(
                 type = DrawingOperationType.CLEAR_CANVAS,
                 strokeId = null,
                 payload = SyncOperationPayload.ClearCanvas
@@ -501,10 +507,30 @@ class DefaultCanvasRuntime @Inject constructor(
                     ).withUndoRedoAvailability()
                 }
             }
+            is SyncOperationPayload.AddPhotoElement -> applyRemoteUpsertPhoto(operation.payload.element, operation.serverRevision)
+            is SyncOperationPayload.UpdatePhotoElement -> applyRemoteUpsertPhoto(operation.payload.element, operation.serverRevision)
+            SyncOperationPayload.DeletePhotoElement -> {
+                val elementId = operation.strokeId ?: return
+                persistenceStore.persistRemoteDeletePhotoElement(elementId, operation.serverRevision)
+                _renderState.update {
+                    it.copy(
+                        committedElements = deleteElement(it.committedElements, elementId),
+                        revision = maxOf(it.revision, operation.serverRevision),
+                        cacheToken = it.cacheToken + 1
+                    ).withUndoRedoAvailability()
+                }
+            }
+            // Nothing this build can draw; the sync repository still advances past its revision.
+            is SyncOperationPayload.Unsupported -> {
+                _renderState.update { it.copy(revision = maxOf(it.revision, operation.serverRevision)) }
+            }
         }
     }
 
     private suspend fun handleRecoverySnapshot(event: CanvasRuntimeEvent.RecoverySnapshot) {
+        // What this device drew before now is gone from the canvas, so its echoes must apply again.
+        // Doing it here, in the event loop, keeps it in step with the strokes drawn either side.
+        operationIds.startNewLineage()
         persistenceStore.replaceFromServerSnapshot(event.strokes, event.elements, event.serverRevision)
         clearHistory()
         _renderState.update {
@@ -616,6 +642,23 @@ class DefaultCanvasRuntime @Inject constructor(
                     committedElements = deleteElement(committedElements, elementId)
                     cacheChanged = true
                 }
+                is SyncOperationPayload.AddPhotoElement -> {
+                    persistenceStore.persistRemoteUpsertPhotoElement(operation.payload.element, operation.serverRevision)
+                    committedElements = upsertElement(committedElements, operation.payload.element)
+                    cacheChanged = true
+                }
+                is SyncOperationPayload.UpdatePhotoElement -> {
+                    persistenceStore.persistRemoteUpsertPhotoElement(operation.payload.element, operation.serverRevision)
+                    committedElements = upsertElement(committedElements, operation.payload.element)
+                    cacheChanged = true
+                }
+                SyncOperationPayload.DeletePhotoElement -> {
+                    val elementId = operation.strokeId ?: return@forEach
+                    persistenceStore.persistRemoteDeletePhotoElement(elementId, operation.serverRevision)
+                    committedElements = deleteElement(committedElements, elementId)
+                    cacheChanged = true
+                }
+                is SyncOperationPayload.Unsupported -> Unit
             }
             revision = maxOf(revision, operation.serverRevision)
         }
@@ -651,7 +694,7 @@ class DefaultCanvasRuntime @Inject constructor(
                 next.withUndoRedoAvailability()
             }
             outbound.send(
-                newClientOperation(
+                localOperation(
                     type = DrawingOperationType.DELETE_STROKE,
                     strokeId = activeStroke.id,
                     payload = SyncOperationPayload.DeleteStroke
@@ -678,7 +721,7 @@ class DefaultCanvasRuntime @Inject constructor(
                     next.withUndoRedoAvailability()
                 }
                 outbound.send(
-                    newClientOperation(
+                    localOperation(
                         type = DrawingOperationType.DELETE_STROKE,
                         strokeId = action.stroke.id,
                         payload = SyncOperationPayload.DeleteStroke
@@ -764,7 +807,7 @@ class DefaultCanvasRuntime @Inject constructor(
                     next.withUndoRedoAvailability()
                 }
                 outbound.send(
-                    newClientOperation(
+                    localOperation(
                         type = DrawingOperationType.DELETE_STROKE,
                         strokeId = action.deletedStrokeId,
                         payload = SyncOperationPayload.DeleteStroke
@@ -907,10 +950,64 @@ class DefaultCanvasRuntime @Inject constructor(
         outbound.send(newClientOperationForDelete(existing))
     }
 
+    private suspend fun applyRemoteUpsertPhoto(element: CanvasPhotoElement, serverRevision: Long) {
+        persistenceStore.persistRemoteUpsertPhotoElement(element, serverRevision)
+        _renderState.update {
+            it.copy(
+                committedElements = upsertElement(it.committedElements, element),
+                revision = maxOf(it.revision, serverRevision),
+                cacheToken = it.cacheToken + 1
+            ).withUndoRedoAvailability()
+        }
+    }
+
+    /** A new element of any kind: on the canvas, saved, undoable and sent. */
+    private suspend fun handleAddElement(element: CanvasElement) {
+        persistUpsertElement(element)
+        recordLocalAction(HistoryAction.AddElementAction(element))
+        _renderState.update { current ->
+            current.copy(
+                committedElements = upsertElement(current.committedElements, element),
+                cacheToken = current.cacheToken + 1
+            ).withUndoRedoAvailability()
+        }
+        outbound.send(newClientOperationForAdd(element))
+    }
+
+    /** A changed element of any kind; an unchanged one is saved and sent but not an undo step. */
+    private suspend fun handleUpdateElement(element: CanvasElement) {
+        val before = _renderState.value.committedElements.firstOrNull { it.id == element.id }
+        persistUpsertElement(element)
+        if (before != null && before != element) {
+            recordLocalAction(HistoryAction.UpdateElementAction(before = before, after = element))
+        }
+        _renderState.update { current ->
+            current.copy(
+                committedElements = upsertElement(current.committedElements, element),
+                cacheToken = current.cacheToken + 1
+            ).withUndoRedoAvailability()
+        }
+        outbound.send(newClientOperationForUpdate(element))
+    }
+
+    private suspend fun handleDeleteElement(elementId: String) {
+        val existing = _renderState.value.committedElements.firstOrNull { it.id == elementId } ?: return
+        persistDeleteElement(existing)
+        recordLocalAction(HistoryAction.DeleteElementAction(existing))
+        _renderState.update { current ->
+            current.copy(
+                committedElements = deleteElement(current.committedElements, elementId),
+                cacheToken = current.cacheToken + 1
+            ).withUndoRedoAvailability()
+        }
+        outbound.send(newClientOperationForDelete(existing))
+    }
+
     private suspend fun persistUpsertElement(element: CanvasElement) {
         when (element) {
             is CanvasTextElement -> persistenceStore.persistUpsertTextElement(element)
             is CanvasStickerElement -> persistenceStore.persistUpsertStickerElement(element)
+            is CanvasPhotoElement -> persistenceStore.persistUpsertPhotoElement(element)
         }
     }
 
@@ -918,48 +1015,75 @@ class DefaultCanvasRuntime @Inject constructor(
         when (element) {
             is CanvasTextElement -> persistenceStore.persistDeleteTextElement(element.id)
             is CanvasStickerElement -> persistenceStore.persistDeleteStickerElement(element.id)
+            is CanvasPhotoElement -> persistenceStore.persistDeletePhotoElement(element.id)
         }
     }
 
+    private fun localOperation(
+        type: DrawingOperationType,
+        strokeId: String?,
+        payload: SyncOperationPayload
+    ): CanvasSyncOperation = newClientOperation(
+        clientOperationId = operationIds.newClientOperationId(),
+        type = type,
+        strokeId = strokeId,
+        payload = payload
+    )
+
     private fun newClientOperationForAdd(element: CanvasElement): CanvasSyncOperation =
         when (element) {
-            is CanvasTextElement -> newClientOperation(
+            is CanvasTextElement -> localOperation(
                 type = DrawingOperationType.ADD_TEXT_ELEMENT,
                 strokeId = element.id,
                 payload = element.toAddPayload()
             )
-            is CanvasStickerElement -> newClientOperation(
+            is CanvasStickerElement -> localOperation(
                 type = DrawingOperationType.ADD_STICKER_ELEMENT,
                 strokeId = element.id,
                 payload = element.toAddPayload()
+            )
+            is CanvasPhotoElement -> localOperation(
+                type = DrawingOperationType.ADD_PHOTO_ELEMENT,
+                strokeId = element.id,
+                payload = SyncOperationPayload.AddPhotoElement(element)
             )
         }
 
     private fun newClientOperationForUpdate(element: CanvasElement): CanvasSyncOperation =
         when (element) {
-            is CanvasTextElement -> newClientOperation(
+            is CanvasTextElement -> localOperation(
                 type = DrawingOperationType.UPDATE_TEXT_ELEMENT,
                 strokeId = element.id,
                 payload = element.toUpdatePayload()
             )
-            is CanvasStickerElement -> newClientOperation(
+            is CanvasStickerElement -> localOperation(
                 type = DrawingOperationType.UPDATE_STICKER_ELEMENT,
                 strokeId = element.id,
                 payload = element.toUpdatePayload()
+            )
+            is CanvasPhotoElement -> localOperation(
+                type = DrawingOperationType.UPDATE_PHOTO_ELEMENT,
+                strokeId = element.id,
+                payload = SyncOperationPayload.UpdatePhotoElement(element)
             )
         }
 
     private fun newClientOperationForDelete(element: CanvasElement): CanvasSyncOperation =
         when (element) {
-            is CanvasTextElement -> newClientOperation(
+            is CanvasTextElement -> localOperation(
                 type = DrawingOperationType.DELETE_TEXT_ELEMENT,
                 strokeId = element.id,
                 payload = SyncOperationPayload.DeleteTextElement
             )
-            is CanvasStickerElement -> newClientOperation(
+            is CanvasStickerElement -> localOperation(
                 type = DrawingOperationType.DELETE_STICKER_ELEMENT,
                 strokeId = element.id,
                 payload = SyncOperationPayload.DeleteStickerElement
+            )
+            is CanvasPhotoElement -> localOperation(
+                type = DrawingOperationType.DELETE_PHOTO_ELEMENT,
+                strokeId = element.id,
+                payload = SyncOperationPayload.DeletePhotoElement
             )
         }
 
@@ -973,7 +1097,7 @@ class DefaultCanvasRuntime @Inject constructor(
         pendingAppendPoints.clear()
         lastAppendFlushAt = now
         outbound.send(
-            newClientOperation(
+            localOperation(
                 type = DrawingOperationType.APPEND_POINTS,
                 strokeId = strokeId,
                 payload = SyncOperationPayload.AppendPoints(points)
@@ -1040,7 +1164,7 @@ class DefaultCanvasRuntime @Inject constructor(
             next.withUndoRedoAvailability()
         }
         outbound.send(
-            newClientOperation(
+            localOperation(
                 type = DrawingOperationType.ADD_STROKE,
                 strokeId = newStroke.id,
                 payload = newStroke.toAddStrokePayload()
@@ -1053,7 +1177,7 @@ class DefaultCanvasRuntime @Inject constructor(
         }
 
         outbound.send(
-            newClientOperation(
+            localOperation(
                 type = DrawingOperationType.FINISH_STROKE,
                 strokeId = newStroke.id,
                 payload = SyncOperationPayload.FinishStroke
@@ -1066,7 +1190,7 @@ class DefaultCanvasRuntime @Inject constructor(
         var chunk = mutableListOf<StrokePoint>()
         for (point in points) {
             chunk.add(point)
-            val candidate = newClientOperation(
+            val candidate = localOperation(
                 type = DrawingOperationType.APPEND_POINTS,
                 strokeId = strokeId,
                 payload = SyncOperationPayload.AppendPoints(chunk)
@@ -1075,7 +1199,7 @@ class DefaultCanvasRuntime @Inject constructor(
             if (sizeBytes > MAX_APPEND_OP_BYTES && chunk.size > 1) {
                 val last = chunk.removeAt(chunk.size - 1)
                 outbound.send(
-                    newClientOperation(
+                    localOperation(
                         type = DrawingOperationType.APPEND_POINTS,
                         strokeId = strokeId,
                         payload = SyncOperationPayload.AppendPoints(chunk)
@@ -1086,7 +1210,7 @@ class DefaultCanvasRuntime @Inject constructor(
         }
         if (chunk.isNotEmpty()) {
             outbound.send(
-                newClientOperation(
+                localOperation(
                     type = DrawingOperationType.APPEND_POINTS,
                     strokeId = strokeId,
                     payload = SyncOperationPayload.AppendPoints(chunk)

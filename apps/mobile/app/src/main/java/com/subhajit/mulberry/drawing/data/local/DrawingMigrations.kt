@@ -62,4 +62,46 @@ object DrawingMigrations {
             )
         }
     }
+
+    /**
+     * Strokes are drawn in the order they were finished, as in the server's snapshot. Strokes
+     * already here keep the order they were drawn in until now: by start time, ties by insertion.
+     */
+    internal val STROKE_FINISH_ORDER_STATEMENTS: List<String> = listOf(
+        "ALTER TABLE stroke_entities ADD COLUMN finishOrder INTEGER NOT NULL DEFAULT 0",
+        "UPDATE stroke_entities SET finishOrder = (" +
+            "SELECT COUNT(*) FROM stroke_entities AS earlier " +
+            "WHERE earlier.createdAt < stroke_entities.createdAt " +
+            "OR (earlier.createdAt = stroke_entities.createdAt AND earlier.rowid <= stroke_entities.rowid)" +
+            ")"
+    )
+
+    val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            STROKE_FINISH_ORDER_STATEMENTS.forEach { statement -> db.execSQL(statement) }
+        }
+    }
+
+    /** Photos on the canvas, in the stickers' stack. */
+    internal val PHOTO_ELEMENT_STATEMENTS: List<String> = listOf(
+        "CREATE TABLE IF NOT EXISTS canvas_photo_element_entities (" +
+            "id TEXT NOT NULL PRIMARY KEY, " +
+            "createdAt INTEGER NOT NULL, " +
+            "zIndex INTEGER NOT NULL, " +
+            "centerX REAL NOT NULL, " +
+            "centerY REAL NOT NULL, " +
+            "rotationRad REAL NOT NULL, " +
+            "scale REAL NOT NULL, " +
+            "photoId TEXT NOT NULL, " +
+            "cutoutPhotoId TEXT, " +
+            "aspectRatio REAL NOT NULL, " +
+            "style TEXT NOT NULL" +
+            ")"
+    )
+
+    val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            PHOTO_ELEMENT_STATEMENTS.forEach { statement -> db.execSQL(statement) }
+        }
+    }
 }

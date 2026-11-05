@@ -14,4 +14,7 @@ data class CanvasState(
 
     val stickerElements: List<CanvasStickerElement>
         get() = elements.filterIsInstance<CanvasStickerElement>()
+
+    val photoElements: List<CanvasPhotoElement>
+        get() = elements.filterIsInstance<CanvasPhotoElement>()
 }

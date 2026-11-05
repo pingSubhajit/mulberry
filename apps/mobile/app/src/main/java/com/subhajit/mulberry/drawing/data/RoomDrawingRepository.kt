@@ -4,6 +4,8 @@ import androidx.room.withTransaction
 import com.subhajit.mulberry.drawing.DrawingRepository
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataDao
 import com.subhajit.mulberry.drawing.data.local.CanvasMetadataEntity
+import com.subhajit.mulberry.drawing.data.local.CanvasPhotoElementDao
+import com.subhajit.mulberry.drawing.data.local.CanvasPhotoElementEntity
 import com.subhajit.mulberry.drawing.data.local.CanvasStickerElementDao
 import com.subhajit.mulberry.drawing.data.local.CanvasTextElementDao
 import com.subhajit.mulberry.drawing.data.local.CanvasStickerElementEntity
@@ -18,6 +20,7 @@ import com.subhajit.mulberry.drawing.data.local.toPointEntities
 import com.subhajit.mulberry.drawing.engine.StrokeBuilder
 import com.subhajit.mulberry.drawing.geometry.normalizeStrokeWidth
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
+import com.subhajit.mulberry.drawing.model.CanvasPhotoElement
 import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasElementKind
 import com.subhajit.mulberry.drawing.model.BrushStyle
@@ -31,6 +34,7 @@ import com.subhajit.mulberry.drawing.model.orBrush
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.drawing.model.ToolState
+import com.subhajit.mulberry.sync.toPhotoPayloadJson
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -45,12 +49,12 @@ class RoomDrawingRepository @Inject constructor(
     private val drawingOperationsDao: DrawingOperationsDao,
     private val canvasTextElementDao: CanvasTextElementDao,
     private val canvasStickerElementDao: CanvasStickerElementDao,
+    private val canvasPhotoElementDao: CanvasPhotoElementDao,
     private val canvasMetadataDao: CanvasMetadataDao,
     private val strokeBuilder: StrokeBuilder
 ) : DrawingRepository {
 
     private val activeStroke = MutableStateFlow<Stroke?>(null)
-    private val zIndexScale = 1000L
 
     private val metadataFlow = canvasMetadataDao.observeMetadata()
         .map { it ?: CanvasMetadataEntity.default() }
@@ -64,14 +68,20 @@ class RoomDrawingRepository @Inject constructor(
         )
     }
 
-    override val canvasState: Flow<CanvasState> = combine(
-        drawingDao.observeStrokeGraphs().map { list -> list.map { it.toDomain() } },
+    private val elementsFlow: Flow<List<CanvasElement>> = combine(
         canvasTextElementDao.observeElements(),
         canvasStickerElementDao.observeElements(),
+        canvasPhotoElementDao.observeElements()
+    ) { textEntities, stickerEntities, photoEntities ->
+        mergeElementsByZIndex(textEntities, stickerEntities, photoEntities)
+    }
+
+    override val canvasState: Flow<CanvasState> = combine(
+        drawingDao.observeStrokeGraphs().map { list -> list.map { it.toDomain() } },
+        elementsFlow,
         activeStroke,
         metadataFlow
-    ) { strokes, textEntities, stickerEntities, active, metadata ->
-        val elements: List<CanvasElement> = mergeElementsByZIndex(textEntities, stickerEntities)
+    ) { strokes, elements, active, metadata ->
         CanvasState(
             strokes = strokes,
             elements = elements,
@@ -84,38 +94,6 @@ class RoomDrawingRepository @Inject constructor(
                 cachedImagePath = metadata.cachedImagePath
             )
         )
-    }
-
-    private fun mergeElementsByZIndex(
-        textEntities: List<CanvasTextElementEntity>,
-        stickerEntities: List<CanvasStickerElementEntity>
-    ): List<CanvasElement> {
-        if (textEntities.isEmpty() && stickerEntities.isEmpty()) return emptyList()
-        val merged = ArrayList<CanvasElement>(textEntities.size + stickerEntities.size)
-        var i = 0
-        var j = 0
-        while (i < textEntities.size || j < stickerEntities.size) {
-            val nextText = textEntities.getOrNull(i)
-            val nextSticker = stickerEntities.getOrNull(j)
-            if (nextText == null) {
-                merged.add(nextSticker!!.toDomain())
-                j += 1
-                continue
-            }
-            if (nextSticker == null) {
-                merged.add(nextText.toDomain())
-                i += 1
-                continue
-            }
-            if (nextText.zIndex <= nextSticker.zIndex) {
-                merged.add(nextText.toDomain())
-                i += 1
-            } else {
-                merged.add(nextSticker.toDomain())
-                j += 1
-            }
-        }
-        return merged
     }
 
     override suspend fun startStroke(point: StrokePoint): Stroke? {
@@ -255,6 +233,7 @@ class RoomDrawingRepository @Inject constructor(
             drawingDao.clearStrokes()
             canvasTextElementDao.clear()
             canvasStickerElementDao.clear()
+            canvasPhotoElementDao.clear()
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.CLEAR_CANVAS,
@@ -283,7 +262,8 @@ class RoomDrawingRepository @Inject constructor(
         database.withTransaction {
             val metadata = currentMetadata()
             nextRevision = metadata.revision + 1
-            drawingDao.insertStroke(stroke.toEntity())
+            // Finished just now, so it goes above every stroke already here.
+            drawingDao.insertStroke(stroke.toEntity(finishOrder = drawingDao.nextFinishOrder()))
             drawingDao.deleteStrokePoints(stroke.id)
             drawingDao.insertStrokePoints(stroke.toPointEntities())
             drawingOperationsDao.insertOperation(
@@ -323,7 +303,8 @@ class RoomDrawingRepository @Inject constructor(
         val now = System.currentTimeMillis()
         database.withTransaction {
             val metadata = currentMetadata()
-            drawingDao.insertStroke(stroke.toEntity())
+            // Finished just now, so it goes above every stroke already here.
+            drawingDao.insertStroke(stroke.toEntity(finishOrder = drawingDao.nextFinishOrder()))
             drawingDao.deleteStrokePoints(stroke.id)
             drawingDao.insertStrokePoints(stroke.toPointEntities())
             drawingOperationsDao.insertOperation(
@@ -425,6 +406,10 @@ class RoomDrawingRepository @Inject constructor(
         val now = System.currentTimeMillis()
         database.withTransaction {
             val metadata = currentMetadata()
+            // As on the server, finishing a stroke lifts it above every stroke finished before it.
+            if (drawingDao.strokeExists(strokeId)) {
+                drawingDao.updateFinishOrder(strokeId, drawingDao.nextFinishOrder())
+            }
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.FINISH_STROKE,
@@ -480,6 +465,7 @@ class RoomDrawingRepository @Inject constructor(
             drawingDao.clearStrokes()
             canvasTextElementDao.clear()
             canvasStickerElementDao.clear()
+            canvasPhotoElementDao.clear()
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.CLEAR_CANVAS,
@@ -508,33 +494,32 @@ class RoomDrawingRepository @Inject constructor(
         activeStroke.value = null
         val textElements = elements.filterIsInstance<CanvasTextElement>()
         val stickerElements = elements.filterIsInstance<CanvasStickerElement>()
+        val photoElements = elements.filterIsInstance<CanvasPhotoElement>()
         val now = System.currentTimeMillis()
         database.withTransaction {
             val metadata = currentMetadata()
             drawingDao.clearStrokes()
             canvasTextElementDao.clear()
             canvasStickerElementDao.clear()
-            strokes.forEach { stroke ->
-                drawingDao.insertStroke(stroke.toEntity())
+            canvasPhotoElementDao.clear()
+            // The snapshot lists strokes in the order they were finished: keep it.
+            strokes.forEachIndexed { index, stroke ->
+                drawingDao.insertStroke(stroke.toEntity(finishOrder = index + 1L))
                 drawingDao.deleteStrokePoints(stroke.id)
                 drawingDao.insertStrokePoints(stroke.toPointEntities())
             }
-            textElements.forEachIndexed { index, element ->
-                canvasTextElementDao.upsert(
-                    element.toEntity(zIndex = (serverRevision * zIndexScale) + index.toLong())
-                )
-            }
-            stickerElements.forEachIndexed { index, element ->
-                canvasStickerElementDao.upsert(
-                    element.toEntity(
-                        zIndex = (serverRevision * zIndexScale) + (textElements.size + index).toLong()
-                    )
-                )
+            // In the server's order across both kinds, so each layer keeps its order within it.
+            elements.withSnapshotZIndices(serverRevision).forEach { (element, zIndex) ->
+                when (element) {
+                    is CanvasTextElement -> canvasTextElementDao.upsert(element.toEntity(zIndex = zIndex))
+                    is CanvasStickerElement -> canvasStickerElementDao.upsert(element.toEntity(zIndex = zIndex))
+                    is CanvasPhotoElement -> canvasPhotoElementDao.upsert(element.toEntity(zIndex = zIndex))
+                }
             }
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.CLEAR_CANVAS,
-                    payload = """{"snapshotRestore":true,"strokeCount":${strokes.size},"textElementCount":${textElements.size},"stickerElementCount":${stickerElements.size}}""",
+                    payload = """{"snapshotRestore":true,"strokeCount":${strokes.size},"textElementCount":${textElements.size},"stickerElementCount":${stickerElements.size},"photoElementCount":${photoElements.size}}""",
                     revision = maxOf(metadata.revision + 1, serverRevision),
                     createdAt = now,
                     serverRevision = serverRevision,
@@ -557,7 +542,7 @@ class RoomDrawingRepository @Inject constructor(
         database.withTransaction {
             val metadata = currentMetadata()
             nextRevision = metadata.revision + 1
-            canvasTextElementDao.upsert(element.toEntity(zIndex = nextRevision * zIndexScale))
+            canvasTextElementDao.upsert(element.toEntity(zIndex = nextRevision * ELEMENT_Z_INDEX_SCALE))
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.UPDATE_TEXT_ELEMENT,
@@ -614,7 +599,7 @@ class RoomDrawingRepository @Inject constructor(
         val now = System.currentTimeMillis()
         database.withTransaction {
             val metadata = currentMetadata()
-            canvasTextElementDao.upsert(element.toEntity(zIndex = serverRevision * zIndexScale))
+            canvasTextElementDao.upsert(element.toEntity(zIndex = serverRevision * ELEMENT_Z_INDEX_SCALE))
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.UPDATE_TEXT_ELEMENT,
@@ -668,7 +653,7 @@ class RoomDrawingRepository @Inject constructor(
         database.withTransaction {
             val metadata = currentMetadata()
             nextRevision = metadata.revision + 1
-            canvasStickerElementDao.upsert(element.toEntity(zIndex = nextRevision * zIndexScale))
+            canvasStickerElementDao.upsert(element.toEntity(zIndex = nextRevision * ELEMENT_Z_INDEX_SCALE))
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.UPDATE_STICKER_ELEMENT,
@@ -724,7 +709,7 @@ class RoomDrawingRepository @Inject constructor(
         val now = System.currentTimeMillis()
         database.withTransaction {
             val metadata = currentMetadata()
-            canvasStickerElementDao.upsert(element.toEntity(zIndex = serverRevision * zIndexScale))
+            canvasStickerElementDao.upsert(element.toEntity(zIndex = serverRevision * ELEMENT_Z_INDEX_SCALE))
             drawingOperationsDao.insertOperation(
                 DrawingOperationEntity(
                     type = DrawingOperationType.UPDATE_STICKER_ELEMENT,
@@ -772,6 +757,107 @@ class RoomDrawingRepository @Inject constructor(
         }
     }
 
+    override suspend fun upsertLocalPhotoElement(element: CanvasPhotoElement): Long {
+        val now = System.currentTimeMillis()
+        var nextRevision = 0L
+        database.withTransaction {
+            val metadata = currentMetadata()
+            nextRevision = metadata.revision + 1
+            canvasPhotoElementDao.upsert(element.toEntity(zIndex = nextRevision * ELEMENT_Z_INDEX_SCALE))
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.UPDATE_PHOTO_ELEMENT,
+                    strokeId = element.id,
+                    payload = element.toPhotoPayloadJson().toString(),
+                    revision = nextRevision,
+                    createdAt = now
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(revision = nextRevision, lastModifiedAt = now, isSnapshotDirty = true)
+            )
+        }
+        return nextRevision
+    }
+
+    override suspend fun deleteLocalPhotoElement(elementId: String): Long {
+        val now = System.currentTimeMillis()
+        var nextRevision = 0L
+        database.withTransaction {
+            val metadata = currentMetadata()
+            if (canvasPhotoElementDao.deleteById(elementId) == 0) {
+                nextRevision = metadata.revision
+                return@withTransaction
+            }
+            nextRevision = metadata.revision + 1
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.DELETE_PHOTO_ELEMENT,
+                    strokeId = elementId,
+                    payload = "{}",
+                    revision = nextRevision,
+                    createdAt = now
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(revision = nextRevision, lastModifiedAt = now, isSnapshotDirty = true)
+            )
+        }
+        return nextRevision
+    }
+
+    override suspend fun applyRemoteAddOrUpdatePhotoElement(element: CanvasPhotoElement, serverRevision: Long) {
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val metadata = currentMetadata()
+            canvasPhotoElementDao.upsert(element.toEntity(zIndex = serverRevision * ELEMENT_Z_INDEX_SCALE))
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.UPDATE_PHOTO_ELEMENT,
+                    strokeId = element.id,
+                    payload = element.toPhotoPayloadJson().toString(),
+                    revision = maxOf(metadata.revision + 1, serverRevision),
+                    createdAt = now,
+                    serverRevision = serverRevision,
+                    syncStatus = "REMOTE_APPLIED"
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = maxOf(metadata.revision, serverRevision),
+                    lastModifiedAt = now,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+    }
+
+    override suspend fun applyRemoteDeletePhotoElement(elementId: String, serverRevision: Long) {
+        val now = System.currentTimeMillis()
+        database.withTransaction {
+            val metadata = currentMetadata()
+            canvasPhotoElementDao.deleteById(elementId)
+            drawingOperationsDao.insertOperation(
+                DrawingOperationEntity(
+                    type = DrawingOperationType.DELETE_PHOTO_ELEMENT,
+                    strokeId = elementId,
+                    payload = "{}",
+                    revision = maxOf(metadata.revision + 1, serverRevision),
+                    createdAt = now,
+                    serverRevision = serverRevision,
+                    syncStatus = "REMOTE_APPLIED"
+                )
+            )
+            canvasMetadataDao.upsertMetadata(
+                metadata.copy(
+                    revision = maxOf(metadata.revision, serverRevision),
+                    lastModifiedAt = now,
+                    isSnapshotDirty = true
+                )
+            )
+        }
+    }
+
     override suspend fun resetAllDrawingState() {
         activeStroke.value = null
         database.withTransaction {
@@ -779,12 +865,37 @@ class RoomDrawingRepository @Inject constructor(
             drawingOperationsDao.clearOperations()
             canvasTextElementDao.clear()
             canvasStickerElementDao.clear()
+            canvasPhotoElementDao.clear()
             canvasMetadataDao.upsertMetadata(CanvasMetadataEntity.default())
         }
     }
 
     private suspend fun currentMetadata(): CanvasMetadataEntity =
         canvasMetadataDao.getMetadata() ?: CanvasMetadataEntity.default()
+}
+
+/** Scales a revision into element zIndex values, leaving room for a snapshot's elements in between. */
+internal const val ELEMENT_Z_INDEX_SCALE = 1000L
+
+/**
+ * A restored snapshot's elements with their zIndex values: in the server's order, whatever their
+ * kind, so stickers keep their order among stickers and text among text.
+ */
+internal fun List<CanvasElement>.withSnapshotZIndices(serverRevision: Long): List<Pair<CanvasElement, Long>> =
+    mapIndexed { index, element -> element to (serverRevision * ELEMENT_Z_INDEX_SCALE) + index.toLong() }
+
+/** Text, sticker and photo rows as one list in zIndex order; on a tie, text, then stickers, then photos. */
+internal fun mergeElementsByZIndex(
+    textEntities: List<CanvasTextElementEntity>,
+    stickerEntities: List<CanvasStickerElementEntity>,
+    photoEntities: List<CanvasPhotoElementEntity> = emptyList()
+): List<CanvasElement> {
+    val rows: List<Pair<Long, CanvasElement>> =
+        textEntities.map { it.zIndex to it.toDomain() } +
+            stickerEntities.map { it.zIndex to it.toDomain() } +
+            photoEntities.map { it.zIndex to it.toDomain() }
+    // A stable sort, so ties keep the order above.
+    return rows.sortedBy { (zIndex, _) -> zIndex }.map { (_, element) -> element }
 }
 
 private fun Stroke.addStrokePayloadJson(): String {

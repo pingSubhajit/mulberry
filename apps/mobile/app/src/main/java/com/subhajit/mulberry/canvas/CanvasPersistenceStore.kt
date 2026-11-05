@@ -2,6 +2,7 @@ package com.subhajit.mulberry.canvas
 
 import com.subhajit.mulberry.drawing.DrawingRepository
 import com.subhajit.mulberry.drawing.model.CanvasElement
+import com.subhajit.mulberry.drawing.model.CanvasPhotoElement
 import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.CanvasState
@@ -33,6 +34,11 @@ interface CanvasPersistenceStore {
     suspend fun persistDeleteStickerElement(elementId: String): Long
     suspend fun persistRemoteUpsertStickerElement(element: CanvasStickerElement, serverRevision: Long)
     suspend fun persistRemoteDeleteStickerElement(elementId: String, serverRevision: Long)
+
+    suspend fun persistUpsertPhotoElement(element: CanvasPhotoElement): Long
+    suspend fun persistDeletePhotoElement(elementId: String): Long
+    suspend fun persistRemoteUpsertPhotoElement(element: CanvasPhotoElement, serverRevision: Long)
+    suspend fun persistRemoteDeletePhotoElement(elementId: String, serverRevision: Long)
 }
 
 @Singleton
@@ -102,5 +108,19 @@ class RoomCanvasPersistenceStore @Inject constructor(
 
     override suspend fun persistRemoteDeleteStickerElement(elementId: String, serverRevision: Long) {
         drawingRepository.applyRemoteDeleteStickerElement(elementId, serverRevision)
+    }
+
+    override suspend fun persistUpsertPhotoElement(element: CanvasPhotoElement): Long =
+        drawingRepository.upsertLocalPhotoElement(element)
+
+    override suspend fun persistDeletePhotoElement(elementId: String): Long =
+        drawingRepository.deleteLocalPhotoElement(elementId)
+
+    override suspend fun persistRemoteUpsertPhotoElement(element: CanvasPhotoElement, serverRevision: Long) {
+        drawingRepository.applyRemoteAddOrUpdatePhotoElement(element, serverRevision)
+    }
+
+    override suspend fun persistRemoteDeletePhotoElement(elementId: String, serverRevision: Long) {
+        drawingRepository.applyRemoteDeletePhotoElement(elementId, serverRevision)
     }
 }

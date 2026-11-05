@@ -3,6 +3,7 @@ package com.subhajit.mulberry.canvas
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.drawing.model.CanvasElement
+import com.subhajit.mulberry.drawing.model.CanvasPhotoElement
 import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.sync.ServerCanvasOperation
@@ -39,6 +40,10 @@ sealed interface CanvasRuntimeEvent {
     data class AddStickerElement(val element: CanvasStickerElement) : CanvasRuntimeEvent
     data class UpdateStickerElement(val element: CanvasStickerElement) : CanvasRuntimeEvent
     data class DeleteStickerElement(val elementId: String) : CanvasRuntimeEvent
+
+    data class AddPhotoElement(val element: CanvasPhotoElement) : CanvasRuntimeEvent
+    data class UpdatePhotoElement(val element: CanvasPhotoElement) : CanvasRuntimeEvent
+    data class DeletePhotoElement(val elementId: String) : CanvasRuntimeEvent
 
     data class FlowControl(
         val mode: FlowControlMode,

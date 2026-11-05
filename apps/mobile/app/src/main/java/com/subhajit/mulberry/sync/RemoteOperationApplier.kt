@@ -90,6 +90,26 @@ class DefaultRemoteOperationApplier @Inject constructor(
                     serverRevision = operation.serverRevision
                 )
             }
+            is SyncOperationPayload.AddPhotoElement -> {
+                drawingRepository.applyRemoteAddOrUpdatePhotoElement(
+                    element = operation.payload.element,
+                    serverRevision = operation.serverRevision
+                )
+            }
+            is SyncOperationPayload.UpdatePhotoElement -> {
+                drawingRepository.applyRemoteAddOrUpdatePhotoElement(
+                    element = operation.payload.element,
+                    serverRevision = operation.serverRevision
+                )
+            }
+            SyncOperationPayload.DeletePhotoElement -> {
+                drawingRepository.applyRemoteDeletePhotoElement(
+                    elementId = operation.strokeId ?: return,
+                    serverRevision = operation.serverRevision
+                )
+            }
+            // Nothing to draw, but the revision below still moves past it.
+            is SyncOperationPayload.Unsupported -> Unit
         }
         syncMetadataRepository.setLastAppliedServerRevision(operation.serverRevision)
     }

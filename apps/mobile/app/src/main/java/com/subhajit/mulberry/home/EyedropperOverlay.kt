@@ -42,12 +42,18 @@ import com.subhajit.mulberry.core.ui.ColourNames
 import com.subhajit.mulberry.drawing.engine.StrokeHitTester
 import com.subhajit.mulberry.drawing.geometry.denormalizeToSurface
 import com.subhajit.mulberry.drawing.model.CanvasElement
+import com.subhajit.mulberry.drawing.model.CanvasPaintItem
+import com.subhajit.mulberry.drawing.model.CanvasPhotoElement
+import com.subhajit.mulberry.photos.CanvasPhotoRenderer
+import com.subhajit.mulberry.photos.CanvasPhotoStore
 import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextAlign
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
 import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.CanvasState
+import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
+import com.subhajit.mulberry.drawing.model.paintOrder
 import com.subhajit.mulberry.drawing.text.rememberCanvasFontResolver
 import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerAssetVariant
@@ -65,6 +71,7 @@ fun EyedropperOverlay(
     canvasState: CanvasState,
     viewportTransform: CanvasViewportTransform,
     stickerAssetStore: StickerAssetStore,
+    photoStore: CanvasPhotoStore,
     backgroundColorArgb: Long,
     onLiveColorArgbChanged: (Long?) -> Unit,
     onCommitColorArgb: (Long) -> Unit,
@@ -178,50 +185,50 @@ fun EyedropperOverlay(
         return argb.toLong() and 0xFFFFFFFFL
     }
 
-    fun sampleElementColorArgb(elements: List<CanvasElement>, contentPointPx: Offset): Long? {
+    fun sampleElementColorArgb(element: CanvasElement, contentPointPx: Offset): Long? {
         if (canvasSize.width <= 0 || canvasSize.height <= 0) return null
-        val pillPaddingPx = with(density) { 12.dp.toPx() }
-        val reversed = elements.asReversed()
-        for (element in reversed) {
-            val centerPx = element.center.denormalize(canvasSize)
-            val dx = contentPointPx.x - centerPx.x
-            val dy = contentPointPx.y - centerPx.y
-            val c = cos(element.rotationRad.toDouble()).toFloat()
-            val s = sin(element.rotationRad.toDouble()).toFloat()
-            val xRot = (c * dx) + (s * dy)
-            val yRot = (-s * dx) + (c * dy)
-            when (element) {
-                is CanvasTextElement -> {
-                    val cached = getTextLayoutFor(element)
-                    val xLocal = xRot / element.scale
-                    val yLocal = yRot / element.scale
-                    val layoutLeft = -cached.layout.width / 2f
-                    val layoutTop = -cached.layout.height / 2f
-                    val tight = cached.tightBounds
-                    var left = layoutLeft + tight.left
-                    var top = layoutTop + tight.top
-                    var right = layoutLeft + tight.right
-                    var bottom = layoutTop + tight.bottom
-                    if (element.backgroundPillEnabled) {
-                        left -= pillPaddingPx
-                        top -= pillPaddingPx
-                        right += pillPaddingPx
-                        bottom += pillPaddingPx
-                    }
-                    if (xLocal in left..right && yLocal in top..bottom) {
-                        return element.colorArgb
-                    }
+        return when (element) {
+            is CanvasTextElement -> {
+                val pillPaddingPx = with(density) { 12.dp.toPx() }
+                val centerPx = element.center.denormalize(canvasSize)
+                val dx = contentPointPx.x - centerPx.x
+                val dy = contentPointPx.y - centerPx.y
+                val c = cos(element.rotationRad.toDouble()).toFloat()
+                val s = sin(element.rotationRad.toDouble()).toFloat()
+                val xRot = (c * dx) + (s * dy)
+                val yRot = (-s * dx) + (c * dy)
+                val cached = getTextLayoutFor(element)
+                val xLocal = xRot / element.scale
+                val yLocal = yRot / element.scale
+                val layoutLeft = -cached.layout.width / 2f
+                val layoutTop = -cached.layout.height / 2f
+                val tight = cached.tightBounds
+                var left = layoutLeft + tight.left
+                var top = layoutTop + tight.top
+                var right = layoutLeft + tight.right
+                var bottom = layoutTop + tight.bottom
+                if (element.backgroundPillEnabled) {
+                    left -= pillPaddingPx
+                    top -= pillPaddingPx
+                    right += pillPaddingPx
+                    bottom += pillPaddingPx
                 }
-                is CanvasStickerElement -> {
-                    val sampled = sampleFromSticker(element, contentPointPx)
-                    if (sampled != null) return sampled
-                }
+                if (xLocal in left..right && yLocal in top..bottom) element.colorArgb else null
             }
+            is CanvasStickerElement -> sampleFromSticker(element, contentPointPx)
+            is CanvasPhotoElement -> CanvasPhotoRenderer.colorAt(
+                x = contentPointPx.x,
+                y = contentPointPx.y,
+                photo = element,
+                image = photoStore.cachedBitmap(element.photoId),
+                cutout = element.cutoutPhotoId?.let(photoStore::cachedBitmap),
+                canvasWidth = canvasSize.width.toFloat(),
+                canvasHeight = canvasSize.height.toFloat()
+            )?.let { argb -> argb.toLong() and 0xFFFFFFFFL }
         }
-        return null
     }
 
-    fun sampleStrokeColorArgb(contentPointPx: Offset): Long? {
+    fun sampleStrokeColorArgb(stroke: Stroke, contentPointPx: Offset): Long? {
         if (canvasSize.width <= 0 || canvasSize.height <= 0) return null
         val w = canvasSize.width.coerceAtLeast(1).toFloat()
         val h = canvasSize.height.coerceAtLeast(1).toFloat()
@@ -229,15 +236,9 @@ fun EyedropperOverlay(
             x = (contentPointPx.x / w).coerceIn(0f, 1f),
             y = (contentPointPx.y / h).coerceIn(0f, 1f)
         )
-        val pointPx = normalized.denormalizeToSurface(w, h)
-        val strokes = buildList {
-            addAll(latestCanvasState.strokes)
-            latestCanvasState.activeStroke?.let { add(it) }
-            addAll(latestCanvasState.remoteActiveStrokes)
-        }
         val hit = strokeHitTester.findStrokeHit(
-            strokes = strokes.map { it.denormalizeToSurface(w, h) },
-            point = pointPx
+            strokes = listOf(stroke.denormalizeToSurface(w, h)),
+            point = normalized.denormalizeToSurface(w, h)
         ) ?: return null
         return hit.colorArgb
     }
@@ -248,11 +249,13 @@ fun EyedropperOverlay(
             x = content.x.coerceIn(0f, canvasSize.width.toFloat().coerceAtLeast(0f)),
             y = content.y.coerceIn(0f, canvasSize.height.toFloat().coerceAtLeast(0f))
         )
-        val elementColor = sampleElementColorArgb(latestCanvasState.elements, contentClamped)
-        if (elementColor != null) return elementColor
-        val strokeColor = sampleStrokeColorArgb(contentClamped)
-        if (strokeColor != null) return strokeColor
-        return latestBackgroundColorArgb
+        // The colour on top: strokes cover the text, and the text covers the stickers.
+        return latestCanvasState.paintOrder().asReversed().firstNotNullOfOrNull { item ->
+            when (item) {
+                is CanvasPaintItem.StrokeItem -> sampleStrokeColorArgb(item.stroke, contentClamped)
+                is CanvasPaintItem.Element -> sampleElementColorArgb(item.element, contentClamped)
+            }
+        } ?: latestBackgroundColorArgb
     }
 
     val stickerElements = remember(canvasState.elements) { canvasState.elements.filterIsInstance<CanvasStickerElement>() }

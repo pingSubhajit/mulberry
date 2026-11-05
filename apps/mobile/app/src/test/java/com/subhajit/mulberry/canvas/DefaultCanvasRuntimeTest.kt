@@ -5,6 +5,8 @@ import com.subhajit.mulberry.drawing.engine.StrokeBuilder
 import com.subhajit.mulberry.drawing.engine.StrokeHitTester
 import com.subhajit.mulberry.drawing.geometry.normalizeStrokeWidth
 import com.subhajit.mulberry.drawing.model.CanvasElement
+import com.subhajit.mulberry.drawing.model.CanvasPhotoElement
+import com.subhajit.mulberry.drawing.model.CanvasPhotoStyle
 import com.subhajit.mulberry.drawing.model.CanvasState
 import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
@@ -17,6 +19,9 @@ import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.drawing.model.ToolState
 import com.subhajit.mulberry.sync.CanvasSyncOperation
+import com.subhajit.mulberry.sync.ServerCanvasOperation
+import com.subhajit.mulberry.sync.SyncOperationPayload
+import com.subhajit.mulberry.sync.establishedOperationIds
 import com.subhajit.mulberry.sync.toWireJson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +49,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -69,6 +75,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -101,6 +108,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -137,6 +145,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -182,6 +191,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -233,6 +243,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -289,6 +300,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -333,6 +345,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -379,6 +392,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -440,6 +454,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -508,6 +523,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -552,6 +568,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -593,6 +610,7 @@ class DefaultCanvasRuntimeTest {
             drawingRepository = drawingRepository,
             strokeBuilder = StrokeBuilder(),
             strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
             applicationScope = backgroundScope
         )
 
@@ -633,7 +651,200 @@ class DefaultCanvasRuntimeTest {
 
         job.cancel()
     }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `local operations carry this install's lineage until a snapshot starts a new one`() = runTest {
+        val operationIds = establishedOperationIds()
+        val runtime = DefaultCanvasRuntime(
+            persistenceStore = FakeCanvasPersistenceStore(),
+            drawingRepository = FakeDrawingRepository(),
+            strokeBuilder = StrokeBuilder(),
+            strokeHitTester = StrokeHitTester(),
+            operationIds = operationIds,
+            applicationScope = backgroundScope
+        )
+        val outbound = mutableListOf<CanvasSyncOperation>()
+        val job = backgroundScope.launch {
+            runtime.outboundOperations.collect { outbound += it }
+        }
+
+        runtime.start(pairSessionId = "pair", userId = "user")
+        advanceUntilIdle()
+        runtime.submitAndAwait(CanvasRuntimeEvent.ClearCanvas)
+        advanceUntilIdle()
+        val beforeSnapshot = outbound.single().clientOperationId
+        assertTrue(operationIds.isLocal(beforeSnapshot))
+
+        runtime.submitAndAwait(
+            CanvasRuntimeEvent.RecoverySnapshot(strokes = emptyList(), elements = emptyList(), serverRevision = 5L)
+        )
+        runtime.submitAndAwait(CanvasRuntimeEvent.ClearCanvas)
+        advanceUntilIdle()
+
+        assertFalse(operationIds.isLocal(beforeSnapshot))
+        assertTrue(operationIds.isLocal(outbound.last().clientOperationId))
+        job.cancel()
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `a stroke started earlier but finished later is drawn above`() = runTest {
+        val persistenceStore = FakeCanvasPersistenceStore()
+        val runtime = DefaultCanvasRuntime(
+            persistenceStore = persistenceStore,
+            drawingRepository = FakeDrawingRepository(),
+            strokeBuilder = StrokeBuilder(),
+            strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
+            applicationScope = backgroundScope
+        )
+        runtime.start(pairSessionId = "pair", userId = "user")
+        advanceUntilIdle()
+        runtime.submitAndAwait(CanvasRuntimeEvent.CanvasViewportChanged(widthPx = 200, heightPx = 400))
+
+        // The partner starts a stroke first...
+        runtime.submitAndAwait(
+            CanvasRuntimeEvent.RemoteOperation(
+                remoteOperation(
+                    revision = 1L,
+                    strokeId = "partner",
+                    payload = SyncOperationPayload.AddStroke(
+                        id = "partner",
+                        colorArgb = 0xFF000000,
+                        width = 0.01f,
+                        createdAt = 1L,
+                        firstPoint = StrokePoint(x = 0.1f, y = 0.1f)
+                    )
+                )
+            )
+        )
+        // ...this device starts and finishes one while the partner's is still being drawn...
+        runtime.submitAndAwait(CanvasRuntimeEvent.LocalPress(StrokePoint(x = 0.5f, y = 0.5f)))
+        runtime.submitAndAwait(CanvasRuntimeEvent.LocalDrag(StrokePoint(x = 0.6f, y = 0.6f)))
+        runtime.submitAndAwait(CanvasRuntimeEvent.LocalRelease)
+        val local = runtime.renderState.value.committedStrokes.single()
+        assertTrue(local.createdAt > 1L)
+        // A stroke still being drawn sits above the finished ones.
+        assertEquals(listOf("partner"), runtime.renderState.value.toCanvasState().remoteActiveStrokes.map { it.id })
+
+        // ...and the partner finishes last, so theirs goes on top.
+        runtime.submitAndAwait(
+            CanvasRuntimeEvent.RemoteOperation(
+                remoteOperation(revision = 2L, strokeId = "partner", payload = SyncOperationPayload.FinishStroke)
+            )
+        )
+
+        assertEquals(listOf(local.id, "partner"), runtime.renderState.value.committedStrokes.map { it.id })
+        assertEquals(listOf(local.id, "partner"), persistenceStore.committedStrokeIds)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `a photo is added, moved and undone like any element, and sent as photo operations`() = runTest {
+        val persistenceStore = FakeCanvasPersistenceStore()
+        val runtime = DefaultCanvasRuntime(
+            persistenceStore = persistenceStore,
+            drawingRepository = FakeDrawingRepository(),
+            strokeBuilder = StrokeBuilder(),
+            strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
+            applicationScope = backgroundScope
+        )
+        val outbound = mutableListOf<CanvasSyncOperation>()
+        val job = backgroundScope.launch { runtime.outboundOperations.collect { outbound += it } }
+        runtime.start(pairSessionId = "pair", userId = "user")
+        advanceUntilIdle()
+
+        val photo = CanvasPhotoElement(
+            id = "photo-1",
+            createdAt = 1L,
+            center = StrokePoint(0.5f, 0.5f),
+            photoId = "upload-1",
+            aspectRatio = 0.75f,
+            style = CanvasPhotoStyle.POLAROID
+        )
+        val moved = photo.copy(center = StrokePoint(0.2f, 0.3f), scale = 0.8f)
+        runtime.submitAndAwait(CanvasRuntimeEvent.AddPhotoElement(photo))
+        runtime.submitAndAwait(CanvasRuntimeEvent.UpdatePhotoElement(moved))
+        assertEquals(listOf(moved), runtime.renderState.value.committedElements)
+
+        runtime.submitAndAwait(CanvasRuntimeEvent.Undo)
+        assertEquals(listOf(photo), runtime.renderState.value.committedElements)
+        runtime.submitAndAwait(CanvasRuntimeEvent.DeletePhotoElement("photo-1"))
+        advanceUntilIdle()
+
+        assertTrue(runtime.renderState.value.committedElements.isEmpty())
+        assertEquals(listOf(photo, moved, photo), persistenceStore.savedPhotos)
+        assertEquals(listOf("photo-1"), persistenceStore.deletedPhotoIds)
+        assertEquals(
+            listOf(
+                DrawingOperationType.ADD_PHOTO_ELEMENT,
+                DrawingOperationType.UPDATE_PHOTO_ELEMENT,
+                DrawingOperationType.UPDATE_PHOTO_ELEMENT,
+                DrawingOperationType.DELETE_PHOTO_ELEMENT
+            ),
+            outbound.map { it.type }
+        )
+        assertEquals(SyncOperationPayload.AddPhotoElement(photo), outbound.first().payload)
+        job.cancel()
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `a partner's photo arrives and goes`() = runTest {
+        val persistenceStore = FakeCanvasPersistenceStore()
+        val runtime = DefaultCanvasRuntime(
+            persistenceStore = persistenceStore,
+            drawingRepository = FakeDrawingRepository(),
+            strokeBuilder = StrokeBuilder(),
+            strokeHitTester = StrokeHitTester(),
+            operationIds = establishedOperationIds(),
+            applicationScope = backgroundScope
+        )
+        runtime.start(pairSessionId = "pair", userId = "user")
+        advanceUntilIdle()
+        val photo = CanvasPhotoElement(
+            id = "photo-9",
+            createdAt = 1L,
+            center = StrokePoint(0.4f, 0.4f),
+            photoId = "upload-9",
+            aspectRatio = 1.5f
+        )
+
+        runtime.submitAndAwait(
+            CanvasRuntimeEvent.RemoteOperation(
+                remoteOperation(revision = 7L, strokeId = "photo-9", payload = SyncOperationPayload.AddPhotoElement(photo))
+            )
+        )
+        assertEquals(listOf(photo), runtime.renderState.value.committedElements)
+        assertEquals(7L, runtime.renderState.value.revision)
+
+        runtime.submitAndAwait(
+            CanvasRuntimeEvent.RemoteOperation(
+                remoteOperation(revision = 8L, strokeId = "photo-9", payload = SyncOperationPayload.DeletePhotoElement)
+            )
+        )
+        assertTrue(runtime.renderState.value.committedElements.isEmpty())
+        assertEquals(listOf("photo-9"), persistenceStore.deletedPhotoIds)
+    }
 }
+
+private fun remoteOperation(
+    revision: Long,
+    strokeId: String,
+    payload: SyncOperationPayload
+): ServerCanvasOperation = ServerCanvasOperation(
+    clientOperationId = "remote-$revision",
+    actorUserId = "partner-user",
+    pairSessionId = "pair",
+    type = null,
+    strokeId = strokeId,
+    payload = payload,
+    clientCreatedAt = "2026-11-05T00:00:00Z",
+    serverRevision = revision,
+    createdAt = "2026-11-05T00:00:00Z"
+)
 
 private class FakeCanvasPersistenceStore(
     private val toolState: ToolState = ToolState(
@@ -647,9 +858,17 @@ private class FakeCanvasPersistenceStore(
 
     override suspend fun loadToolState(): ToolState = toolState
 
-    override suspend fun persistLocalCommittedStroke(stroke: Stroke): Long = 1L
+    /** Strokes in the order they were committed, which is the order they're drawn in. */
+    val committedStrokeIds = mutableListOf<String>()
 
-    override suspend fun persistRemoteCommittedStroke(stroke: Stroke, serverRevision: Long) = Unit
+    override suspend fun persistLocalCommittedStroke(stroke: Stroke): Long {
+        committedStrokeIds += stroke.id
+        return 1L
+    }
+
+    override suspend fun persistRemoteCommittedStroke(stroke: Stroke, serverRevision: Long) {
+        committedStrokeIds += stroke.id
+    }
 
     override suspend fun persistErase(strokeId: String, serverRevision: Long?) = Unit
 
@@ -676,6 +895,28 @@ private class FakeCanvasPersistenceStore(
     override suspend fun persistRemoteUpsertStickerElement(element: CanvasStickerElement, serverRevision: Long) = Unit
 
     override suspend fun persistRemoteDeleteStickerElement(elementId: String, serverRevision: Long) = Unit
+
+    /** Photos as they were saved, last first undone. */
+    val savedPhotos = mutableListOf<CanvasPhotoElement>()
+    val deletedPhotoIds = mutableListOf<String>()
+
+    override suspend fun persistUpsertPhotoElement(element: CanvasPhotoElement): Long {
+        savedPhotos += element
+        return 1L
+    }
+
+    override suspend fun persistDeletePhotoElement(elementId: String): Long {
+        deletedPhotoIds += elementId
+        return 1L
+    }
+
+    override suspend fun persistRemoteUpsertPhotoElement(element: CanvasPhotoElement, serverRevision: Long) {
+        savedPhotos += element
+    }
+
+    override suspend fun persistRemoteDeletePhotoElement(elementId: String, serverRevision: Long) {
+        deletedPhotoIds += elementId
+    }
 }
 
 private class FakeDrawingRepository(
@@ -743,6 +984,14 @@ private class FakeDrawingRepository(
     override suspend fun applyRemoteAddOrUpdateStickerElement(element: CanvasStickerElement, serverRevision: Long) = Unit
 
     override suspend fun applyRemoteDeleteStickerElement(elementId: String, serverRevision: Long) = Unit
+
+    override suspend fun upsertLocalPhotoElement(element: CanvasPhotoElement): Long = 1L
+
+    override suspend fun deleteLocalPhotoElement(elementId: String): Long = 1L
+
+    override suspend fun applyRemoteAddOrUpdatePhotoElement(element: CanvasPhotoElement, serverRevision: Long) = Unit
+
+    override suspend fun applyRemoteDeletePhotoElement(elementId: String, serverRevision: Long) = Unit
 
     override suspend fun replaceWithRemoteSnapshot(
         strokes: List<Stroke>,

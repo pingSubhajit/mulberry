@@ -7,15 +7,32 @@ import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
+/** Strokes bottom to top: in the order they were finished. */
+internal const val STROKES_IN_FINISH_ORDER_QUERY =
+    "SELECT * FROM stroke_entities ORDER BY finishOrder ASC, createdAt ASC"
+
+/** The next stroke finished goes above every stroke there now. */
+internal const val NEXT_FINISH_ORDER_QUERY =
+    "SELECT COALESCE(MAX(finishOrder), 0) + 1 FROM stroke_entities"
+
+internal const val UPDATE_FINISH_ORDER_QUERY =
+    "UPDATE stroke_entities SET finishOrder = :finishOrder WHERE id = :strokeId"
+
 @Dao
 interface DrawingDao {
     @Transaction
-    @Query("SELECT * FROM stroke_entities ORDER BY createdAt ASC")
+    @Query(STROKES_IN_FINISH_ORDER_QUERY)
     fun observeStrokeGraphs(): Flow<List<StrokeWithPoints>>
 
     @Transaction
-    @Query("SELECT * FROM stroke_entities ORDER BY createdAt ASC")
+    @Query(STROKES_IN_FINISH_ORDER_QUERY)
     suspend fun getStrokeGraphs(): List<StrokeWithPoints>
+
+    @Query(NEXT_FINISH_ORDER_QUERY)
+    suspend fun nextFinishOrder(): Long
+
+    @Query(UPDATE_FINISH_ORDER_QUERY)
+    suspend fun updateFinishOrder(strokeId: String, finishOrder: Long): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertStroke(stroke: StrokeEntity)

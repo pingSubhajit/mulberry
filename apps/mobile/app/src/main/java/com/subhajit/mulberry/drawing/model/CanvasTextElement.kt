@@ -11,7 +11,8 @@ sealed interface CanvasElement {
 
 enum class CanvasElementKind {
     TEXT,
-    STICKER
+    STICKER,
+    PHOTO
 }
 
 data class CanvasTextElement(
@@ -59,4 +60,52 @@ data class CanvasStickerElement(
     val stickerId: String
 ) : CanvasElement {
     override val kind: CanvasElementKind = CanvasElementKind.STICKER
+}
+
+/** How a photo sits on the canvas. */
+enum class CanvasPhotoStyle {
+    /** A thin white border. */
+    FRAME,
+    /** A white border with a deeper bottom edge. */
+    POLAROID,
+    /** The subject cut out, with a white outline. */
+    STICKER;
+
+    companion object {
+        /** Anything this build doesn't know reads as [FRAME], as on iOS. */
+        fun fromWire(value: String?): CanvasPhotoStyle =
+            entries.firstOrNull { it.name == value } ?: FRAME
+    }
+}
+
+/**
+ * A photo placed on the canvas. [scale] is the framed photo's long edge as a fraction of the canvas
+ * width. The sticker style draws [cutoutPhotoId] when there is one.
+ */
+data class CanvasPhotoElement(
+    override val id: String,
+    override val createdAt: Long,
+    override val center: StrokePoint,
+    override val rotationRad: Float = 0f,
+    override val scale: Float = DEFAULT_SCALE,
+    val photoId: String,
+    val cutoutPhotoId: String? = null,
+    /** The original photo's width over its height. */
+    val aspectRatio: Float,
+    val style: CanvasPhotoStyle = CanvasPhotoStyle.FRAME
+) : CanvasElement {
+    override val kind: CanvasElementKind = CanvasElementKind.PHOTO
+
+    val renderScale: Float
+        get() = scale.coerceIn(SCALE_MIN, SCALE_MAX)
+
+    /** The image the style draws: the cut-out for a sticker, when there is one. */
+    val shownPhotoId: String
+        get() = if (style == CanvasPhotoStyle.STICKER) cutoutPhotoId ?: photoId else photoId
+
+    companion object {
+        const val SCALE_MIN = 0.12f
+        const val SCALE_MAX = 1.2f
+        const val DEFAULT_SCALE = 0.5f
+    }
 }

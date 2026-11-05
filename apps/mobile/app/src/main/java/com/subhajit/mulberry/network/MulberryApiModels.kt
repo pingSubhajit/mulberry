@@ -209,7 +209,20 @@ data class CanvasSnapshotElement(
     // STICKER
     val packKey: String? = null,
     val packVersion: Int? = null,
-    val stickerId: String? = null
+    val stickerId: String? = null,
+    // PHOTO
+    val photoId: String? = null,
+    val cutoutPhotoId: String? = null,
+    val aspectRatio: Float? = null,
+    val style: String? = null
+)
+
+/** `POST /canvas/photos`. */
+data class CanvasPhotoUploadResponse(
+    val photoId: String,
+    val width: Int,
+    val height: Int,
+    val contentType: String
 )
 
 data class CanvasOperationEnvelopeResponse(

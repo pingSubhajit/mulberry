@@ -54,6 +54,8 @@ import com.subhajit.mulberry.wallpaper.RemoteWallpaper
 import com.subhajit.mulberry.wallpaper.WallpaperCatalogRepository
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import com.subhajit.mulberry.stickers.StickerAssetStore
+import com.subhajit.mulberry.photos.CanvasPhotoStore
+import com.subhajit.mulberry.drawing.model.CanvasPhotoElement
 import com.subhajit.mulberry.stickers.StickerAssetVariant
 import com.subhajit.mulberry.stickers.StickerCatalogCacheStore
 import com.subhajit.mulberry.stickers.StickerCatalogRepository
@@ -190,6 +192,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val stickerCatalogRepository: StickerCatalogRepository,
     private val stickerCatalogCacheStore: StickerCatalogCacheStore,
     val stickerAssetStore: StickerAssetStore,
+    val photoStore: CanvasPhotoStore,
     private val wallpaperCoordinator: WallpaperCoordinator,
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     private val reviewPromptCoordinator: com.subhajit.mulberry.review.ReviewPromptCoordinator,
@@ -948,6 +951,33 @@ class CanvasHomeViewModel @Inject constructor(
 
     fun onStickerElementDeleted(elementId: String) {
         canvasRuntime.submit(CanvasRuntimeEvent.DeleteStickerElement(elementId))
+    }
+
+    fun onPhotoElementAdded(element: CanvasPhotoElement) {
+        canvasRuntime.submit(CanvasRuntimeEvent.AddPhotoElement(element))
+    }
+
+    fun onPhotoElementUpdated(element: CanvasPhotoElement) {
+        canvasRuntime.submit(CanvasRuntimeEvent.UpdatePhotoElement(element))
+    }
+
+    fun onPhotoElementDeleted(elementId: String) {
+        canvasRuntime.submit(CanvasRuntimeEvent.DeletePhotoElement(elementId))
+    }
+
+    /** The Camera tool: it moves and edits the photos on the canvas once the camera closes. */
+    fun onCameraToolSelected() {
+        viewModelScope.launch { drawingRepository.setTool(DrawingTool.PHOTO) }
+    }
+
+    /** Closing the camera without a photo leaves the tool, unless there are photos to move, as on iOS. */
+    fun onPhotoCancelled() {
+        viewModelScope.launch {
+            val state = uiState.value
+            if (state.toolState.activeTool == DrawingTool.PHOTO && state.canvasState.photoElements.isEmpty()) {
+                drawingRepository.setTool(DrawingTool.DRAW)
+            }
+        }
     }
 
     fun onCanvasViewportChanged(widthPx: Int, heightPx: Int) {

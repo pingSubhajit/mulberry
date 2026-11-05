@@ -11,7 +11,10 @@ enum class DrawingOperationType {
     DELETE_TEXT_ELEMENT,
     ADD_STICKER_ELEMENT,
     UPDATE_STICKER_ELEMENT,
-    DELETE_STICKER_ELEMENT
+    DELETE_STICKER_ELEMENT,
+    ADD_PHOTO_ELEMENT,
+    UPDATE_PHOTO_ELEMENT,
+    DELETE_PHOTO_ELEMENT
 }
 
 /**
@@ -24,11 +27,14 @@ val DrawingOperationType.drawsSomething: Boolean
         DrawingOperationType.ADD_TEXT_ELEMENT,
         DrawingOperationType.UPDATE_TEXT_ELEMENT,
         DrawingOperationType.ADD_STICKER_ELEMENT,
-        DrawingOperationType.UPDATE_STICKER_ELEMENT -> true
+        DrawingOperationType.UPDATE_STICKER_ELEMENT,
+        DrawingOperationType.ADD_PHOTO_ELEMENT,
+        DrawingOperationType.UPDATE_PHOTO_ELEMENT -> true
         DrawingOperationType.ADD_STROKE,
         DrawingOperationType.APPEND_POINTS,
         DrawingOperationType.DELETE_STROKE,
         DrawingOperationType.CLEAR_CANVAS,
         DrawingOperationType.DELETE_TEXT_ELEMENT,
-        DrawingOperationType.DELETE_STICKER_ELEMENT -> false
+        DrawingOperationType.DELETE_STICKER_ELEMENT,
+        DrawingOperationType.DELETE_PHOTO_ELEMENT -> false
     }

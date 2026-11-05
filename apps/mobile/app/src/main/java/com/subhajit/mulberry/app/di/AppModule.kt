@@ -31,11 +31,13 @@ import com.subhajit.mulberry.drawing.data.local.CanvasTextElementDao
 import com.subhajit.mulberry.drawing.data.local.DrawingDatabase
 import com.subhajit.mulberry.drawing.data.local.DrawingDao
 import com.subhajit.mulberry.drawing.data.local.DrawingMigrations
+import com.subhajit.mulberry.drawing.data.local.CanvasPhotoElementDao
 import com.subhajit.mulberry.drawing.data.local.DrawingOperationsDao
 import com.subhajit.mulberry.navigation.BootstrapRouteResolver
 import com.subhajit.mulberry.network.AnalyticsHeaderInterceptor
 import com.subhajit.mulberry.network.AuthHeaderInterceptor
 import com.subhajit.mulberry.network.AppBuildHeaderInterceptor
+import com.subhajit.mulberry.network.CanvasFeaturesHeaderInterceptor
 import com.subhajit.mulberry.network.TimeZoneHeaderInterceptor
 import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.onboarding.BackendProfileRepository
@@ -64,7 +66,9 @@ import com.subhajit.mulberry.sync.DefaultBackgroundCanvasSyncCoordinator
 import com.subhajit.mulberry.sync.DefaultCanvasSyncRepository
 import com.subhajit.mulberry.sync.DefaultPartnerWallpaperStatusReportCoordinator
 import com.subhajit.mulberry.sync.FcmTokenRepository
+import com.subhajit.mulberry.sync.FileLocalCanvasOperationIds
 import com.subhajit.mulberry.sync.FirebaseFcmTokenRepository
+import com.subhajit.mulberry.sync.LocalCanvasOperationIds
 import com.subhajit.mulberry.sync.OkHttpCanvasSyncClient
 import com.subhajit.mulberry.sync.DefaultRemoteOperationApplier
 import com.subhajit.mulberry.sync.PartnerWallpaperStatusReportCoordinator
@@ -112,6 +116,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import java.io.File
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -374,6 +379,14 @@ object AppProvidesModule {
 
     @Provides
     @Singleton
+    fun provideLocalCanvasOperationIds(
+        @ApplicationContext context: Context
+    ): LocalCanvasOperationIds = FileLocalCanvasOperationIds(
+        File(context.noBackupFilesDir, FileLocalCanvasOperationIds.FILE_NAME)
+    )
+
+    @Provides
+    @Singleton
     fun providePreferenceDataStore(
         @ApplicationContext context: Context
     ): DataStore<Preferences> = PreferenceDataStoreFactory.create(
@@ -418,7 +431,9 @@ object AppProvidesModule {
     ).addMigrations(
         DrawingMigrations.MIGRATION_7_8,
         DrawingMigrations.MIGRATION_8_9,
-        DrawingMigrations.MIGRATION_9_10
+        DrawingMigrations.MIGRATION_9_10,
+        DrawingMigrations.MIGRATION_10_11,
+        DrawingMigrations.MIGRATION_11_12
     ).fallbackToDestructiveMigration().build()
 
     @Provides
@@ -435,6 +450,10 @@ object AppProvidesModule {
     @Provides
     fun provideCanvasStickerElementDao(database: DrawingDatabase): CanvasStickerElementDao =
         database.canvasStickerElementDao()
+
+    @Provides
+    fun provideCanvasPhotoElementDao(database: DrawingDatabase): CanvasPhotoElementDao =
+        database.canvasPhotoElementDao()
 
     @Provides
     fun provideCanvasMetadataDao(database: DrawingDatabase): CanvasMetadataDao =
@@ -465,12 +484,14 @@ object AppProvidesModule {
         authHeaderInterceptor: AuthHeaderInterceptor,
         appBuildHeaderInterceptor: AppBuildHeaderInterceptor,
         timeZoneHeaderInterceptor: TimeZoneHeaderInterceptor,
+        canvasFeaturesHeaderInterceptor: CanvasFeaturesHeaderInterceptor,
         analyticsHeaderInterceptor: AnalyticsHeaderInterceptor,
         loggingInterceptor: HttpLoggingInterceptor
     ): OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(authHeaderInterceptor)
         .addInterceptor(appBuildHeaderInterceptor)
         .addInterceptor(timeZoneHeaderInterceptor)
+        .addInterceptor(canvasFeaturesHeaderInterceptor)
         .addInterceptor(analyticsHeaderInterceptor)
         .addInterceptor(loggingInterceptor)
         .build()

@@ -1,15 +1,18 @@
 package com.subhajit.mulberry.drawing.data.local
 
 import com.subhajit.mulberry.drawing.model.CanvasTextElement
+import com.subhajit.mulberry.drawing.model.CanvasPhotoElement
+import com.subhajit.mulberry.drawing.model.CanvasPhotoStyle
 import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 
-fun Stroke.toEntity(): StrokeEntity = StrokeEntity(
+fun Stroke.toEntity(finishOrder: Long): StrokeEntity = StrokeEntity(
     id = id,
     colorArgb = colorArgb,
     width = width,
-    createdAt = createdAt
+    createdAt = createdAt,
+    finishOrder = finishOrder
 )
 
 fun Stroke.toPointEntities(): List<StrokePointEntity> = points.mapIndexed { index, point ->
@@ -84,4 +87,30 @@ fun CanvasStickerElementEntity.toDomain(): CanvasStickerElement = CanvasStickerE
     packKey = packKey,
     packVersion = packVersion,
     stickerId = stickerId
+)
+
+fun CanvasPhotoElement.toEntity(zIndex: Long): CanvasPhotoElementEntity = CanvasPhotoElementEntity(
+    id = id,
+    createdAt = createdAt,
+    zIndex = zIndex,
+    centerX = center.x,
+    centerY = center.y,
+    rotationRad = rotationRad,
+    scale = scale,
+    photoId = photoId,
+    cutoutPhotoId = cutoutPhotoId,
+    aspectRatio = aspectRatio,
+    style = style.name
+)
+
+fun CanvasPhotoElementEntity.toDomain(): CanvasPhotoElement = CanvasPhotoElement(
+    id = id,
+    createdAt = createdAt,
+    center = StrokePoint(x = centerX, y = centerY),
+    rotationRad = rotationRad,
+    scale = scale,
+    photoId = photoId,
+    cutoutPhotoId = cutoutPhotoId,
+    aspectRatio = aspectRatio,
+    style = CanvasPhotoStyle.fromWire(style)
 )

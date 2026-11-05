@@ -1,7 +1,10 @@
 package com.subhajit.mulberry.sync
 
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.subhajit.mulberry.drawing.model.CanvasPhotoElement
+import com.subhajit.mulberry.drawing.model.CanvasPhotoStyle
 import com.subhajit.mulberry.drawing.model.CanvasTextAlign
 import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
@@ -15,9 +18,10 @@ import java.time.ZoneId
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
-import java.util.UUID
 
 private val gson = Gson()
+
+private const val TAG = "CanvasSyncJson"
 
 data class ClientOperationMessage(
     val type: String = "CLIENT_OP",
@@ -92,12 +96,14 @@ data class ErrorMessage(
     val message: String
 )
 
+/** [clientOperationId] comes from [LocalCanvasOperationIds], so the echo is recognised as this device's. */
 fun newClientOperation(
+    clientOperationId: String,
     type: DrawingOperationType,
     strokeId: String?,
     payload: SyncOperationPayload
 ): CanvasSyncOperation = CanvasSyncOperation(
-    clientOperationId = UUID.randomUUID().toString(),
+    clientOperationId = clientOperationId,
     type = type,
     strokeId = strokeId,
     payload = payload,
@@ -175,18 +181,27 @@ fun parseFlowControl(raw: String): FlowControlMessage = gson.fromJson(raw, FlowC
 
 fun parseError(raw: String): ErrorMessage = gson.fromJson(raw, ErrorMessage::class.java)
 
-fun CanvasOperationEnvelopeResponse.toDomainOperation(): ServerCanvasOperation =
-    ServerCanvasOperation(
+/**
+ * An operation of a type this build doesn't know comes back as [SyncOperationPayload.Unsupported],
+ * so it is skipped while sync still advances past its revision.
+ */
+fun CanvasOperationEnvelopeResponse.toDomainOperation(): ServerCanvasOperation {
+    val knownType = enumValues<DrawingOperationType>().firstOrNull { it.name == type }
+    if (knownType == null) {
+        Log.w(TAG, "Skipping unsupported canvas operation type=$type serverRevision=$serverRevision")
+    }
+    return ServerCanvasOperation(
         clientOperationId = clientOperationId,
         actorUserId = actorUserId,
         pairSessionId = pairSessionId,
-        type = DrawingOperationType.valueOf(type),
+        type = knownType,
         strokeId = strokeId,
-        payload = payload.toSyncPayload(DrawingOperationType.valueOf(type)),
+        payload = knownType?.let { payload.toSyncPayload(it) } ?: SyncOperationPayload.Unsupported(type),
         clientCreatedAt = clientCreatedAt,
         serverRevision = serverRevision,
         createdAt = createdAt
     )
+}
 
 fun SyncOperationPayload.toJsonObject(): JsonObject = when (this) {
     is SyncOperationPayload.AddStroke -> gson.toJsonTree(
@@ -260,6 +275,11 @@ fun SyncOperationPayload.toJsonObject(): JsonObject = when (this) {
         )
     ).asJsonObject
     SyncOperationPayload.DeleteStickerElement -> JsonObject()
+    is SyncOperationPayload.AddPhotoElement -> element.toPhotoPayloadJson()
+    is SyncOperationPayload.UpdatePhotoElement -> element.toPhotoPayloadJson()
+    SyncOperationPayload.DeletePhotoElement -> JsonObject()
+    // Only ever comes from the server; never sent.
+    is SyncOperationPayload.Unsupported -> JsonObject()
 }
 
 fun JsonObject?.toSyncPayload(type: DrawingOperationType): SyncOperationPayload = when (type) {
@@ -369,7 +389,60 @@ fun JsonObject?.toSyncPayload(type: DrawingOperationType): SyncOperationPayload 
         )
     }
     DrawingOperationType.DELETE_STICKER_ELEMENT -> SyncOperationPayload.DeleteStickerElement
+    // A photo without its upload or shape can't be drawn: it is skipped, as an unknown type is.
+    DrawingOperationType.ADD_PHOTO_ELEMENT -> this.toPhotoElement()
+        ?.let { SyncOperationPayload.AddPhotoElement(it) }
+        ?: SyncOperationPayload.Unsupported(type.name)
+    DrawingOperationType.UPDATE_PHOTO_ELEMENT -> this.toPhotoElement()
+        ?.let { SyncOperationPayload.UpdatePhotoElement(it) }
+        ?: SyncOperationPayload.Unsupported(type.name)
+    DrawingOperationType.DELETE_PHOTO_ELEMENT -> SyncOperationPayload.DeletePhotoElement
 }
+
+/** The `ADD_PHOTO_ELEMENT` and `UPDATE_PHOTO_ELEMENT` payload; `cutoutPhotoId` only when there is one. */
+internal fun CanvasPhotoElement.toPhotoPayloadJson(): JsonObject = JsonObject().apply {
+    addProperty("id", id)
+    addProperty("createdAt", createdAt)
+    add("center", JsonObject().apply {
+        addProperty("x", center.x)
+        addProperty("y", center.y)
+    })
+    addProperty("rotationRad", rotationRad)
+    addProperty("scale", scale)
+    addProperty("photoId", photoId)
+    cutoutPhotoId?.let { addProperty("cutoutPhotoId", it) }
+    addProperty("aspectRatio", aspectRatio)
+    addProperty("style", style.name)
+}
+
+/** Null without an id, an upload or a usable shape, as iOS reads it. */
+internal fun JsonObject?.toPhotoElement(): CanvasPhotoElement? {
+    val json = this ?: return null
+    val id = json.stringOrNull("id")?.takeIf { it.isNotBlank() } ?: return null
+    val photoId = json.stringOrNull("photoId")?.takeIf { it.isNotBlank() } ?: return null
+    val aspectRatio = json.floatOrNull("aspectRatio")?.takeIf { it > 0f && it.isFinite() } ?: return null
+    val center = json.get("center")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
+    return CanvasPhotoElement(
+        id = id,
+        createdAt = json.get("createdAt")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L,
+        center = StrokePoint(
+            x = center.floatOrNull("x") ?: return null,
+            y = center.floatOrNull("y") ?: return null
+        ),
+        rotationRad = json.floatOrNull("rotationRad") ?: 0f,
+        scale = json.floatOrNull("scale") ?: CanvasPhotoElement.DEFAULT_SCALE,
+        photoId = photoId,
+        cutoutPhotoId = json.stringOrNull("cutoutPhotoId")?.takeIf { it.isNotBlank() },
+        aspectRatio = aspectRatio,
+        style = CanvasPhotoStyle.fromWire(json.stringOrNull("style"))
+    )
+}
+
+private fun JsonObject.stringOrNull(name: String): String? =
+    get(name)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+
+private fun JsonObject.floatOrNull(name: String): Float? =
+    get(name)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asFloat
 
 private fun nowIsoString(): String = SimpleDateFormat(
     "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
