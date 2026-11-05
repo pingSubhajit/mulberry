@@ -2,6 +2,18 @@ package com.subhajit.mulberry.reactions
 
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.graphics.drawable.AnimatedImageDrawable
+import android.graphics.drawable.Drawable
+import android.os.Build
+import android.view.View
+import android.widget.ImageView
+import androidx.annotation.RequiresApi
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -12,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -29,11 +42,105 @@ fun ReactionGif(
     type: ReactionType,
     modifier: Modifier = Modifier
 ) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        AnimatedReactionImage(type = type, modifier = modifier)
+    } else {
+        MovieReactionGif(type = type, modifier = modifier)
+    }
+}
+
+/**
+ * Android 9 and later: the platform's animated drawable, which decodes frames on its own thread
+ * and draws them on the GPU, so an open rail of six reactions costs the main thread next to nothing.
+ */
+@RequiresApi(Build.VERSION_CODES.P)
+@Composable
+private fun AnimatedReactionImage(
+    type: ReactionType,
+    modifier: Modifier
+) {
+    val context = LocalContext.current.applicationContext
+    val assetPackGeneration = rememberReactionAssetPackGeneration()
+    var sizePx by remember { mutableIntStateOf(0) }
+    var decodeAttempt by remember(type) { mutableIntStateOf(0) }
+    val drawable by produceState<Drawable?>(null, type, sizePx, decodeAttempt, assetPackGeneration) {
+        if (sizePx <= 0) return@produceState
+        value = withContext(Dispatchers.IO) {
+            ReactionGifAssets.decodeAnimatedDrawable(context, type, sizePx)
+        }
+    }
+
+    LaunchedEffect(type) {
+        if (type != ReactionType.HEART) ReactionGifAssets.requestFastFollowPack(context)
+    }
+    // Until the reactions' pack arrives, the emoji stands in, and the decode tries again.
+    LaunchedEffect(drawable, type, assetPackGeneration) {
+        if (drawable != null || type == ReactionType.HEART) return@LaunchedEffect
+        while (isActive) {
+            delay(1_000)
+            decodeAttempt += 1
+        }
+    }
+    DisposableEffect(drawable) {
+        val animated = drawable as? AnimatedImageDrawable
+        animated?.start()
+        onDispose { animated?.stop() }
+    }
+
+    Box(
+        modifier = modifier.onSizeChanged { size -> sizePx = maxOf(size.width, size.height) },
+        contentAlignment = Alignment.Center
+    ) {
+        val current = drawable
+        if (current == null) {
+            EmojiFallback(type = type, modifier = Modifier.matchParentSize())
+        } else {
+            AndroidView(
+                factory = { viewContext ->
+                    ImageView(viewContext).apply {
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    }
+                },
+                update = { view -> if (view.drawable !== current) view.setImageDrawable(current) },
+                modifier = Modifier.matchParentSize()
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmojiFallback(type: ReactionType, modifier: Modifier) {
+    val paint = remember {
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT
+        }
+    }
+    Canvas(modifier = modifier) {
+        paint.textSize = (min(size.width, size.height) * 0.78f).coerceAtLeast(1f)
+        val y = size.height / 2f - (paint.ascent() + paint.descent()) / 2f
+        drawIntoCanvas { canvas -> canvas.nativeCanvas.drawText(type.emoji, size.width / 2f, y, paint) }
+    }
+}
+
+/** Before Android 9: [Movie], decoded once in the background and drawn in software. */
+@Composable
+private fun MovieReactionGif(
+    type: ReactionType,
+    modifier: Modifier
+) {
     val context = LocalContext.current.applicationContext
     val assetPackGeneration = rememberReactionAssetPackGeneration()
     var decodeAttempt by remember(type) { mutableIntStateOf(0) }
-    val movie = remember(type, decodeAttempt, assetPackGeneration) {
-        ReactionGifAssets.decodeMovie(context, type)
+    // Decoded once and kept, off the main thread: the emoji stands in for the moment it takes.
+    val movie by produceState(
+        initialValue = ReactionGifUiCache.peek(type),
+        type,
+        decodeAttempt,
+        assetPackGeneration
+    ) {
+        value = ReactionGifUiCache.movie(context, type)
     }
     var elapsedMs by remember(type) { mutableLongStateOf(0L) }
     val fallbackEmojiPaint = remember {
