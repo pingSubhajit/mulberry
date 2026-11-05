@@ -12,6 +12,7 @@ import type { PushDispatchService } from "../../infra/push/dispatchService.js"
 import type { BootstrapService } from "../bootstrap/service.js"
 import { disabledAnalytics, type Analytics } from "../../infra/analytics/recorder.js"
 import type { InviteRedeemFailureReason } from "../../infra/analytics/events.js"
+import { canvasPhotoStorageKeys, type CanvasPhotoFileRemover } from "../canvas/photos.js"
 
 const PARTNER_DETAILS_REQUIRED_MESSAGE = "Partner details are required before creating an invite"
 /** Wrong codes an account may try per window, so six-digit codes can't be guessed. */
@@ -24,6 +25,7 @@ export class PairingService {
     private readonly bootstrapService: BootstrapService,
     private readonly pushDispatchService?: PushDispatchService,
     private readonly analytics: Analytics = disabledAnalytics,
+    private readonly canvasPhotoFiles?: CanvasPhotoFileRemover,
   ) {}
 
   async createInvite(accessToken: string): Promise<CreateInviteResponse> {
@@ -243,12 +245,16 @@ export class PairingService {
     const profile = await getProfileFrom(this.db, context.user.id)
     const actorDisplayName = profile?.display_name ?? "Your partner"
 
-    await this.db.transaction(async (tx) => {
+    const photoKeys = await this.db.transaction(async (tx) => {
       const activeDays = await pairActiveDays(tx, pairSession.id)
+      // The rows go with the pair; their files are removed once that has committed.
+      const photoKeys = await canvasPhotoStorageKeys(tx, { pairSessionId: pairSession.id })
       await tx.query(`DELETE FROM pair_sessions WHERE id = $1`, [pairSession.id])
       await clearPartnerMetadata(tx, [pairSession.user_one_id, pairSession.user_two_id])
       await this.analytics.endPair(tx, { pair: pairSession, reason: "unpaired", distinctId: context.user.id, activeDays })
+      return photoKeys
     })
+    await this.canvasPhotoFiles?.removeStoredPhotos(photoKeys)
 
     this.pushDispatchService?.enqueuePairingDisconnected(
       pairSession.id,

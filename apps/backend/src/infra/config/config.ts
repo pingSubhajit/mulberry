@@ -50,10 +50,14 @@ export interface AppConfig {
   supabaseServiceRoleKey?: string
   supabaseWallpaperBucket?: string
   supabaseStickerBucket?: string
+  /** A private bucket for photos placed on canvases. `canvas-photos` once Supabase is configured. */
+  supabaseCanvasPhotoBucket?: string
   /** Unlocks every admin route: wallpapers, stickers and app versions. */
   adminPassword?: string
   stickerLocalStorageDir?: string
   wallpaperLocalStorageDir?: string
+  /** Development only: keep canvas photos on local disk instead of Supabase. */
+  canvasPhotoLocalStorageDir?: string
   cannySsoPrivateKey?: string
   /**
    * iCloud links to the iOS wallpaper Shortcut, by app bundle ID. Each build's Shortcut calls
@@ -156,9 +160,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
     supabaseWallpaperBucket: env.SUPABASE_WALLPAPER_BUCKET,
     supabaseStickerBucket: env.SUPABASE_STICKER_BUCKET ?? env.SUPABASE_WALLPAPER_BUCKET,
+    supabaseCanvasPhotoBucket: canvasPhotoBucket(env),
     adminPassword: env.ADMIN_PASSWORD?.trim() ? env.ADMIN_PASSWORD.trim() : undefined,
     stickerLocalStorageDir: optionalLocalStorageDir("STICKER_LOCAL_STORAGE_DIR", env, isProduction),
     wallpaperLocalStorageDir: optionalLocalStorageDir("WALLPAPER_LOCAL_STORAGE_DIR", env, isProduction),
+    canvasPhotoLocalStorageDir: optionalLocalStorageDir("CANVAS_PHOTO_LOCAL_STORAGE_DIR", env, isProduction),
     cannySsoPrivateKey: env.CANNY_SSO_PRIVATE_KEY?.trim() ? env.CANNY_SSO_PRIVATE_KEY : undefined,
     wallpaperShortcutLinks: wallpaperShortcutLinks(env.WALLPAPER_SHORTCUT_LINKS),
     apnsKeys: apnsKeys(env),
@@ -218,9 +224,18 @@ export function wallpaperShortcutLinks(value: string | undefined): Record<string
   return links
 }
 
-// Local sticker and wallpaper files exist only for development against the local database.
+const DEFAULT_CANVAS_PHOTO_BUCKET = "canvas-photos"
+
+/** The canvas photo bucket: as set, else the default once Supabase is configured, else none. */
+function canvasPhotoBucket(env: NodeJS.ProcessEnv): string | undefined {
+  const bucket = env.SUPABASE_CANVAS_PHOTO_BUCKET?.trim()
+  if (bucket) return bucket
+  return env.SUPABASE_URL?.trim() && env.SUPABASE_SERVICE_ROLE_KEY?.trim() ? DEFAULT_CANVAS_PHOTO_BUCKET : undefined
+}
+
+// Local sticker, wallpaper and canvas photo files exist only for development against the local database.
 function optionalLocalStorageDir(
-  name: "STICKER_LOCAL_STORAGE_DIR" | "WALLPAPER_LOCAL_STORAGE_DIR",
+  name: "STICKER_LOCAL_STORAGE_DIR" | "WALLPAPER_LOCAL_STORAGE_DIR" | "CANVAS_PHOTO_LOCAL_STORAGE_DIR",
   env: NodeJS.ProcessEnv,
   isProduction: boolean,
 ): string | undefined {

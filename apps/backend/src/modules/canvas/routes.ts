@@ -3,7 +3,15 @@ import { requireBearerToken } from "../../infra/http/auth.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import type { ClientCanvasOperation } from "../../contracts/canvas.js"
 import type { CanvasService } from "./service.js"
-import { CANVAS_PHOTO_MAX_BYTES, canvasPhotoTooLarge, type CanvasPhotoService } from "./photos.js"
+import { absolutizeLocalUrls } from "../../infra/http/localAssetUrls.js"
+import {
+  CANVAS_PHOTO_MAX_BYTES,
+  canvasPhotoTooLarge,
+  LocalCanvasPhotoStorage,
+  LOCAL_CANVAS_PHOTO_PREFIX,
+  type CanvasPhotoService,
+  type CanvasPhotoStorage,
+} from "./photos.js"
 import { clientSupportsPhotos, operationsForClient, snapshotForClient } from "./featureCompat.js"
 
 /** Photos are fetched by id and never change, so devices can keep them for good. */
@@ -13,7 +21,22 @@ export function registerCanvasRoutes(
   app: FastifyInstance,
   service: CanvasService,
   photoService: CanvasPhotoService,
+  photoStorage: CanvasPhotoStorage | null = null,
 ): void {
+  if (photoStorage instanceof LocalCanvasPhotoStorage) {
+    // Development only: the files behind local signed photo URLs.
+    app.get(`${LOCAL_CANVAS_PHOTO_PREFIX}*`, async (request, reply) => {
+      const params = request.params as { "*"?: string }
+      const query = request.query as { expires?: string; sig?: string }
+      const path = params["*"] ?? ""
+      const data = await photoStorage.read(path, Number(query.expires), query.sig ?? "")
+      return reply
+        .header("Cache-Control", "private, max-age=3600")
+        .type(path.endsWith(".png") ? "image/png" : "image/jpeg")
+        .send(data)
+    })
+  }
+
   app.get("/canvas/ops", async (request) => {
     const query = request.query as { afterRevision?: string }
     const afterRevision = Number(query.afterRevision ?? "0")
@@ -48,6 +71,13 @@ export function registerCanvasRoutes(
 
   app.post("/canvas/photos", async (request) => {
     return photoService.uploadPhoto(requireBearerToken(request), () => readCanvasPhotoUpload(request))
+  })
+
+  app.get("/canvas/photos/:photoId/url", async (request) => {
+    const { photoId } = request.params as { photoId: string }
+    const response = await photoService.getPhotoUrl(requireBearerToken(request), photoId)
+    // Local URLs are relative; the client gets them on the host it called.
+    return absolutizeLocalUrls(response, LOCAL_CANVAS_PHOTO_PREFIX, `${request.protocol}://${request.headers.host ?? "localhost"}`)
   })
 
   app.get("/canvas/photos/:photoId", async (request, reply) => {

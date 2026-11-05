@@ -42,7 +42,13 @@ import { ProfileService } from "../modules/profile/service.js"
 import { PairingService } from "../modules/pairing/service.js"
 import { ReactionsService } from "../modules/reactions/service.js"
 import { CanvasService } from "../modules/canvas/service.js"
-import { CanvasPhotoService } from "../modules/canvas/photos.js"
+import {
+  CanvasPhotoService,
+  createCanvasPhotoStorage,
+  ensureCanvasPhotoBucket,
+  type CanvasPhotoStorage,
+} from "../modules/canvas/photos.js"
+import { CanvasPhotoSweeper, type CanvasPhotoSweeperOptions } from "../modules/canvas/photoSweep.js"
 import { CanvasSyncHub } from "../modules/canvasSync/hub.js"
 import { registerAuthRoutes } from "../modules/auth/routes.js"
 import { registerDeviceRoutes } from "../modules/devices/routes.js"
@@ -84,6 +90,10 @@ export interface CreateAppOptions {
   widgetPushSender?: WidgetPushSender
   wallpaperStorage?: WallpaperStorage
   wallpaperImageProcessor?: WallpaperImageProcessor
+  /** Replaces where canvas photo files live, as in tests; null leaves it unconfigured. */
+  canvasPhotoStorage?: CanvasPhotoStorage | null
+  /** The unused-photo sweep's timing, or false to leave it off. */
+  canvasPhotoSweep?: CanvasPhotoSweeperOptions | false
   /** Stands in for Firebase Remote Config; null leaves it unconfigured. */
   remoteConfig?: RemoteConfigClient | null
 }
@@ -149,13 +159,30 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const authService = new AuthService(db, googleVerifier, bootstrapService, appleVerifier, appleCredentials, analytics)
   const devicesService = new DevicesService(db)
   const profileService = new ProfileService(db, bootstrapService, pushDispatchService, storage, analytics)
-  const pairingService = new PairingService(db, bootstrapService, pushDispatchService, analytics)
+  const canvasPhotoStorage = options.canvasPhotoStorage !== undefined
+    ? options.canvasPhotoStorage
+    : createCanvasPhotoStorage(config)
+  if (options.canvasPhotoStorage === undefined) {
+    void ensureCanvasPhotoBucket(canvasPhotoStorage)
+  }
+  const canvasPhotoService = new CanvasPhotoService(db, canvasPhotoStorage)
+  const canvasPhotoSweeper = options.canvasPhotoSweep === false
+    ? null
+    : new CanvasPhotoSweeper(db, canvasPhotoStorage, options.canvasPhotoSweep)
+  const pairingService = new PairingService(db, bootstrapService, pushDispatchService, analytics, canvasPhotoService)
   const reactionsService = new ReactionsService(db, pushDispatchService, analytics)
   const canvasService = new CanvasService(db, streakService, pushDispatchService, analytics)
-  const canvasPhotoService = new CanvasPhotoService(db)
   const canvasSyncHub = new CanvasSyncHub(canvasService)
   const feedbackService = new FeedbackService(db, config.cannySsoPrivateKey)
-  const accountService = new AccountService(db, pushDispatchService, storage, canvasSyncHub, appleCredentials, analytics)
+  const accountService = new AccountService(
+    db,
+    pushDispatchService,
+    storage,
+    canvasSyncHub,
+    appleCredentials,
+    analytics,
+    canvasPhotoService,
+  )
   const clientAnalyticsService = new ClientAnalyticsService(db, analytics)
 
   const app = Fastify({ logger: false })
@@ -181,6 +208,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
 
   app.addHook("onClose", async () => {
     pushDispatchService.dispose()
+    await canvasPhotoSweeper?.stop()
     if (analyticsWorker) {
       analyticsWorker.stop()
       await flushWithin(analyticsWorker.flush(), ANALYTICS_SHUTDOWN_FLUSH_MS)
@@ -209,7 +237,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   registerProfileRoutes(app, profileService)
   registerPairingRoutes(app, pairingService)
   registerReactionRoutes(app, reactionsService)
-  registerCanvasRoutes(app, canvasService, canvasPhotoService)
+  registerCanvasRoutes(app, canvasService, canvasPhotoService, canvasPhotoStorage)
   registerCatalogAdminHooks(app, config.adminPassword)
   registerWallpaperRoutes(app, wallpaperCatalogService, wallpaperStorage)
   registerStickerRoutes(app, stickerCatalogService, stickerStorage)
@@ -227,6 +255,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   if (analyticsWorker) {
     analyticsWorker.start()
   }
+  canvasPhotoSweeper?.start()
   if (analyticsWorker && options.analyticsBackfill !== false) {
     const backfillCutoff = new Date()
     void runAnalyticsBackfill(db, analytics, backfillCutoff).catch((error: unknown) => {

@@ -519,6 +519,17 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
 
     CREATE INDEX IF NOT EXISTS canvas_photos_pair_idx
       ON canvas_photos(pair_session_id);
+
+    -- Photo files moved to storage. storage_key is the object's path; bytes is only left on rows
+    -- from before, until their first read moves them across.
+    ALTER TABLE canvas_photos
+      ADD COLUMN IF NOT EXISTS storage_key TEXT;
+
+    ALTER TABLE canvas_photos
+      ALTER COLUMN bytes DROP NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS canvas_photos_created_idx
+      ON canvas_photos(created_at, id);
   `)
 
   await runBackfills(db)

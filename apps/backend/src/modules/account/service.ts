@@ -4,6 +4,7 @@ import type { AppleCredentialClient } from "../../infra/auth/appleCredentialClie
 import type { PairSessionRecord } from "../../contracts/dbRecords.js"
 import type { CanvasSyncHub } from "../canvasSync/hub.js"
 import type { ProfilePhotoStorage } from "../profile/service.js"
+import { canvasPhotoStorageKeys, type CanvasPhotoFileRemover } from "../canvas/photos.js"
 import { requireSessionContext } from "../_shared/session.js"
 import { clearPartnerMetadata, getProfileFrom } from "../_shared/profiles.js"
 import { getPairSession, pairActiveDays } from "../_shared/pairs.js"
@@ -14,6 +15,7 @@ interface DeletedAccount {
   partnerUserId: string | null
   displayName: string
   photoPaths: string[]
+  canvasPhotoKeys: string[]
   appleCredential: AppleCredential | null
 }
 
@@ -31,6 +33,7 @@ export class AccountService {
     private readonly canvasSyncHub?: Pick<CanvasSyncHub, "closePairSession">,
     private readonly appleCredentials?: AppleCredentialClient,
     private readonly analytics: Analytics = disabledAnalytics,
+    private readonly canvasPhotoFiles?: CanvasPhotoFileRemover,
   ) {}
 
   /**
@@ -61,6 +64,8 @@ export class AccountService {
       )
       const { apple_client_id: clientId, apple_refresh_token: refreshToken, email, created_at: createdAt } = apple.rows[0] ?? {}
       const activeDays = pairSession ? await pairActiveDays(tx, pairSession.id) : 0
+      // Canvas photo rows go with the pair and the user; their files once this commits.
+      const canvasPhotoKeys = await canvasPhotoStorageKeys(tx, { pairSessionId: pairSession?.id, uploaderUserId: userId })
 
       if (pairSession && partnerUserId) {
         await tx.query(`DELETE FROM pair_sessions WHERE id = $1`, [pairSession.id])
@@ -87,6 +92,7 @@ export class AccountService {
         partnerUserId,
         displayName: profile?.display_name ?? "Your partner",
         photoPaths: await this.unreferencedPhotoPaths(tx, photoPaths),
+        canvasPhotoKeys,
         appleCredential: clientId && refreshToken ? { clientId, refreshToken } : null,
       }
     })
@@ -102,6 +108,7 @@ export class AccountService {
       this.pushDispatchService?.enqueuePairEnded(deleted.pairSession.id, [deleted.partnerUserId])
     }
     await this.removeProfilePhotos(userId, deleted.photoPaths)
+    await this.canvasPhotoFiles?.removeStoredPhotos(deleted.canvasPhotoKeys)
     await this.revokeApple(userId, deleted.appleCredential)
   }
 

@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto"
-import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import sharp from "sharp"
 import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import { requireAdminPassword } from "../../infra/http/adminAuth.js"
 import { catalogMutation, catalogHistory, restoreCatalogChange } from "../catalog/history.js"
+import { SupabaseFileStorage, type FileStorage } from "../../infra/storage/fileStorage.js"
 import { LocalStickerStorage } from "./localStorage.js"
 
 export interface StickerCatalogConfig {
@@ -15,13 +15,7 @@ export interface StickerCatalogConfig {
   stickerLocalStorageDir?: string
 }
 
-export interface StickerStorage {
-  upload(path: string, data: Buffer, contentType: string): Promise<void>
-  remove(paths: string[]): Promise<void>
-  signedUrl(path: string, expiresInSeconds: number): Promise<string>
-  /** Signs every path in one round trip, in the order given. */
-  signedUrls(paths: string[], expiresInSeconds: number): Promise<string[]>
-}
+export type StickerStorage = FileStorage
 
 /** Published pack versions never change, so their asset links can outlive a picker session. */
 const SIGNED_URL_TTL_SECONDS = 24 * 60 * 60
@@ -93,64 +87,10 @@ interface StickerRow {
   updated_at: string
 }
 
-export class SupabaseStickerStorage implements StickerStorage {
-  private readonly client: SupabaseClient
-
-  constructor(
-    private readonly supabaseUrl: string,
-    serviceRoleKey: string,
-    private readonly bucket: string,
-  ) {
-    this.client = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    })
-  }
-
-  async upload(path: string, data: Buffer, contentType: string): Promise<void> {
-    const { error } = await this.client.storage
-      .from(this.bucket)
-      .upload(path, data, {
-        cacheControl: "31536000",
-        contentType,
-        upsert: true,
-      })
-    if (error) {
-      throw new HttpError(502, `Unable to upload sticker asset: ${error.message}`)
-    }
-  }
-
-  async remove(paths: string[]): Promise<void> {
-    if (paths.length === 0) return
-    const { error } = await this.client.storage.from(this.bucket).remove(paths)
-    if (error) {
-      throw new HttpError(502, `Unable to delete sticker asset: ${error.message}`)
-    }
-  }
-
-  async signedUrl(path: string, expiresInSeconds: number): Promise<string> {
-    const { data, error } = await this.client.storage
-      .from(this.bucket)
-      .createSignedUrl(path, expiresInSeconds)
-    if (error || !data?.signedUrl) {
-      throw new HttpError(502, `Unable to create signed sticker URL: ${error?.message ?? "unknown error"}`)
-    }
-    return data.signedUrl
-  }
-
-  async signedUrls(paths: string[], expiresInSeconds: number): Promise<string[]> {
-    if (paths.length === 0) return []
-    const { data, error } = await this.client.storage
-      .from(this.bucket)
-      .createSignedUrls(paths, expiresInSeconds)
-    if (error || !data) {
-      throw new HttpError(502, `Unable to create signed sticker URLs: ${error?.message ?? "unknown error"}`)
-    }
-    const byPath = new Map(data.map((item) => [item.path, item.signedUrl]))
-    return paths.map((path, index) => {
-      const url = byPath.get(path) ?? data[index]?.signedUrl
-      if (!url) throw new HttpError(502, `Unable to create signed sticker URL for ${path}`)
-      return url
-    })
+/** The sticker catalog's Supabase bucket. */
+export class SupabaseStickerStorage extends SupabaseFileStorage {
+  constructor(supabaseUrl: string, serviceRoleKey: string, bucket: string) {
+    super(supabaseUrl, serviceRoleKey, bucket, "sticker asset")
   }
 }
 
