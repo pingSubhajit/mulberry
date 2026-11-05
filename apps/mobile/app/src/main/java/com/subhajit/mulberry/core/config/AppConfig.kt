@@ -8,7 +8,10 @@ data class AppConfig(
     val apiBaseUrl: String,
     val enableDebugMenu: Boolean,
     val googleServerClientId: String,
-    val defaultFeatureFlags: FeatureFlags
+    val defaultFeatureFlags: FeatureFlags,
+    /** Sign in with Apple's web flow: the Services ID, and where Apple returns the result. */
+    val appleServicesId: String = "",
+    val appleRedirectUri: String = ""
 )
 
 object AppConfigFactory {
@@ -17,6 +20,8 @@ object AppConfigFactory {
         apiBaseUrl: String,
         enableDebugMenu: Boolean,
         googleServerClientId: String = "",
+        appleServicesId: String = "",
+        appleRedirectUri: String = "",
     ): AppConfig {
         val environment = AppEnvironment.fromRaw(environmentName)
         val defaultFeatureFlags = when (environment) {
@@ -38,7 +43,9 @@ object AppConfigFactory {
             apiBaseUrl = apiBaseUrl,
             enableDebugMenu = enableDebugMenu,
             googleServerClientId = googleServerClientId,
-            defaultFeatureFlags = defaultFeatureFlags
+            defaultFeatureFlags = defaultFeatureFlags,
+            appleServicesId = appleServicesId,
+            appleRedirectUri = appleRedirectUri
         )
     }
 
@@ -47,6 +54,8 @@ object AppConfigFactory {
             environmentName = BuildConfig.APP_ENVIRONMENT,
             apiBaseUrl = BuildConfig.API_BASE_URL,
             enableDebugMenu = BuildConfig.ENABLE_DEBUG_MENU,
-            googleServerClientId = BuildConfig.GOOGLE_SERVER_CLIENT_ID
+            googleServerClientId = BuildConfig.GOOGLE_SERVER_CLIENT_ID,
+            appleServicesId = BuildConfig.APPLE_SERVICES_ID,
+            appleRedirectUri = BuildConfig.APPLE_REDIRECT_URI
         )
 }

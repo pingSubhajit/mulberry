@@ -5,6 +5,8 @@ import com.subhajit.mulberry.analytics.TrackOnboardingStep
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -48,9 +51,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.isLargeText
 import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.core.ui.metadata.AuthLandingMetadata
 import com.subhajit.mulberry.core.ui.metadata.AuthProviderId
+import com.subhajit.mulberry.core.ui.metadata.AuthProviderMetadata
 import com.subhajit.mulberry.core.ui.metadata.MulberryUiMetadataProvider
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.MulberryInk
@@ -58,6 +63,8 @@ import com.subhajit.mulberry.ui.theme.mulberryAppColors
 
 data class AuthLandingUiState(
     val isLoading: Boolean = false,
+    /** The button that is signing in, or null while the automatic Google sign-in runs. */
+    val signingInWith: SignInMethod? = null,
     val errorMessage: String? = null
 )
 
@@ -95,9 +102,9 @@ fun AuthLandingRoute(
     AuthLandingScreen(
         uiState = uiState,
         metadata = metadata,
-        onGoogleSignIn = {
+        onSignIn = { method ->
             if (activity != null) {
-                viewModel.onGoogleSignInClicked(activity)
+                viewModel.onSignInClicked(activity, method)
             }
         }
     )
@@ -107,10 +114,10 @@ fun AuthLandingRoute(
 private fun AuthLandingScreen(
     uiState: AuthLandingUiState,
     metadata: AuthLandingMetadata,
-    onGoogleSignIn: () -> Unit
+    onSignIn: (SignInMethod) -> Unit
 ) {
-    val googleProvider = metadata.providers.first { it.id == AuthProviderId.GOOGLE }
     val appColors = MaterialTheme.mulberryAppColors
+    val largeText = isLargeText()
 
     Box(
         modifier = Modifier
@@ -123,137 +130,189 @@ private fun AuthLandingScreen(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
-
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(horizontal = 20.dp)
-                .padding(top = 66.dp)
-                .fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Image(
-                painter = painterResource(R.drawable.brand_iconmark_white),
-                contentDescription = stringResource(MulberryUiMetadataProvider.brand.displayNameRes),
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.size(width = 48.dp, height = 72.dp)
+        if (largeText) {
+            // A near-opaque cream wash keeps large text legible over the artwork, as on iPhone.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(LargeTextWash)
             )
-            Spacer(modifier = Modifier.height(32.dp))
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = stringResource(metadata.headlineRes),
-                    color = MulberryInk,
-                    style = TextStyle(
-                        fontFamily = PoppinsFontFamily,
-                        fontSize = 41.sp,
-                        lineHeight = 46.sp,
-                        fontWeight = FontWeight.Bold
-                    ),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    text = stringResource(metadata.subtitleRes),
-                    color = MulberryInk,
-                    style = TextStyle(
-                        fontFamily = FontFamily.Default,
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 17.5.sp,
-                        lineHeight = 25.sp,
-                        letterSpacing = 0.25.sp
-                    ),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.width(315.dp)
-                )
-            }
         }
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 12.dp)
-                .fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            uiState.errorMessage?.let {
-                Surface(
-                    color = appColors.authMessageSurface,
-                    contentColor = Color(0xFFB31329),
-                    shape = RoundedCornerShape(18.dp),
+        Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .statusBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 66.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.brand_iconmark_white),
+                    contentDescription = stringResource(MulberryUiMetadataProvider.brand.displayNameRes),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(width = 48.dp, height = 72.dp)
+                )
+                Spacer(modifier = Modifier.height(32.dp))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = it,
+                        text = stringResource(metadata.headlineRes),
+                        color = MulberryInk,
                         style = TextStyle(
                             fontFamily = PoppinsFontFamily,
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            fontWeight = FontWeight.Medium
+                            fontSize = 41.sp,
+                            lineHeight = 46.sp,
+                            fontWeight = FontWeight.Bold
                         ),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = stringResource(metadata.subtitleRes),
+                        color = MulberryInk,
+                        style = TextStyle(
+                            fontFamily = FontFamily.Default,
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 17.5.sp,
+                            lineHeight = 25.sp,
+                            letterSpacing = 0.25.sp
+                        ),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.width(315.dp)
                     )
                 }
             }
 
-            Button(
-                onClick = onGoogleSignIn,
-                enabled = !uiState.isLoading && googleProvider.enabled,
-                shape = RoundedCornerShape(15.38.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = appColors.authButtonSurface,
-                    contentColor = appColors.authButtonContent,
-                    disabledContainerColor = appColors.authButtonSurface.copy(alpha = 0.72f),
-                    disabledContentColor = appColors.authButtonContent.copy(alpha = 0.72f)
-                ),
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .testTag(TestTags.AUTH_GOOGLE_BUTTON)
-                    .mulberryTapScale(enabled = !uiState.isLoading && googleProvider.enabled)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 12.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (uiState.isLoading) {
-                        CircularProgressIndicator(
-                            color = appColors.authButtonContent,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(21.dp)
-                        )
-                    } else {
-                        Image(
-                            painter = painterResource(googleProvider.iconDrawableRes),
-                            contentDescription = null,
-                            modifier = Modifier.size(21.dp)
+                uiState.errorMessage?.let {
+                    Surface(
+                        color = appColors.authMessageSurface,
+                        contentColor = Color(0xFFB31329),
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = it,
+                            style = TextStyle(
+                                fontFamily = PoppinsFontFamily,
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.size(10.dp))
-                    Text(
-                        text = if (uiState.isLoading) {
-                            stringResource(com.subhajit.mulberry.R.string.auth_signing_in)
-                        } else {
-                            stringResource(googleProvider.labelRes)
-                        },
-                        style = TextStyle(
-                            fontFamily = PoppinsFontFamily,
-                            fontSize = 13.5.sp,
-                            lineHeight = 24.sp,
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        fontWeight = FontWeight.SemiBold
+                }
+
+                metadata.providers.forEach { provider ->
+                    val method = when (provider.id) {
+                        AuthProviderId.GOOGLE -> SignInMethod.GOOGLE
+                        AuthProviderId.APPLE -> SignInMethod.APPLE
+                    }
+                    SignInButton(
+                        provider = provider,
+                        method = method,
+                        // The automatic Google sign-in shows on the Google button.
+                        signingIn = uiState.isLoading &&
+                            (uiState.signingInWith ?: SignInMethod.GOOGLE) == method,
+                        enabled = !uiState.isLoading && provider.enabled,
+                        onClick = { onSignIn(method) }
                     )
                 }
             }
+        }
+    }
+}
+
+private val LargeTextWash = Color(red = 1f, green = 0.96f, blue = 0.93f, alpha = 0.94f)
+
+/** Google's white button, and Apple's black one under it, the same size. */
+@Composable
+private fun SignInButton(
+    provider: AuthProviderMetadata,
+    method: SignInMethod,
+    signingIn: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val appColors = MaterialTheme.mulberryAppColors
+    val container = when (method) {
+        SignInMethod.GOOGLE -> appColors.authButtonSurface
+        SignInMethod.APPLE -> Color.Black
+    }
+    val content = when (method) {
+        SignInMethod.GOOGLE -> appColors.authButtonContent
+        SignInMethod.APPLE -> Color.White
+    }
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(15.38.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = container,
+            contentColor = content,
+            disabledContainerColor = container.copy(alpha = 0.72f),
+            disabledContentColor = content.copy(alpha = 0.72f)
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 50.dp)
+            .testTag(
+                when (method) {
+                    SignInMethod.GOOGLE -> TestTags.AUTH_GOOGLE_BUTTON
+                    SignInMethod.APPLE -> TestTags.AUTH_APPLE_BUTTON
+                }
+            )
+            .mulberryTapScale(enabled = enabled)
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (signingIn) {
+                CircularProgressIndicator(
+                    color = content,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(21.dp)
+                )
+            } else {
+                Image(
+                    painter = painterResource(provider.iconDrawableRes),
+                    contentDescription = null,
+                    modifier = Modifier.size(21.dp)
+                )
+            }
+            Spacer(modifier = Modifier.size(10.dp))
+            Text(
+                text = if (signingIn) {
+                    stringResource(R.string.auth_signing_in)
+                } else {
+                    stringResource(provider.labelRes)
+                },
+                style = TextStyle(
+                    fontFamily = PoppinsFontFamily,
+                    fontSize = 13.5.sp,
+                    lineHeight = 24.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            )
         }
     }
 }

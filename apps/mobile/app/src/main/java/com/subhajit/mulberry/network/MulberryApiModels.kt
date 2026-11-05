@@ -6,6 +6,14 @@ data class GoogleAuthRequest(
     val idToken: String
 )
 
+/** Sign in with Apple's result, as `/auth/apple` and `/me/sign-in-methods/apple` take it. */
+data class AppleAuthRequest(
+    val identityToken: String,
+    val authorizationCode: String?,
+    val nonce: String,
+    val displayName: String?
+)
+
 data class RefreshRequest(
     val refreshToken: String
 )
@@ -24,6 +32,8 @@ data class BootstrapResponse(
     val canvasStrokeRenderMode: String = "dry",
     val userId: String?,
     val userEmail: String?,
+    /** "google" and "apple"; missing from servers older than Sign in with Apple. */
+    val signInMethods: List<String>? = null,
     val userPhotoUrl: String?,
     val userDisplayName: String?,
     val partnerPhotoUrl: String?,
@@ -33,6 +43,8 @@ data class BootstrapResponse(
     val partnerProfileNextUpdateAt: String?,
     val pairedAt: String?,
     val currentStreakDays: Int = 0,
+    /** Whether the account has ever drawn, on any device. Missing from older servers. */
+    val hasDrawn: Boolean? = null,
     val pairingStatus: String,
     val pairSessionId: String?,
     val invite: InviteResponse?

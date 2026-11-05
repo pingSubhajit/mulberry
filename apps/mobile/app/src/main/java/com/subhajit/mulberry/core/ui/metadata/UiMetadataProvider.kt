@@ -35,7 +35,8 @@ data class AuthProviderMetadata(
 )
 
 enum class AuthProviderId {
-    GOOGLE
+    GOOGLE,
+    APPLE
 }
 
 data class AppSystemBarStyle(
@@ -63,6 +64,12 @@ object MulberryUiMetadataProvider : UiMetadataProvider {
                 id = AuthProviderId.GOOGLE,
                 labelRes = R.string.auth_provider_google,
                 iconDrawableRes = R.drawable.ic_google_logo,
+                enabled = true
+            ),
+            AuthProviderMetadata(
+                id = AuthProviderId.APPLE,
+                labelRes = R.string.auth_provider_apple,
+                iconDrawableRes = R.drawable.ic_apple_logo,
                 enabled = true
             )
         ),

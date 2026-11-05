@@ -36,8 +36,16 @@ fun requiredIntGradleProperty(key: String): Int =
         ?: error("Gradle property $key must be an integer")
 
 val googleServerClientId = localConfigValue("GOOGLE_SERVER_CLIENT_ID")
+val devApiBaseUrl = localConfigValue("DEV_API_BASE_URL").ifBlank { "http://10.0.2.2:8080/" }
 val prodApiBaseUrl = localConfigValue("PROD_API_BASE_URL")
     .ifBlank { "https://api.mulberry.my/" }
+// Sign in with Apple runs Apple's web flow: a Services ID, and the return URL registered for it,
+// which the backend serves. Dev builds without one sign in with a development token instead.
+val appleServicesId = localConfigValue("APPLE_SERVICES_ID").ifBlank { "com.subhajit.mulberry.web" }
+val appleRedirectUri = localConfigValue("APPLE_REDIRECT_URI")
+    .ifBlank { "${prodApiBaseUrl.trimEnd('/')}/auth/apple/callback" }
+val devAppleServicesId = localConfigValue("APPLE_SERVICES_ID_DEV")
+val devAppleRedirectUri = localConfigValue("APPLE_REDIRECT_URI_DEV")
 val appVersionCode = requiredIntGradleProperty("MULBERRY_VERSION_CODE")
 val appVersionName = requiredGradleProperty("MULBERRY_VERSION_NAME")
 val releaseStoreFile = localConfigValue("RELEASE_STORE_FILE")
@@ -77,7 +85,9 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
             buildConfigField("String", "APP_ENVIRONMENT", "\"dev\"")
-            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080/\"")
+            // The emulator's view of this Mac. A phone can use http://127.0.0.1:8080/ with
+            // `adb reverse tcp:8080 tcp:8080`, set as DEV_API_BASE_URL.
+            buildConfigField("String", "API_BASE_URL", quotedBuildConfigValue(devApiBaseUrl))
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             buildConfigField("boolean", "ENABLE_DEBUG_MENU", "true")
             buildConfigField(
@@ -85,6 +95,8 @@ android {
                 "GOOGLE_SERVER_CLIENT_ID",
                 quotedBuildConfigValue(googleServerClientId)
             )
+            buildConfigField("String", "APPLE_SERVICES_ID", quotedBuildConfigValue(devAppleServicesId))
+            buildConfigField("String", "APPLE_REDIRECT_URI", quotedBuildConfigValue(devAppleRedirectUri))
         }
         create("prod") {
             dimension = "environment"
@@ -96,6 +108,8 @@ android {
                 "GOOGLE_SERVER_CLIENT_ID",
                 quotedBuildConfigValue(googleServerClientId)
             )
+            buildConfigField("String", "APPLE_SERVICES_ID", quotedBuildConfigValue(appleServicesId))
+            buildConfigField("String", "APPLE_REDIRECT_URI", quotedBuildConfigValue(appleRedirectUri))
         }
     }
 
@@ -183,6 +197,7 @@ dependencies {
     implementation(libs.retrofit.core)
     implementation(libs.retrofit.gson)
     implementation(libs.okhttp.logging)
+    implementation(libs.androidx.browser)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.googleid)

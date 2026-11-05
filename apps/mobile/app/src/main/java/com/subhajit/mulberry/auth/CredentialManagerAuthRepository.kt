@@ -21,6 +21,8 @@ import com.subhajit.mulberry.core.config.AppConfig
 import com.subhajit.mulberry.data.bootstrap.AppSession
 import com.subhajit.mulberry.data.bootstrap.AuthStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
+import com.subhajit.mulberry.network.AppleAuthRequest
+import com.subhajit.mulberry.network.AuthResponse
 import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.network.GoogleAuthRequest
 import com.subhajit.mulberry.network.RefreshRequest
@@ -39,6 +41,7 @@ class CredentialManagerAuthRepository @Inject constructor(
     private val sessionBootstrapRepository: SessionBootstrapRepository,
     private val appConfig: AppConfig,
     private val fcmTokenRepository: FcmTokenRepository,
+    private val appleSignInCoordinator: AppleSignInCoordinator,
     @ApplicationContext private val context: Context
 ) : AuthRepository {
 
@@ -58,22 +61,54 @@ class CredentialManagerAuthRepository @Inject constructor(
     }
 
     override suspend fun signInWithGoogle(activity: ComponentActivity): Result<Unit> = runCatching {
-        completeGoogleSignInWithIdToken(
-            if (appConfig.enableDebugMenu && appConfig.googleServerClientId.isBlank()) {
-                "dev-google:subhajit@elaris.dev:Subhajit"
-            } else {
-                check(appConfig.googleServerClientId.isNotBlank()) {
-                    "Google server client id is not configured"
-                }
-                val credentialManager = CredentialManager.create(activity)
-                requestGoogleButtonCredential(
-                    activity = activity,
-                    credentialManager = credentialManager,
-                    attemptLabel = "button"
-                ).googleIdToken()
-            }
-        )
+        completeGoogleSignInWithIdToken(googleButtonIdToken(activity))
     }
+
+    override suspend fun signInWithApple(activity: ComponentActivity): Result<Unit> = runCatching {
+        val credential = appleSignInCoordinator.authorize(activity)
+        completeSignIn(apiService.authenticateWithApple(credential.toRequest()))
+    }
+
+    override suspend fun linkSignInMethod(
+        activity: ComponentActivity,
+        method: SignInMethod
+    ): Result<Unit> = runCatching {
+        val bootstrap = when (method) {
+            SignInMethod.GOOGLE -> apiService.linkGoogle(GoogleAuthRequest(idToken = googleButtonIdToken(activity)))
+            SignInMethod.APPLE -> apiService.linkApple(appleSignInCoordinator.authorize(activity).toRequest())
+        }
+        sessionBootstrapRepository.cacheBootstrap(bootstrap.toDomainBootstrap())
+    }
+
+    override suspend fun deleteAccount(): Result<Unit> = runCatching {
+        // Unregistered while the session still works; a failed deletion registers it again on the next start.
+        fcmTokenRepository.unregisterRegisteredToken()
+        val response = apiService.deleteAccount()
+        if (!response.isSuccessful) throw retrofit2.HttpException(response)
+        signOutLocally()
+    }
+
+    /** Google's own "Sign in with Google" sheet, or a development token in dev builds without a client. */
+    private suspend fun googleButtonIdToken(activity: ComponentActivity): String =
+        if (appConfig.enableDebugMenu && appConfig.googleServerClientId.isBlank()) {
+            "dev-google:subhajit@elaris.dev:Subhajit"
+        } else {
+            check(appConfig.googleServerClientId.isNotBlank()) {
+                "Google server client id is not configured"
+            }
+            requestGoogleButtonCredential(
+                activity = activity,
+                credentialManager = CredentialManager.create(activity),
+                attemptLabel = "button"
+            ).googleIdToken()
+        }
+
+    private fun AppleIdCredential.toRequest() = AppleAuthRequest(
+        identityToken = identityToken,
+        authorizationCode = authorizationCode,
+        nonce = nonce,
+        displayName = displayName
+    )
 
     override suspend fun tryAutomaticGoogleSignIn(activity: ComponentActivity): Result<Boolean> = runCatching {
         if (appConfig.enableDebugMenu && appConfig.googleServerClientId.isBlank()) {
@@ -115,6 +150,14 @@ class CredentialManagerAuthRepository @Inject constructor(
     override suspend fun logout(): Result<Unit> = runCatching {
         fcmTokenRepository.unregisterRegisteredToken()
         runCatching { apiService.logout() }
+        signOutLocally()
+    }
+
+    /**
+     * Forgets the session and the account's cached state on this device. The wallpaper stays
+     * configured, since it is still this phone's wallpaper.
+     */
+    private suspend fun signOutLocally() {
         runCatching {
             CredentialManager.create(context).clearCredentialState(ClearCredentialStateRequest())
         }.onFailure { error ->
@@ -149,10 +192,10 @@ class CredentialManagerAuthRepository @Inject constructor(
     }
 
     private suspend fun completeGoogleSignInWithIdToken(idToken: String) {
-        val authResponse = apiService.authenticateWithGoogle(
-            GoogleAuthRequest(idToken = idToken)
-        )
+        completeSignIn(apiService.authenticateWithGoogle(GoogleAuthRequest(idToken = idToken)))
+    }
 
+    private suspend fun completeSignIn(authResponse: AuthResponse) {
         sessionBootstrapRepository.cacheSession(
             AppSession(
                 accessToken = authResponse.accessToken,

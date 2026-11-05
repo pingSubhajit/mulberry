@@ -7,7 +7,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.subhajit.mulberry.BuildConfig
+import androidx.activity.ComponentActivity
+import com.subhajit.mulberry.auth.AppleSignInException
 import com.subhajit.mulberry.auth.AuthRepository
+import com.subhajit.mulberry.auth.SignInMethod
+import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.subhajit.mulberry.core.config.AppConfig
 import com.subhajit.mulberry.core.flags.FeatureFlag
 import com.subhajit.mulberry.core.flags.FeatureFlagProvider
@@ -86,7 +90,10 @@ data class SettingsUiState(
     val feedbackLoading: Boolean = false,
     val feedbackError: String? = null,
     val hasCurrentVersionWhatsNew: Boolean = false,
-    val isBusy: Boolean = false
+    val isBusy: Boolean = false,
+    /** The sign-in method being linked, while Google's or Apple's sheet is open. */
+    val linkingSignInMethod: SignInMethod? = null,
+    val isDeletingAccount: Boolean = false
 ) {
     val pendingOperationCount: Int
         get() = syncMetadata.pendingOperations.size
@@ -138,6 +145,7 @@ class SettingsViewModel @Inject constructor(
     private val pendingPartnerProfilePhotoUri = kotlinx.coroutines.flow.MutableStateFlow<Uri?>(null)
     private val feedbackState = kotlinx.coroutines.flow.MutableStateFlow(FeedbackState())
     private val hasCurrentVersionWhatsNew = kotlinx.coroutines.flow.MutableStateFlow(false)
+    private val accountActionState = kotlinx.coroutines.flow.MutableStateFlow(AccountActionState())
 
     private val baseUiStateCoreWithoutCanvasDebug = combine(
         combine(
@@ -217,9 +225,15 @@ class SettingsViewModel @Inject constructor(
 
     val uiState = combine(
         uiStateWithoutWhatsNewAvailability,
-        hasCurrentVersionWhatsNew
-    ) { base, hasCurrentWhatsNew ->
-        base.copy(hasCurrentVersionWhatsNew = hasCurrentWhatsNew)
+        hasCurrentVersionWhatsNew,
+        accountActionState
+    ) { base, hasCurrentWhatsNew, accountAction ->
+        base.copy(
+            hasCurrentVersionWhatsNew = hasCurrentWhatsNew,
+            isBusy = base.isBusy || accountAction.linking != null || accountAction.deleting,
+            linkingSignInMethod = accountAction.linking,
+            isDeletingAccount = accountAction.deleting
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -440,6 +454,52 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** Lets this account sign in with [method] too, through Google's or Apple's own sheet. */
+    fun onLinkSignInMethod(activity: ComponentActivity, method: SignInMethod) {
+        if (uiState.value.isBusy) return
+        viewModelScope.launch {
+            accountActionState.value = accountActionState.value.copy(linking = method)
+            authRepository.linkSignInMethod(activity, method)
+                .onFailure { error ->
+                    val message = when (error) {
+                        is GetCredentialCancellationException, is AppleSignInException.Cancelled -> null
+                        is AppleSignInException.Failed -> "Sign in with Apple didn’t finish. Try again."
+                        else -> error.toUserFacingMessage()
+                    }
+                    message?.let { _effects.emit(SettingsEffect.Message(it)) }
+                }
+            accountActionState.value = accountActionState.value.copy(linking = null)
+        }
+    }
+
+    /** Deletes the account at once, as on iPhone: no grace period, and the partner sees a plain unpair. */
+    fun onDeleteAccount() {
+        if (uiState.value.isBusy) return
+        viewModelScope.launch {
+            accountActionState.value = accountActionState.value.copy(deleting = true)
+            val userId = sessionRepository.state.first().userId
+            authRepository.deleteAccount()
+                .onSuccess {
+                    canvasSyncRepository.reset()
+                    drawingRepository.resetAllDrawingState()
+                    streakSimulationRepository.setSimulation(null)
+                    canvasSnapshotRenderer.clearSnapshots()
+                    if (!userId.isNullOrBlank()) {
+                        stickerCatalogCacheStore.clearUser(userId)
+                        stickerAssetStore.clearAllStickerAssets(userId)
+                    }
+                    wallpaperCoordinator.ensureSnapshotCurrent()
+                    wallpaperCoordinator.notifyWallpaperUpdated()
+                    accountActionState.value = AccountActionState()
+                    _effects.emit(SettingsEffect.RestartFromBootstrap)
+                }
+                .onFailure { error ->
+                    accountActionState.value = AccountActionState()
+                    _effects.emit(SettingsEffect.Message(error.toUserFacingMessage()))
+                }
+        }
+    }
+
     fun onClearStickerAssets() {
         viewModelScope.launchWithBusy {
             val userId = sessionRepository.state.first().userId
@@ -642,6 +702,11 @@ private data class SettingsCoreInputs(
     val flags: FeatureFlags,
     val developerOptionsEnabled: Boolean,
     val streakSimulation: com.subhajit.mulberry.streak.StreakSimulation?,
+)
+
+private data class AccountActionState(
+    val linking: SignInMethod? = null,
+    val deleting: Boolean = false
 )
 
 private data class FeedbackState(

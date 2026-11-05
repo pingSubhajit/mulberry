@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.data.bootstrap
 
+import com.subhajit.mulberry.auth.SignInMethod
 import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
 
 enum class AuthStatus(val displayName: String) {
@@ -52,6 +53,8 @@ data class SessionBootstrapState(
     val canvasStrokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.DryBrush,
     val userId: String? = null,
     val userEmail: String? = null,
+    /** How this account can sign in. Accounts from servers that don't say sign in with Google. */
+    val signInMethods: Set<SignInMethod> = setOf(SignInMethod.GOOGLE),
     val userPhotoUrl: String? = null,
     val userDisplayName: String? = null,
     val partnerPhotoUrl: String? = null,
@@ -61,6 +64,8 @@ data class SessionBootstrapState(
     val partnerProfileNextUpdateAt: String? = null,
     val pairedAt: String? = null,
     val currentStreakDays: Int = 0,
+    /** Whether the account has ever drawn, on any device. Null when the server doesn't say. */
+    val hasDrawn: Boolean? = null,
     val streakLevelUpBannerStreakDays: Int? = null,
     val streakLevelUpBannerShownAtMs: Long? = null,
     val streakLevelUpBannerExpiresAtMs: Long? = null,

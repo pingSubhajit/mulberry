@@ -2,6 +2,7 @@ package com.subhajit.mulberry.network
 
 import com.subhajit.mulberry.analytics.AnalyticsEventsRequest
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.HTTP
 import retrofit2.http.Multipart
@@ -18,6 +19,21 @@ import retrofit2.Response
 interface MulberryApiService {
     @POST("/auth/google")
     suspend fun authenticateWithGoogle(@Body request: GoogleAuthRequest): AuthResponse
+
+    @POST("/auth/apple")
+    suspend fun authenticateWithApple(@Body request: AppleAuthRequest): AuthResponse
+
+    /** Lets the signed-in account sign in with Google too. */
+    @POST("/me/sign-in-methods/google")
+    suspend fun linkGoogle(@Body request: GoogleAuthRequest): BootstrapResponse
+
+    /** Lets the signed-in account sign in with Apple too. */
+    @POST("/me/sign-in-methods/apple")
+    suspend fun linkApple(@Body request: AppleAuthRequest): BootstrapResponse
+
+    /** Deletes the account and everything in it, at once. The partner sees a plain unpair. */
+    @DELETE("/me")
+    suspend fun deleteAccount(): Response<Unit>
 
     @POST("/auth/refresh")
     suspend fun refreshSession(@Body request: RefreshRequest): AuthResponse

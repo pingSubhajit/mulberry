@@ -15,6 +15,7 @@ object PreferenceStorage {
     val sessionUserId = stringPreferencesKey("session_user_id")
     val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
     val userEmail = stringPreferencesKey("user_email")
+    val signInMethods = stringSetPreferencesKey("sign_in_methods")
     val userPhotoUrl = stringPreferencesKey("user_photo_url")
     val userDisplayName = stringPreferencesKey("user_display_name")
     val partnerPhotoUrl = stringPreferencesKey("partner_photo_url")
@@ -36,6 +37,9 @@ object PreferenceStorage {
     val partnerProfileNextUpdateAt = stringPreferencesKey("partner_profile_next_update_at")
     val pairedAt = stringPreferencesKey("paired_at")
     val currentStreakDays = intPreferencesKey("current_streak_days")
+    val hasDrawn = booleanPreferencesKey("has_drawn")
+    /** Accounts whose first drawing this device has seen, before the server's word catches up. */
+    val firstDrawingUserIds = stringSetPreferencesKey("first_drawing_user_ids")
     val pairingStatus = stringPreferencesKey("pairing_status")
     val pairSessionId = stringPreferencesKey("pair_session_id")
     val pendingInviteId = stringPreferencesKey("pending_invite_id")
@@ -48,6 +52,8 @@ object PreferenceStorage {
     val pendingInboundInviteSource = stringPreferencesKey("pending_inbound_invite_source")
     /** "userId|day": the lost streak whose bolt this device last showed breaking. */
     val lostStreakSeen = stringPreferencesKey("lost_streak_seen")
+    /** "userId|pairSessionId|days": the streak count the streak screen last showed. */
+    val streakShownDays = stringPreferencesKey("streak_shown_days")
     val pendingInboundInviteDismissedAtMs = longPreferencesKey("pending_inbound_invite_dismissed_at_ms")
     val installReferrerChecked = booleanPreferencesKey("install_referrer_checked")
     val wallpaperConfigured = booleanPreferencesKey("wallpaper_configured")

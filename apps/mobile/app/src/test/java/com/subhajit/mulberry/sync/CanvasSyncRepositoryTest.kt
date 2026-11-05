@@ -622,6 +622,18 @@ private class FakeMulberryApiService : MulberryApiService {
     override suspend fun authenticateWithGoogle(request: GoogleAuthRequest): AuthResponse =
         error("unused")
 
+    override suspend fun authenticateWithApple(
+        request: com.subhajit.mulberry.network.AppleAuthRequest
+    ): AuthResponse = error("unused")
+
+    override suspend fun linkGoogle(request: GoogleAuthRequest): BootstrapResponse = error("unused")
+
+    override suspend fun linkApple(
+        request: com.subhajit.mulberry.network.AppleAuthRequest
+    ): BootstrapResponse = error("unused")
+
+    override suspend fun deleteAccount(): retrofit2.Response<Unit> = error("unused")
+
     override suspend fun refreshSession(request: RefreshRequest): AuthResponse = error("unused")
 
     override suspend fun logout() = error("unused")

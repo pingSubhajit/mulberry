@@ -61,23 +61,39 @@ class AuthLandingViewModel @Inject constructor(
         }
     }
 
-    fun onGoogleSignInClicked(activity: ComponentActivity) {
+    fun onSignInClicked(activity: ComponentActivity, method: SignInMethod) {
+        if (_uiState.value.isLoading) return
         analytics.track(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.SIGN_IN))
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
-            authRepository.signInWithGoogle(activity)
+            _uiState.value = _uiState.value.copy(isLoading = true, signingInWith = method, errorMessage = null)
+            val result = when (method) {
+                SignInMethod.GOOGLE -> authRepository.signInWithGoogle(activity)
+                SignInMethod.APPLE -> authRepository.signInWithApple(activity)
+            }
+            result
                 .onSuccess {
-                    _uiState.value = _uiState.value.copy(isLoading = false)
+                    _uiState.value = _uiState.value.copy(isLoading = false, signingInWith = null)
                     redeemInboundInviteIfPresent()
                     _effects.emit(AuthLandingEffect.NavigateToBootstrap)
                 }
                 .onFailure { error ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = error.toUserMessage()
+                        signingInWith = null,
+                        errorMessage = when (method) {
+                            SignInMethod.GOOGLE -> error.toUserMessage()
+                            SignInMethod.APPLE -> error.toAppleUserMessage()
+                        }
                     )
                 }
         }
+    }
+
+    /** Apple's own failures read as on iPhone; the server's go through the usual words. */
+    private fun Throwable.toAppleUserMessage(): String? = when (this) {
+        is AppleSignInException.Cancelled -> null
+        is AppleSignInException.Failed -> APPLE_SIGN_IN_FAILED
+        else -> UserFacingError.message(this, GENERIC_FAILURE)
     }
 
     private fun Throwable.toUserMessage(): String? {
@@ -124,5 +140,7 @@ class AuthLandingViewModel @Inject constructor(
 
     private companion object {
         const val INBOUND_INVITE_TTL_MS = 24 * 60 * 60 * 1000L
+        const val APPLE_SIGN_IN_FAILED = "Sign in with Apple didn’t finish. Try again."
+        const val GENERIC_FAILURE = "Mulberry couldn’t finish that. Try again."
     }
 }

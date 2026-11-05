@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.network
 
+import com.subhajit.mulberry.auth.SignInMethod
 import com.subhajit.mulberry.data.bootstrap.AuthStatus
 import com.subhajit.mulberry.data.bootstrap.InviteStatus
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
@@ -15,6 +16,11 @@ fun BootstrapResponse.toDomainBootstrap(): SessionBootstrapState = SessionBootst
     canvasStrokeRenderMode = CanvasStrokeRenderMode.fromRaw(canvasStrokeRenderMode),
     userId = userId,
     userEmail = userEmail,
+    signInMethods = signInMethods
+        ?.mapNotNull(SignInMethod::fromRaw)
+        ?.toSet()
+        ?.takeIf { it.isNotEmpty() }
+        ?: setOf(SignInMethod.GOOGLE),
     userPhotoUrl = userPhotoUrl,
     userDisplayName = userDisplayName,
     partnerPhotoUrl = partnerPhotoUrl,
@@ -33,6 +39,7 @@ fun BootstrapResponse.toDomainBootstrap(): SessionBootstrapState = SessionBootst
     partnerProfileNextUpdateAt = partnerProfileNextUpdateAt,
     pairedAt = pairedAt,
     currentStreakDays = currentStreakDays,
+    hasDrawn = hasDrawn,
     pairingStatus = PairingStatus.valueOf(pairingStatus),
     pairSessionId = pairSessionId,
     pendingInvite = invite?.let {

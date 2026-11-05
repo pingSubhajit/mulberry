@@ -31,6 +31,7 @@ import com.subhajit.mulberry.app.bootstrap.ReleaseStartupGateAfterFirstFrame
 import com.subhajit.mulberry.app.shortcut.AppShortcutActionController
 import com.subhajit.mulberry.app.snackbar.MulberrySnackbarController
 import com.subhajit.mulberry.app.snackbar.MulberrySnackbarRequest
+import com.subhajit.mulberry.auth.AppleSignInCoordinator
 import com.subhajit.mulberry.data.bootstrap.AuthStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.pairing.inbound.InboundInviteActionController
@@ -78,6 +79,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var whatsNewPrompter: WhatsNewPrompter
     @Inject lateinit var appAnalytics: AppAnalytics
     @Inject lateinit var wallpaperSetupTracker: WallpaperSetupTracker
+    @Inject lateinit var appleSignInCoordinator: AppleSignInCoordinator
 
     private val currentRoute = MutableStateFlow<String?>(null)
     private var pendingUpdatePromptVersionCode: Int? = null
@@ -215,6 +217,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        appleSignInCoordinator.onHostResumed()
         if (isMainAppRoute(currentRoute.value)) {
             maybeShowDownloadedUpdateSnackbar()
         }

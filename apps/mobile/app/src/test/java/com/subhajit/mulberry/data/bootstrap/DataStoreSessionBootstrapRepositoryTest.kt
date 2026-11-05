@@ -1,6 +1,7 @@
 package com.subhajit.mulberry.data.bootstrap
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import com.subhajit.mulberry.auth.SignInMethod
 import com.subhajit.mulberry.core.config.AppConfigFactory
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -21,6 +22,23 @@ class DataStoreSessionBootstrapRepositoryTest {
         val repository = createRepository(this)
 
         assertEquals(SessionBootstrapState(), repository.state.first())
+    }
+
+    @Test
+    fun `cache bootstrap keeps the account's sign-in methods`() = runTest {
+        val repository = createRepository(this)
+
+        repository.cacheBootstrap(
+            SessionBootstrapState(
+                authStatus = AuthStatus.SIGNED_IN,
+                userId = "user-1",
+                signInMethods = setOf(SignInMethod.GOOGLE, SignInMethod.APPLE)
+            )
+        )
+        assertEquals(setOf(SignInMethod.GOOGLE, SignInMethod.APPLE), repository.state.first().signInMethods)
+
+        repository.reset()
+        assertEquals(setOf(SignInMethod.GOOGLE), repository.state.first().signInMethods)
     }
 
     @Test

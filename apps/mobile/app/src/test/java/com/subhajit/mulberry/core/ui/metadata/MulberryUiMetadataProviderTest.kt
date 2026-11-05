@@ -21,17 +21,19 @@ class MulberryUiMetadataProviderTest {
     }
 
     @Test
-    fun authLandingMetadataExposesOnlyGoogleProvider() {
+    fun authLandingMetadataOffersGoogleThenApple() {
         val auth = MulberryUiMetadataProvider.authLanding
 
         assertEquals(R.drawable.auth_login_bg, auth.backgroundDrawableRes)
         assertEquals(R.string.auth_headline, auth.headlineRes)
         assertEquals(R.string.auth_subtitle, auth.subtitleRes)
-        assertEquals(1, auth.providers.size)
-        assertEquals(AuthProviderId.GOOGLE, auth.providers.single().id)
-        assertEquals(R.string.auth_provider_google, auth.providers.single().labelRes)
-        assertEquals(R.drawable.ic_google_logo, auth.providers.single().iconDrawableRes)
-        assertTrue(auth.providers.single().enabled)
+        assertEquals(listOf(AuthProviderId.GOOGLE, AuthProviderId.APPLE), auth.providers.map { it.id })
+        val (google, apple) = auth.providers
+        assertEquals(R.string.auth_provider_google, google.labelRes)
+        assertEquals(R.drawable.ic_google_logo, google.iconDrawableRes)
+        assertEquals(R.string.auth_provider_apple, apple.labelRes)
+        assertEquals(R.drawable.ic_apple_logo, apple.iconDrawableRes)
+        assertTrue(auth.providers.all { it.enabled })
     }
 
     @Test

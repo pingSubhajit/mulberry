@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -87,6 +88,10 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -97,10 +102,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.subhajit.mulberry.MainActivity
 import com.subhajit.mulberry.R
+import com.subhajit.mulberry.auth.SignInMethod
 import com.subhajit.mulberry.core.flags.FeatureFlag
 import com.subhajit.mulberry.core.ui.PrivacyPolicySheetContent
 import com.subhajit.mulberry.core.ui.TermsOfUseSheetContent
 import com.subhajit.mulberry.core.ui.TestTags
+import com.subhajit.mulberry.core.ui.isLargeText
 import com.subhajit.mulberry.core.ui.mulberryTapScale
 import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus
@@ -244,6 +251,10 @@ fun SettingsRoute(
         onCanvasStrokeRenderModeChanged = viewModel::onCanvasStrokeRenderModeChanged,
         onDisplayNameSave = viewModel::onDisplayNameSave,
         onProfilePhotoChangeRequested = { profilePhotoPicker.launch("image/*") },
+        onLinkSignInMethod = { method ->
+            if (activity != null) viewModel.onLinkSignInMethod(activity, method)
+        },
+        onDeleteAccount = viewModel::onDeleteAccount,
         onDisconnectPartner = viewModel::onDisconnectPartner,
         onPartnerProfileSave = viewModel::onPartnerProfileSave,
         onPartnerPhotoChangeRequested = { partnerPhotoPicker.launch("image/*") },
@@ -293,6 +304,8 @@ private fun SettingsScreen(
     onCanvasStrokeRenderModeChanged: (Boolean) -> Unit,
     onDisplayNameSave: (String) -> Unit,
     onProfilePhotoChangeRequested: () -> Unit,
+    onLinkSignInMethod: (SignInMethod) -> Unit,
+    onDeleteAccount: () -> Unit,
     onDisconnectPartner: () -> Unit,
     onPartnerProfileSave: (String, String) -> Unit,
     onPartnerPhotoChangeRequested: () -> Unit,
@@ -355,6 +368,8 @@ private fun SettingsScreen(
                 onBack = onNavigateBack,
                 onDisplayNameSave = onDisplayNameSave,
                 onProfilePhotoChangeRequested = onProfilePhotoChangeRequested,
+                onLinkSignInMethod = onLinkSignInMethod,
+                onDeleteAccount = onDeleteAccount,
                 modifier = Modifier.padding(padding)
             )
         } else if (pane == SettingsPane.Partner) {
@@ -684,38 +699,26 @@ private fun SettingsRootSubtitle(
     anniversaryDate: String?
 ) {
     if (paired && !partnerName.isNullOrBlank()) {
-        Row(
+        val mutedColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f)
+        val nameColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.86f)
+        val since = anniversaryDate.toFriendlyAnniversaryDate()
+        // One text, so it wraps as a sentence at the large text sizes.
+        Text(
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(color = mutedColor)) { append("with: ") }
+                withStyle(SpanStyle(color = nameColor, fontWeight = FontWeight.Bold)) { append(partnerName) }
+                since?.let { date ->
+                    withStyle(SpanStyle(color = mutedColor)) { append(", since $date") }
+                }
+            },
+            fontFamily = PoppinsFontFamily,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+            textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 2.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "with: ",
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
-                fontFamily = PoppinsFontFamily,
-                fontSize = 14.sp,
-                lineHeight = 20.sp
-            )
-            Text(
-                text = partnerName,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.86f),
-                fontFamily = PoppinsFontFamily,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                lineHeight = 20.sp
-            )
-            anniversaryDate.toFriendlyAnniversaryDate()?.let { date ->
-                Text(
-                    text = ", since $date",
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
-                    fontFamily = PoppinsFontFamily,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                )
-            }
-        }
+                .padding(top = 2.dp)
+        )
     } else {
         Text(
             text = "waiting for partner to join",
@@ -753,21 +756,20 @@ private fun SettingsRootMenu(
             title = "Partner settings",
             onClick = { onPaneSelected(SettingsPane.Partner) }
         )
+        val syncStatus = SyncStatus.of(
+            paired = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED,
+            syncState = uiState.syncState
+        )
         SettingsRootRow(
-            icon = if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
-                SettingsRootIcon.SyncConnected
-            } else {
+            icon = if (syncStatus == SyncStatus.NotPaired) {
                 SettingsRootIcon.SyncUnpaired
+            } else {
+                SettingsRootIcon.SyncConnected
             },
             title = "Sync status",
-            status = if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) "Connected" else "Unpaired",
-            statusColor = if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
-                Color(0xFF00A53C)
-            } else {
-                Color(0xFFE00012)
-            },
+            trailingContent = { SyncStatusLabel(syncStatus) },
             enabled = uiState.developerOptionsEnabled,
-            showChevron = uiState.developerOptionsEnabled,
+            showChevron = false,
             onClick = { onPaneSelected(SettingsPane.DeveloperOptions) }
         )
         SettingsRootToggleRow(
@@ -840,7 +842,7 @@ private fun SettingsRootRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(36.dp)
+            .heightIn(min = 36.dp)
             .clickable(enabled = enabled, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -903,18 +905,20 @@ private fun PartnerDrawingVisibilityBanner(
     label: String,
     onClick: () -> Unit
 ) {
+    val largeText = isLargeText()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(58.dp)
+            .heightIn(min = 58.dp)
             .clip(RoundedCornerShape(15.38.dp))
             .background(Color(0xFFB31329))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 24.dp),
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = if (largeText) 12.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(
+            modifier = Modifier.weight(1f, fill = false),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -926,7 +930,8 @@ private fun PartnerDrawingVisibilityBanner(
             Text(
                 text = label,
                 color = Color.White,
-                maxLines = 1,
+                // One line, as on iPhone, until the large text sizes.
+                maxLines = if (largeText) Int.MAX_VALUE else 1,
                 overflow = TextOverflow.Ellipsis,
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.SemiBold,
@@ -990,6 +995,7 @@ private fun PartnerDrawingVisibilitySheetContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 22.dp)
             .padding(bottom = 24.dp)
     ) {
@@ -1041,7 +1047,7 @@ private fun SettingsRootToggleRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(36.dp),
+            .heightIn(min = 36.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         RootLineIcon(
@@ -1090,6 +1096,7 @@ private fun WallpaperDoodlesInfoSheetContent(onDismiss: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 22.dp)
             .padding(bottom = 24.dp)
     ) {
@@ -1269,7 +1276,8 @@ private fun RootCloseButton(onClick: () -> Unit) {
     Canvas(
         modifier = Modifier
             .size(31.dp)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "Close" }
             .padding(7.dp)
     ) {
         val stroke = Stroke(width = 3.8f, cap = StrokeCap.Round)
@@ -1299,8 +1307,10 @@ private fun RootAvatar(
     modifier: Modifier = Modifier
 ) {
     val initial = displayName?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+    val label = displayName?.takeIf { it.isNotBlank() && it != "?" } ?: "Profile photo"
     Box(
         modifier = modifier
+            .clearAndSetSemantics { contentDescription = label }
             .size(size)
             .clip(CircleShape)
             .background(MulberryPrimaryLight)
@@ -1546,11 +1556,16 @@ private fun ProfilePane(
     onBack: () -> Unit,
     onDisplayNameSave: (String) -> Unit,
     onProfilePhotoChangeRequested: () -> Unit,
+    onLinkSignInMethod: (SignInMethod) -> Unit,
+    onDeleteAccount: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var displayName by remember(uiState.bootstrapState.userDisplayName) {
         mutableStateOf(uiState.bootstrapState.userDisplayName.orEmpty())
     }
+    var showDeleteAccountConfirmation by remember { mutableStateOf(false) }
+    val isPaired = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED
+    val partnerName = uiState.bootstrapState.partnerDisplayName
     SettingsDetailScaffold(
         title = "Profile info",
         onBack = onBack,
@@ -1589,6 +1604,40 @@ private fun ProfilePane(
             placeholder = "Google account",
             onValueChange = {},
             enabled = false
+        )
+        Spacer(modifier = Modifier.height(32.dp))
+        SignInMethodsSection(
+            linked = uiState.bootstrapState.signInMethods,
+            linking = uiState.linkingSignInMethod,
+            enabled = !uiState.isBusy,
+            onLink = onLinkSignInMethod
+        )
+        // Out of the way, at the very end of the profile.
+        Spacer(modifier = Modifier.height(40.dp))
+        DeleteAccountAction(
+            deleting = uiState.isDeletingAccount,
+            enabled = !uiState.isBusy,
+            onClick = { showDeleteAccountConfirmation = true }
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+    }
+
+    if (showDeleteAccountConfirmation) {
+        ConfirmationDialog(
+            title = "Delete your Mulberry account?",
+            body = if (isPaired) {
+                "This also unpairs you from ${partnerName?.takeIf { it.isNotBlank() } ?: "your partner"} " +
+                    "and erases your shared canvas and streak. This can’t be undone."
+            } else {
+                "This can’t be undone."
+            },
+            confirmText = "Delete account",
+            confirmColor = MaterialTheme.colorScheme.error,
+            onDismiss = { showDeleteAccountConfirmation = false },
+            onConfirm = {
+                showDeleteAccountConfirmation = false
+                onDeleteAccount()
+            }
         )
     }
 }
@@ -1752,10 +1801,11 @@ private fun SettingsDetailScaffold(
 
 @Composable
 private fun SettingsDetailHeader(title: String, onBack: () -> Unit) {
+    val largeText = isLargeText()
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(36.dp),
+            .heightIn(min = 36.dp),
         contentAlignment = Alignment.Center
     ) {
         SettingsBackButton(
@@ -1769,8 +1819,11 @@ private fun SettingsDetailHeader(title: String, onBack: () -> Unit) {
             fontWeight = FontWeight.Medium,
             fontSize = 22.sp,
             lineHeight = 28.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            textAlign = TextAlign.Center,
+            maxLines = if (largeText) Int.MAX_VALUE else 1,
+            overflow = TextOverflow.Ellipsis,
+            // Wrapped titles stay clear of the back button.
+            modifier = if (largeText) Modifier.padding(horizontal = 48.dp) else Modifier
         )
     }
 }
@@ -1785,8 +1838,10 @@ private fun SettingsBackButton(onClick: () -> Unit, modifier: Modifier = Modifie
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
+                role = Role.Button,
                 onClick = onClick
-            ),
+            )
+            .semantics { contentDescription = "Back" },
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.size(24.dp)) {
@@ -1862,7 +1917,8 @@ private fun EditPhotoButton(
             .size(size)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.background)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "Change photo" },
         contentAlignment = Alignment.Center
     ) {
         Image(
@@ -1897,7 +1953,7 @@ private fun SettingsDetailField(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(66.dp)
+            .heightIn(min = 66.dp)
             .clip(RoundedCornerShape(15.38.dp))
             .background(MaterialTheme.mulberryAppColors.inputSurface)
             .padding(horizontal = 13.dp, vertical = 9.dp),
@@ -2005,7 +2061,7 @@ private fun PartnerMetricRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(36.dp),
+            .heightIn(min = 36.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
@@ -2050,7 +2106,7 @@ private fun SettingsSaveButton(text: String, enabled: Boolean, onClick: () -> Un
         enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
-            .height(58.dp)
+            .heightIn(min = 58.dp)
             .mulberryTapScale(enabled = enabled),
         shape = RoundedCornerShape(15.38.dp),
         colors = ButtonDefaults.buttonColors(
@@ -2165,33 +2221,50 @@ private fun PrivacyLegalCard(
 
 @Composable
 private fun PrivacyPromiseRow() {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
-    ) {
+    val items: @Composable (Modifier) -> Unit = { itemModifier ->
         PrivacyPromiseItem(
             iconRes = R.drawable.settings_legal_lock,
-            label = "No data\nsharing"
+            label = "No data\nsharing",
+            modifier = itemModifier
         )
         PrivacyPromiseItem(
             iconRes = R.drawable.settings_legal_megaphone,
-            label = "No\nadvertising"
+            label = "No\nadvertising",
+            modifier = itemModifier
         )
         PrivacyPromiseItem(
             iconRes = R.drawable.settings_legal_search,
-            label = "No\ntracking"
+            label = "No\ntracking",
+            modifier = itemModifier
         )
+    }
+    if (isLargeText()) {
+        // Three narrow columns would break words at the large text sizes, so they stack.
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            items(Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            items(Modifier.width(96.dp))
+        }
     }
 }
 
 @Composable
 private fun PrivacyPromiseItem(
     @DrawableRes iconRes: Int,
-    label: String
+    label: String,
+    modifier: Modifier
 ) {
     Column(
-        modifier = Modifier.width(96.dp),
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Image(
@@ -2335,6 +2408,7 @@ private fun AboutInfoRow(
         )
         .padding(vertical = 14.dp)
 
+    val largeText = isLargeText()
     Row(
         modifier = rowModifier,
         verticalAlignment = Alignment.CenterVertically
@@ -2356,7 +2430,7 @@ private fun AboutInfoRow(
             fontSize = 15.sp,
             lineHeight = 22.sp,
             textAlign = TextAlign.End,
-            maxLines = 1,
+            maxLines = if (largeText) Int.MAX_VALUE else 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .padding(start = 18.dp, end = if (showChevron) 18.dp else 0.dp)
@@ -2836,7 +2910,7 @@ private fun SettingsNavCard(
                     fontFamily = PoppinsFontFamily,
                     fontSize = 13.sp,
                     lineHeight = 19.sp,
-                    maxLines = 2,
+                    maxLines = if (isLargeText()) Int.MAX_VALUE else 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
@@ -2925,7 +2999,7 @@ private fun SettingsValueRow(
             fontWeight = FontWeight.Medium,
             fontSize = 13.sp,
             lineHeight = 19.sp,
-            maxLines = 2,
+            maxLines = if (isLargeText()) Int.MAX_VALUE else 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1.2f)
         )
@@ -3065,7 +3139,7 @@ private fun SettingsPrimaryButton(
         enabled = !isBusy,
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp)
+            .heightIn(min = 54.dp)
             .mulberryTapScale(enabled = !isBusy),
         shape = RoundedCornerShape(15.38.dp),
         colors = ButtonDefaults.buttonColors(containerColor = MulberryPrimary)
@@ -3086,7 +3160,7 @@ private fun SettingsSecondaryButton(
         enabled = enabled && !isBusy,
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp)
+            .heightIn(min = 54.dp)
             .mulberryTapScale(enabled = enabled && !isBusy),
         shape = RoundedCornerShape(15.38.dp)
     ) {
@@ -3105,7 +3179,7 @@ private fun SettingsDestructiveButton(
         enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp)
+            .heightIn(min = 54.dp)
             .testTag(TestTags.SETTINGS_RESET_BUTTON)
             .mulberryTapScale(enabled = enabled),
         shape = RoundedCornerShape(15.38.dp),
@@ -3121,7 +3195,8 @@ private fun ConfirmationDialog(
     body: String,
     confirmText: String,
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: () -> Unit,
+    confirmColor: Color = MulberryPrimary
 ) {
         AlertDialog(
         onDismissRequest = onDismiss,
@@ -3141,7 +3216,7 @@ private fun ConfirmationDialog(
         },
         confirmButton = {
             TextButton(onClick = onConfirm, modifier = Modifier.mulberryTapScale()) {
-                Text(confirmText, color = MulberryPrimary, fontFamily = PoppinsFontFamily)
+                Text(confirmText, color = confirmColor, fontFamily = PoppinsFontFamily)
             }
         },
         dismissButton = {

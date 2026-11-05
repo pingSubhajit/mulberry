@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
+import com.subhajit.mulberry.auth.SignInMethod
 import com.subhajit.mulberry.core.config.AppConfig
 import com.subhajit.mulberry.core.data.PreferenceStorage
 import com.subhajit.mulberry.drawing.render.CanvasStrokeRenderMode
@@ -57,6 +58,11 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                     ?: CanvasStrokeRenderMode.DryBrush,
                 userId = preferences[PreferenceStorage.sessionUserId],
                 userEmail = preferences[PreferenceStorage.userEmail],
+                signInMethods = preferences[PreferenceStorage.signInMethods]
+                    ?.mapNotNull(SignInMethod::fromRaw)
+                    ?.toSet()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: setOf(SignInMethod.GOOGLE),
                 userPhotoUrl = preferences[PreferenceStorage.userPhotoUrl],
                 userDisplayName = preferences[PreferenceStorage.userDisplayName],
                 partnerPhotoUrl = preferences[PreferenceStorage.partnerPhotoUrl],
@@ -66,6 +72,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                 partnerProfileNextUpdateAt = preferences[PreferenceStorage.partnerProfileNextUpdateAt],
                 pairedAt = preferences[PreferenceStorage.pairedAt],
                 currentStreakDays = preferences[PreferenceStorage.currentStreakDays] ?: 0,
+                hasDrawn = preferences[PreferenceStorage.hasDrawn],
                 streakLevelUpBannerStreakDays =
                     preferences[PreferenceStorage.streakLevelUpBannerStreakDays],
                 streakLevelUpBannerShownAtMs =
@@ -128,6 +135,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
                 state.hasWallpaperConfigured || localWallpaperConfigured
             updateNullable(preferences, PreferenceStorage.sessionUserId, state.userId)
             updateNullable(preferences, PreferenceStorage.userEmail, state.userEmail)
+            preferences[PreferenceStorage.signInMethods] = state.signInMethods.map { it.raw }.toSet()
             updateNullable(preferences, PreferenceStorage.userPhotoUrl, state.userPhotoUrl)
             updateNullable(preferences, PreferenceStorage.userDisplayName, state.userDisplayName)
             updateNullable(preferences, PreferenceStorage.partnerPhotoUrl, state.partnerPhotoUrl)
@@ -162,6 +170,11 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             )
             updateNullable(preferences, PreferenceStorage.pairedAt, state.pairedAt)
             preferences[PreferenceStorage.currentStreakDays] = state.currentStreakDays
+            if (state.hasDrawn == null) {
+                preferences.remove(PreferenceStorage.hasDrawn)
+            } else {
+                preferences[PreferenceStorage.hasDrawn] = state.hasDrawn
+            }
             preferences[PreferenceStorage.pairingStatus] = state.pairingStatus.name
             updateNullable(preferences, PreferenceStorage.pairSessionId, state.pairSessionId)
 
@@ -325,6 +338,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences.remove(PreferenceStorage.sessionUserId)
             preferences.remove(PreferenceStorage.onboardingCompleted)
             preferences.remove(PreferenceStorage.userEmail)
+            preferences.remove(PreferenceStorage.signInMethods)
             preferences.remove(PreferenceStorage.userPhotoUrl)
             preferences.remove(PreferenceStorage.userDisplayName)
             preferences.remove(PreferenceStorage.partnerPhotoUrl)
@@ -338,6 +352,7 @@ class DataStoreSessionBootstrapRepository @Inject constructor(
             preferences.remove(PreferenceStorage.partnerHasEverBeenAbleToSee)
             preferences.remove(PreferenceStorage.anniversaryDate)
             preferences.remove(PreferenceStorage.partnerProfileNextUpdateAt)
+            preferences.remove(PreferenceStorage.hasDrawn)
             preferences.remove(PreferenceStorage.pairingStatus)
             preferences.remove(PreferenceStorage.pairSessionId)
             preferences.remove(PreferenceStorage.pendingInviteId)
