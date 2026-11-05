@@ -55,7 +55,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -73,7 +72,6 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
@@ -97,7 +95,6 @@ import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.drawing.text.canvasDisplayName
 import com.subhajit.mulberry.drawing.text.rememberCanvasFontResolver
-import com.subhajit.mulberry.reactions.ReactionType
 import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerAssetVariant
 import com.subhajit.mulberry.stickers.resolveStickerRenderSizePx
@@ -105,12 +102,24 @@ import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import java.util.UUID
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import com.subhajit.mulberry.core.ui.ColourNames
+import com.subhajit.mulberry.core.ui.HapticOnChange
+import com.subhajit.mulberry.core.ui.MulberryHaptic
+import com.subhajit.mulberry.core.ui.rememberMulberryHaptics
+import com.subhajit.mulberry.ui.animation.rememberSystemAnimationsEnabled
+import kotlin.math.roundToInt
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -154,12 +163,9 @@ fun CanvasTextOverlay(
     selectedColorArgb: Long,
     showElementBounds: Boolean = false,
     stickerAssetStore: StickerAssetStore,
-    reactionRailOpen: Boolean,
-    onReactionRailOpenChanged: (Boolean) -> Unit,
-    onReactionTriggered: (ReactionType) -> Unit,
     viewportTransform: CanvasViewportTransform,
-    onViewportTransformChanged: (CanvasViewportTransform) -> Unit,
     onEraseTap: (StrokePoint) -> Unit,
+    onEraseDrag: (StrokePoint, StrokePoint) -> Unit,
     onAddTextElement: (CanvasTextElement) -> Unit,
     onUpdateTextElement: (CanvasTextElement) -> Unit,
     onDeleteTextElement: (String) -> Unit,
@@ -176,7 +182,6 @@ fun CanvasTextOverlay(
 ) {
     val density = LocalDensity.current
     val fontResolver = rememberCanvasFontResolver()
-    val coroutineScope = rememberCoroutineScope()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var liveTransformPreview by remember { mutableStateOf<CanvasElement?>(null) }
     val stickerBitmaps = remember { mutableStateMapOf<String, android.graphics.Bitmap>() }
@@ -199,16 +204,8 @@ fun CanvasTextOverlay(
     val placeholderInkArgb = remember(canvasSurface) {
         (if (canvasSurface.luminance() > 0.5f) Color.Black else Color.White).toArgb()
     }
-    val context = LocalContext.current
-    val animationsEnabled = remember(context) {
-        runCatching {
-            android.provider.Settings.Global.getFloat(
-                context.contentResolver,
-                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-                1f
-            ) != 0f
-        }.getOrDefault(true)
-    }
+    val animationsEnabled = rememberSystemAnimationsEnabled()
+    val haptics = rememberMulberryHaptics()
     // Pulses only while a placeholder is waiting on a download, so the canvas isn't redrawn otherwise.
     val placeholderPulse = if (animationsEnabled && stickerPlaceholders.values.any { it }) {
         rememberInfiniteTransition(label = "stickerPlaceholder").animateFloat(
@@ -227,36 +224,17 @@ fun CanvasTextOverlay(
     LaunchedEffect(fontResolver) {
         textLayoutCache.clear()
     }
-    var lastNoToolTapUpAtMs by remember { mutableStateOf<Long?>(null) }
-    var pendingNoToolTapJob by remember { mutableStateOf<Job?>(null) }
-
-    val cancelPendingNoToolTap: () -> Unit = {
-        pendingNoToolTapJob?.cancel()
-        pendingNoToolTapJob = null
-    }
-
-    val latestActiveTool by rememberUpdatedState(activeTool)
-    val latestIsEditorOpen by rememberUpdatedState(isEditorOpen)
-    val latestReactionRailOpen by rememberUpdatedState(reactionRailOpen)
     val latestViewportTransform by rememberUpdatedState(viewportTransform)
 
     LaunchedEffect(activeTool) {
-        if (activeTool != DrawingTool.TEXT && activeTool != DrawingTool.STICKER && activeTool != DrawingTool.NONE) {
+        if (activeTool != DrawingTool.TEXT && activeTool != DrawingTool.STICKER) {
             liveTransformPreview = null
-        }
-        if (activeTool != DrawingTool.NONE) {
-            lastNoToolTapUpAtMs = null
-            cancelPendingNoToolTap()
         }
     }
 
     LaunchedEffect(isEditorOpen) {
         if (!isEditorOpen) {
             liveTransformPreview = null
-        }
-        if (isEditorOpen) {
-            cancelPendingNoToolTap()
-            lastNoToolTapUpAtMs = null
         }
     }
 
@@ -467,7 +445,7 @@ fun CanvasTextOverlay(
     // Important: only install pointer handlers when needed; this overlay sits above the
     // drawing canvas so it must not block drawing/erase gestures unless it consumes them.
 	    val gestureModifier = when {
-	        (activeTool == DrawingTool.TEXT || activeTool == DrawingTool.STICKER || activeTool == DrawingTool.NONE) &&
+	        (activeTool == DrawingTool.TEXT || activeTool == DrawingTool.STICKER) &&
 	            !isEditorOpen ->
 	            Modifier.pointerInput(elements, canvasSize, selectedColorArgb, activeTool) {
 		            awaitEachGesture {
@@ -514,9 +492,6 @@ fun CanvasTextOverlay(
 
                 var beganTransform = false
                 var beganDrag = false
-                var beganViewportPan = false
-                var beganViewportTransform = false
-                var didViewportInteract = false
                 var sawMultiTouch = false
                 var consumeGesture = false
                 var lastCentroid = initialDown
@@ -527,113 +502,29 @@ fun CanvasTextOverlay(
                 var baselineCentroid = initialDown
                 var baselineAngle = 0f
                 var baselineSpan = 0f
-	                var gestureEndUptimeMs = down.uptimeMillis
-
-	                var longPressMovedOrTransformed = false
-	                var longPressFired = false
-	                var stillPressed = true
-	                var lastEventUptimeMs = down.uptimeMillis
-	                val longPressDeadlineUptimeMs: Long? =
-	                    if (activeTool == DrawingTool.NONE && !reactionRailOpen) {
-	                        down.uptimeMillis + viewConfiguration.longPressTimeoutMillis
-	                    } else {
-	                        null
-	                    }
+                // The twist as the fingers made it, before settling on a quarter turn.
+                var twistRawRotation: Float? = null
+                var twistSquared = false
 
                 fun activeElement(): CanvasElement? {
                     val selected = lockedElementId ?: return null
                     return liveTransformPreview ?: hittable.firstOrNull { it.id == selected }
                 }
 
-	                fun updateViewportTransform(
-	                    panChange: Offset,
-	                    zoomChange: Float,
-	                    centroidPx: Offset
-	                ) {
-	                    val current = latestViewportTransform
-	                    val oldScale = current.scale.coerceAtLeast(0.0001f)
-	                    // Gallery-like behavior: never allow zooming out below 100%.
-	                    val newScale = (current.scale * zoomChange).coerceIn(1.0f, 4.0f)
-	                    val contentUnderCentroid = (centroidPx - current.offsetPx) / oldScale
-	                    val rawNextOffset = (centroidPx - (contentUnderCentroid * newScale)) + panChange
-
-	                    val viewW = canvasSize.width.toFloat()
-	                    val viewH = canvasSize.height.toFloat()
-	                    if (viewW <= 0f || viewH <= 0f) {
-	                        onViewportTransformChanged(
-	                            CanvasViewportTransform(scale = newScale, offsetPx = rawNextOffset)
-	                        )
-	                        return
-	                    }
-
-	                    val contentW = viewW * newScale
-	                    val contentH = viewH * newScale
-
-	                    val minOffsetX = if (contentW >= viewW) (viewW - contentW) else 0f
-	                    val maxOffsetX = if (contentW >= viewW) 0f else (viewW - contentW)
-	                    val minOffsetY = if (contentH >= viewH) (viewH - contentH) else 0f
-	                    val maxOffsetY = if (contentH >= viewH) 0f else (viewH - contentH)
-
-	                    val clampedOffset = Offset(
-	                        x = rawNextOffset.x.coerceIn(minOffsetX, maxOffsetX),
-	                        y = rawNextOffset.y.coerceIn(minOffsetY, maxOffsetY)
-	                    )
-	                    onViewportTransformChanged(CanvasViewportTransform(scale = newScale, offsetPx = clampedOffset))
-	                }
-
 		                // Track pointers until all are up.
 		                while (true) {
-		                    val event = if (
-		                        longPressDeadlineUptimeMs != null &&
-		                            !longPressMovedOrTransformed &&
-		                            !longPressFired
-		                    ) {
-		                        val remainingMs = longPressDeadlineUptimeMs - lastEventUptimeMs
-		                        if (remainingMs > 0L) {
-		                            withTimeoutOrNull(remainingMs) { awaitPointerEvent() }
-		                        } else {
-		                            awaitPointerEvent()
-		                        }
-		                    } else {
-		                        awaitPointerEvent()
+		                    val event = awaitPointerEvent()
+		                    // Held for the reactions: the element stays as it was.
+		                    if (event.changes.any { it.isConsumed }) {
+		                        liveTransformPreview = null
+		                        isTransformInProgress = false
+		                        return@awaitEachGesture
 		                    }
-
-		                    if (event == null) {
-		                        if (stillPressed && !longPressMovedOrTransformed && !longPressFired) {
-		                            longPressFired = true
-		                            onReactionRailOpenChanged(true)
-		                        }
-		                        continue
-		                    }
-
-		                    lastEventUptimeMs = event.changes.firstOrNull()?.uptimeMillis ?: lastEventUptimeMs
 		                    val pressed = event.changes.filter { it.pressed }
-		                    if (pressed.isEmpty()) {
-	                            stillPressed = false
-	                            gestureEndUptimeMs = event.changes.firstOrNull()?.uptimeMillis ?: gestureEndUptimeMs
-	                            break
-	                        }
+		                    if (pressed.isEmpty()) break
 
 		                    val positions = pressed.map { it.position }
 		                    val centroid = positions.reduce { acc, offset -> acc + offset } / positions.size.toFloat()
-
-	                        if (
-	                            longPressDeadlineUptimeMs != null &&
-	                                stillPressed &&
-	                                !longPressMovedOrTransformed &&
-	                                !longPressFired &&
-	                                lastEventUptimeMs >= longPressDeadlineUptimeMs
-	                        ) {
-	                            longPressFired = true
-	                            onReactionRailOpenChanged(true)
-	                        }
-
-	                        if (longPressFired) {
-	                            // Reaction rail is open; consume pointer changes so nothing else reacts.
-	                            pressed.forEach { it.consume() }
-	                            lastCentroid = centroid
-	                            continue
-                        }
 
 	                    val span = if (positions.size >= 2) {
 	                        (positions[1] - positions[0]).getDistance()
@@ -657,12 +548,6 @@ fun CanvasTextOverlay(
 		                            lastAngle = angle
 		                            lastSpan = span.coerceAtLeast(1f)
 		                            transformBaselineSet = false
-		                            // If the user introduces a second finger, decide upfront whether this
-		                            // is an element transform or a viewport transform (no-tool only).
-		                            // This avoids needing to exceed touch slop before pinch-zoom works on empty space.
-		                            if (activeTool == DrawingTool.NONE && lockedElementId == null) {
-		                                lockedElementId = hitTestAtScreenPosition(centroid)
-		                            }
 		                        }
 		                        if (positions.size == 1) {
 		                            beganTransform = false
@@ -685,37 +570,6 @@ fun CanvasTextOverlay(
 	                    val baselineSpanMove = kotlin.math.abs(span - baselineSpan)
 	                    val baselineRotationMove = kotlin.math.abs(angle - baselineAngle) * baselineSpan
 
-	                    // No-tool: if there is no element under the gesture, treat 2-finger motion as viewport pan/zoom
-	                    // immediately (don’t wait for slop).
-	                    if (
-	                        activeTool == DrawingTool.NONE &&
-	                            lockedElementId == null &&
-	                            positions.size >= 2 &&
-	                            (baselineCentroidMove > 1f || baselineSpanMove > 1f)
-	                    ) {
-		                        sawMultiTouch = true
-		                        consumeGesture = true
-		                        didViewportInteract = true
-		                        longPressMovedOrTransformed = true
-
-		                        val zoomChange = span.coerceAtLeast(1f) / lastSpan.coerceAtLeast(1f)
-	                        updateViewportTransform(
-	                            panChange = panDelta,
-	                            zoomChange = zoomChange,
-	                            centroidPx = centroid
-	                        )
-	                        pressed.forEach { it.consume() }
-	                        lastCentroid = centroid
-	                        lastSpan = span.coerceAtLeast(1f)
-	                        continue
-	                    }
-
-		                    if (!longPressMovedOrTransformed) {
-		                        if (positions.size >= 2 || totalMove > touchSlop) {
-		                            longPressMovedOrTransformed = true
-		                        }
-	                    }
-
 	                    if (
 	                        !beganTransform &&
 	                        positions.size >= 2 &&
@@ -723,7 +577,6 @@ fun CanvasTextOverlay(
 	                    ) {
 		                        sawMultiTouch = true
 		                        consumeGesture = true
-	                            longPressMovedOrTransformed = true
 
 		                        // Allow direct 2-finger transform without a prior tap selection by
 		                        // picking the topmost element under the gesture centroid.
@@ -736,25 +589,9 @@ fun CanvasTextOverlay(
 
                         // If we still don't have a target element, we can't transform; ignore.
                         if (lockedElementId == null) {
-                            if (activeTool == DrawingTool.NONE) {
-                                beganViewportTransform = true
-                                beganViewportPan = true
-                                didViewportInteract = true
-                                val zoomChange = span.coerceAtLeast(1f) / lastSpan.coerceAtLeast(1f)
-                                updateViewportTransform(
-                                    panChange = panDelta,
-                                    zoomChange = zoomChange,
-                                    centroidPx = centroid
-                                )
-                                pressed.forEach { it.consume() }
-                                lastCentroid = centroid
-                                lastSpan = span.coerceAtLeast(1f)
-                                continue
-                            } else {
-                                pressed.forEach { it.consume() }
-                                lastCentroid = centroid
-                                continue
-                            }
+                            pressed.forEach { it.consume() }
+                            lastCentroid = centroid
+                            continue
                         }
                         beganTransform = true
                         beganDrag = true
@@ -764,18 +601,6 @@ fun CanvasTextOverlay(
                     } else if (!beganDrag && positions.size == 1 && totalMove > touchSlop) {
                         // Single-finger drag only makes sense when we have a target element.
                         if (lockedElementId == null) {
-                            if (activeTool == DrawingTool.NONE) {
-                                beganViewportPan = true
-                                didViewportInteract = true
-                                updateViewportTransform(
-                                    panChange = panDelta,
-                                    zoomChange = 1f,
-                                    centroidPx = centroid
-                                )
-                                pressed.forEach { it.consume() }
-                                lastCentroid = centroid
-                                continue
-                            }
                             if (consumeGesture) {
                                 pressed.forEach { it.consume() }
                                 lastCentroid = centroid
@@ -784,7 +609,6 @@ fun CanvasTextOverlay(
                         }
 	                        beganDrag = true
 	                        isTransformInProgress = true
-	                        longPressMovedOrTransformed = true
 	                    }
 
                     if (beganDrag) {
@@ -807,7 +631,22 @@ fun CanvasTextOverlay(
                             is CanvasTextElement -> (current.scale * zoomChange).coerceIn(0.3f, 6f)
                             is CanvasStickerElement -> (current.scale * zoomChange).coerceIn(0.08f, 1.6f)
                         }
-                        val nextRotation = current.rotationRad + rotationDelta
+                        // Settles level, or on a quarter turn, within 3°, with a tick as it lands, as on iOS.
+                        val nextRotation = if (beganTransform) {
+                            val base = twistRawRotation ?: current.rotationRad.also {
+                                twistSquared = ElementRotation.isSquare(it)
+                            }
+                            val raw = base + rotationDelta
+                            twistRawRotation = raw
+                            val settled = ElementRotation.settle(raw)
+                            val square = ElementRotation.isSquare(settled)
+                            if (square && !twistSquared) haptics.perform(MulberryHaptic.RotationSnap)
+                            twistSquared = square
+                            settled
+                        } else {
+                            twistRawRotation = null
+                            current.rotationRad
+                        }
                         liveTransformPreview = when (current) {
                             is CanvasTextElement -> current.copy(
                                 center = nextCenterPx.toNormalizedPoint(canvasSize),
@@ -837,20 +676,6 @@ fun CanvasTextOverlay(
 
 	                // Gesture ended.
 	                isTransformInProgress = false
-
-                    if (activeTool == DrawingTool.NONE && didViewportInteract) {
-                        // Any pan/zoom interaction is viewport-only in the no-tool state.
-                        liveTransformPreview = null
-                        return@awaitEachGesture
-                    }
-
-                    if (activeTool == DrawingTool.NONE && longPressFired) {
-                        // Long-press opens the reaction rail; don't treat this as a tap or a transform.
-                        liveTransformPreview = null
-                        cancelPendingNoToolTap()
-                        lastNoToolTapUpAtMs = null
-                        return@awaitEachGesture
-                    }
 
 	                if (lockedElementId == null && activeTool == DrawingTool.TEXT) {
 	                    // Tap empty area => create + edit (text only).
@@ -897,27 +722,6 @@ fun CanvasTextOverlay(
                     return@awaitEachGesture
                 } else if (lockedElementId == null) {
                     liveTransformPreview = null
-                    if (activeTool == DrawingTool.NONE) {
-                        val nowMs = gestureEndUptimeMs
-                        val lastTapAt = lastNoToolTapUpAtMs
-                        val doubleTapTimeoutMs = viewConfiguration.doubleTapTimeoutMillis
-                        if (lastTapAt != null && nowMs - lastTapAt <= doubleTapTimeoutMs) {
-                            lastNoToolTapUpAtMs = null
-                            cancelPendingNoToolTap()
-                            onReactionTriggered(ReactionType.HEART)
-                            return@awaitEachGesture
-                        }
-                        lastNoToolTapUpAtMs = nowMs
-                        cancelPendingNoToolTap()
-                        pendingNoToolTapJob = coroutineScope.launch {
-                            delay(doubleTapTimeoutMs.toLong())
-                            if (lastNoToolTapUpAtMs != nowMs) return@launch
-                            if (latestActiveTool != DrawingTool.NONE || latestIsEditorOpen || latestReactionRailOpen) {
-                                return@launch
-                            }
-                            lastNoToolTapUpAtMs = null
-                        }
-                    }
                     return@awaitEachGesture
                 }
 
@@ -939,34 +743,6 @@ fun CanvasTextOverlay(
                         onRequestTextEdit(CanvasTextEditorSession(element = target, isNew = false))
                     } else if (activeTool == DrawingTool.STICKER && target is CanvasStickerElement) {
                         onRequestStickerEdit(CanvasStickerEditorSession(element = target, isNew = false))
-                    } else if (activeTool == DrawingTool.NONE) {
-                        val nowMs = gestureEndUptimeMs
-                        val lastTapAt = lastNoToolTapUpAtMs
-                        val doubleTapTimeoutMs = viewConfiguration.doubleTapTimeoutMillis
-
-                        // Second tap within window => heart reaction anywhere.
-                        if (lastTapAt != null && nowMs - lastTapAt <= doubleTapTimeoutMs) {
-                            lastNoToolTapUpAtMs = null
-                            cancelPendingNoToolTap()
-                            onReactionTriggered(ReactionType.HEART)
-                            return@awaitEachGesture
-                        }
-
-                        // First tap: wait out the double-tap window before opening the editor.
-                        lastNoToolTapUpAtMs = nowMs
-                        cancelPendingNoToolTap()
-                        pendingNoToolTapJob = coroutineScope.launch {
-                            delay(doubleTapTimeoutMs.toLong())
-                            if (lastNoToolTapUpAtMs != nowMs) return@launch
-                            if (latestActiveTool != DrawingTool.NONE || latestIsEditorOpen || latestReactionRailOpen) {
-                                return@launch
-                            }
-                            lastNoToolTapUpAtMs = null
-                            when (target) {
-                                is CanvasTextElement -> onRequestTextEdit(CanvasTextEditorSession(element = target, isNew = false))
-                                is CanvasStickerElement -> onRequestStickerEdit(CanvasStickerEditorSession(element = target, isNew = false))
-                            }
-                        }
                     }
                 }
             }
@@ -999,23 +775,41 @@ fun CanvasTextOverlay(
                 val initialDown = down.position
                 val touchSlop = viewConfiguration.touchSlop
                 var movedBeyondSlop = false
+                // Where the next erase segment starts, once the finger is dragging.
+                var eraseFrom: Offset? = null
 
-                // Wait until the pointer is released/cancelled.
+                // Wait until the pointer is released/cancelled. A drag erases every stroke it
+                // crosses; a drag that starts on text or a sticker leaves it and erases from there.
                 var pointer = down
+                var heldForReactions = false
                 while (true) {
                     val event = awaitPointerEvent()
                     val change = event.changes.firstOrNull { it.id == pointer.id }
                         ?: event.changes.firstOrNull()
                         ?: break
                     pointer = change
-                    if (!change.pressed) break
+                    // Held for the reactions: the rest of the touch erases nothing.
+                    if (change.isConsumed) {
+                        heldForReactions = true
+                        break
+                    }
                     if (!movedBeyondSlop && (change.position - initialDown).getDistance() > touchSlop) {
                         movedBeyondSlop = true
+                        eraseFrom = if (hitId != null) change.position else initialDown
                     }
+                    val from = eraseFrom
+                    if (from != null) {
+                        onEraseDrag(
+                            toContentOffset(from).toNormalizedPoint(canvasSize),
+                            toContentOffset(change.position).toNormalizedPoint(canvasSize)
+                        )
+                        eraseFrom = change.position
+                    }
+                    if (!change.pressed) break
                     change.consume()
                 }
 
-                if (movedBeyondSlop) return@awaitEachGesture
+                if (movedBeyondSlop || heldForReactions) return@awaitEachGesture
 
                 if (hitId != null) {
                     val target = elements.firstOrNull { it.id == hitId }
@@ -1201,6 +995,12 @@ fun TextEditorOverlay(
     var enter by remember(element.id) { mutableStateOf(false) }
     var showCustomColorPicker by remember(element.id) { mutableStateOf(false) }
     val fontResolver = rememberCanvasFontResolver()
+
+    // A tick for each font, alignment and colour picked, and as the rotation settles on level, as on iOS.
+    HapticOnChange(font, MulberryHaptic.Selection)
+    HapticOnChange(alignment, MulberryHaptic.Selection)
+    HapticOnChange(colorArgb, MulberryHaptic.Selection)
+    HapticOnChange(rotationDeg == 0f, MulberryHaptic.RotationSnap)
 
     LaunchedEffect(element.id) {
         enter = true
@@ -1415,6 +1215,7 @@ fun TextEditorOverlay(
                         Text(
                             text = "Aa",
                             color = Color.White,
+                            modifier = Modifier.clearAndSetSemantics { },
                             fontFamily = PoppinsFontFamily,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp
@@ -1423,11 +1224,17 @@ fun TextEditorOverlay(
                             value = scale,
                             onValueChange = { scale = it },
                             valueRange = 0.3f..6f,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics {
+                                    contentDescription = "Size"
+                                    stateDescription = "${(scale * 100).roundToInt()} percent"
+                                }
                         )
                         Text(
                             text = "AA",
                             color = Color.White,
+                            modifier = Modifier.clearAndSetSemantics { },
                             fontFamily = PoppinsFontFamily,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 16.sp
@@ -1440,11 +1247,18 @@ fun TextEditorOverlay(
                         androidx.compose.material3.Slider(
                             value = rotationDeg.coerceIn(ROTATION_MIN_DEG, ROTATION_MAX_DEG),
                             onValueChange = { value ->
-                                rotationDeg = value.coerceIn(ROTATION_MIN_DEG, ROTATION_MAX_DEG)
+                                rotationDeg = ElementRotation.settleSliderDegrees(
+                                    value.coerceIn(ROTATION_MIN_DEG, ROTATION_MAX_DEG)
+                                )
                                 focusRequester.requestFocus()
                             },
                             valueRange = ROTATION_MIN_DEG..ROTATION_MAX_DEG,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics {
+                                    contentDescription = "Rotation"
+                                    stateDescription = "${rotationDeg.roundToInt()} degrees"
+                                }
                         )
                     }
                 }
@@ -1471,13 +1285,16 @@ fun TextEditorOverlay(
                                         color = if (selected) MulberryPrimary else Color.White.copy(alpha = 0.22f),
                                         shape = CircleShape
                                     )
-                                    .clickable(
+                                    .selectable(
+                                        selected = selected,
                                         interactionSource = remember { MutableInteractionSource() },
-                                        indication = null
+                                        indication = null,
+                                        role = Role.Button
                                     ) {
                                         colorArgb = candidate
                                         focusRequester.requestFocus()
                                     }
+                                    .semantics { contentDescription = ColourNames.name(candidate) }
                             )
                         }
 
@@ -1492,18 +1309,21 @@ fun TextEditorOverlay(
                                         Modifier
                                     }
                                 )
-                                .clickable(
+                                .selectable(
+                                    selected = customSelected,
                                     interactionSource = remember { MutableInteractionSource() },
-                                    indication = null
+                                    indication = null,
+                                    role = Role.Button
                                 ) {
                                     showCustomColorPicker = true
                                     focusRequester.requestFocus()
-                                },
+                                }
+                                .semantics { contentDescription = "Custom colour" },
                             contentAlignment = Alignment.Center
                         ) {
                             Image(
                                 painter = painterResource(R.drawable.ic_text_toolbar_color),
-                                contentDescription = "Custom color",
+                                contentDescription = null,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -1614,7 +1434,7 @@ private fun EditorSecondaryBar(
         ) { onPanelChanged(TextEditorPanel.ROTATION) }
         EditorIconButton(
             iconRes = R.drawable.ic_text_toolbar_color,
-            contentDescription = "Color",
+            contentDescription = "Colour",
             selected = panel == TextEditorPanel.COLOR,
             tint = Color.Unspecified
         ) { onPanelChanged(TextEditorPanel.COLOR) }
@@ -1627,14 +1447,19 @@ private fun EditorSecondaryBar(
         EditorIconButton(
             iconRes = alignIcon,
             contentDescription = "Alignment",
-            selected = false
+            selected = false,
+            stateDescription = when (alignment) {
+                CanvasTextAlign.LEFT -> "Left"
+                CanvasTextAlign.CENTER -> "Centre"
+                CanvasTextAlign.RIGHT -> "Right"
+            }
         ) { onCycleAlignment() }
 
         Spacer(modifier = Modifier.weight(1f))
 
         EditorIconButton(
             iconRes = R.drawable.ic_text_toolbar_pill,
-            contentDescription = "Background pill",
+            contentDescription = "Background",
             selected = backgroundPillEnabled
         ) { onTogglePill() }
         EditorIconButton(
@@ -1663,6 +1488,7 @@ private fun EditorIconButton(
     contentDescription: String,
     selected: Boolean,
     tint: Color = Color.White,
+    stateDescription: String? = null,
     onClick: () -> Unit
 ) {
     Box(
@@ -1678,8 +1504,13 @@ private fun EditorIconButton(
             )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { onClick() },
+                indication = null,
+                role = Role.Button
+            ) { onClick() }
+            .semantics(mergeDescendants = true) {
+                this.selected = selected
+                stateDescription?.let { this.stateDescription = it }
+            },
         contentAlignment = Alignment.Center
     ) {
         // Use Image for bitmap resources (e.g. the color icon); Icon for vectors.

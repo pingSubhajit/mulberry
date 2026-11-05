@@ -5,9 +5,15 @@ import android.graphics.RectF
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,14 +23,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.subhajit.mulberry.core.ui.ColourNames
 import com.subhajit.mulberry.drawing.engine.StrokeHitTester
 import com.subhajit.mulberry.drawing.geometry.denormalizeToSurface
 import com.subhajit.mulberry.drawing.model.CanvasElement
@@ -62,6 +76,8 @@ fun EyedropperOverlay(
     val density = LocalDensity.current
     val fontResolver = rememberCanvasFontResolver()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    // The colour under the finger, shown in a loupe above it while picking.
+    var loupe by remember { mutableStateOf<EyedropperLoupe?>(null) }
     val strokeHitTester = remember { StrokeHitTester() }
     val stickerBitmaps = remember { mutableStateMapOf<String, Bitmap>() }
     val textLayoutCache = remember { mutableMapOf<String, EyedropperCachedTextLayout>() }
@@ -261,7 +277,7 @@ fun EyedropperOverlay(
         }
     }
 
-    androidx.compose.foundation.layout.Box(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { canvasSize = it }
@@ -273,31 +289,45 @@ fun EyedropperOverlay(
                         return@awaitEachGesture
                     }
                     var lastColorArgb: Long? = null
-                    val initial = sampleAtScreenPoint(down.position)
-                    lastColorArgb = initial
-                    latestOnLiveChanged(initial)
+                    // As on iPhone, picking waits until the finger moves or lifts, so a finger
+                    // held still can open the reactions instead.
+                    val touchSlop = viewConfiguration.touchSlop
+                    var sampling = false
+                    fun sampleAt(position: Offset) {
+                        val sampled = sampleAtScreenPoint(position)
+                        lastColorArgb = sampled
+                        latestOnLiveChanged(sampled)
+                        loupe = EyedropperLoupe(position = position, colorArgb = sampled)
+                    }
                     down.consume()
 
                     var canceled = false
                     while (true) {
                         val event = awaitPointerEvent()
                         val primary = event.changes.firstOrNull { it.id == down.id } ?: break
+                        // Held for the reactions: no colour is picked.
+                        if (primary.isConsumed) {
+                            canceled = true
+                            break
+                        }
                         if (event.changes.count { it.pressed } > 1) {
                             canceled = true
                             event.changes.forEach { it.consume() }
                             break
                         }
                         if (!primary.pressed) {
+                            // A tap picks the colour where the finger was.
+                            if (!sampling) sampleAt(down.position)
                             primary.consume()
                             break
                         }
-                        if (primary.positionChanged()) {
-                            val sampled = sampleAtScreenPoint(primary.position)
-                            lastColorArgb = sampled
-                            latestOnLiveChanged(sampled)
+                        if (!sampling && (primary.position - down.position).getDistance() > touchSlop) {
+                            sampling = true
                         }
+                        if (sampling && primary.positionChanged()) sampleAt(primary.position)
                         primary.consume()
                     }
+                    loupe = null
 
                     if (canceled) {
                         latestOnCanceled()
@@ -312,8 +342,50 @@ fun EyedropperOverlay(
                     }
                 }
             }
-    ) {}
+    ) {
+        loupe?.let { current -> EyedropperLoupeBubble(current) }
+    }
 }
+
+private data class EyedropperLoupe(
+    val position: Offset,
+    val colorArgb: Long
+)
+
+/** As on iOS: the picked colour in a white-ringed circle floating above the finger. */
+@Composable
+private fun EyedropperLoupeBubble(loupe: EyedropperLoupe) {
+    val density = LocalDensity.current
+    val radiusPx = with(density) { (EYEDROPPER_LOUPE_DIAMETER / 2).toPx() }
+    val liftPx = with(density) { EYEDROPPER_LOUPE_LIFT.toPx() }
+    val shadowColor = Color.Black.copy(alpha = 0.3f)
+    Box(
+        modifier = Modifier
+            .offset {
+                IntOffset(
+                    x = (loupe.position.x - radiusPx).roundToInt(),
+                    y = (loupe.position.y - liftPx - radiusPx).roundToInt()
+                )
+            }
+            .size(EYEDROPPER_LOUPE_DIAMETER)
+            .shadow(
+                elevation = 6.dp,
+                shape = CircleShape,
+                ambientColor = shadowColor,
+                spotColor = shadowColor
+            )
+            .background(Color(loupe.colorArgb), CircleShape)
+            .border(width = 3.dp, color = Color.White, shape = CircleShape)
+            // TalkBack names the colour under the finger as it changes, as the palette names its colours.
+            .semantics {
+                contentDescription = ColourNames.name(loupe.colorArgb)
+                liveRegion = LiveRegionMode.Polite
+            }
+    )
+}
+
+private val EYEDROPPER_LOUPE_DIAMETER = 44.dp
+private val EYEDROPPER_LOUPE_LIFT = 64.dp
 
 private data class EyedropperCachedTextLayout(
     val text: String,

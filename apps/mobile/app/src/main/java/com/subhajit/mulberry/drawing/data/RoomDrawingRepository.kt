@@ -27,6 +27,7 @@ import com.subhajit.mulberry.drawing.model.CanvasElement
 import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.DrawingTool
+import com.subhajit.mulberry.drawing.model.orBrush
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.drawing.model.ToolState
@@ -56,7 +57,7 @@ class RoomDrawingRepository @Inject constructor(
 
     override val toolState: Flow<ToolState> = metadataFlow.map { metadata ->
         ToolState(
-            activeTool = metadata.selectedTool,
+            activeTool = metadata.selectedTool.orBrush(),
             strokeColorArgb = metadata.selectedColorArgb,
             textColorArgb = metadata.selectedTextColorArgb,
             selectedWidth = metadata.selectedWidth
@@ -119,7 +120,7 @@ class RoomDrawingRepository @Inject constructor(
 
     override suspend fun startStroke(point: StrokePoint): Stroke? {
         val metadata = currentMetadata()
-        if (metadata.selectedTool != DrawingTool.DRAW) return null
+        if (metadata.selectedTool.orBrush() != DrawingTool.DRAW) return null
 
         val stroke = strokeBuilder.startStroke(
             point = point,
@@ -189,12 +190,13 @@ class RoomDrawingRepository @Inject constructor(
     }
 
     override suspend fun setTool(tool: DrawingTool) {
+        // The canvas always has a tool, as on iPhone: "no tool" is stored as the brush.
+        val chosen = tool.orBrush()
         val metadata = currentMetadata()
-        val nextLastNonNone = if (tool != DrawingTool.NONE) tool else metadata.lastNonNoneTool
         canvasMetadataDao.upsertMetadata(
             metadata.copy(
-                selectedTool = tool,
-                lastNonNoneTool = nextLastNonNone,
+                selectedTool = chosen,
+                lastNonNoneTool = chosen,
                 lastModifiedAt = System.currentTimeMillis()
             )
         )

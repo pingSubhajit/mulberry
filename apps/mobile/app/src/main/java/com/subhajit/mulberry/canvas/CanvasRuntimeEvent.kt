@@ -13,6 +13,9 @@ sealed interface CanvasRuntimeEvent {
     data class LocalDrag(val point: StrokePoint) : CanvasRuntimeEvent
     data object LocalRelease : CanvasRuntimeEvent
     data class EraseAt(val point: StrokePoint) : CanvasRuntimeEvent
+
+    /** One step of an eraser drag: every stroke the segment crosses is erased. */
+    data class EraseAlong(val from: StrokePoint, val to: StrokePoint) : CanvasRuntimeEvent
     data object ClearCanvas : CanvasRuntimeEvent
     data object Undo : CanvasRuntimeEvent
     data object Redo : CanvasRuntimeEvent

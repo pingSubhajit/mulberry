@@ -15,6 +15,7 @@ import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
+import com.subhajit.mulberry.drawing.model.drawsSomething
 import com.subhajit.mulberry.sync.CanvasSyncOperation
 import com.subhajit.mulberry.sync.ServerCanvasOperation
 import com.subhajit.mulberry.sync.SyncOperationPayload
@@ -28,10 +29,15 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -39,6 +45,10 @@ import kotlinx.coroutines.launch
 interface CanvasRuntime {
     val renderState: StateFlow<CanvasRenderState>
     val outboundOperations: Flow<CanvasSyncOperation>
+
+    /** Fires each time this device hands sync something it drew: a stroke, text or a sticker. */
+    val localDrawings: Flow<Unit>
+        get() = emptyFlow()
 
     fun start(pairSessionId: String, userId: String)
     fun stop()
@@ -58,8 +68,16 @@ class DefaultCanvasRuntime @Inject constructor(
 ) : CanvasRuntime {
     private val events = Channel<RuntimeEventEnvelope>(Channel.UNLIMITED)
     private val outbound = Channel<CanvasSyncOperation>(Channel.UNLIMITED)
+    private val _localDrawings = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    override val localDrawings: Flow<Unit> = _localDrawings.asSharedFlow()
 
     override val outboundOperations: Flow<CanvasSyncOperation> = outbound.receiveAsFlow()
+        .onEach { operation ->
+            if (operation.type.drawsSomething) _localDrawings.tryEmit(Unit)
+        }
 
     private val _renderState = MutableStateFlow(CanvasRenderState())
     override val renderState: StateFlow<CanvasRenderState> = _renderState
@@ -182,7 +200,8 @@ class DefaultCanvasRuntime @Inject constructor(
             is CanvasRuntimeEvent.LocalPress -> handleLocalPress(event.point)
             is CanvasRuntimeEvent.LocalDrag -> handleLocalDrag(event.point)
             CanvasRuntimeEvent.LocalRelease -> handleLocalRelease()
-            is CanvasRuntimeEvent.EraseAt -> handleEraseAt(event.point)
+            is CanvasRuntimeEvent.EraseAt -> handleEraseAlong(event.point, event.point)
+            is CanvasRuntimeEvent.EraseAlong -> handleEraseAlong(event.from, event.to)
             CanvasRuntimeEvent.ClearCanvas -> handleClearCanvas()
             CanvasRuntimeEvent.Undo -> handleUndo()
             CanvasRuntimeEvent.Redo -> handleRedo()
@@ -270,37 +289,56 @@ class DefaultCanvasRuntime @Inject constructor(
         )
     }
 
-    private suspend fun handleEraseAt(point: StrokePoint) {
+    /**
+     * Erases every committed stroke the eraser crosses between [from] and [to]; a tap passes the
+     * same point twice and erases only the newest stroke under it. As on iOS, each erased stroke is
+     * its own undo step and its own DELETE_STROKE.
+     */
+    private suspend fun handleEraseAlong(from: StrokePoint, to: StrokePoint) {
         if (_renderState.value.toolState.activeTool != DrawingTool.ERASE) return
         val renderWidth = canvasViewportWidthPx.coerceAtLeast(1).toFloat()
         val renderHeight = canvasViewportHeightPx.coerceAtLeast(1).toFloat()
-        val stroke = strokeHitTester.findStrokeHit(
-            strokes = _renderState.value.committedStrokes.map { committed ->
-                committed.denormalizeToSurface(renderWidth, renderHeight)
-            },
-            point = point.denormalizeToSurface(renderWidth, renderHeight)
-        ) ?: return
-        val committedStroke = _renderState.value.committedStrokes.firstOrNull { it.id == stroke.id }
-            ?: return
-        recordLocalAction(HistoryAction.EraseAction(stroke.id, committedStroke))
-        persistenceStore.persistErase(stroke.id)
+        val committedStrokes = _renderState.value.committedStrokes
+        val renderStrokes = committedStrokes.map { committed ->
+            committed.denormalizeToSurface(renderWidth, renderHeight)
+        }
+        val renderFrom = from.denormalizeToSurface(renderWidth, renderHeight)
+        val hitIds = if (from == to) {
+            listOfNotNull(strokeHitTester.findStrokeHit(renderStrokes, renderFrom)?.id)
+        } else {
+            strokeHitTester.findStrokesAlongSegment(
+                strokes = renderStrokes,
+                from = renderFrom,
+                to = to.denormalizeToSurface(renderWidth, renderHeight)
+            ).map { stroke -> stroke.id }
+        }
+        if (hitIds.isEmpty()) return
+        // Oldest first, so undo brings back the newest stroke first.
+        val erased = committedStrokes.filter { committed -> committed.id in hitIds }
+        for (stroke in erased) {
+            recordLocalAction(HistoryAction.EraseAction(stroke.id, stroke))
+            persistenceStore.persistErase(stroke.id)
+        }
+        val erasedIds = erased.map { stroke -> stroke.id }.toSet()
         _renderState.update {
             val next = it.copy(
                 committedStrokes = it.committedStrokes.filterNot { committed ->
-                    committed.id == stroke.id
+                    committed.id in erasedIds
                 },
-                remoteActiveStrokes = it.remoteActiveStrokes - stroke.id,
+                remoteActiveStrokes = it.remoteActiveStrokes - erasedIds,
                 cacheToken = it.cacheToken + 1
             )
             next.withUndoRedoAvailability()
         }
-        outbound.send(
-            newClientOperation(
-                type = DrawingOperationType.DELETE_STROKE,
-                strokeId = stroke.id,
-                payload = SyncOperationPayload.DeleteStroke
+        for (stroke in erased) {
+            outbound.send(
+                newClientOperation(
+                    type = DrawingOperationType.DELETE_STROKE,
+                    strokeId = stroke.id,
+                    payload = SyncOperationPayload.DeleteStroke
+                )
             )
-        )
+        }
     }
 
     private suspend fun handleClearCanvas() {

@@ -4,7 +4,7 @@ object CanvasProcessDefaults {
     @Volatile
     private var appliedColdStartDefaults = false
 
-    fun shouldForceNoToolOnColdStart(): Boolean {
+    fun shouldResetToolOnColdStart(): Boolean {
         if (appliedColdStartDefaults) return false
         appliedColdStartDefaults = true
         return true

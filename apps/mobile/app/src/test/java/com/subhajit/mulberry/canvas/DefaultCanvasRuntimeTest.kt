@@ -12,6 +12,7 @@ import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.model.DrawingTool
+import com.subhajit.mulberry.drawing.model.drawsSomething
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.drawing.model.ToolState
@@ -427,6 +428,74 @@ class DefaultCanvasRuntimeTest {
         assertEquals(restoredId, redoDelete.strokeId)
 
         job.cancel()
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `erase drag removes every stroke it crosses and each undoes on its own`() = runTest {
+        val drawingRepository = FakeDrawingRepository()
+        val persistenceStore = FakeCanvasPersistenceStore()
+        val runtime = DefaultCanvasRuntime(
+            persistenceStore = persistenceStore,
+            drawingRepository = drawingRepository,
+            strokeBuilder = StrokeBuilder(),
+            strokeHitTester = StrokeHitTester(),
+            applicationScope = backgroundScope
+        )
+
+        val outbound = mutableListOf<CanvasSyncOperation>()
+        var localDrawings = 0
+        val job = backgroundScope.launch {
+            runtime.outboundOperations.collect { outbound += it }
+        }
+        val drawingsJob = backgroundScope.launch {
+            runtime.localDrawings.collect { localDrawings += 1 }
+        }
+
+        runtime.start(pairSessionId = "pair", userId = "user")
+        advanceUntilIdle()
+        runtime.submitAndAwait(CanvasRuntimeEvent.CanvasViewportChanged(widthPx = 200, heightPx = 400))
+
+        // Two short vertical strokes, far apart.
+        runtime.submitAndAwait(CanvasRuntimeEvent.LocalPress(StrokePoint(x = 0.2f, y = 0.5f)))
+        runtime.submitAndAwait(CanvasRuntimeEvent.LocalDrag(StrokePoint(x = 0.2f, y = 0.55f)))
+        runtime.submitAndAwait(CanvasRuntimeEvent.LocalRelease)
+        runtime.submitAndAwait(CanvasRuntimeEvent.LocalPress(StrokePoint(x = 0.8f, y = 0.5f)))
+        runtime.submitAndAwait(CanvasRuntimeEvent.LocalDrag(StrokePoint(x = 0.8f, y = 0.55f)))
+        runtime.submitAndAwait(CanvasRuntimeEvent.LocalRelease)
+        advanceUntilIdle()
+        val drawnIds = runtime.renderState.value.committedStrokes.map { it.id }.toSet()
+        assertEquals(2, drawnIds.size)
+        assertTrue(localDrawings > 0)
+
+        // One drag step whose touch samples miss both strokes but whose path crosses them.
+        drawingRepository.setToolForTest(DrawingTool.ERASE)
+        advanceUntilIdle()
+        outbound.clear()
+        runtime.submitAndAwait(
+            CanvasRuntimeEvent.EraseAlong(
+                from = StrokePoint(x = 0f, y = 0.52f),
+                to = StrokePoint(x = 1f, y = 0.52f)
+            )
+        )
+        advanceUntilIdle()
+
+        assertTrue(runtime.renderState.value.committedStrokes.isEmpty())
+        val deletes = outbound.filter { it.type == DrawingOperationType.DELETE_STROKE }
+        assertEquals(drawnIds, deletes.mapNotNull { it.strokeId }.toSet())
+        // Erasing isn't drawing: it sends only deletes, which never count toward a first drawing.
+        assertTrue(outbound.none { it.type.drawsSomething })
+
+        // Each erased stroke is its own undo step, as on iOS.
+        runtime.submitAndAwait(CanvasRuntimeEvent.Undo)
+        advanceUntilIdle()
+        assertEquals(1, runtime.renderState.value.committedStrokes.size)
+        runtime.submitAndAwait(CanvasRuntimeEvent.Undo)
+        advanceUntilIdle()
+        assertEquals(2, runtime.renderState.value.committedStrokes.size)
+
+        job.cancel()
+        drawingsJob.cancel()
     }
 
     @Test

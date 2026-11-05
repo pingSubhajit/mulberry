@@ -7,7 +7,6 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.drag
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -52,6 +51,7 @@ fun DrawingCanvas(
     onDrawPoint: (StrokePoint) -> Unit,
     onDrawEnd: () -> Unit,
     onEraseTap: (StrokePoint) -> Unit,
+    onEraseDrag: (StrokePoint, StrokePoint) -> Unit,
     onCanvasSizeChanged: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
     strokeRenderMode: CanvasStrokeRenderMode = CanvasStrokeRenderMode.DryBrush
@@ -134,6 +134,8 @@ fun DrawingCanvas(
                 // (Now that reactions are gated to the no-tool state, taps in brush mode
                 // should produce a dot stroke immediately.)
                 if (slopChange == null || !started) {
+                    // A finger held for the reactions draws nothing.
+                    if (currentEvent.changes.any { it.id == down.id && it.isConsumed }) return@awaitEachGesture
                     onDrawStart(down.position.toStrokePoint(canvasSize, viewportTransform))
                     onDrawEnd()
                     return@awaitEachGesture
@@ -149,8 +151,36 @@ fun DrawingCanvas(
             }
         }
         DrawingTool.ERASE -> Modifier.pointerInput(activeTool) {
-            detectTapGestures { offset ->
-                onEraseTap(offset.toStrokePoint(canvasSize, viewportTransform))
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                down.consume()
+                val touchSlop = viewConfiguration.touchSlop
+                // Where the next erase segment starts, once the finger is dragging.
+                var eraseFrom: Offset? = null
+                var pointer = down
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == pointer.id } ?: break
+                    pointer = change
+                    // Held for the reactions: the rest of the touch erases nothing.
+                    if (change.isConsumed) break
+                    if (eraseFrom == null && (change.position - down.position).getDistance() > touchSlop) {
+                        eraseFrom = down.position
+                    }
+                    // A drag erases every stroke it crosses, between each pair of touch samples.
+                    eraseFrom?.let { from ->
+                        onEraseDrag(
+                            from.toStrokePoint(canvasSize, viewportTransform),
+                            change.position.toStrokePoint(canvasSize, viewportTransform)
+                        )
+                        eraseFrom = change.position
+                    }
+                    if (!change.pressed) break
+                    change.consume()
+                }
+                if (eraseFrom == null && !pointer.pressed && !pointer.isConsumed) {
+                    onEraseTap(down.position.toStrokePoint(canvasSize, viewportTransform))
+                }
             }
         }
         else -> Modifier

@@ -4,6 +4,7 @@ import com.subhajit.mulberry.drawing.model.DrawingDefaults
 import com.subhajit.mulberry.drawing.model.Stroke
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import javax.inject.Inject
+import kotlin.math.min
 import kotlin.math.sqrt
 
 class StrokeHitTester @Inject constructor() {
@@ -11,24 +12,74 @@ class StrokeHitTester @Inject constructor() {
         strokes: List<Stroke>,
         point: StrokePoint
     ): Stroke? = strokes.asReversed().firstOrNull { stroke ->
-        isPointNearStroke(stroke, point)
+        isSegmentNearStroke(stroke, point, point)
     }
 
-    private fun isPointNearStroke(
+    /**
+     * Every stroke the eraser crosses moving from [from] to [to], newest first. The whole segment
+     * is tested, so a fast drag between two touch samples still catches the strokes in between.
+     */
+    fun findStrokesAlongSegment(
+        strokes: List<Stroke>,
+        from: StrokePoint,
+        to: StrokePoint
+    ): List<Stroke> = strokes.asReversed().filter { stroke ->
+        isSegmentNearStroke(stroke, from, to)
+    }
+
+    private fun isSegmentNearStroke(
         stroke: Stroke,
-        point: StrokePoint
+        from: StrokePoint,
+        to: StrokePoint
     ): Boolean {
         val threshold = stroke.width / 2f + DrawingDefaults.STROKE_HIT_TOLERANCE
         val points = stroke.points
         if (points.isEmpty()) return false
         if (points.size == 1) {
-            return distance(points.first(), point) <= threshold
+            return distanceToSegment(points.first(), from, to) <= threshold
         }
 
         return points.zipWithNext().any { (start, end) ->
-            distanceToSegment(point, start, end) <= threshold
+            distanceBetweenSegments(from, to, start, end) <= threshold
         }
     }
+
+    private fun distanceBetweenSegments(
+        firstStart: StrokePoint,
+        firstEnd: StrokePoint,
+        secondStart: StrokePoint,
+        secondEnd: StrokePoint
+    ): Float {
+        if (segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd)) return 0f
+        return min(
+            min(
+                distanceToSegment(firstStart, secondStart, secondEnd),
+                distanceToSegment(firstEnd, secondStart, secondEnd)
+            ),
+            min(
+                distanceToSegment(secondStart, firstStart, firstEnd),
+                distanceToSegment(secondEnd, firstStart, firstEnd)
+            )
+        )
+    }
+
+    private fun segmentsIntersect(
+        firstStart: StrokePoint,
+        firstEnd: StrokePoint,
+        secondStart: StrokePoint,
+        secondEnd: StrokePoint
+    ): Boolean {
+        val d1 = cross(secondStart, secondEnd, firstStart)
+        val d2 = cross(secondStart, secondEnd, firstEnd)
+        val d3 = cross(firstStart, firstEnd, secondStart)
+        val d4 = cross(firstStart, firstEnd, secondEnd)
+        // Touching or collinear segments are left to the distance checks, which return zero.
+        return ((d1 > 0f && d2 < 0f) || (d1 < 0f && d2 > 0f)) &&
+            ((d3 > 0f && d4 < 0f) || (d3 < 0f && d4 > 0f))
+    }
+
+    private fun cross(origin: StrokePoint, a: StrokePoint, b: StrokePoint): Float =
+        (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x)
 
     private fun distanceToSegment(
         point: StrokePoint,
