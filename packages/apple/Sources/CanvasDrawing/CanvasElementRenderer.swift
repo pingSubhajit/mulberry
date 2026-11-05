@@ -375,15 +375,22 @@ public final class CanvasElementRenderer {
         context.restoreGState()
     }
 
+    /// The element in the user's hand, mid-drag, resize or turn: it floats above every other
+    /// element until let go, though strokes still cover it, as on iPhone.
+    public var floatingElementID: String?
+
     /// The order every platform paints elements in: stickers and photos in one stack, then text
     /// above them; within each, the element added or changed last is on top. Strokes go over all.
-    public static func paintOrder(_ elements: [CanvasElement]) -> [CanvasElement] {
-        elements.filter { $0.text == nil } + elements.filter { $0.text != nil }
+    /// A floating element goes above every other element.
+    public static func paintOrder(_ elements: [CanvasElement], floating: String? = nil) -> [CanvasElement] {
+        let ordered = elements.filter { $0.text == nil } + elements.filter { $0.text != nil }
+        guard let floating, let held = ordered.first(where: { $0.id == floating }) else { return ordered }
+        return ordered.filter { $0.id != floating } + [held]
     }
 
     public func draw(_ elements: [CanvasElement], in context: CGContext, canvasSize: CGSize,
                      now: TimeInterval = StickerArtworkTimeline.now) {
-        for element in Self.paintOrder(elements) {
+        for element in Self.paintOrder(elements, floating: floatingElementID) {
             switch element {
             case .text(let text) where !text.text.isEmpty:
                 layout(for: text, canvasWidth: canvasSize.width).draw(text, in: context, canvasSize: canvasSize)
@@ -400,7 +407,7 @@ public final class CanvasElementRenderer {
 
     /// The topmost element under `point`, optionally limited to one kind.
     public func hit(_ elements: [CanvasElement], at point: CGPoint, canvasSize: CGSize, where include: (CanvasElement) -> Bool = { _ in true }) -> CanvasElement? {
-        Self.paintOrder(elements).reversed().first { element in
+        Self.paintOrder(elements, floating: floatingElementID).reversed().first { element in
             guard include(element) else { return false }
             switch element {
             case .text(let text):

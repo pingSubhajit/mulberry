@@ -2,6 +2,7 @@ package com.subhajit.mulberry.drawing.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class CanvasPaintOrderTest {
@@ -82,6 +83,54 @@ class CanvasPaintOrderTest {
         assertEquals(listOf("p1", "s1", "p2", "t1"), elements.inPaintOrder().map { it.id })
         assertEquals("t1", elements.topmostElement { true }?.id)
         assertEquals("p2", elements.topmostElement { it !is CanvasTextElement }?.id)
+    }
+
+    @Test
+    fun `a dragged sticker floats above the text`() {
+        val elements = listOf(sticker("s1"), text("t1"), sticker("s2"))
+        val dragged = sticker("s1").copy(center = StrokePoint(x = 0.2f, y = 0.3f))
+
+        val order = elements.inPaintOrder(dragged = dragged)
+
+        assertEquals(listOf("s2", "t1", "s1"), order.map { it.id })
+        assertSame(dragged, order.last())
+    }
+
+    @Test
+    fun `a dragged photo or text floats above every other element`() {
+        val elements = listOf(photo("p1"), text("t1"), text("t2"), sticker("s1"))
+
+        assertEquals(
+            listOf("s1", "t1", "t2", "p1"),
+            elements.inPaintOrder(dragged = photo("p1")).map { it.id }
+        )
+        assertEquals(
+            listOf("p1", "s1", "t2", "t1"),
+            elements.inPaintOrder(dragged = text("t1")).map { it.id }
+        )
+    }
+
+    @Test
+    fun `with nothing dragged the normal order holds`() {
+        val elements = listOf(photo("p1"), text("t1"), sticker("s1"))
+
+        assertEquals(elements.inPaintOrder(), elements.inPaintOrder(dragged = null))
+    }
+
+    @Test
+    fun `a dragged element that is no longer on the canvas isn't drawn`() {
+        val elements = listOf(sticker("s1"), text("t1"))
+
+        assertEquals(listOf("s1", "t1"), elements.inPaintOrder(dragged = sticker("gone")).map { it.id })
+    }
+
+    @Test
+    fun `after the drag the moved sticker settles back under the text`() {
+        // The update moves it to the top of its own layer, not above the text.
+        val afterUpdate = listOf(sticker("s2"), text("t1"), sticker("s1"))
+
+        assertEquals(listOf("s2", "s1", "t1"), afterUpdate.inPaintOrder().map { it.id })
+        assertEquals("t1", afterUpdate.topmostElement { true }?.id)
     }
 
     private fun idOf(item: CanvasPaintItem): String = when (item) {

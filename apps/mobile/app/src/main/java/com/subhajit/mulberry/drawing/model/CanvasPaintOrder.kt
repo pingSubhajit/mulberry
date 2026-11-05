@@ -24,6 +24,18 @@ val CanvasElement.paintLayer: CanvasPaintLayer
 fun <T : CanvasElement> List<T>.inPaintOrder(): List<T> =
     sortedBy { element -> element.paintLayer.ordinal }
 
+/**
+ * Elements bottom to top while [dragged] is being dragged, pinched or twisted: it stands in for
+ * the element with its id and floats above every other element, text too, as on iPhone. Strokes
+ * still go over it. Once the gesture ends, pass null and it settles back into [inPaintOrder].
+ * Hit-testing at rest doesn't use this.
+ */
+fun <T : CanvasElement> List<T>.inPaintOrder(dragged: T?): List<T> {
+    val ordered = inPaintOrder()
+    if (dragged == null || ordered.none { it.id == dragged.id }) return ordered
+    return ordered.filterNot { it.id == dragged.id } + dragged
+}
+
 /** Elements top to bottom: the order a finger finds them in. */
 fun <T : CanvasElement> List<T>.inHitTestOrder(): List<T> = inPaintOrder().asReversed()
 

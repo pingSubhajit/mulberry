@@ -1350,6 +1350,9 @@ struct FullAppCanvasEditor: View {
             try? state.apply(.delete(editing))
         }
         canvasModel.state = state
+        // The element in hand floats above every other element until let go, as on iPhone.
+        let held = (drag?.moved == true ? drag?.current.id : nil) ?? stickerPreview?.id ?? photoPreview?.id ?? textPreview?.id
+        if canvasModel.floatingElementID != held { canvasModel.floatingElementID = held }
         canvasModel.activeStroke = editor.activeStroke
         canvasModel.stickerImages = stickerLoader.images
         canvasModel.stickerTimeline = stickerLoader.timeline

@@ -415,7 +415,6 @@ fun CanvasTextOverlay(
         ) != null
     }
 
-    val elementsInPaintOrder = remember(elements) { elements.inPaintOrder() }
     val stickerElements = remember(elements) { elements.filterIsInstance<CanvasStickerElement>() }
     // Keyed on the artwork rather than the elements, so moving a sticker doesn't restart its load.
     val stickerArtwork = remember(stickerElements) { stickerElements.map { it.artwork() }.distinct() }
@@ -946,12 +945,11 @@ fun CanvasTextOverlay(
                         textPillBoundsPaint.strokeWidth = debugStrokeWidthPx
                         stickerBoundsPaint.strokeWidth = debugStrokeWidthPx
 
-	                    // While dragged, an element keeps its place in its own layer, under the strokes.
-	                    val preview = liveTransformPreview
+	                    // While dragged, an element floats above every other one, text too; the strokes
+	                    // layer above this overlay still goes over it.
 	                    loadedPhotoIds
-	                    elementsInPaintOrder.forEach { baseElement ->
-	                        if (baseElement.id == hiddenElementId) return@forEach
-	                        val element = if (preview != null && preview.id == baseElement.id) preview else baseElement
+	                    elements.inPaintOrder(dragged = liveTransformPreview).forEach { element ->
+	                        if (element.id == hiddenElementId) return@forEach
 	                        when (element) {
 	                        is CanvasTextElement -> {
 	                            val center = element.center.denormalize(canvasSize)

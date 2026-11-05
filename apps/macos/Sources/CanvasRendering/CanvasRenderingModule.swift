@@ -177,6 +177,8 @@ public final class CanvasRenderModel: ObservableObject {
     @Published public var stickerTimeline: StickerArtworkTimeline?
     /// Decoded photos and cut-outs by photo id.
     @Published public var photoImages: [String: CanvasImage] = [:]
+    /// The element mid-drag, resize or turn, drawn above every other element until let go.
+    @Published public var floatingElementID: String?
     /// The stroke being drawn on this Mac, shown at every point. Its operations are saved in
     /// batches of points, so `state` has it only as far as the last batch.
     @Published public var activeStroke: DrawingStroke?
@@ -246,6 +248,10 @@ public final class CanvasRenderView: NSView {
             .removeDuplicates()
             .sink { [weak self] images in MainActor.assumeIsolated { self?.show(photoImages: images) } }
             .store(in: &cancellables)
+        model.$floatingElementID
+            .removeDuplicates()
+            .sink { [weak self] id in MainActor.assumeIsolated { self?.show(floating: id) } }
+            .store(in: &cancellables)
         model.$stickerTimeline
             .sink { [weak self] timeline in MainActor.assumeIsolated { self?.show(stickerTimeline: timeline) } }
             .store(in: &cancellables)
@@ -308,6 +314,11 @@ public final class CanvasRenderView: NSView {
 
     private func show(stickerImages: [StickerReference: CanvasImage]) {
         elementsView.stickerImages = stickerImages
+        elementsView.needsDisplay = true
+    }
+
+    private func show(floating id: String?) {
+        elementsView.floatingElementID = id
         elementsView.needsDisplay = true
     }
 
@@ -435,6 +446,10 @@ private final class CanvasElementsView: NSView {
     var photoImages: [String: CanvasImage] {
         get { renderer.photoImages }
         set { renderer.photoImages = newValue }
+    }
+    var floatingElementID: String? {
+        get { renderer.floatingElementID }
+        set { renderer.floatingElementID = newValue }
     }
     /// Kept between draws, so text stays laid out and photos rendered while only positions change.
     private let renderer = CanvasElementRenderer()
