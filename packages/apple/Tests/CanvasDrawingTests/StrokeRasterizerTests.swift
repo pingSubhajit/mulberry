@@ -15,6 +15,14 @@ private func pixels(_ raster: StrokeRasterizer.Raster?) throws -> Data {
     return try #require(image.dataProvider?.data as Data?)
 }
 
+/// Whether two bitmaps look the same: every channel of every pixel within `tolerance`. Painting in
+/// steps and painting at once can round an anti-aliased edge pixel a step apart, so the comparison
+/// allows that, while a missing or misplaced stroke still differs by far more.
+private func matches(_ a: Data, _ b: Data, tolerance: UInt8 = 2) -> Bool {
+    guard a.count == b.count else { return false }
+    return zip(a, b).allSatisfy { max($0, $1) - min($0, $1) <= tolerance }
+}
+
 private let strokes = [stroke(0.3, colour: 0xFFB31329), stroke(0.5, colour: 0xFF5BB7E8), stroke(0.7, colour: 0x99FFE66D)]
 
 @Test(arguments: [true, false])
@@ -24,7 +32,7 @@ func strokesPaintedOverEarlierOnesMatchARedraw(dry: Bool) async throws {
         _ = await growing.render(.init(strokes: Array(strokes.prefix(count)), size: size, scale: 2, dry: dry))
     }
     let all = StrokeRasterizer.Request(strokes: strokes, size: size, scale: 2, dry: dry)
-    #expect(try pixels(await growing.render(all)) == pixels(await StrokeRasterizer().render(all)))
+    #expect(matches(try pixels(await growing.render(all)), try pixels(await StrokeRasterizer().render(all))))
 }
 
 @Test func anErasedStrokeIsRedrawnAway() async throws {
@@ -33,7 +41,7 @@ func strokesPaintedOverEarlierOnesMatchARedraw(dry: Bool) async throws {
     let erased = StrokeRasterizer.Request(strokes: [strokes[0], strokes[2]], size: size, scale: 2, dry: true)
     let raster = try #require(await rasterizer.render(erased))
     #expect(raster.request == erased)
-    #expect(try pixels(raster) == pixels(await StrokeRasterizer().render(erased)))
+    #expect(matches(try pixels(raster), try pixels(await StrokeRasterizer().render(erased))))
 }
 
 @Test func aNewSizeOrScaleGetsABitmapToMatch() async throws {
@@ -45,4 +53,11 @@ func strokesPaintedOverEarlierOnesMatchARedraw(dry: Bool) async throws {
 
 @Test func anEmptyCanvasHasNoBitmap() async {
     #expect(await StrokeRasterizer().render(.init(strokes: strokes, size: .zero, scale: 2, dry: true)) == nil)
+}
+
+/// The comparison still catches a real difference: a missing stroke.
+@Test func aMissingStrokeStillDiffers() async throws {
+    let request = StrokeRasterizer.Request(strokes: strokes, size: size, scale: 2, dry: false)
+    let fewer = StrokeRasterizer.Request(strokes: Array(strokes.dropLast()), size: size, scale: 2, dry: false)
+    #expect(!matches(try pixels(await StrokeRasterizer().render(request)), try pixels(await StrokeRasterizer().render(fewer))))
 }
