@@ -18,6 +18,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.EaseIn
 import androidx.compose.animation.core.RepeatMode
@@ -88,8 +91,17 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.State
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -101,6 +113,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -166,13 +179,21 @@ import com.subhajit.mulberry.drawing.model.DrawingTool
 import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.review.InAppReviewLauncher
 import com.subhajit.mulberry.reactions.ReactionType
+import com.subhajit.mulberry.reactions.ReactionGifUiCache
 import com.subhajit.mulberry.reactions.ReactionGif
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.VirgilFontFamily
-import com.subhajit.mulberry.ui.animation.rememberBobbingOffsetDp
+import com.subhajit.mulberry.ui.animation.bobbing
+import com.subhajit.mulberry.ui.animation.rememberBobbingPhase
 import com.subhajit.mulberry.ui.animation.mulberrySelectionPop
 import com.subhajit.mulberry.ui.animation.TwoSidedConfettiBurst
+import com.subhajit.mulberry.ui.animation.rememberSystemAnimationsEnabled
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import com.subhajit.mulberry.streak.boltHop
+import com.subhajit.mulberry.streak.RollingNumber
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 import com.subhajit.mulberry.wallpaper.RemoteWallpaper
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
@@ -185,6 +206,20 @@ import com.subhajit.mulberry.wallpaper.ui.WallpaperWhyDoIDoThisLink
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
+import com.subhajit.mulberry.core.ui.ColourNames
+import com.subhajit.mulberry.core.ui.MulberryHaptic
+import com.subhajit.mulberry.core.ui.isLargeText
+import com.subhajit.mulberry.core.ui.rememberMulberryHaptics
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -206,6 +241,9 @@ fun CanvasHomeRoute(
     onNavigateToStreak: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToPairingHub: () -> Unit,
+    /** The streak screen just closed: the toolbar bolt takes the streak back, once. */
+    streakJustClosed: Boolean = false,
+    onStreakClosingSeen: () -> Unit = {},
     viewModel: CanvasHomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -269,6 +307,8 @@ fun CanvasHomeRoute(
 	    CanvasHomeScreen(
 	        uiState = uiState,
 	        shortcutAction = shortcutAction,
+	        streakJustClosed = streakJustClosed,
+	        onStreakClosingSeen = onStreakClosingSeen,
 	        wallpaperPresets = viewModel.wallpaperPresets,
             onCanvasTabVisible = viewModel::onCanvasTabVisible,
             onBrushToolGuideDismissed = viewModel::onBrushToolGuideDismissed,
@@ -306,6 +346,7 @@ fun CanvasHomeRoute(
         onCanvasDrag = viewModel::onCanvasDrag,
         onCanvasRelease = viewModel::onCanvasRelease,
         onCanvasTap = viewModel::onCanvasTap,
+        onCanvasEraseDrag = viewModel::onCanvasEraseDrag,
         onCanvasViewportChanged = viewModel::onCanvasViewportChanged,
         onColorSelected = viewModel::onColorSelected,
         onEyedropperColorCommitted = viewModel::onEyedropperColorCommitted,
@@ -338,6 +379,8 @@ fun CanvasHomeRoute(
 	private fun CanvasHomeScreen(
 		    uiState: CanvasHomeUiState,
 		    shortcutAction: AppShortcutAction?,
+		    streakJustClosed: Boolean,
+		    onStreakClosingSeen: () -> Unit,
 		    wallpaperPresets: List<WallpaperPreset>,
             onCanvasTabVisible: () -> Unit,
             onBrushToolGuideDismissed: () -> Unit,
@@ -371,6 +414,7 @@ fun CanvasHomeRoute(
     onCanvasDrag: (StrokePoint) -> Unit,
     onCanvasRelease: () -> Unit,
 	    onCanvasTap: (StrokePoint) -> Unit,
+	    onCanvasEraseDrag: (StrokePoint, StrokePoint) -> Unit,
 	    onCanvasViewportChanged: (Int, Int) -> Unit,
 	    onColorSelected: (Long) -> Unit,
         onEyedropperColorCommitted: (Long) -> Unit,
@@ -396,9 +440,8 @@ fun CanvasHomeRoute(
 	    onSendReaction: suspend (ReactionType) -> Boolean,
 	    onShortcutActionHandled: (AppShortcutAction) -> Unit
 		) {
-    val pagerState = rememberPagerState(pageCount = { MainAppTab.entries.size })
-	    val coroutineScope = rememberCoroutineScope()
-	    val selectedTab = MainAppTab.entries[pagerState.currentPage]
+    // The wallpapers open over the canvas from the top bar, as iOS pushes them.
+    var wallpaperOpen by rememberSaveable { mutableStateOf(false) }
 	    var textEditorSession by remember { mutableStateOf<CanvasTextEditorSession?>(null) }
 	    var stickerEditorSession by remember { mutableStateOf<CanvasStickerEditorSession?>(null) }
 	    var pendingNewStickerCenter by remember { mutableStateOf<StrokePoint?>(null) }
@@ -410,8 +453,8 @@ fun CanvasHomeRoute(
         uiState.bootstrapState.authStatus == AuthStatus.SIGNED_IN &&
             uiState.bootstrapState.hasCompletedOnboarding
 
-    LaunchedEffect(selectedTab, uiState.bootstrapState.pairingStatus) {
-        if (selectedTab == MainAppTab.Canvas && uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
+    LaunchedEffect(wallpaperOpen, uiState.bootstrapState.pairingStatus) {
+        if (!wallpaperOpen && uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
             onCanvasTabVisible()
         }
     }
@@ -429,12 +472,12 @@ fun CanvasHomeRoute(
 	            }
 
             AppShortcutAction.ChangeWallpaper -> {
-                pagerState.animateScrollToPage(MainAppTab.entries.indexOf(MainAppTab.Wallpaper))
+                wallpaperOpen = true
                 onShortcutActionHandled(action)
             }
 
 	            AppShortcutAction.OpenCanvas -> {
-	                pagerState.animateScrollToPage(MainAppTab.entries.indexOf(MainAppTab.Canvas))
+	                wallpaperOpen = false
 	                onShortcutActionHandled(action)
 	            }
 
@@ -647,7 +690,10 @@ fun CanvasHomeRoute(
                 allowToolTapPlacement = active == DrawingTool.TEXT || active == DrawingTool.STICKER
             }
 
-	        Column(
+        val headerUserName = uiState.bootstrapState.userDisplayName
+            ?.takeIf { it.isNotBlank() }
+            ?: stringResource(R.string.home_default_user_name)
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
@@ -667,97 +713,97 @@ fun CanvasHomeRoute(
                 }
                 .testTag(TestTags.HOME_SCREEN)
         ) {
-            MainAppHeader(
-                userName = uiState.bootstrapState.userDisplayName,
-                userPhotoUrl = uiState.bootstrapState.userPhotoUrl,
-                currentStreakDays = uiState.bootstrapState.currentStreakDays,
-                onStreakClick = onNavigateToStreak,
-                onProfileClick = onNavigateToSettings
-            )
-
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) { page ->
-	                when (MainAppTab.entries[page]) {
-		                    MainAppTab.Canvas -> CompositionLocalProvider(
-                                LocalStreakLevelUpBannerClick provides {
-                                    onStreakLevelUpBannerClicked()
-                                    onNavigateToStreak()
-                                }
-                            ) {
-                                CanvasHomePane(
-                                    uiState = uiState,
-                                    onBrushToolGuideDismissed = onBrushToolGuideDismissed,
-                                    onInviteRequested = onInviteRequested,
-                                    onJoinCodeRequested = onJoinCodeRequested,
-                                    onCanvasPress = onCanvasPress,
-                                    onCanvasDrag = onCanvasDrag,
-                                    onCanvasRelease = onCanvasRelease,
-                                    onCanvasTap = onCanvasTap,
-                                    onCanvasViewportChanged = onCanvasViewportChanged,
-                                    onColorSelected = onColorSelected,
-                                    onEyedropperColorCommitted = onEyedropperColorCommitted,
-                                    onBrushWidthChanged = onBrushWidthChanged,
-                                    onBrushToggle = onBrushToggle,
-                                    onEraserToggle = onEraserToggle,
-                                    onTextToggle = toolSelectText,
-                                    onStickerToggle = toolSelectSticker,
-                                    onStickerPackSelected = onStickerPackSelected,
-                                    stickerAssetStore = stickerAssetStore,
-                                    onTextElementAdded = onTextElementAdded,
-                                    onTextElementUpdated = onTextElementUpdated,
-                                    onTextElementDeleted = onTextElementDeleted,
-                                    onStickerElementAdded = onStickerElementAdded,
-                                    onStickerElementUpdated = onStickerElementUpdated,
-                                    onStickerElementDeleted = onStickerElementDeleted,
-                                    onTextEditorRequested = { session ->
-                                        stickerEditorSession = null
-                                        textEditorSession = session
-                                    },
-                                    onStickerEditorRequested = { session ->
-                                        textEditorSession = null
-                                        onStickerPackSelected(session.element.packKey, session.element.packVersion)
-                                        stickerEditorSession = session
-                                    },
-                                    onNewStickerRequestedAt = { center ->
-                                        pendingNewStickerCenter = center
-                                    },
-                                    allowToolTapPlacement = allowToolTapPlacement,
-                                    onEmptyTapCreationHandled = { allowToolTapPlacement = true },
-                                    isEditorOpen = editorOpen,
-                                    onClearRequested = onClearRequested,
-                                    onUndoRequested = onUndoRequested,
-                                    onRedoRequested = onRedoRequested,
-                                    onSendReaction = onSendReaction
-                                )
-                            }
-
-	                    MainAppTab.Wallpaper -> WallpaperHomePane(
-	                        uiState = uiState,
-	                        presets = wallpaperPresets,
-	                        onSetUpWallpaper = onSetUpWallpaper,
-                            onNavigateToWallpaperHelp = onNavigateToWallpaperHelp,
-	                        onViewMoreWallpapers = onViewMoreWallpapers,
-	                        onUploadFromGallery = onUploadWallpaperBackground,
-	                        onPresetSelected = onWallpaperPresetSelected,
-	                        onRemoteWallpaperSelected = onRemoteWallpaperSelected
-	                    )
+            CompositionLocalProvider(
+                LocalStreakLevelUpBannerClick provides {
+                    onStreakLevelUpBannerClicked()
+                    onNavigateToStreak()
                 }
+            ) {
+                CanvasHomePane(
+                    uiState = uiState,
+                    onBrushToolGuideDismissed = onBrushToolGuideDismissed,
+                    onInviteRequested = onInviteRequested,
+                    onJoinCodeRequested = onJoinCodeRequested,
+                    onCanvasPress = onCanvasPress,
+                    onCanvasDrag = onCanvasDrag,
+                    onCanvasRelease = onCanvasRelease,
+                    onCanvasTap = onCanvasTap,
+                    onCanvasEraseDrag = onCanvasEraseDrag,
+                    onCanvasViewportChanged = onCanvasViewportChanged,
+                    onColorSelected = onColorSelected,
+                    onEyedropperColorCommitted = onEyedropperColorCommitted,
+                    onBrushWidthChanged = onBrushWidthChanged,
+                    onBrushToggle = onBrushToggle,
+                    onEraserToggle = onEraserToggle,
+                    onTextToggle = toolSelectText,
+                    onStickerToggle = toolSelectSticker,
+                    onStickerPackSelected = onStickerPackSelected,
+                    stickerAssetStore = stickerAssetStore,
+                    onTextElementAdded = onTextElementAdded,
+                    onTextElementUpdated = onTextElementUpdated,
+                    onTextElementDeleted = onTextElementDeleted,
+                    onStickerElementAdded = onStickerElementAdded,
+                    onStickerElementUpdated = onStickerElementUpdated,
+                    onStickerElementDeleted = onStickerElementDeleted,
+                    onTextEditorRequested = { session ->
+                        stickerEditorSession = null
+                        textEditorSession = session
+                    },
+                    onStickerEditorRequested = { session ->
+                        textEditorSession = null
+                        onStickerPackSelected(session.element.packKey, session.element.packVersion)
+                        stickerEditorSession = session
+                    },
+                    onNewStickerRequestedAt = { center ->
+                        pendingNewStickerCenter = center
+                    },
+                    allowToolTapPlacement = allowToolTapPlacement,
+                    onEmptyTapCreationHandled = { allowToolTapPlacement = true },
+                    isEditorOpen = editorOpen,
+                    onClearRequested = onClearRequested,
+                    onUndoRequested = onUndoRequested,
+                    onRedoRequested = onRedoRequested,
+                    onSendReaction = onSendReaction
+                )
             }
 
-            MainAppBottomNavigation(
-                selectedTab = selectedTab,
-                onTabSelected = { tab ->
-                    coroutineScope.launch {
-                        pagerState.animateScrollToPage(MainAppTab.entries.indexOf(tab))
-                    }
-                },
-                modifier = Modifier
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 10.dp, bottom = 12.dp)
+            CanvasHomeTopBar(
+                showStreak = uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED,
+                currentStreakDays = uiState.bootstrapState.currentStreakDays,
+                streakJustClosed = streakJustClosed,
+                onStreakClosingSeen = onStreakClosingSeen,
+                userName = headerUserName,
+                userPhotoUrl = uiState.bootstrapState.userPhotoUrl,
+                onStreakClick = onNavigateToStreak,
+                onWallpaperClick = { wallpaperOpen = true },
+                onProfileClick = onNavigateToSettings,
+                modifier = Modifier.align(Alignment.TopCenter),
+                history = if (uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
+                    CanvasHistoryControls(
+                        canUndo = uiState.canUndo,
+                        canRedo = uiState.canRedo,
+                        onUndo = onUndoRequested,
+                        onRedo = onRedoRequested
+                    )
+                } else {
+                    null
+                }
+            )
+        }
+
+        WallpapersPage(
+            visible = wallpaperOpen,
+            onBack = { wallpaperOpen = false }
+        ) {
+            WallpaperHomePane(
+                uiState = uiState,
+                presets = wallpaperPresets,
+                onSetUpWallpaper = onSetUpWallpaper,
+                onNavigateToWallpaperHelp = onNavigateToWallpaperHelp,
+                onViewMoreWallpapers = onViewMoreWallpapers,
+                onUploadFromGallery = onUploadWallpaperBackground,
+                onPresetSelected = onWallpaperPresetSelected,
+                onRemoteWallpaperSelected = onRemoteWallpaperSelected
             )
         }
 
@@ -811,95 +857,6 @@ fun CanvasHomeRoute(
 	            )
 	        }
 	    }
-}
-
-@Composable
-private fun MainAppHeader(
-    userName: String?,
-    userPhotoUrl: String?,
-    currentStreakDays: Int,
-    onStreakClick: () -> Unit,
-    onProfileClick: () -> Unit
-) {
-    val displayName = userName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.home_default_user_name)
-    val titleColorFilter = if (isSystemInDarkTheme()) ColorFilter.tint(Color.White) else null
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .height(38.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Image(
-            painter = painterResource(R.drawable.home_header_wordmark),
-            contentDescription = stringResource(R.string.app_name),
-            contentScale = ContentScale.Fit,
-            colorFilter = titleColorFilter,
-            modifier = Modifier.size(width = 85.dp, height = 19.dp)
-        )
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            StreakPill(
-                currentStreakDays = currentStreakDays,
-                onClick = onStreakClick
-            )
-
-            ProfileAvatar(
-                photoUrl = userPhotoUrl,
-                displayName = displayName,
-                size = 38.dp,
-                modifier = Modifier
-                    .testTag(TestTags.HOME_SETTINGS_BUTTON)
-                    .clickable(onClick = onProfileClick)
-            )
-        }
-    }
-}
-
-@Composable
-private fun StreakPill(
-    currentStreakDays: Int,
-    onClick: () -> Unit
-) {
-    val label = pluralStringResource(R.plurals.home_streak_days, currentStreakDays, currentStreakDays)
-    val shape = RoundedCornerShape(43.dp)
-    val textColor = if (isSystemInDarkTheme()) Color.White else MulberryPrimary
-
-    Row(
-        modifier = Modifier
-            .size(width = 92.dp, height = 31.dp)
-            .border(1.dp, MulberryPrimary, shape)
-            .background(MulberryPrimary.copy(alpha = 0.15f), shape)
-            .clickable(onClick = onClick),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Image(
-                painter = painterResource(R.drawable.ic_home_streak_bolt),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.size(width = 16.dp, height = 23.dp)
-            )
-            Text(
-                text = label,
-                color = textColor,
-                fontFamily = PoppinsFontFamily,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.25.sp
-            )
-        }
-    }
 }
 
 @Composable
@@ -959,6 +916,7 @@ private fun CanvasHomePane(
     onCanvasDrag: (StrokePoint) -> Unit,
     onCanvasRelease: () -> Unit,
     onCanvasTap: (StrokePoint) -> Unit,
+    onCanvasEraseDrag: (StrokePoint, StrokePoint) -> Unit,
     onCanvasViewportChanged: (Int, Int) -> Unit,
     onColorSelected: (Long) -> Unit,
     onEyedropperColorCommitted: (Long) -> Unit,
@@ -996,7 +954,8 @@ private fun CanvasHomePane(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 20.dp)
-                .padding(top = 150.dp),
+                // Below the top bar, where it sat under the old header.
+                .padding(top = CanvasChromeMetrics.HeaderHeight + 132.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             OverlappingInviteAvatars(
@@ -1032,7 +991,7 @@ private fun CanvasHomePane(
                 onClick = onInviteRequested,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
                     .testTag(TestTags.HOME_SHARE_INVITE_BUTTON)
                     .mulberryTapScale(),
                 shape = RoundedCornerShape(15.38.dp),
@@ -1079,6 +1038,7 @@ private fun CanvasHomePane(
 		            onCanvasDrag = onCanvasDrag,
 	            onCanvasRelease = onCanvasRelease,
 	            onCanvasTap = onCanvasTap,
+	            onCanvasEraseDrag = onCanvasEraseDrag,
 	            onCanvasViewportChanged = onCanvasViewportChanged,
 	            onColorSelected = onColorSelected,
                 onEyedropperColorCommitted = onEyedropperColorCommitted,
@@ -1118,6 +1078,7 @@ private fun CanvasHomePane(
 	    onCanvasDrag: (StrokePoint) -> Unit,
 	    onCanvasRelease: () -> Unit,
 	    onCanvasTap: (StrokePoint) -> Unit,
+	    onCanvasEraseDrag: (StrokePoint, StrokePoint) -> Unit,
 	    onCanvasViewportChanged: (Int, Int) -> Unit,
 	    onColorSelected: (Long) -> Unit,
         onEyedropperColorCommitted: (Long) -> Unit,
@@ -1151,11 +1112,11 @@ private fun CanvasHomePane(
 	    var reactionRailOpen by remember { mutableStateOf(false) }
 	    var sentReactionOverlay by remember { mutableStateOf<SentReactionOverlayState?>(null) }
 	    var sentReactionToken by remember { mutableStateOf(0L) }
-        var viewportTransform by remember { mutableStateOf(CanvasViewportTransform()) }
+        // The canvas never zooms or pans, as on iPhone.
+        val viewportTransform = CanvasViewportTransform()
         var eyedropperArmed by remember { mutableStateOf(false) }
         var eyedropperLiveColorArgb by remember { mutableStateOf<Long?>(null) }
         var eyedropperCommittedColorArgb by remember { mutableStateOf<Long?>(null) }
-        var eyedropperToolBeforeArm by remember { mutableStateOf(DrawingTool.NONE) }
 
 	    LaunchedEffect(sentReactionOverlay) {
 	        if (sentReactionOverlay == null) return@LaunchedEffect
@@ -1188,24 +1149,49 @@ private fun CanvasHomePane(
             }
         }
 
-        val onEyedropperToggle: () -> Unit = toggle@{
-            if (isEditorOpen) return@toggle
-            if (eyedropperArmed) {
-                eyedropperArmed = false
-                eyedropperLiveColorArgb = null
-                eyedropperCommittedColorArgb = null
-                return@toggle
-            }
-            eyedropperToolBeforeArm = uiState.toolState.activeTool
+        // The eyedropper is one of the tools, as on iPhone: choosing it puts the others down,
+        // choosing another tool puts it down, and tapping it again keeps it.
+        // The tool just chosen, until the saved tool catches up: the toolbar shows the choice at
+        // once rather than waiting on the database, so nothing flashes on the way.
+        var pendingTool by remember { mutableStateOf<DrawingTool?>(null) }
+        LaunchedEffect(uiState.toolState.activeTool, pendingTool) {
+            if (pendingTool == uiState.toolState.activeTool) pendingTool = null
+        }
+        val shownTool = pendingTool ?: uiState.toolState.activeTool
+        val onEyedropperSelected: () -> Unit = select@{
+            if (isEditorOpen || eyedropperArmed) return@select
+            // It replaces the tool in hand, so text or stickers aren't left waiting underneath.
+            pendingTool = DrawingTool.DRAW
+            onBrushToggle()
             eyedropperArmed = true
             eyedropperLiveColorArgb = null
             eyedropperCommittedColorArgb = null
         }
+        val putEyedropperDown: () -> Unit = {
+            eyedropperArmed = false
+            eyedropperLiveColorArgb = null
+        }
+        /** Puts the eyedropper down and takes up [tool], showing it chosen straight away. */
+        val chooseTool: (DrawingTool, () -> Unit) -> Unit = { tool, select ->
+            pendingTool = tool
+            putEyedropperDown()
+            select()
+        }
+        /** A colour from the palette ends the eyedropper and, unless writing text, returns to the brush. */
+        val chooseColour: (Long) -> Unit = { colorArgb ->
+            onColorSelected(colorArgb)
+            if (shownTool == DrawingTool.TEXT) putEyedropperDown() else chooseTool(DrawingTool.DRAW, onBrushToggle)
+        }
 
+        val haptics = rememberMulberryHaptics()
+        // The reactions' GIFs decode in the background while the canvas opens, so the rail opens at once.
+        val reactionContext = LocalContext.current
+        LaunchedEffect(Unit) { ReactionGifUiCache.prewarm(reactionContext) }
 	    val sendAndAnimate: (ReactionType) -> Unit = { type ->
             coroutineScope.launch {
                 val didSend = onSendReaction(type)
                 if (!didSend) return@launch
+                haptics.perform(MulberryHaptic.LightImpact)
                 sentReactionToken += 1
                 sentReactionOverlay = SentReactionOverlayState(type = type, token = sentReactionToken)
                 reactionRailOpen = false
@@ -1219,12 +1205,19 @@ private fun CanvasHomePane(
         val density = LocalDensity.current
         val streakLevelUpBannerClick = LocalStreakLevelUpBannerClick.current ?: {}
 
-        val guideBobOffsetPx = with(density) {
-            rememberBobbingOffsetDp(label = "brush_tool_guide_bob").toPx()
-        }
-        val streakLevelUpBobOffset = rememberBobbingOffsetDp(label = "streak_level_up_banner_bob")
+        val celebrationAnimationsEnabled = rememberSystemAnimationsEnabled()
 
-        Box(
+        var showWidthPicker by remember { mutableStateOf(false) }
+        // A finger held on the canvas opens the reactions over it, whatever the tool, as on iPhone.
+        var reactionArc by remember { mutableStateOf<ReactionArcRequest?>(null) }
+        val reactionArcPointer = remember { ReactionArcPointer() }
+        val reduceMotion = !rememberSystemAnimationsEnabled()
+        var showColorPicker by remember { mutableStateOf(false) }
+        var showCustomColorPicker by remember { mutableStateOf(false) }
+        val brushColorArgb = eyedropperLiveColorArgb ?: uiState.toolState.selectedColorArgb
+        val canvasBackgroundArgb = MaterialTheme.colorScheme.background.toArgb().toLong() and 0xFFFFFFFFL
+
+        BoxWithConstraints(
             modifier = modifier
                 .fillMaxSize()
                 .onGloballyPositioned { coordinates ->
@@ -1232,191 +1225,375 @@ private fun CanvasHomePane(
                     paneSizePx = coordinates.size
                 }
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .graphicsLayer {
-                            shape = RoundedCornerShape(24.dp)
-                            clip = true
-                        }
-                        .background(MaterialTheme.mulberryAppColors.softSurface)
-                        .border(
-                            width = 2.dp,
-                            color = MulberryPrimary.copy(alpha = 0.30f),
-                            shape = RoundedCornerShape(24.dp)
-                        )
-                ) {
-	            DrawingCanvas(
-	                canvasState = uiState.canvasState,
-	                activeTool = uiState.toolState.activeTool,
-                    viewportTransform = viewportTransform,
-	                onDrawStart = onCanvasPress,
-                onDrawPoint = onCanvasDrag,
-                onDrawEnd = onCanvasRelease,
-	                onEraseTap = onCanvasTap,
-	                onCanvasSizeChanged = onCanvasViewportChanged,
-	                modifier = Modifier
-	                    .fillMaxSize()
-	                    .padding(8.dp)
-                        ,
-	                strokeRenderMode = uiState.canvasStrokeRenderMode
-	            )
+            val paneWidth = maxWidth
+            val toolsTop = maxHeight - CanvasChromeMetrics.BottomMargin - CanvasChromeMetrics.ToolRowHeight
+            val visibleHeight = (toolsTop - CanvasChromeMetrics.HeaderHeight).coerceAtLeast(0.dp)
+            val canvasHeight = canvasHeightFor(paneWidth, visibleHeight)
+            // Centred between the middles of the top bar and the tools, so it runs under both, as on iPhone.
+            val canvasMiddle = (CanvasChromeMetrics.HeaderHeight / 2 + toolsTop + CanvasChromeMetrics.ToolRowHeight / 2) / 2
+            val canvasTop = canvasMiddle - canvasHeight / 2
+            val controlsWidth = minOf(paneWidth - 16.dp, CanvasChromeMetrics.ControlsMaxWidth)
+            // Squee stands beside the reactions, undo and redo column rather than under it.
+            val squeeStart = (paneWidth - controlsWidth) / 2 + 8.dp + CanvasChromeMetrics.ButtonSize + 8.dp
+            // The left column's top: the reactions button above the tools.
+            val columnsTop = toolsTop - CanvasChromeMetrics.ColumnsToTools - CanvasChromeMetrics.ButtonSize
 
-	            CanvasTextOverlay(
-	                elements = uiState.canvasState.elements,
-	                activeTool = uiState.toolState.activeTool,
-	                palette = uiState.palette,
-	                selectedColorArgb = uiState.toolState.selectedColorArgb,
-                    showElementBounds = uiState.canvasShowElementBounds,
-	                stickerAssetStore = stickerAssetStore,
-                    reactionRailOpen = reactionRailOpen,
-                    onReactionRailOpenChanged = { reactionRailOpen = it },
-                    onReactionTriggered = sendAndAnimate,
+            val canvasTopPx = with(density) { canvasTop.toPx() }
+            // Transparent and unframed: drawings sit straight on the screen.
+            Box(
+                modifier = Modifier
+                    .offset(y = canvasTop)
+                    .size(width = paneWidth, height = canvasHeight)
+                    .clipToBounds()
+                    .holdForReactions(
+                        enabled = { !isEditorOpen && !reactionRailOpen && reactionArc == null },
+                        onHold = { position ->
+                            haptics.perform(MulberryHaptic.LongPress)
+                            reactionArc = ReactionArcRequest(tip = Offset(position.x, position.y + canvasTopPx))
+                        },
+                        pointer = reactionArcPointer
+                    )
+            ) {
+                DrawingCanvas(
+                    canvasState = uiState.canvasState,
+                    activeTool = uiState.toolState.activeTool,
                     viewportTransform = viewportTransform,
-                    onViewportTransformChanged = { viewportTransform = it },
-	                onEraseTap = onCanvasTap,
-	                onAddTextElement = onTextElementAdded,
-	                onUpdateTextElement = onTextElementUpdated,
-	                onDeleteTextElement = onTextElementDeleted,
-	                onAddStickerElement = onStickerElementAdded,
-	                onUpdateStickerElement = onStickerElementUpdated,
-	                onDeleteStickerElement = onStickerElementDeleted,
-	                onRequestTextEdit = onTextEditorRequested,
-	                onRequestStickerEdit = onStickerEditorRequested,
-	                onRequestNewStickerAt = onNewStickerRequestedAt,
+                    onDrawStart = onCanvasPress,
+                    onDrawPoint = onCanvasDrag,
+                    onDrawEnd = onCanvasRelease,
+                    onEraseTap = onCanvasTap,
+                    onEraseDrag = onCanvasEraseDrag,
+                    onCanvasSizeChanged = onCanvasViewportChanged,
+                    modifier = Modifier.fillMaxSize(),
+                    strokeRenderMode = uiState.canvasStrokeRenderMode
+                )
+
+                CanvasTextOverlay(
+                    elements = uiState.canvasState.elements,
+                    activeTool = uiState.toolState.activeTool,
+                    palette = uiState.palette,
+                    selectedColorArgb = uiState.toolState.selectedColorArgb,
+                    showElementBounds = uiState.canvasShowElementBounds,
+                    stickerAssetStore = stickerAssetStore,
+                    viewportTransform = viewportTransform,
+                    onEraseTap = onCanvasTap,
+                    onEraseDrag = onCanvasEraseDrag,
+                    onAddTextElement = onTextElementAdded,
+                    onUpdateTextElement = onTextElementUpdated,
+                    onDeleteTextElement = onTextElementDeleted,
+                    onAddStickerElement = onStickerElementAdded,
+                    onUpdateStickerElement = onStickerElementUpdated,
+                    onDeleteStickerElement = onStickerElementDeleted,
+                    onRequestTextEdit = onTextEditorRequested,
+                    onRequestStickerEdit = onStickerEditorRequested,
+                    onRequestNewStickerAt = onNewStickerRequestedAt,
                     allowCreateOnEmptyTap = allowToolTapPlacement,
                     onEmptyTapCreationHandled = onEmptyTapCreationHandled,
-	                isEditorOpen = isEditorOpen,
-	                modifier = Modifier
-	                    .fillMaxSize()
-	                    .padding(8.dp)
-	            )
+                    isEditorOpen = isEditorOpen,
+                    modifier = Modifier.fillMaxSize()
+                )
 
-                    EyedropperOverlay(
-                        armed = eyedropperArmed,
-                        enabled = !isEditorOpen,
-                        canvasState = uiState.canvasState,
-                        viewportTransform = viewportTransform,
-                        stickerAssetStore = stickerAssetStore,
-                        backgroundColorArgb = (MaterialTheme.mulberryAppColors.softSurface.toArgb().toLong() and 0xFFFFFFFFL),
-                        onLiveColorArgbChanged = { colorArgb ->
-                            eyedropperLiveColorArgb = colorArgb
-                        },
-                        onCommitColorArgb = { colorArgb ->
-                            eyedropperLiveColorArgb = colorArgb
-                            eyedropperCommittedColorArgb = colorArgb
-                            onEyedropperColorCommitted(colorArgb)
-                            eyedropperArmed = false
-                        },
-                        onCanceled = {
-                            eyedropperArmed = false
-                            eyedropperLiveColorArgb = null
-                            eyedropperCommittedColorArgb = null
-                        },
+                EyedropperOverlay(
+                    armed = eyedropperArmed,
+                    enabled = !isEditorOpen,
+                    canvasState = uiState.canvasState,
+                    viewportTransform = viewportTransform,
+                    stickerAssetStore = stickerAssetStore,
+                    backgroundColorArgb = canvasBackgroundArgb,
+                    onLiveColorArgbChanged = { colorArgb ->
+                        eyedropperLiveColorArgb = colorArgb
+                    },
+                    // The picked colour becomes the brush's and the text's, and the brush is back in hand.
+                    onCommitColorArgb = { colorArgb ->
+                        eyedropperLiveColorArgb = colorArgb
+                        eyedropperCommittedColorArgb = colorArgb
+                        onEyedropperColorCommitted(colorArgb)
+                        eyedropperArmed = false
+                        onBrushToggle()
+                    },
+                    // Let go without choosing, as when a second finger lands: still the eyedropper.
+                    onCanceled = {
+                        eyedropperLiveColorArgb = null
+                        eyedropperCommittedColorArgb = null
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // The visible part of the canvas, between the top bar and the tools: the prompt, the
+            // streak banner and the celebrations belong here.
+            Box(
+                modifier = Modifier
+                    .padding(top = CanvasChromeMetrics.HeaderHeight)
+                    .fillMaxWidth()
+                    .height(visibleHeight)
+            ) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = uiState.canvasState.isEmpty,
+                    enter = fadeIn(animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)),
+                    exit = fadeOut(animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing)),
+                    modifier = Modifier.matchParentSize()
+                ) {
+                    CanvasBlankStateGuidance(squeeStart = squeeStart)
+                }
+
+                if (uiState.showStreakLevelUpBanner && !isEditorOpen) {
+                    // Bobs only while it's shown, and moves without rebuilding the canvas.
+                    val bannerBob = rememberBobbingPhase(label = "streak_level_up_banner_bob")
+                    StreakLevelUpBanner(
+                        text = stringResource(R.string.home_canvas_streak_level_up_banner),
+                        onClick = streakLevelUpBannerClick,
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(8.dp)
+                            .zIndex(40f)
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .padding(top = 12.dp)
+                            .bobbing(bannerBob)
                     )
+                }
 
-                    if (uiState.showStreakLevelUpBanner && !isEditorOpen) {
-                        StreakLevelUpBanner(
-                            text = stringResource(R.string.home_canvas_streak_level_up_banner),
-                            onClick = streakLevelUpBannerClick,
-                            modifier = Modifier
-                                .zIndex(40f)
-                                .align(Alignment.TopCenter)
-                                .fillMaxWidth(0.9f)
-                                .padding(top = 12.dp)
-                                .offset(y = streakLevelUpBobOffset)
-                        )
-                    }
-
-                    if (uiState.streakLevelUpConfettiToken != null) {
+                // A streak level-up, or the account's first drawing. Like iOS, it never plays
+                // with animations turned off.
+                val celebrationConfettiToken = uiState.celebrationConfettiToken
+                if (celebrationConfettiToken != null && celebrationAnimationsEnabled) {
+                    key(celebrationConfettiToken) {
                         TwoSidedConfettiBurst(
                             modifier = Modifier
                                 .matchParentSize()
                                 .zIndex(45f)
                         )
                     }
-
-            androidx.compose.animation.AnimatedVisibility(
-                visible = uiState.canvasState.isEmpty,
-                enter = fadeIn(animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)),
-                exit = fadeOut(animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing)),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 34.dp)
-            ) {
-                CanvasBlankStateGuidance()
-            }
-
-                if (reactionRailOpen) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .pointerInput(Unit) {
-                                awaitEachGesture {
-                                    awaitFirstDown(requireUnconsumed = false)
-                                    val up = waitForUpOrCancellation()
-                                    if (up != null) {
-                                        reactionRailOpen = false
-                                    }
-                                }
-                            }
-                    )
                 }
 
-	            if (reactionRailOpen) {
-	                ReactionRail(
-	                    onReactionSelected = sendAndAnimate,
-	                    onDismiss = {
-                            reactionRailOpen = false
+                sentReactionOverlay?.let { overlay ->
+                    ReactionSentOverlay(
+                        reactionType = overlay.type,
+                        token = overlay.token,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+            }
+
+            // Actions stand apart from the tools: reactions on the left; width, colour and clear on
+            // the right. Undo and redo are in the top bar, as in the Mac app.
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = CanvasChromeMetrics.BottomMargin)
+                    .width(controlsWidth),
+                verticalArrangement = Arrangement.spacedBy(CanvasChromeMetrics.ColumnsToTools)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(CanvasChromeMetrics.ColumnSpacing)) {
+                        CanvasChromeButton(
+                            contentDescription = stringResource(R.string.home_canvas_reactions_content_description),
+                            onClick = { reactionRailOpen = !reactionRailOpen },
+                            selected = reactionRailOpen,
+                            floating = true
+                        ) { ChromeSymbol(R.drawable.ic_material_favorite_border) }
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    // Width for the brush, colour for the brush and the eyedropper, and clear always.
+                    // What the tool in hand can't use slides away to the side.
+                    val brushInHand = !eyedropperArmed && shownTool == DrawingTool.DRAW
+                    LaunchedEffect(brushInHand) { if (!brushInHand) showWidthPicker = false }
+                    Column {
+                        HudSlot(visible = brushInHand, reduceMotion = reduceMotion) {
+                            BrushWidthControl(
+                                savedWidth = uiState.toolState.selectedWidth,
+                                colorArgb = brushColorArgb,
+                                open = showWidthPicker,
+                                onOpenChanged = { open ->
+                                    showWidthPicker = open
+                                    if (open) showColorPicker = false
+                                },
+                                onWidthChosen = onBrushWidthChanged
+                            )
+                        }
+                        HudSlot(visible = brushInHand || eyedropperArmed, reduceMotion = reduceMotion) {
+                            CanvasChromeButton(
+                                contentDescription = "Colour palette",
+                                onClick = {
+                                    showColorPicker = true
+                                    showWidthPicker = false
+                                },
+                                floating = true,
+                                modifier = Modifier.colourState(brushColorArgb)
+                            ) { ColourWheelIcon(colorArgb = brushColorArgb) }
+                        }
+                        CanvasChromeButton(
+                            contentDescription = stringResource(R.string.home_canvas_clear_content_description),
+                            onClick = onClearRequested,
+                            // Nothing to clear on a blank canvas.
+                            enabled = !uiState.canvasState.isEmpty,
+                            floating = true,
+                            modifier = Modifier.testTag(TestTags.CLEAR_BUTTON)
+                        ) { ChromeSymbol(R.drawable.ic_material_delete) }
+                    }
+                }
+
+                CanvasToolRow {
+                    CanvasChromeButton(
+                        contentDescription = stringResource(R.string.home_canvas_brush_content_description),
+                        onClick = {
+                            chooseTool(DrawingTool.DRAW, onBrushToggle)
+                            if (uiState.showBrushToolGuide) onBrushToolGuideDismissed()
                         },
-	                    modifier = Modifier.align(Alignment.BottomCenter)
-	                )
-	            }
+                        selected = !eyedropperArmed && shownTool == DrawingTool.DRAW,
+                        modifier = Modifier
+                            .testTag(TestTags.BRUSH_BUTTON)
+                            .onGloballyPositioned { coordinates ->
+                                brushButtonBoundsInRoot = coordinates.boundsInRoot()
+                            }
+                    ) {
+                        ChromeIllustration(
+                            R.drawable.canvas_action_brush,
+                            selected = !eyedropperArmed && shownTool == DrawingTool.DRAW
+                        )
+                    }
+                    CanvasChromeButton(
+                        contentDescription = stringResource(R.string.home_canvas_text_content_description),
+                        onClick = {
+                            val next = if (!eyedropperArmed && shownTool == DrawingTool.TEXT) DrawingTool.DRAW else DrawingTool.TEXT
+                            chooseTool(next, onTextToggle)
+                        },
+                        selected = !eyedropperArmed && shownTool == DrawingTool.TEXT,
+                        modifier = Modifier.testTag(TestTags.TEXT_BUTTON)
+                    ) {
+                        ChromeIllustration(
+                            R.drawable.canvas_action_text,
+                            selected = !eyedropperArmed && shownTool == DrawingTool.TEXT,
+                            tinted = true
+                        )
+                    }
+                    CanvasChromeButton(
+                        contentDescription = stringResource(R.string.home_canvas_sticker_content_description),
+                        onClick = {
+                            val next = if (!eyedropperArmed && shownTool == DrawingTool.STICKER) DrawingTool.DRAW else DrawingTool.STICKER
+                            chooseTool(next, onStickerToggle)
+                        },
+                        selected = !eyedropperArmed && shownTool == DrawingTool.STICKER,
+                        modifier = Modifier.testTag(TestTags.STICKER_BUTTON)
+                    ) {
+                        ChromeIllustration(
+                            R.drawable.canvas_action_sticker,
+                            selected = !eyedropperArmed && shownTool == DrawingTool.STICKER
+                        )
+                    }
+                    // Coming soon.
+                    CanvasChromeButton(
+                        contentDescription = stringResource(R.string.home_canvas_camera_content_description),
+                        onClick = {},
+                        enabled = false
+                    ) {
+                        ChromeIllustration(R.drawable.canvas_action_camera, selected = false)
+                    }
+                    CanvasChromeButton(
+                        contentDescription = stringResource(R.string.home_canvas_erase_content_description),
+                        onClick = { chooseTool(DrawingTool.ERASE, onEraserToggle) },
+                        selected = !eyedropperArmed && shownTool == DrawingTool.ERASE,
+                        modifier = Modifier.testTag(TestTags.ERASER_BUTTON)
+                    ) {
+                        ChromeIllustration(
+                            R.drawable.canvas_action_erase,
+                            selected = !eyedropperArmed && shownTool == DrawingTool.ERASE
+                        )
+                    }
+                    CanvasChromeButton(
+                        contentDescription = stringResource(R.string.home_canvas_eyedropper_content_description),
+                        onClick = {
+                            showWidthPicker = false
+                            showColorPicker = false
+                            showCustomColorPicker = false
+                            onEyedropperSelected()
+                        },
+                        selected = eyedropperArmed,
+                        enabled = !isEditorOpen,
+                        modifier = Modifier.testTag(TestTags.EYEDROPPER_BUTTON)
+                    ) {
+                        ChromeIllustration(R.drawable.canvas_action_eyedropper, selected = eyedropperArmed)
+                    }
+                }
+            }
 
-	            sentReactionOverlay?.let { overlay ->
-	                ReactionSentOverlay(
-	                    reactionType = overlay.type,
-	                    token = overlay.token,
-	                    modifier = Modifier.align(Alignment.Center)
-	                )
-	            }
-        }
-
-                CanvasControlTray(
-                    uiState = uiState,
-                    showBrushToolGuide = uiState.showBrushToolGuide,
-                    onBrushToolGuideDismissed = onBrushToolGuideDismissed,
-                    onBrushButtonBoundsInRootChanged = { bounds ->
-                        brushButtonBoundsInRoot = bounds
-                    },
-                    onBrushWidthChanged = onBrushWidthChanged,
-                    onColorSelected = onColorSelected,
-                    eyedropperArmed = eyedropperArmed,
-                    eyedropperEnabled = !isEditorOpen,
-                    eyedropperPreviewColorArgb = eyedropperLiveColorArgb,
-                    onEyedropperToggle = onEyedropperToggle,
-                    onUndoRequested = onUndoRequested,
-                    onRedoRequested = onRedoRequested,
-                    onBrushToggle = onBrushToggle,
-                    onEraserToggle = onEraserToggle,
-                    onTextToggle = onTextToggle,
-                    onStickerToggle = onStickerToggle,
-                    onClearRequested = onClearRequested
+            if (reactionRailOpen) {
+                // A tap anywhere else puts the reactions away.
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                val up = waitForUpOrCancellation()
+                                if (up != null) {
+                                    reactionRailOpen = false
+                                }
+                            }
+                        }
+                )
+                // Over the reactions button, where iOS opens its picker.
+                ReactionRail(
+                    onReactionSelected = sendAndAnimate,
+                    onDismiss = { reactionRailOpen = false },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = maxHeight - columnsTop + 12.dp)
                 )
             }
 
+            reactionArc?.let { request ->
+                ReactionArc(
+                    tip = request.tip,
+                    paneWidthPx = with(density) { paneWidth.toPx() },
+                    minTopPx = with(density) { CanvasChromeMetrics.HeaderHeight.toPx() },
+                    pointer = reactionArcPointer,
+                    pointerOrigin = Offset(0f, canvasTopPx),
+                    reduceMotion = reduceMotion,
+                    onSend = { type ->
+                        reactionArc = null
+                        sendAndAnimate(type)
+                    },
+                    onDismiss = { reactionArc = null }
+                )
+                BackHandler { reactionArc = null }
+            }
+
+            if (showColorPicker) {
+                CanvasPaletteSheet(
+                    palette = uiState.palette,
+                    selectedColorArgb = uiState.toolState.selectedColorArgb,
+                    showSelection = uiState.toolState.activeTool == DrawingTool.DRAW ||
+                        uiState.toolState.activeTool == DrawingTool.TEXT,
+                    onColorSelected = { colorArgb ->
+                        chooseColour(colorArgb)
+                        showColorPicker = false
+                    },
+                    onCustomColourRequested = {
+                        showColorPicker = false
+                        showCustomColorPicker = true
+                    },
+                    onDismiss = { showColorPicker = false }
+                )
+            }
+
+            RgbColorPickerSheet(
+                visible = showCustomColorPicker,
+                initialColorArgb = uiState.toolState.selectedColorArgb,
+                onDismissRequest = { showCustomColorPicker = false },
+                onApply = { colorArgb ->
+                    chooseColour(colorArgb)
+                    showCustomColorPicker = false
+                }
+            )
+
             if (uiState.showBrushToolGuide) {
+                val guideBob = rememberBobbingPhase(label = "brush_tool_guide_bob")
                 val brushBounds = brushButtonBoundsInRoot
                 if (brushBounds != null && paneSizePx.width > 0 && paneSizePx.height > 0) {
                     val horizontalPaddingPx = with(density) { 14.dp.toPx() }
@@ -1446,9 +1623,10 @@ private fun CanvasHomePane(
                             .offset {
                                 IntOffset(
                                     x = tooltipX.toInt(),
-                                    y = (tooltipY + guideBobOffsetPx).toInt()
+                                    y = tooltipY.toInt()
                                 )
                             }
+                            .bobbing(guideBob)
                             .onGloballyPositioned { coordinates ->
                                 guideTooltipSizePx = coordinates.size
                             }
@@ -1459,82 +1637,99 @@ private fun CanvasHomePane(
     }
 
 @Composable
-private fun AnimatedVisibilityScope.CanvasBlankStateGuidance(modifier: Modifier = Modifier) {
+/**
+ * Fills the visible canvas, as on iPhone: the prompt in its middle, and Squee at its foot, at
+ * [squeeStart] so it stands beside the reactions, undo and redo column.
+ */
+private fun AnimatedVisibilityScope.CanvasBlankStateGuidance(
+    squeeStart: Dp,
+    modifier: Modifier = Modifier
+) {
     val guidanceFontFamily = rememberMulberryGuidanceFontFamily()
     val squeeExitExtraOffsetPx = with(LocalDensity.current) { 28.dp.roundToPx() }
+    // As on iOS: with animations removed Squee rests, and at large text sizes it's smaller.
+    val animate = rememberSystemAnimationsEnabled()
+    val squeeHeight = if (isLargeText()) 96.dp else 160.dp
 
-    val squeeBobPhase by rememberInfiniteTransition(label = "squee_idle_bob").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = keyframes {
-                durationMillis = 1800
-                0f at 0
-                0f at 240
-                1f at 900 with LinearOutSlowInEasing
-                0f at 1800 with EaseIn
-            },
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "squee_idle_bob_phase"
-    )
-    val squeeBobOffset = ((-6f) * squeeBobPhase).dp
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Text(
-            text = stringResource(R.string.home_paired_canvas_guidance_title),
-            color = MulberryPrimary,
-            fontFamily = guidanceFontFamily,
-            fontSize = 20.sp,
-            lineHeight = 20.sp,
-            letterSpacing = 0.25.sp,
-            textAlign = TextAlign.Center
+    // Read only while placing Squee, so the idle bob never rebuilds the prompt.
+    val squeeBobPhase: State<Float> = if (animate) {
+        rememberInfiniteTransition(label = "squee_idle_bob").animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = keyframes {
+                    durationMillis = 1800
+                    0f at 0
+                    0f at 240
+                    1f at 900 with LinearOutSlowInEasing
+                    0f at 1800 with EaseIn
+                },
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "squee_idle_bob_phase"
         )
-        Text(
-            text = stringResource(R.string.home_paired_canvas_guidance_body),
-            color = MaterialTheme.mulberryAppColors.mutedText,
-            fontFamily = guidanceFontFamily,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-            letterSpacing = 0.25.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.width(252.dp)
-        )
+    } else {
+        remember { mutableFloatStateOf(0f) }
+    }
 
-        Spacer(modifier = Modifier.height(18.dp))
-
-        Box(
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(178.dp)
+                .align(Alignment.Center)
+                .padding(horizontal = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            Text(
+                text = stringResource(R.string.home_paired_canvas_guidance_title),
+                color = MulberryPrimary,
+                fontFamily = guidanceFontFamily,
+                fontSize = 20.sp,
+                lineHeight = 20.sp,
+                letterSpacing = 0.25.sp,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = stringResource(R.string.home_paired_canvas_guidance_body),
+                color = MaterialTheme.mulberryAppColors.mutedText,
+                fontFamily = guidanceFontFamily,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                letterSpacing = 0.25.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.width(252.dp)
+            )
+        }
+
             Image(
                 painter = painterResource(R.drawable.squee_with_pencil),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .offset(x = (-22).dp, y = squeeBobOffset)
-                    .height(160.dp)
+                    .padding(start = squeeStart)
+                    .bobbing(squeeBobPhase, amplitude = 6.dp)
+                    .height(squeeHeight)
                     .aspectRatio(432f / 498f)
                     .animateEnterExit(
-                        enter = slideInHorizontally(
-                            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
-                            initialOffsetX = { fullWidth -> -fullWidth - squeeExitExtraOffsetPx }
-                        ),
-                        exit = slideOutHorizontally(
-                            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
-                            targetOffsetX = { fullWidth -> -fullWidth - squeeExitExtraOffsetPx }
-                        )
+                        enter = if (animate) {
+                            slideInHorizontally(
+                                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+                                initialOffsetX = { fullWidth -> -fullWidth - squeeExitExtraOffsetPx }
+                            )
+                        } else {
+                            EnterTransition.None
+                        },
+                        exit = if (animate) {
+                            slideOutHorizontally(
+                                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+                                targetOffsetX = { fullWidth -> -fullWidth - squeeExitExtraOffsetPx }
+                            )
+                        } else {
+                            ExitTransition.None
+                        }
                     )
-            )
-        }
+        )
     }
 }
 
@@ -1627,11 +1822,14 @@ private fun ReactionRail(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val containerAlpha = remember { Animatable(0f) }
-    val containerOffsetYDp = remember { Animatable(26f) }
-    val containerScale = remember { Animatable(0.94f) }
+    // With animations removed, the rail and its reactions are simply there, as under iOS's Reduce Motion.
+    val animate = rememberSystemAnimationsEnabled()
+    val containerAlpha = remember { Animatable(if (animate) 0f else 1f) }
+    val containerOffsetYDp = remember { Animatable(if (animate) 26f else 0f) }
+    val containerScale = remember { Animatable(if (animate) 0.94f else 1f) }
 
     LaunchedEffect(Unit) {
+        if (!animate) return@LaunchedEffect
         containerAlpha.snapTo(0f)
         containerOffsetYDp.snapTo(26f)
         containerScale.snapTo(0.94f)
@@ -1682,11 +1880,12 @@ private fun ReactionRail(
         verticalAlignment = Alignment.CenterVertically
     ) {
         ReactionType.entries.forEachIndexed { idx, reaction ->
-            val emojiAlpha = remember(reaction) { Animatable(0f) }
-            val emojiOffsetYDp = remember(reaction) { Animatable(24f) }
-            val emojiScale = remember(reaction) { Animatable(0.72f) }
+            val emojiAlpha = remember(reaction) { Animatable(if (animate) 0f else 1f) }
+            val emojiOffsetYDp = remember(reaction) { Animatable(if (animate) 24f else 0f) }
+            val emojiScale = remember(reaction) { Animatable(if (animate) 0.72f else 1f) }
 
             LaunchedEffect(reaction) {
+                if (!animate) return@LaunchedEffect
                 emojiAlpha.snapTo(0f)
                 emojiOffsetYDp.snapTo(24f)
                 emojiScale.snapTo(0.72f)
@@ -1730,11 +1929,13 @@ private fun ReactionRail(
                     .mulberryTapScale()
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = null
+                        indication = null,
+                        role = Role.Button
                     ) {
                         onReactionSelected(reaction)
                         onDismiss()
                     }
+                    .semantics { contentDescription = reaction.shortcutLabel }
             )
         }
     }
@@ -1751,8 +1952,20 @@ private fun ReactionSentOverlay(
     val offsetYDp = remember { Animatable(18f) }
     val offsetXDp = remember { Animatable(0f) }
     val rotationZAnim = remember { Animatable(0f) }
+    val animate = rememberSystemAnimationsEnabled()
 
     LaunchedEffect(token) {
+        if (!animate) {
+            // iOS's still pose: no rise, sway or fall; it shows in place, holds, and goes.
+            scale.snapTo(1f)
+            offsetYDp.snapTo(0f)
+            offsetXDp.snapTo(0f)
+            rotationZAnim.snapTo(0f)
+            alpha.animateTo(1f, tween(durationMillis = 150, easing = FastOutSlowInEasing))
+            delay(550)
+            alpha.animateTo(0f, tween(durationMillis = 260, easing = FastOutSlowInEasing))
+            return@LaunchedEffect
+        }
         scale.snapTo(0.92f)
         alpha.snapTo(0f)
         offsetYDp.snapTo(18f)
@@ -1863,137 +2076,10 @@ private fun rememberMulberryGuidanceFontFamily(): FontFamily {
 }
 
 @Composable
-private fun CanvasActionButton(
-    drawableRes: Int,
-    contentDescription: String,
-    selected: Boolean,
-    enabled: Boolean = true,
-    showSelectedRing: Boolean = selected,
-    dimWhenNotSelected: Boolean = false,
-    ringColor: Color = MulberryPrimary.copy(alpha = 0.95f),
-    animateSelectionPop: Boolean = true,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    size: Dp = 49.dp
-) {
-    val ringWidth = if (selected) 4.dp else 2.dp
-    val iconAlpha = when {
-        !enabled -> 0.35f
-        selected -> 1f
-        dimWhenNotSelected -> 0.60f
-        else -> 1f
-    }
-    Box(
-        modifier = modifier
-            .size(size)
-            .shadow(
-                elevation = 14.dp,
-                shape = CircleShape,
-                clip = false,
-                ambientColor = Color(0x1A3D3D3D),
-                spotColor = Color(0x1A3D3D3D)
-            )
-            .clip(CircleShape)
-            .background(MaterialTheme.mulberryAppColors.softSurfaceStrong)
-            .border(
-                width = if (showSelectedRing) ringWidth else 0.dp,
-                color = if (showSelectedRing) ringColor else Color.Transparent,
-                shape = CircleShape
-            )
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(7.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Image(
-            painter = painterResource(drawableRes),
-            contentDescription = contentDescription,
-            modifier = Modifier
-                .fillMaxSize()
-                .mulberrySelectionPop(selected = selected, enabled = enabled && animateSelectionPop)
-                .alpha(iconAlpha),
-            contentScale = ContentScale.Fit,
-            colorFilter = if (
-                drawableRes == R.drawable.canvas_action_text
-            ) {
-                ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
-            } else {
-                null
-            }
-        )
-    }
-}
-
-@Composable
-private fun ColorDotButton(
-    colorArgb: Long,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    buttonSize: Dp = 49.dp
-) {
-    Surface(
-        modifier = modifier
-            .size(buttonSize)
-            .shadow(
-                elevation = 12.dp,
-                shape = CircleShape,
-                clip = false,
-                ambientColor = Color(0x1A3D3D3D),
-                spotColor = Color(0x1A3D3D3D)
-            )
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
-        color = Color(colorArgb),
-        shape = CircleShape
-    ) {}
-}
-
-@Composable
-private fun BrushWidthButton(
-    width: Float,
-    accentColor: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    buttonSize: Dp = 49.dp
-) {
-    Surface(
-        modifier = modifier
-            .size(buttonSize)
-            .shadow(
-                elevation = 12.dp,
-                shape = CircleShape,
-                clip = false,
-                ambientColor = Color(0x1A3D3D3D),
-                spotColor = Color(0x1A3D3D3D)
-            )
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
-        color = MaterialTheme.mulberryAppColors.softSurfaceStrong,
-        shape = CircleShape
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val t = ((width - DrawingDefaults.MIN_WIDTH) / (DrawingDefaults.MAX_WIDTH - DrawingDefaults.MIN_WIDTH))
-                .coerceIn(0f, 1f)
-
-            val insetPx = 7.dp.toPx()
-            val ringWidthPx = 4.dp.toPx()
-            val ringRadiusPx = (size.minDimension / 2f) - insetPx - (ringWidthPx / 2f)
-
-            drawCircle(
-                color = accentColor,
-                radius = ringRadiusPx,
-                style = Stroke(width = ringWidthPx)
-            )
-
-            val dotRadiusPx = 4.dp.toPx() + (11.dp.toPx() - 4.dp.toPx()) * t
-            drawCircle(color = accentColor, radius = dotRadiusPx)
-        }
-    }
-}
-
-@Composable
 private fun VerticalSlider(
     value: Float,
     onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
     valueRange: ClosedFloatingPointRange<Float>,
     colors: androidx.compose.material3.SliderColors,
     modifier: Modifier = Modifier
@@ -2001,6 +2087,7 @@ private fun VerticalSlider(
     Slider(
         value = value,
         onValueChange = onValueChange,
+        onValueChangeFinished = onValueChangeFinished,
         valueRange = valueRange,
         colors = colors,
         modifier = modifier.vertical()
@@ -2029,343 +2116,6 @@ private fun Modifier.vertical(): Modifier =
             }
         }
     }
-
-@Composable
-private fun CanvasControlTray(
-    uiState: CanvasHomeUiState,
-    showBrushToolGuide: Boolean,
-    onBrushToolGuideDismissed: () -> Unit,
-    onBrushButtonBoundsInRootChanged: (androidx.compose.ui.geometry.Rect) -> Unit,
-    onBrushWidthChanged: (Float) -> Unit,
-    onColorSelected: (Long) -> Unit,
-    eyedropperArmed: Boolean,
-    eyedropperEnabled: Boolean,
-    eyedropperPreviewColorArgb: Long?,
-    onEyedropperToggle: () -> Unit,
-    onUndoRequested: () -> Unit,
-    onRedoRequested: () -> Unit,
-    onBrushToggle: () -> Unit,
-    onEraserToggle: () -> Unit,
-    onTextToggle: () -> Unit,
-    onStickerToggle: () -> Unit,
-    onClearRequested: () -> Unit
-) {
-    var showWidthPicker by remember { mutableStateOf(false) }
-    var showColorPicker by remember { mutableStateOf(false) }
-    var showCustomColorPicker by remember { mutableStateOf(false) }
-
-    val trayPadding = 10.dp
-    val toolSize = 49.dp
-    val baseToolSpacing = 18.dp
-    // We keep the "default" spacing feel, but when the tray is scrollable we
-    // increase spacing just enough so the last tool that would otherwise be fully
-    // visible becomes half-clipped, hinting that the tray is swipeable.
-    val minToolSpacing = baseToolSpacing
-    val maxToolSpacing = 40.dp
-    val toolCount = 9
-
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val availableWidth = (maxWidth - trayPadding * 2).coerceAtLeast(0.dp)
-        val toolSpacing = remember(availableWidth) {
-            computeCanvasTrayToolSpacing(
-                availableWidth = availableWidth,
-                toolSize = toolSize,
-                baseSpacing = baseToolSpacing,
-                minSpacing = minToolSpacing,
-                maxSpacing = maxToolSpacing,
-                toolCount = toolCount
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(69.dp)
-                .shadow(
-                    elevation = 15.dp,
-                    shape = RoundedCornerShape(500.dp),
-                    clip = false,
-                    ambientColor = Color(0x26000000),
-                    spotColor = Color(0x26000000)
-                )
-                .clip(RoundedCornerShape(500.dp))
-                .background(MaterialTheme.mulberryAppColors.softSurface)
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = trayPadding, vertical = trayPadding),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(toolSpacing)
-        ) {
-        CanvasActionButton(
-            drawableRes = R.drawable.canvas_action_undo,
-            contentDescription = stringResource(R.string.home_canvas_undo_content_description),
-            selected = true,
-            showSelectedRing = false,
-            dimWhenNotSelected = false,
-            animateSelectionPop = false,
-            enabled = uiState.canUndo,
-            onClick = onUndoRequested,
-            modifier = Modifier.testTag(TestTags.UNDO_BUTTON),
-            size = toolSize
-        )
-        CanvasActionButton(
-            drawableRes = R.drawable.canvas_action_redo,
-            contentDescription = stringResource(R.string.home_canvas_redo_content_description),
-            selected = true,
-            showSelectedRing = false,
-            dimWhenNotSelected = false,
-            animateSelectionPop = false,
-            enabled = uiState.canRedo,
-            onClick = onRedoRequested,
-            modifier = Modifier.testTag(TestTags.REDO_BUTTON),
-            size = toolSize
-        )
-        CanvasActionButton(
-            drawableRes = R.drawable.canvas_action_brush,
-            contentDescription = stringResource(R.string.home_canvas_brush_content_description),
-            selected = uiState.toolState.activeTool == DrawingTool.DRAW,
-            onClick = {
-                onBrushToggle()
-                if (showBrushToolGuide) onBrushToolGuideDismissed()
-            },
-            modifier = Modifier
-                .testTag(TestTags.BRUSH_BUTTON)
-                .onGloballyPositioned { coordinates ->
-                    onBrushButtonBoundsInRootChanged(coordinates.boundsInRoot())
-                },
-            size = toolSize
-        )
-
-        Box {
-            BrushWidthButton(
-                width = uiState.toolState.selectedWidth,
-                accentColor = Color(eyedropperPreviewColorArgb ?: uiState.toolState.selectedColorArgb),
-                onClick = {
-                    if (!eyedropperArmed) {
-                        showWidthPicker = true
-                        showColorPicker = false
-                        showCustomColorPicker = false
-                    }
-                },
-                modifier = Modifier.testTag(TestTags.BRUSH_WIDTH_BUTTON),
-                buttonSize = toolSize
-            )
-
-            DropdownMenu(
-                expanded = showWidthPicker,
-                onDismissRequest = { showWidthPicker = false },
-                containerColor = MaterialTheme.mulberryAppColors.softSurface,
-                modifier = Modifier.width(72.dp),
-                properties = PopupProperties(focusable = true)
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .height(220.dp)
-                            .width(52.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        VerticalSlider(
-                            value = uiState.toolState.selectedWidth,
-                            onValueChange = onBrushWidthChanged,
-                            valueRange = DrawingDefaults.MIN_WIDTH..DrawingDefaults.MAX_WIDTH,
-                            colors = SliderDefaults.colors(
-                                thumbColor = MulberryPrimary,
-                                activeTrackColor = MulberryPrimary,
-                                inactiveTrackColor = MaterialTheme.mulberryAppColors.softSurfaceAlt
-                            ),
-                            modifier = Modifier
-                                .testTag(TestTags.BRUSH_WIDTH_SLIDER)
-                                .fillMaxSize()
-                        )
-                    }
-                }
-            }
-        }
-
-        val canShowBrushColorSelection =
-            uiState.toolState.activeTool == DrawingTool.DRAW ||
-                uiState.toolState.activeTool == DrawingTool.NONE ||
-                uiState.toolState.activeTool == DrawingTool.TEXT
-
-        Box {
-            ColorDotButton(
-                colorArgb = eyedropperPreviewColorArgb ?: uiState.toolState.selectedColorArgb,
-                onClick = {
-                    if (!eyedropperArmed) {
-                        showColorPicker = true
-                        showWidthPicker = false
-                    }
-                },
-                buttonSize = toolSize
-            )
-
-            DropdownMenu(
-                expanded = showColorPicker,
-                onDismissRequest = { showColorPicker = false },
-                containerColor = MaterialTheme.mulberryAppColors.softSurface,
-                properties = PopupProperties(focusable = true)
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    val customSelected = uiState.toolState.selectedColorArgb !in uiState.palette
-                    val gridItems = buildList {
-                        uiState.palette.forEach { add(it) }
-                        add(Long.MIN_VALUE) // Custom color sentinel (always last slot).
-                    }
-
-                    gridItems
-                        .chunked(5)
-                        .forEach { rowItems ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                rowItems.forEach { item ->
-                                    if (item == Long.MIN_VALUE) {
-                                        CustomColorSwatch(
-                                            isSelected = customSelected && canShowBrushColorSelection,
-                                            onClick = {
-                                                showColorPicker = false
-                                                showCustomColorPicker = true
-                                            },
-                                            size = 44.dp
-                                        )
-                                    } else {
-                                        ColorSwatch(
-                                            colorArgb = item,
-                                            isSelected = item == uiState.toolState.selectedColorArgb &&
-                                                canShowBrushColorSelection,
-                                            onClick = {
-                                                onColorSelected(item)
-                                                showColorPicker = false
-                                            },
-                                            size = 44.dp
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                }
-            }
-        }
-
-        RgbColorPickerSheet(
-            visible = showCustomColorPicker,
-            initialColorArgb = uiState.toolState.selectedColorArgb,
-            onDismissRequest = { showCustomColorPicker = false },
-            onApply = { colorArgb ->
-                onColorSelected(colorArgb)
-                showCustomColorPicker = false
-            }
-        )
-
-        CanvasActionButton(
-            drawableRes = R.drawable.canvas_action_eyedropper,
-            contentDescription = stringResource(R.string.home_canvas_eyedropper_content_description),
-            selected = eyedropperArmed,
-            enabled = eyedropperEnabled,
-            ringColor = Color(eyedropperPreviewColorArgb ?: uiState.toolState.selectedColorArgb),
-            onClick = {
-                showWidthPicker = false
-                showColorPicker = false
-                showCustomColorPicker = false
-                onEyedropperToggle()
-            },
-            modifier = Modifier.testTag(TestTags.EYEDROPPER_BUTTON),
-            size = toolSize
-        )
-
-        CanvasActionButton(
-            drawableRes = R.drawable.canvas_action_erase,
-            contentDescription = stringResource(R.string.home_canvas_erase_content_description),
-            selected = uiState.toolState.activeTool == DrawingTool.ERASE,
-            onClick = onEraserToggle,
-            modifier = Modifier.testTag(TestTags.ERASER_BUTTON),
-            size = toolSize
-        )
-        CanvasActionButton(
-            drawableRes = R.drawable.canvas_action_text,
-            contentDescription = stringResource(R.string.home_canvas_text_content_description),
-            selected = uiState.toolState.activeTool == DrawingTool.TEXT,
-            onClick = onTextToggle,
-            modifier = Modifier.testTag(TestTags.TEXT_BUTTON),
-            size = toolSize
-        )
-        CanvasActionButton(
-            drawableRes = R.drawable.canvas_action_sticker,
-            contentDescription = stringResource(R.string.home_canvas_sticker_content_description),
-            selected = uiState.toolState.activeTool == DrawingTool.STICKER,
-            onClick = onStickerToggle,
-            modifier = Modifier.testTag(TestTags.STICKER_BUTTON),
-            size = toolSize
-        )
-        CanvasActionButton(
-            drawableRes = R.drawable.canvas_action_clear,
-            contentDescription = stringResource(R.string.home_canvas_clear_content_description),
-            selected = true,
-            showSelectedRing = false,
-            dimWhenNotSelected = false,
-            animateSelectionPop = false,
-            onClick = onClearRequested,
-            modifier = Modifier.testTag(TestTags.CLEAR_BUTTON),
-            size = toolSize
-        )
-    }
-    }
-}
-
-internal fun computeCanvasTrayToolSpacing(
-    availableWidth: Dp,
-    toolSize: Dp,
-    baseSpacing: Dp,
-    minSpacing: Dp,
-    maxSpacing: Dp,
-    toolCount: Int
-): Dp {
-    if (toolCount <= 1) return baseSpacing
-
-    fun fullWidth(fullTools: Int, spacing: Dp): Dp {
-        if (fullTools <= 0) return 0.dp
-        val gaps = (fullTools - 1).coerceAtLeast(0)
-        return (toolSize * fullTools) + (spacing * gaps)
-    }
-
-    // If everything fits at the base spacing, don't force a "peek".
-    val allFitAtBase = fullWidth(toolCount, baseSpacing) <= availableWidth
-    if (allFitAtBase) return baseSpacing
-
-    // Phase 1: with base spacing, find how many tools can be fully visible.
-    var maxFullToolsAtBase = 1
-    for (fullTools in 1..toolCount) {
-        if (fullWidth(fullTools, baseSpacing) <= availableWidth) {
-            maxFullToolsAtBase = fullTools
-        } else {
-            break
-        }
-    }
-
-    // If the next tool is already naturally peeking at the base spacing,
-    // keep spacing natural (avoid comically large spacing on narrow devices).
-    if (maxFullToolsAtBase < toolCount) {
-        val remaining = availableWidth - fullWidth(maxFullToolsAtBase, baseSpacing)
-        val naturalPeek = (remaining - baseSpacing).coerceAtLeast(0.dp)
-        if (naturalPeek > 0.dp) return baseSpacing
-    }
-
-    // Phase 2: increase spacing so the last tool that would otherwise be fully visible
-    // becomes half-clipped, hinting swipeability.
-    val peekToolIndex = maxFullToolsAtBase
-    if (peekToolIndex <= 1) return baseSpacing
-
-    val fullToolsBeforePeek = (peekToolIndex - 1).coerceAtLeast(1)
-    val gaps = fullToolsBeforePeek
-    val targetSpacing = (availableWidth - (toolSize * (fullToolsBeforePeek + 0.5f))) / gaps.toFloat()
-
-    // Keep spacing within a sane range; if clamped, the peek will be slightly more/less than half.
-    return targetSpacing.coerceIn(minSpacing, maxSpacing)
-}
 
 @Composable
 private fun WallpaperHomePane(
@@ -2617,149 +2367,6 @@ private fun QuestionAvatar(modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-private fun MainAppBottomNavigation(
-    selectedTab: MainAppTab,
-    onTabSelected: (MainAppTab) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(60.dp)
-            .clip(RoundedCornerShape(7.dp))
-            .background(MaterialTheme.colorScheme.surface),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        MainAppBottomNavItem(
-            tab = MainAppTab.Canvas,
-            selected = selectedTab == MainAppTab.Canvas,
-            onClick = { onTabSelected(MainAppTab.Canvas) },
-            modifier = Modifier.weight(1f)
-        )
-        MainAppBottomNavItem(
-            tab = MainAppTab.Wallpaper,
-            selected = selectedTab == MainAppTab.Wallpaper,
-            onClick = { onTabSelected(MainAppTab.Wallpaper) },
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-@Composable
-private fun MainAppBottomNavItem(
-    tab: MainAppTab,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val activeColor = MulberryPrimary
-    val inactiveColor = MaterialTheme.mulberryAppColors.iconMuted
-    val itemColor = if (selected) activeColor else inactiveColor
-    val label = when (tab) {
-        MainAppTab.Canvas -> stringResource(R.string.home_tab_canvas)
-        MainAppTab.Wallpaper -> stringResource(R.string.home_tab_wallpaper)
-    }
-
-    Column(
-        modifier = modifier
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(7.dp))
-            .background(
-                if (selected) MaterialTheme.mulberryAppColors.softSurfaceSelected else Color.Transparent
-            )
-            .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        when (tab) {
-            MainAppTab.Canvas -> BrushNavIcon(
-                color = itemColor,
-                modifier = Modifier.mulberrySelectionPop(selected = selected)
-            )
-            MainAppTab.Wallpaper -> WallpaperNavIcon(
-                color = itemColor,
-                modifier = Modifier.mulberrySelectionPop(selected = selected)
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = label,
-            color = itemColor,
-            fontFamily = PoppinsFontFamily,
-            fontSize = 15.sp,
-            lineHeight = 18.sp,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-@Composable
-private fun BrushNavIcon(
-    color: Color,
-    modifier: Modifier = Modifier
-) {
-    Canvas(modifier = modifier.size(20.dp)) {
-        drawLine(
-            color = color,
-            start = Offset(size.width * 0.28f, size.height * 0.72f),
-            end = Offset(size.width * 0.72f, size.height * 0.28f),
-            strokeWidth = size.width * 0.15f,
-            cap = StrokeCap.Round
-        )
-        drawCircle(
-            color = color,
-            radius = size.width * 0.18f,
-            center = Offset(size.width * 0.31f, size.height * 0.73f)
-        )
-        drawCircle(
-            color = color,
-            radius = size.width * 0.09f,
-            center = Offset(size.width * 0.18f, size.height * 0.84f)
-        )
-    }
-}
-
-@Composable
-private fun WallpaperNavIcon(
-    color: Color,
-    modifier: Modifier = Modifier
-) {
-    Canvas(modifier = modifier.size(20.dp)) {
-        val stroke = Stroke(
-            width = size.width * 0.12f,
-            cap = StrokeCap.Round,
-            join = StrokeJoin.Round
-        )
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(size.width * 0.14f, size.height * 0.18f),
-            size = Size(size.width * 0.72f, size.height * 0.68f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * 0.12f),
-            style = stroke
-        )
-        drawCircle(
-            color = color,
-            radius = size.width * 0.07f,
-            center = Offset(size.width * 0.68f, size.height * 0.38f)
-        )
-        drawLine(
-            color = color,
-            start = Offset(size.width * 0.28f, size.height * 0.74f),
-            end = Offset(size.width * 0.46f, size.height * 0.56f),
-            strokeWidth = size.width * 0.12f,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = color,
-            start = Offset(size.width * 0.46f, size.height * 0.56f),
-            end = Offset(size.width * 0.72f, size.height * 0.76f),
-            strokeWidth = size.width * 0.12f,
-            cap = StrokeCap.Round
-        )
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun InviteCodeBottomSheet(
@@ -2855,7 +2462,7 @@ private fun InviteCodeBottomSheet(
                 enabled = !inviteSheet.isLoading,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
                     .mulberryTapScale(enabled = !inviteSheet.isLoading),
                 shape = RoundedCornerShape(15.38.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -2957,7 +2564,7 @@ private fun PartnerDetailsBottomSheet(
                 enabled = form.canSubmit,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
                     .mulberryTapScale(enabled = form.canSubmit),
                 shape = RoundedCornerShape(15.38.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -3179,7 +2786,7 @@ private fun JoinCodeBottomSheet(
                 enabled = joinCode.code.length == 6 && !joinCode.isSubmitting,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
                     .testTag(TestTags.HOME_JOIN_CODE_SUBMIT_BUTTON)
                     .mulberryTapScale(enabled = joinCode.code.length == 6 && !joinCode.isSubmitting),
                 shape = RoundedCornerShape(15.38.dp),
@@ -3274,7 +2881,7 @@ private fun PairingConfirmedBottomSheet(
                     enabled = !confirmation.isDisconnecting,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp)
+                        .heightIn(min = 50.dp)
                         .mulberryTapScale(enabled = !confirmation.isDisconnecting),
                     shape = RoundedCornerShape(15.38.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -3418,7 +3025,7 @@ private fun InboundInvitePairedBottomSheet(
                 enabled = !confirmation.isDisconnecting,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
                     .mulberryTapScale(enabled = !confirmation.isDisconnecting),
                 shape = RoundedCornerShape(15.38.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -3448,7 +3055,7 @@ private fun InboundInvitePairedBottomSheet(
                 enabled = !confirmation.isDisconnecting,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
                     .mulberryTapScale(enabled = !confirmation.isDisconnecting),
                 shape = RoundedCornerShape(15.38.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -3513,11 +3120,15 @@ private fun HomeInviteCodeInput(
         keyboardActions = KeyboardActions(onDone = { onSubmit() }),
         modifier = Modifier
             .fillMaxWidth()
-            .focusRequester(focusRequester),
+            .focusRequester(focusRequester)
+            .semantics { contentDescription = "Six-digit invite code" },
         decorationBox = { innerTextField ->
             Box(modifier = Modifier.fillMaxWidth()) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    // The cells only draw the field's digits; TalkBack reads the field itself.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clearAndSetSemantics { },
                     horizontalArrangement = Arrangement.spacedBy(11.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -3551,7 +3162,7 @@ private fun HomeInviteCodeCell(
 ) {
     Row(
         modifier = modifier
-            .aspectRatio(0.84f)
+            .inviteCodeCellShape()
             .clip(RoundedCornerShape(15.38.dp))
             .background(MaterialTheme.mulberryAppColors.inputSurface),
         horizontalArrangement = Arrangement.Center,
@@ -3584,14 +3195,21 @@ private fun HomeInviteCodeCell(
 private fun InviteCodeCells(code: String) {
     val digits = code.padEnd(6, ' ').take(6)
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        // Read as one code, digit by digit, as on iOS.
+        modifier = Modifier
+            .fillMaxWidth()
+            .clearAndSetSemantics {
+                if (code.isNotBlank()) {
+                    contentDescription = "Invite code ${code.toList().joinToString(" ")}"
+                }
+            },
         horizontalArrangement = Arrangement.spacedBy(11.dp)
     ) {
         digits.forEach { digit ->
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .aspectRatio(0.84f)
+                    .inviteCodeCellShape()
                     .clip(RoundedCornerShape(15.38.dp))
                     .background(MaterialTheme.mulberryAppColors.inputSurface),
                 contentAlignment = Alignment.Center
@@ -3608,6 +3226,14 @@ private fun InviteCodeCells(code: String) {
         }
     }
 }
+
+/**
+ * An invite code cell's shape: a fixed portrait tile, which at large text sizes grows taller to
+ * hold its digit rather than clipping it.
+ */
+@Composable
+private fun Modifier.inviteCodeCellShape(): Modifier =
+    if (isLargeText()) heightIn(min = 60.dp) else aspectRatio(0.84f)
 
 private fun Long.formatInviteCountdown(): String {
     val hours = this / 3_600
@@ -3632,6 +3258,7 @@ fun CanvasSurfaceRoute(
         onCanvasDrag = viewModel::onCanvasDrag,
         onCanvasRelease = viewModel::onCanvasRelease,
         onCanvasTap = viewModel::onCanvasTap,
+        onCanvasEraseDrag = viewModel::onCanvasEraseDrag,
         onCanvasViewportChanged = viewModel::onCanvasViewportChanged,
         onColorSelected = viewModel::onColorSelected,
         onBrushWidthChanged = viewModel::onBrushWidthChanged,
@@ -3651,6 +3278,7 @@ private fun CanvasSurfaceScreen(
     onCanvasDrag: (StrokePoint) -> Unit,
     onCanvasRelease: () -> Unit,
     onCanvasTap: (StrokePoint) -> Unit,
+    onCanvasEraseDrag: (StrokePoint, StrokePoint) -> Unit,
     onCanvasViewportChanged: (Int, Int) -> Unit,
     onColorSelected: (Long) -> Unit,
     onBrushWidthChanged: (Float) -> Unit,
@@ -3705,9 +3333,12 @@ private fun CanvasSurfaceScreen(
                 ) {
                     Text("Erase")
                 }
+                val clearEnabled = !uiState.canvasState.isEmpty
                 FloatingActionButton(
-                    onClick = onClearRequested,
-                    modifier = Modifier.testTag(TestTags.CLEAR_BUTTON)
+                    onClick = { if (clearEnabled) onClearRequested() },
+                    modifier = Modifier
+                        .testTag(TestTags.CLEAR_BUTTON)
+                        .alpha(if (clearEnabled) 1f else 0.45f)
                 ) {
                     Text("Clear")
                 }
@@ -3739,6 +3370,7 @@ private fun CanvasSurfaceScreen(
                     onDrawPoint = onCanvasDrag,
                     onDrawEnd = onCanvasRelease,
                     onEraseTap = onCanvasTap,
+                    onEraseDrag = onCanvasEraseDrag,
                     onCanvasSizeChanged = onCanvasViewportChanged,
                     modifier = Modifier.padding(8.dp),
                     strokeRenderMode = uiState.canvasStrokeRenderMode
@@ -3793,7 +3425,8 @@ private fun ColorSwatch(
     Surface(
         modifier = Modifier
             .size(size)
-            .clickable(onClick = onClick)
+            .selectable(selected = isSelected, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = ColourNames.name(colorArgb) }
             .border(
                 width = if (isSelected) 3.dp else 1.dp,
                 color = outlineColor,
@@ -3814,7 +3447,8 @@ private fun CustomColorSwatch(
         modifier = Modifier
             .size(size)
             .clip(CircleShape)
-            .clickable(onClick = onClick)
+            .selectable(selected = isSelected, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "Custom colour" }
             .then(
                 if (isSelected) {
                     Modifier.border(3.dp, MaterialTheme.colorScheme.primary, CircleShape)
@@ -3826,7 +3460,7 @@ private fun CustomColorSwatch(
     ) {
         Image(
             painter = painterResource(R.drawable.ic_text_toolbar_color),
-            contentDescription = "Custom color",
+            contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit
         )
@@ -3841,4 +3475,167 @@ private fun HomePairingSheetMode.onboardingStep(): OnboardingStep? = when (this)
     // Asks an already paired person whether to switch partners; no contract step fits it.
     HomePairingSheetMode.InboundInvitePaired,
     HomePairingSheetMode.Hidden -> null
+}
+
+/**
+ * Every colour, and the custom colour, in a sheet: the iPhone opens its palette the same way.
+ * The chosen colour carries a check.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CanvasPaletteSheet(
+    palette: List<Long>,
+    selectedColorArgb: Long,
+    showSelection: Boolean,
+    onColorSelected: (Long) -> Unit,
+    onCustomColourRequested: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val haptics = rememberMulberryHaptics()
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.mulberryAppColors.softSurface,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 44.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 24.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            items(palette.size) { index ->
+                val colorArgb = palette[index]
+                val selected = showSelection && colorArgb == selectedColorArgb
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(Color(colorArgb))
+                        .border(1.dp, MaterialTheme.mulberryAppColors.mutedText.copy(alpha = 0.3f), CircleShape)
+                        .selectable(
+                            selected = selected,
+                            role = Role.Button,
+                            onClick = {
+                                haptics.perform(MulberryHaptic.Selection)
+                                onColorSelected(colorArgb)
+                            }
+                        )
+                        .semantics { contentDescription = ColourNames.name(colorArgb) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (selected) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_check),
+                            contentDescription = null,
+                            colorFilter = ColorFilter.tint(
+                                if (Color(colorArgb).luminance() > 0.6f) Color.Black else Color.White
+                            ),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
+            item {
+                CustomColorSwatch(
+                    isSelected = showSelection && selectedColorArgb !in palette,
+                    onClick = onCustomColourRequested,
+                    size = 44.dp
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The width button and its slider. The width being dragged lives here, so a drag redraws only
+ * this control: read any higher, it rebuilt the whole canvas pane on every movement. It is saved
+ * once, as the finger lifts.
+ */
+@Composable
+private fun BrushWidthControl(
+    savedWidth: Float,
+    colorArgb: Long,
+    open: Boolean,
+    onOpenChanged: (Boolean) -> Unit,
+    onWidthChosen: (Float) -> Unit
+) {
+    var draftWidth by remember { mutableStateOf<Float?>(null) }
+    LaunchedEffect(savedWidth) {
+        if (draftWidth == savedWidth) draftWidth = null
+    }
+    val width = draftWidth ?: savedWidth
+    Box {
+        CanvasChromeButton(
+            contentDescription = "Brush width",
+            onClick = { onOpenChanged(true) },
+            floating = true,
+            modifier = Modifier
+                .testTag(TestTags.BRUSH_WIDTH_BUTTON)
+                .semantics { stateDescription = "${width.toInt()}" }
+        ) { BrushWidthScribble(width = width) }
+
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { onOpenChanged(false) },
+            containerColor = MaterialTheme.mulberryAppColors.softSurface,
+            modifier = Modifier.width(72.dp),
+            properties = PopupProperties(focusable = true)
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 10.dp, vertical = 14.dp)
+                    .height(220.dp)
+                    .width(52.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                VerticalSlider(
+                    value = width,
+                    onValueChange = { draftWidth = it },
+                    onValueChangeFinished = { draftWidth?.let(onWidthChosen) },
+                    valueRange = DrawingDefaults.MIN_WIDTH..DrawingDefaults.MAX_WIDTH,
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color(colorArgb),
+                        activeTrackColor = Color(colorArgb),
+                        inactiveTrackColor = MaterialTheme.mulberryAppColors.softSurfaceAlt
+                    ),
+                    modifier = Modifier
+                        .testTag(TestTags.BRUSH_WIDTH_SLIDER)
+                        .fillMaxSize()
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A place in the canvas's right-hand column that empties when the tool in hand has no use for it:
+ * the control slides off to the side as the column closes up, and back again. With animations
+ * removed it only fades.
+ */
+@Composable
+private fun HudSlot(
+    visible: Boolean,
+    reduceMotion: Boolean,
+    content: @Composable () -> Unit
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = if (reduceMotion) {
+            fadeIn(tween(durationMillis = 150))
+        } else {
+            slideInHorizontally(tween(durationMillis = 260, easing = FastOutSlowInEasing)) { width -> width * 2 } +
+                expandVertically(tween(durationMillis = 220), expandFrom = Alignment.Bottom) +
+                fadeIn(tween(durationMillis = 200))
+        },
+        exit = if (reduceMotion) {
+            fadeOut(tween(durationMillis = 150))
+        } else {
+            slideOutHorizontally(tween(durationMillis = 220, easing = FastOutSlowInEasing)) { width -> width * 2 } +
+                shrinkVertically(tween(durationMillis = 220), shrinkTowards = Alignment.Bottom) +
+                fadeOut(tween(durationMillis = 180))
+        }
+    ) {
+        Box(modifier = Modifier.padding(bottom = CanvasChromeMetrics.ColumnSpacing)) { content() }
+    }
 }

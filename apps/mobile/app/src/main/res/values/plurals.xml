@@ -1,4 +1,8 @@
 <resources>
+    <plurals name="home_streak_label">
+        <item quantity="one">Daily streak: %d day</item>
+        <item quantity="other">Daily streak: %d days</item>
+    </plurals>
     <plurals name="home_streak_days">
         <item quantity="one">%d day</item>
         <item quantity="other">%d days</item>

@@ -4,6 +4,7 @@ object TestTags {
     const val BOOTSTRAP_SCREEN = "bootstrap_screen"
     const val AUTH_LANDING_SCREEN = "auth_landing_screen"
     const val AUTH_GOOGLE_BUTTON = "auth_google_button"
+    const val AUTH_APPLE_BUTTON = "auth_apple_button"
     const val ONBOARDING_NAME_SCREEN = "onboarding_name_screen"
     const val ONBOARDING_NAME_CONTINUE_BUTTON = "onboarding_name_continue_button"
     const val ONBOARDING_ENTER_CODE_BUTTON = "onboarding_enter_code_button"

@@ -44,6 +44,7 @@ import com.subhajit.mulberry.reactions.ReactionType
 import com.subhajit.mulberry.settings.PairingDisconnectCoordinator
 import com.subhajit.mulberry.settings.CanvasDebugOptionsRepository
 import com.subhajit.mulberry.settings.DeveloperOptionsRepository
+import com.subhajit.mulberry.streak.FirstDrawingCelebrator
 import com.subhajit.mulberry.streak.StreakSimulationRepository
 import com.subhajit.mulberry.streak.withDisplayStreakSimulation
 import com.subhajit.mulberry.wallpaper.BackgroundImageRepository
@@ -78,11 +79,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-
-enum class MainAppTab {
-    Canvas,
-    Wallpaper
-}
 
 enum class HomePairingSheetMode {
     Hidden,
@@ -167,7 +163,8 @@ data class CanvasHomeUiState(
     val canvasShowElementBounds: Boolean = false,
     val showBrushToolGuide: Boolean = false,
     val showStreakLevelUpBanner: Boolean = false,
-    val streakLevelUpConfettiToken: Long? = null
+    /** Set while the canvas's confetti plays: a streak level-up, or else the account's first drawing. */
+    val celebrationConfettiToken: Long? = null
 )
 
 sealed interface CanvasHomeEffect {
@@ -197,6 +194,7 @@ class CanvasHomeViewModel @Inject constructor(
     private val pairingDisconnectCoordinator: PairingDisconnectCoordinator,
     private val reviewPromptCoordinator: com.subhajit.mulberry.review.ReviewPromptCoordinator,
     private val streakSimulationRepository: StreakSimulationRepository,
+    firstDrawingCelebrator: FirstDrawingCelebrator,
     private val appConfig: AppConfig,
     private val reactionRepository: ReactionRepository,
     private val reactionLocalStore: ReactionLocalStore,
@@ -228,6 +226,11 @@ class CanvasHomeViewModel @Inject constructor(
     private val currentTimeMillis = MutableStateFlow(System.currentTimeMillis())
     private val showBrushToolGuideState = MutableStateFlow(false)
     private val streakLevelUpConfettiToken = MutableStateFlow<Long?>(null)
+    // The first drawing shares the streak's confetti and never adds to it.
+    private val celebrationConfettiToken = combine(
+        streakLevelUpConfettiToken,
+        firstDrawingCelebrator.confettiToken
+    ) { streakToken, firstDrawingToken -> streakToken ?: firstDrawingToken }
     private val _effects = MutableSharedFlow<CanvasHomeEffect>()
     val effects = _effects.asSharedFlow()
     val wallpaperPresets: List<WallpaperPreset> = DefaultWallpaperPresets
@@ -245,11 +248,14 @@ class CanvasHomeViewModel @Inject constructor(
     private var lastObservedStreakDays: Int? = null
 
     init {
-        // Cold start: default to no-tool. RAM resume naturally keeps the last-used tool because
-        // this runs only once per process.
-        if (CanvasProcessDefaults.shouldForceNoToolOnColdStart()) {
+        // Cold start: the brush or the eraser carries over, as on iPhone; text and stickers start
+        // again in the brush. Resuming from memory keeps the tool, since this runs once per process.
+        if (CanvasProcessDefaults.shouldResetToolOnColdStart()) {
             viewModelScope.launch {
-                drawingRepository.setTool(DrawingTool.NONE)
+                val tool = drawingRepository.toolState.first().activeTool
+                if (tool != DrawingTool.DRAW && tool != DrawingTool.ERASE) {
+                    drawingRepository.setTool(DrawingTool.DRAW)
+                }
             }
         }
 
@@ -460,7 +466,7 @@ class CanvasHomeViewModel @Inject constructor(
         streakSimulationRepository.simulation,
         showBrushToolGuideState,
         currentTimeMillis,
-        streakLevelUpConfettiToken
+        celebrationConfettiToken
     ) { base, streakSimulation, showBrushToolGuide, nowMillis, confettiToken ->
         val bannerExpiresAtMs = base.bootstrapState.streakLevelUpBannerExpiresAtMs
         val showStreakLevelUpBanner =
@@ -471,7 +477,7 @@ class CanvasHomeViewModel @Inject constructor(
             bootstrapState = base.bootstrapState.withDisplayStreakSimulation(streakSimulation),
             showBrushToolGuide = showBrushToolGuide,
             showStreakLevelUpBanner = showStreakLevelUpBanner,
-            streakLevelUpConfettiToken = confettiToken
+            celebrationConfettiToken = confettiToken
         )
     }.stateIn(
         scope = viewModelScope,
@@ -916,6 +922,10 @@ class CanvasHomeViewModel @Inject constructor(
         canvasRuntime.submit(CanvasRuntimeEvent.EraseAt(point))
     }
 
+    fun onCanvasEraseDrag(from: StrokePoint, to: StrokePoint) {
+        canvasRuntime.submit(CanvasRuntimeEvent.EraseAlong(from, to))
+    }
+
     fun onTextElementAdded(element: CanvasTextElement) {
         canvasRuntime.submit(CanvasRuntimeEvent.AddTextElement(element))
     }
@@ -970,32 +980,24 @@ class CanvasHomeViewModel @Inject constructor(
         }
     }
 
+    /** The brush stays chosen when tapped again: the canvas always has a tool, as on iPhone. */
     fun onBrushToggle() {
         viewModelScope.launch {
-            val nextTool = if (uiState.value.toolState.activeTool == DrawingTool.DRAW) {
-                DrawingTool.NONE
-            } else {
-                DrawingTool.DRAW
-            }
-            drawingRepository.setTool(nextTool)
+            drawingRepository.setTool(DrawingTool.DRAW)
         }
     }
 
     fun onEraserToggle() {
         viewModelScope.launch {
-            val nextTool = if (uiState.value.toolState.activeTool == DrawingTool.ERASE) {
-                DrawingTool.NONE
-            } else {
-                DrawingTool.ERASE
-            }
-            drawingRepository.setTool(nextTool)
+            drawingRepository.setTool(DrawingTool.ERASE)
         }
     }
 
+    /** Text and stickers toggle back to the brush, as on iPhone. */
     fun onTextToggle() {
         viewModelScope.launch {
             val nextTool = if (uiState.value.toolState.activeTool == DrawingTool.TEXT) {
-                DrawingTool.NONE
+                DrawingTool.DRAW
             } else {
                 DrawingTool.TEXT
             }
@@ -1006,7 +1008,7 @@ class CanvasHomeViewModel @Inject constructor(
     fun onStickerToggle() {
         viewModelScope.launch {
             val nextTool = if (uiState.value.toolState.activeTool == DrawingTool.STICKER) {
-                DrawingTool.NONE
+                DrawingTool.DRAW
             } else {
                 DrawingTool.STICKER
             }
