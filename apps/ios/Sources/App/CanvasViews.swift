@@ -106,6 +106,25 @@ struct DoodleCanvasView: View {
             .task { await editor.runPreviewArgument() }
             #endif
             .onDisappear { editor.end(); model.reactions.watching = false }
+            // On iPhone, undo and redo sit at the top left, as in the Mac app's main window.
+            .toolbar {
+                if sizeClass != .regular {
+                    ToolbarItemGroup(placement: .topBarLeading) {
+                        Button(action: editor.undo) { Image(systemName: "arrow.uturn.backward") }
+                        .tint(MulberryDesign.ink)
+                        .disabled(!editor.canUndo)
+                        .accessibilityLabel("Undo")
+                        Button(action: editor.redo) { Image(systemName: "arrow.uturn.forward") }
+                        .tint(MulberryDesign.ink)
+                        .disabled(!editor.canRedo)
+                        .accessibilityLabel("Redo")
+                    }
+                }
+            }
+            // On iPhone, a popover doesn't stay open over a width button that has slid away.
+            .onChange(of: editor.tool) { _, tool in
+                if tool != .brush && sizeClass != .regular { widthOpen = false }
+            }
             .fullScreenCover(item: $editor.textSession) { session in
                 CanvasTextEditorView(session: session, palette: DoodleEditor.palette,
                                      onDone: editor.commitText, onDelete: editor.deleteEditingText)
@@ -143,13 +162,14 @@ struct DoodleCanvasView: View {
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
             ReactionStage(reactions: model.reactions, partnerName: model.bootstrap?.partnerDisplayName)
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
-            // Actions stand apart from the tools: undo and redo on the left, colour and width on the right.
+            // Actions stand apart from the tools: the reactions on the left; width, colour and clear on
+            // the right. Undo and redo are in the navigation bar.
             VStack(spacing: 28) {
                 HStack(alignment: .bottom) {
                     // Clear glass lets them blend into the canvas, apart from the tools below.
-                    VStack(spacing: 10) { reactionButton(edge: .bottom, glass: .clear); undoButton(glass: .clear); redoButton(glass: .clear) }
+                    reactionButton(edge: .bottom, glass: .clear)
                     Spacer()
-                    VStack(spacing: 10) { paletteButton(edge: .trailing, glass: .clear); widthButton(edge: .trailing, glass: .clear) }
+                    actionColumn
                 }
                 .padding(.horizontal, 8)
                 compactToolbar
@@ -220,6 +240,12 @@ struct DoodleCanvasView: View {
                 // The canvas keeps its place when the colours fold away.
                 .frame(width: panelWidth, height: geometry.size.height - margin * 2, alignment: .leading)
                 .position(x: margin + panelWidth / 2, y: geometry.size.height / 2)
+                // The reactions stand apart in the bottom-right corner, which leaves the column
+                // room for every tool.
+                reactionButton(edge: .bottom)
+                    .buttonBorderShape(.circle)
+                    .controlSize(.large)
+                    .position(x: geometry.size.width - margin - 28, y: geometry.size.height - margin - 28)
             } else {
                 toolbar(.horizontal)
                     .frame(maxWidth: roomWidth)
@@ -282,8 +308,9 @@ struct DoodleCanvasView: View {
             .accessibilityLabel("Hide colours")
             .padding(.bottom, 8)
         }
-        // As tall as the tool column beside it: three groups of 56 pt buttons, 10 pt apart, with 8 pt padding.
-        .frame(width: 60).frame(maxHeight: 10 * 56 + 7 * 10 + 2 * Self.groupGap + 16)
+        // As tall as the tool column beside it: the actions and the tools, two groups of 56 pt
+        // buttons 10 pt apart, with 8 pt padding.
+        .frame(width: 60).frame(maxHeight: 10 * 56 + 8 * 10 + Self.groupGap + 16)
         .glassEffect(.regular, in: .capsule)
         .glassEffectID(Self.colourGlass, in: glassSpace)
         .glassEffectTransition(reduceMotion ? .materialize : .matchedGeometry)
@@ -343,13 +370,13 @@ struct DoodleCanvasView: View {
                     brushButton; Spacer(minLength: 4)
                     textButton; Spacer(minLength: 4)
                     stickerButton(edge: .bottom); Spacer(minLength: 4)
+                    cameraButton; Spacer(minLength: 4)
                     eraserButton; Spacer(minLength: 4)
-                    eyedropperButton; Spacer(minLength: 4)
-                    clearButton
+                    eyedropperButton
                 }
                 .padding(8)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) { brushButton; textButton; stickerButton(edge: .bottom); eraserButton; eyedropperButton; clearButton }
+                    HStack(spacing: 10) { brushButton; textButton; stickerButton(edge: .bottom); cameraButton; eraserButton; eyedropperButton }
                         .padding(8)
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -372,22 +399,26 @@ struct DoodleCanvasView: View {
         let edge: Edge = axis == .horizontal ? .bottom : .leading
         let groups = axis == .horizontal ? AnyLayout(HStackLayout(spacing: Self.groupGap)) : AnyLayout(VStackLayout(spacing: Self.groupGap))
         let group = axis == .horizontal ? AnyLayout(HStackLayout(spacing: 10)) : AnyLayout(VStackLayout(spacing: 10))
-        // Three groups: reactions on their own, then the actions, then the tools.
+        // Reactions on their own, then the actions (clear among them, as on the phone's action
+        // column), then the tools. The landscape column leaves the reactions to the bottom-right
+        // corner: with them, it would no longer fit an 11-inch iPad and would turn into a scroll
+        // view, and the colour column couldn't fold into its button.
         return groups {
-            reactionButton(edge: edge)
+            if axis == .horizontal { reactionButton(edge: edge) }
             group {
                 undoButton()
                 redoButton()
                 if palette { paletteButton(edge: edge, opensRail: axis == .vertical) }
                 widthButton(edge: edge)
+                clearButton()
             }
             group {
                 brushButton
                 textButton
                 stickerButton(edge: edge)
+                cameraButton
                 eraserButton
                 eyedropperButton
-                clearButton
             }
         }
         .buttonBorderShape(.circle)
@@ -479,8 +510,32 @@ struct DoodleCanvasView: View {
             }
     }
 
-    private var clearButton: some View {
-        toolButton("Clear canvas", image: "CanvasClear", enabled: !(!editor.hasStrokes && editor.elements.isEmpty)) { clearConfirmation = true }
+    /// The phone's right-hand column: width for the brush, colour for the brush and the eyedropper,
+    /// and clear always. What the tool in hand can't use slides away to the side.
+    private var actionColumn: some View {
+        VStack(spacing: 10) {
+            if editor.tool == .brush {
+                widthButton(edge: .trailing, glass: .clear).transition(actionTransition)
+            }
+            if editor.tool == .brush || editor.tool == .eyedropper {
+                paletteButton(edge: .trailing, glass: .clear).transition(actionTransition)
+            }
+            clearButton(glass: .clear)
+        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .snappy(duration: 0.26), value: editor.tool)
+    }
+
+    private var actionTransition: AnyTransition {
+        reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity)
+    }
+
+    /// Coming soon.
+    private var cameraButton: some View {
+        toolButton("Camera", image: "CanvasCamera", enabled: false) {}
+    }
+
+    private func clearButton(glass: Glass = .regular) -> some View {
+        toolButton("Clear canvas", image: "", symbol: "trash", enabled: !(!editor.hasStrokes && editor.elements.isEmpty), glass: glass) { clearConfirmation = true }
             .confirmationDialog("Clear canvas?", isPresented: $clearConfirmation, titleVisibility: .visible) {
                 Button("Clear", role: .destructive) { editor.clear() }
                 Button("Cancel", role: .cancel) {}
@@ -489,8 +544,13 @@ struct DoodleCanvasView: View {
 
     private func widthButton(edge: Edge, glass: Glass = .regular) -> some View {
         Button { widthOpen.toggle() } label: {
-            Circle().fill(brushColor)
-                .frame(width: 8 + (editor.width - 4) / 38 * 38, height: 8 + (editor.width - 4) / 38 * 38)
+            // A scribble at the brush's thickness, in ink: it says "line weight", where a dot in the
+            // brush's colour read as a second colour button.
+            WidthScribble()
+                .stroke(MulberryDesign.ink, style: StrokeStyle(lineWidth: WidthScribble.lineWidth(for: editor.width),
+                                                               lineCap: .round, lineJoin: .round))
+                .frame(width: 30, height: 30)
+                .animation(.snappy(duration: 0.15), value: editor.width)
                 .frame(width: 56, height: 56)
                 // The whole glass circle opens the slider, not only the dot.
                 .contentShape(Circle())
@@ -532,6 +592,7 @@ struct DoodleCanvasView: View {
                     Image(image).resizable().renderingMode(image == "CanvasText" ? .template : .original)
                         .scaledToFit().frame(width: 34, height: 34)
                         .foregroundStyle(MulberryDesign.ink)
+                        .modifier(SelectionPop(selected: selected))
                 }
             }
                 .opacity(enabled ? 1 : 0.35)
@@ -742,5 +803,72 @@ private struct ReactionStage: View {
             }
         }
         .allowsHitTesting(false)
+    }
+}
+
+/// Android's selection pop: a tool's illustration squeezes and tips back, springs past its size
+/// with a wiggle, and settles, each time the tool is chosen. Still under Reduce Motion.
+private struct SelectionPop: ViewModifier {
+    let selected: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pops = 0
+
+    private struct Pose {
+        var scale = 1.0
+        var rotation = 0.0
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .keyframeAnimator(initialValue: Pose(), trigger: pops) { view, pose in
+                view.scaleEffect(pose.scale).rotationEffect(.degrees(pose.rotation))
+            } keyframes: { _ in
+                // Android's springs, by stiffness and damping ratio (damping = 2 × ratio × √stiffness).
+                KeyframeTrack(\.scale) {
+                    CubicKeyframe(0.78, duration: 0.09)
+                    SpringKeyframe(1.10, duration: 0.16, spring: Spring(mass: 1, stiffness: 640, damping: 21.25))
+                    SpringKeyframe(1, duration: 0.3, spring: Spring(mass: 1, stiffness: 520, damping: 32.8))
+                }
+                KeyframeTrack(\.rotation) {
+                    CubicKeyframe(-14, duration: 0.09)
+                    CubicKeyframe(9, duration: 0.11)
+                    CubicKeyframe(-4.95, duration: 0.08)
+                    CubicKeyframe(2.52, duration: 0.065)
+                    SpringKeyframe(0, duration: 0.25, spring: Spring(mass: 1, stiffness: 560, damping: 33.1))
+                }
+            }
+            .onChange(of: selected) { wasSelected, isSelected in
+                if isSelected && !wasSelected && !reduceMotion { pops += 1 }
+            }
+    }
+}
+
+/// The width button's mark: Apple's scribble (SF Symbols' `scribble`), traced as a path so its line
+/// can be as thick as the brush. Android draws the same path.
+private struct WidthScribble: Shape {
+    /// The brush's widths, 4...42, drawn 1.25...4 pt thick: every width looks different, and the
+    /// scribble's loops stay open at the thickest.
+    static func lineWidth(for width: Double) -> CGFloat {
+        let range = CanvasToolStore.widths
+        let fraction = (width - range.lowerBound) / (range.upperBound - range.lowerBound)
+        return 1.25 + 2.75 * CGFloat(min(max(fraction, 0), 1))
+    }
+
+    func path(in rect: CGRect) -> Path {
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + rect.width * x, y: rect.minY + rect.height * y)
+        }
+        var path = Path()
+        path.move(to: point(0.095, 0.612))
+        path.addLine(to: point(0.45, 0.262))
+        path.addCurve(to: point(0.68, 0.18), control1: point(0.55, 0.165), control2: point(0.63, 0.13))
+        path.addCurve(to: point(0.565, 0.43), control1: point(0.73, 0.23), control2: point(0.67, 0.32))
+        path.addLine(to: point(0.39, 0.645))
+        path.addCurve(to: point(0.40, 0.83), control1: point(0.30, 0.76), control2: point(0.33, 0.83))
+        path.addCurve(to: point(0.70, 0.61), control1: point(0.48, 0.83), control2: point(0.60, 0.70))
+        path.addCurve(to: point(0.85, 0.59), control1: point(0.78, 0.535), control2: point(0.84, 0.53))
+        path.addCurve(to: point(0.76, 0.80), control1: point(0.86, 0.65), control2: point(0.79, 0.73))
+        path.addCurve(to: point(0.90, 0.79), control1: point(0.73, 0.88), control2: point(0.78, 0.92))
+        return path
     }
 }
