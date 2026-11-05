@@ -162,13 +162,13 @@ interface MulberryApiService {
     @POST("/reactions/confirm")
     suspend fun confirmReactionPlayback(@Body request: ReactionConfirmRequest): ReactionConfirmResponse
 
-    @GET("/whats-new/{version}.md")
+    @GET("/whats-new/android/{version}.md")
     suspend fun getWhatsNewMarkdown(@Path("version") version: String): Response<ResponseBody>
 
-    @GET("/whats-new/latest.md")
+    @GET("/whats-new/android/latest.md")
     suspend fun getLatestWhatsNewMarkdown(): Response<ResponseBody>
 
-    @GET("/whats-new")
+    @GET("/whats-new/android")
     suspend fun getWhatsNewEntries(
         @Query("cursor") cursor: String?,
         @Query("limit") limit: Int
