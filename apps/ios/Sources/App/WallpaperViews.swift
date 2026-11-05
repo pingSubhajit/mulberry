@@ -321,16 +321,16 @@ struct WallpaperGalleryView: View {
                                 Text(item.title).font(MulberryDesign.font(14, weight: "Medium")).foregroundStyle(MulberryDesign.ink)
                             }
                         }.buttonStyle(.plain).accessibilityLabel(item.title)
+                            .onAppear { if item.id == items.last?.id { Task { await loadMore() } } }
                     }
                 }.padding(20)
                 if loading { ProgressView("Loading wallpapers…").padding() }
                 if let error {
                     InlineError(message: error).padding(.horizontal, 20)
                     Button("Try again") { Task { await loadMore() } }.padding()
-                } else if !loaded || cursor != nil {
-                    Color.clear.frame(height: 1).id(cursor ?? "first-page").onAppear { Task { await loadMore() } }
-                } else if items.isEmpty { ContentUnavailableView("No wallpapers yet", systemImage: "photo.on.rectangle") }
+                } else if loaded && items.isEmpty { ContentUnavailableView("No wallpapers yet", systemImage: "photo.on.rectangle") }
             }.background(MulberryDesign.background)
+                .task { if !loaded { await loadMore() } }
                 .navigationTitle("Wallpapers").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
                 .sheet(item: $preview) { item in
