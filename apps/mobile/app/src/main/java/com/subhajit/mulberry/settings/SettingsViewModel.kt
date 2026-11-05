@@ -46,6 +46,7 @@ import com.subhajit.mulberry.wallpaper.CanvasSnapshotRenderer
 import com.subhajit.mulberry.wallpaper.WallpaperCoordinator
 import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
 import com.subhajit.mulberry.stickers.StickerAssetStore
+import com.subhajit.mulberry.photos.CanvasPhotoStore
 import com.subhajit.mulberry.stickers.StickerCatalogCacheStore
 import com.subhajit.mulberry.whatsnew.WhatsNewPrompter
 import com.subhajit.mulberry.whatsnew.WhatsNewRepository
@@ -134,6 +135,7 @@ class SettingsViewModel @Inject constructor(
     private val whatsNewRepository: WhatsNewRepository,
     private val stickerAssetStore: StickerAssetStore,
     private val stickerCatalogCacheStore: StickerCatalogCacheStore,
+    private val canvasPhotoStore: CanvasPhotoStore,
     @ApplicationContext private val appContext: Context,
     appConfig: AppConfig
 ) : ViewModel() {
@@ -433,6 +435,7 @@ class SettingsViewModel @Inject constructor(
             if (!userId.isNullOrBlank()) {
                 stickerCatalogCacheStore.clearUser(userId)
                 stickerAssetStore.clearAllStickerAssets(userId)
+                canvasPhotoStore.removeAccount(userId)
             }
             wallpaperCoordinator.ensureSnapshotCurrent()
             wallpaperCoordinator.notifyWallpaperUpdated()

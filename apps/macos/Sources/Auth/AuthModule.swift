@@ -77,6 +77,9 @@ public final class AuthSessionController: ObservableObject {
     @Published public private(set) var signingInWith: SignInMethod?
     /// Revoke this device's push registration while its account is still authenticated.
     public var beforeSignOut: (() async -> Void)?
+    /// The account's id once it has left this Mac: signed out, deleted, or refused by the server,
+    /// so its private data, such as canvas photos, goes too.
+    public var afterSignOut: ((String) -> Void)?
 
     public let api: BackendClient
     private let configuration: MacAppConfiguration
@@ -191,6 +194,7 @@ public final class AuthSessionController: ObservableObject {
     public func sessionEnded() {
         if case let .signedIn(session) = state {
             store.clearBootstrap(userId: session.userID)
+            afterSignOut?(session.userID)
         }
         state = .signedOut
     }
@@ -199,6 +203,7 @@ public final class AuthSessionController: ObservableObject {
     public func accountDeleted() {
         if case let .signedIn(session) = state {
             store.forgetAccount(userId: session.userID)
+            afterSignOut?(session.userID)
         }
         state = .signedOut
     }
@@ -207,6 +212,7 @@ public final class AuthSessionController: ObservableObject {
         await beforeSignOut?()
         if case let .signedIn(session) = state {
             store.clearBootstrap(userId: session.userID)
+            afterSignOut?(session.userID)
         }
         // Local sign-out is immediate even if the server cannot revoke the session.
         try? await api.signOut()

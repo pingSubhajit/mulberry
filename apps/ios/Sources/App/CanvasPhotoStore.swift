@@ -13,6 +13,9 @@ actor CanvasPhotoStore {
     private let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Mulberry/CanvasPhotos", isDirectory: true)
     private var downloads: [String: Task<URL?, Never>] = [:]
+    /// Advances when an account's photos are removed, so a download or upload that started before
+    /// never writes a photo back afterwards.
+    private var generation = 0
     /// NSCache is thread-safe, though not marked Sendable, so the canvas can read it synchronously.
     nonisolated(unsafe) private let images = NSCache<NSString, UIImage>()
 
@@ -26,45 +29,53 @@ actor CanvasPhotoStore {
     /// The decoded photo, downloaded first if this device has never had it. Nil while offline.
     func image(_ photoId: String, user: String) async -> UIImage? {
         if let cached = cachedImage(photoId, user: user) { return cached }
+        let started = generation
         guard let file = await file(photoId, user: user) else { return nil }
         let key = Self.key(photoId, user: user)
         let decoded = await Task.detached(priority: .userInitiated) { Self.decode(file) }.value
-        guard let (image, cost) = decoded else { return nil }
+        guard let (image, cost) = decoded, generation == started else { return nil }
         images.setObject(image, forKey: key, cost: cost)
         return image
     }
 
     /// Uploads a photo taken or picked here and keeps it, so the canvas shows it without a download.
     func upload(_ data: Data, contentType: String, user: String) async throws -> CanvasPhotoUpload {
+        let started = generation
         let api = try await MainActor.run { try AppRuntime.api() }
         let result = try await api.uploadCanvasPhoto(data, contentType: contentType)
-        if let destination = destination(result.photoId, user: user) {
+        if generation == started, let destination = destination(result.photoId, user: user) {
             try? FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: destination, options: .atomic)
         }
         return result
     }
 
+    /// Removes everything kept for the account, on disk and in memory, on sign-out or deletion.
     func removeAll(user: String) {
+        generation += 1
+        downloads.values.forEach { $0.cancel() }
+        downloads = [:]
+        images.removeAllObjects()
         guard let folder = folder(user) else { return }
         try? FileManager.default.removeItem(at: folder)
-        images.removeAllObjects()
     }
 
     private func file(_ photoId: String, user: String) async -> URL? {
         guard let destination = destination(photoId, user: user) else { return nil }
         if FileManager.default.fileExists(atPath: destination.path) { return destination }
         if let pending = downloads[photoId] { return await pending.value }
+        let started = generation
         let task = Task<URL?, Never> {
             guard let api = try? await MainActor.run(body: { try AppRuntime.api() }),
-                  let data = try? await api.canvasPhoto(photoId) else { return nil }
+                  let data = try? await api.canvasPhoto(photoId),
+                  !Task.isCancelled, self.generation == started else { return nil }
             try? FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             guard (try? data.write(to: destination, options: .atomic)) != nil else { return nil }
             return destination
         }
         downloads[photoId] = task
         let result = await task.value
-        downloads[photoId] = nil
+        if generation == started { downloads[photoId] = nil }
         return result
     }
 

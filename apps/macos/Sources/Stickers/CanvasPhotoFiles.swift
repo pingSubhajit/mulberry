@@ -19,6 +19,12 @@ enum CanvasPhotoFiles {
         return root.appendingPathComponent(user, isDirectory: true).appendingPathComponent(photoId.lowercased())
     }
 
+    /// Removes every photo kept for the account.
+    static func removeAll(user: String) {
+        guard !user.isEmpty, !user.contains("/"), user != ".." else { return }
+        try? FileManager.default.removeItem(at: root.appendingPathComponent(user, isDirectory: true))
+    }
+
     static func save(_ data: Data, to file: URL) {
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: file, options: .atomic)

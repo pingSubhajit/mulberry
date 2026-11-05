@@ -282,6 +282,7 @@ final class MulberryModel: ObservableObject {
     func signOut() async {
         guard !busy else { return }
         busy = true
+        let user = userId
         sessionEpoch += 1
         await sync?.stop()
         syncObserver?.cancel(); syncObserver = nil; sync = nil
@@ -297,6 +298,8 @@ final class MulberryModel: ObservableObject {
             }
         }
         GoogleAuthentication.signOut()
+        // Canvas photos are private to the couple: none stay on the device once signed out.
+        if let user { await CanvasPhotoStore.shared.removeAll(user: user) }
         resetSignedOut()
     }
 
@@ -319,6 +322,7 @@ final class MulberryModel: ObservableObject {
         await ReactionActivities.endAll()
         if let pair { try? await AppRuntime.drawings.remove(userId: user, pairSessionId: pair) }
         wallpaperService.forget(user: user)
+        await CanvasPhotoStore.shared.removeAll(user: user)
         // Every per-account setting is keyed by the account's id.
         for key in UserDefaults.standard.dictionaryRepresentation().keys where key.contains(user) {
             UserDefaults.standard.removeObject(forKey: key)
@@ -434,6 +438,8 @@ final class MulberryModel: ObservableObject {
         // Leaving the app cancels the 5-second refresh mid-request; that is not a failure to show.
         if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
         if (try? await api.signedInUserId) == nil && bootstrap != nil {
+            // The server ended the session: this account's private photos leave the device too.
+            if let user = userId { await CanvasPhotoStore.shared.removeAll(user: user) }
             await sync?.stop(); syncObserver?.cancel(); sync = nil
             streaks.bind(userId: nil, pairSessionId: nil)
             firstDrawing.bind(userId: nil, hasDrawn: nil)

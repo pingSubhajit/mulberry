@@ -27,6 +27,7 @@ import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.network.GoogleAuthRequest
 import com.subhajit.mulberry.network.RefreshRequest
 import com.subhajit.mulberry.network.toDomainBootstrap
+import com.subhajit.mulberry.photos.CanvasPhotoStore
 import com.subhajit.mulberry.sync.FcmTokenRepository
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -42,6 +43,7 @@ class CredentialManagerAuthRepository @Inject constructor(
     private val appConfig: AppConfig,
     private val fcmTokenRepository: FcmTokenRepository,
     private val appleSignInCoordinator: AppleSignInCoordinator,
+    private val canvasPhotoStore: CanvasPhotoStore,
     @ApplicationContext private val context: Context
 ) : AuthRepository {
 
@@ -154,8 +156,8 @@ class CredentialManagerAuthRepository @Inject constructor(
     }
 
     /**
-     * Forgets the session and the account's cached state on this device. The wallpaper stays
-     * configured, since it is still this phone's wallpaper.
+     * Forgets the session and the account's cached state on this device, its private canvas photos
+     * too. The wallpaper stays configured, since it is still this phone's wallpaper.
      */
     private suspend fun signOutLocally() {
         runCatching {
@@ -172,13 +174,18 @@ class CredentialManagerAuthRepository @Inject constructor(
                 Log.w(TAG, "Unexpected clearCredentialState failure during logout", error)
             }
         }
-        val wallpaperConfigured = sessionBootstrapRepository.state.first().hasWallpaperConfigured
+        val signedOutState = sessionBootstrapRepository.state.first()
         sessionBootstrapRepository.cacheSession(null)
         sessionBootstrapRepository.cacheBootstrap(
             com.subhajit.mulberry.data.bootstrap.SessionBootstrapState(
-                hasWallpaperConfigured = wallpaperConfigured
+                hasWallpaperConfigured = signedOutState.hasWallpaperConfigured
             )
         )
+        // After the session is gone, so no new download can land in the account's folder.
+        signedOutState.userId?.takeIf { it.isNotBlank() }?.let { userId ->
+            runCatching { canvasPhotoStore.removeAccount(userId) }
+                .onFailure { error -> Log.w(TAG, "Unable to remove canvas photos during sign-out", error) }
+        }
     }
 
     private fun GetCredentialResponse.googleIdToken(): String {

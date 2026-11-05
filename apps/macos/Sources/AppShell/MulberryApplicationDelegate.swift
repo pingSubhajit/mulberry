@@ -170,6 +170,8 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
         })
         pushRegistration.configure()
         authController.beforeSignOut = { [weak self] in await self?.pushRegistration.signOut() }
+        // Canvas photos are private to the couple: none stay on this Mac once the account leaves it.
+        authController.afterSignOut = { [weak self] user in self?.stickerLoader.forgetPhotos(user: user) }
         partnerArrival.remoteMessage = { [weak self] event in await self?.receiveRemoteUpdate(event) }
         NSApp.setActivationPolicy(.accessory)
         installMainMenu()

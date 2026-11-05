@@ -20,6 +20,9 @@ public final class StickerImageLoader: ObservableObject {
     @Published public private(set) var photoImages: [String: CanvasImage] = [:]
     private var loadingPhotos: Set<String> = []
     private var unavailablePhotos: Set<String> = []
+    /// Advances when an account's photos are removed, so a download or upload that started before
+    /// never writes a photo back afterwards.
+    private var photoGeneration = 0
     private let api: StickerBackend
     /// When each sticker's artwork was asked for and arrived, for the live canvases to draw.
     @Published public private(set) var timeline = StickerArtworkTimeline()
@@ -120,9 +123,8 @@ public final class StickerImageLoader: ObservableObject {
             .subtracting(photoImages.keys).subtracting(loadingPhotos).subtracting(unavailablePhotos)
         for photoId in needed {
             loadingPhotos.insert(photoId)
-            let api = self.api
             Task {
-                let image = await Self.photo(photoId, user: user, api: api)
+                let image = await photo(photoId, user: user)
                 guard self.user == user else { return }
                 loadingPhotos.remove(photoId)
                 if let image { photoImages[photoId] = image } else { unavailablePhotos.insert(photoId) }
@@ -130,20 +132,37 @@ public final class StickerImageLoader: ObservableObject {
         }
     }
 
-    /// The photo from disk, or downloaded and kept first. Nil while offline.
-    private nonisolated static func photo(_ photoId: String, user: String, api: StickerBackend) async -> NSImage? {
+    /// The photo from disk, or downloaded and kept first. Nil while offline, or if the account's
+    /// photos were removed meanwhile.
+    private func photo(_ photoId: String, user: String) async -> NSImage? {
         guard let file = CanvasPhotoFiles.file(photoId, user: user) else { return nil }
+        let started = photoGeneration
         if !FileManager.default.fileExists(atPath: file.path) {
-            guard let data = try? await api().canvasPhoto(photoId), !data.isEmpty else { return nil }
+            guard let data = try? await api().canvasPhoto(photoId), !data.isEmpty, photoGeneration == started else { return nil }
             CanvasPhotoFiles.save(data, to: file)
         }
-        return await Task.detached(priority: .userInitiated) { CanvasPhotoFiles.decode(file) }.value
+        let image = await Task.detached(priority: .userInitiated) { CanvasPhotoFiles.decode(file) }.value
+        return photoGeneration == started ? image : nil
+    }
+
+    /// Removes the account's canvas photos from this Mac, on disk and in memory, once it signs
+    /// out, is deleted, or its session is refused. They are private to the couple.
+    public func forgetPhotos(user: String) {
+        photoGeneration += 1
+        if self.user == user {
+            photoImages = [:]
+            loadingPhotos = []
+            unavailablePhotos = []
+        }
+        CanvasPhotoFiles.removeAll(user: user)
     }
 
     /// Uploads a photo taken or picked on this Mac and keeps it, so the canvas shows it at once.
     /// `image` is what `data` decodes to.
     public func uploadPhoto(_ data: Data, contentType: String, image: NSImage, user: String) async throws -> CanvasPhotoUpload {
+        let started = photoGeneration
         let upload = try await api().uploadCanvasPhoto(data, contentType: contentType)
+        guard photoGeneration == started else { return upload }
         if let file = CanvasPhotoFiles.file(upload.photoId, user: user) { CanvasPhotoFiles.save(data, to: file) }
         if self.user == user { photoImages[upload.photoId] = image }
         return upload
