@@ -207,6 +207,29 @@ public actor BackendClient {
         if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
         return try await get("wallpapers", query: query, authenticated: false)
     }
+    /// The "What's new" note for `version` of this platform's app, as its markdown, or nil when it has none.
+    public func whatsNewNote(platform: WhatsNewPlatform, version: String) async throws -> String? {
+        guard WhatsNewEntry.isVersionKey(version) else { return nil }
+        return try await whatsNewText("whats-new/\(platform.rawValue)/\(version).md")
+    }
+    /// The newest "What's new" note for this platform's app, or nil when it has none.
+    public func latestWhatsNewNote(platform: WhatsNewPlatform) async throws -> String? {
+        try await whatsNewText("whats-new/\(platform.rawValue)/latest.md")
+    }
+    /// A page of this platform's "What's new" notes, newest first.
+    public func whatsNewNotes(platform: WhatsNewPlatform, cursor: String? = nil, limit: Int = 3) async throws -> WhatsNewPage {
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        return try await get("whats-new/\(platform.rawValue)", query: query, authenticated: false)
+    }
+    private func whatsNewText(_ path: String) async throws -> String? {
+        do {
+            let (data, _) = try await send(makeRequest(path), authenticated: false)
+            return String(decoding: data, as: UTF8.self)
+        } catch BackendError.rejected(404, _, _) {
+            return nil
+        }
+    }
     public func cannyToken() async throws -> String {
         struct Token: Decodable { let token: String }
         let result: Token = try await get("feedback/canny-sso-token")
