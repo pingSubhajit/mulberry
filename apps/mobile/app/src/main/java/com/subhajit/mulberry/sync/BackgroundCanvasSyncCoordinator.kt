@@ -7,13 +7,6 @@ import com.subhajit.mulberry.drawing.geometry.containsLegacyGeometry
 import com.subhajit.mulberry.drawing.geometry.hasLegacyGeometry
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.drawing.DrawingRepository
-import com.subhajit.mulberry.drawing.model.CanvasElement
-import com.subhajit.mulberry.drawing.model.CanvasStickerElement
-import com.subhajit.mulberry.drawing.model.CanvasTextAlign
-import com.subhajit.mulberry.drawing.model.CanvasTextElement
-import com.subhajit.mulberry.drawing.model.CanvasTextFont
-import com.subhajit.mulberry.drawing.model.Stroke
-import com.subhajit.mulberry.drawing.model.StrokePoint
 import com.subhajit.mulberry.network.CanvasOperationBatchRequest
 import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.wallpaper.WallpaperSyncSettingsRepository
@@ -45,6 +38,7 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
     private val apiService: MulberryApiService,
     private val drawingRepository: DrawingRepository,
     private val remoteOperationApplier: RemoteOperationApplier,
+    private val operationIds: LocalCanvasOperationIds,
     private val wallpaperSyncSettingsRepository: WallpaperSyncSettingsRepository,
     private val wallpaperCoordinator: WallpaperCoordinator
 ) : BackgroundCanvasSyncCoordinator {
@@ -140,6 +134,8 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
                 wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
                 return@runCatching BackgroundCanvasSyncResult.Synced
             }
+            // Every operation, this device's own included: the snapshot just replaced the canvas,
+            // and the outbox was empty, so none of them are on it yet.
             tail.forEach { remoteOperationApplier.apply(it) }
         }
         wallpaperCoordinator.ensureSnapshotCurrent()
@@ -179,6 +175,7 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         drawingRepository.resetAllDrawingState()
         syncOutboxStore.enqueue(
             newClientOperation(
+                clientOperationId = operationIds.newClientOperationId(),
                 type = DrawingOperationType.CLEAR_CANVAS,
                 strokeId = null,
                 payload = SyncOperationPayload.ClearCanvas
@@ -215,79 +212,5 @@ class DefaultBackgroundCanvasSyncCoordinator @Inject constructor(
         const val MAX_BACKGROUND_OUTBOX_OPERATIONS = 32
         const val MAX_BACKGROUND_OUTBOX_PAYLOAD_BYTES = 64 * 1024
         const val BACKGROUND_IN_FLIGHT_STALE_MS = 8_000L
-    }
-}
-
-private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainStrokes(): List<Stroke> =
-    strokes.map { stroke ->
-        Stroke(
-            id = stroke.id,
-            colorArgb = stroke.colorArgb,
-            width = stroke.width,
-            createdAt = stroke.createdAt,
-            points = stroke.points.map { point ->
-                StrokePoint(x = point.x, y = point.y)
-            }
-        )
-    }
-
-private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainElements(): List<CanvasElement> {
-    val unified = elements.orEmpty()
-    if (unified.isNotEmpty()) {
-        return unified.mapNotNull { element ->
-            when (element.kind) {
-                "TEXT" -> {
-                    CanvasTextElement(
-                        id = element.id,
-                        text = element.text.orEmpty(),
-                        createdAt = element.createdAt,
-                        center = StrokePoint(x = element.center.x, y = element.center.y),
-                        rotationRad = element.rotationRad,
-                        scale = element.scale,
-                        boxWidth = element.boxWidth ?: 0.7f,
-                        colorArgb = element.colorArgb ?: 0xff111111,
-                        backgroundPillEnabled = element.backgroundPillEnabled ?: false,
-                        font = runCatching { CanvasTextFont.valueOf(element.font ?: "POPPINS") }
-                            .getOrElse { CanvasTextFont.POPPINS },
-                        alignment = runCatching { CanvasTextAlign.valueOf(element.alignment ?: "CENTER") }
-                            .getOrElse { CanvasTextAlign.CENTER }
-                    )
-                }
-                "STICKER" -> {
-                    val packKey = element.packKey?.trim().orEmpty()
-                    val stickerId = element.stickerId?.trim().orEmpty()
-                    val packVersion = element.packVersion ?: 0
-                    if (packKey.isBlank() || stickerId.isBlank() || packVersion <= 0) return@mapNotNull null
-                    CanvasStickerElement(
-                        id = element.id,
-                        createdAt = element.createdAt,
-                        center = StrokePoint(x = element.center.x, y = element.center.y),
-                        rotationRad = element.rotationRad,
-                        scale = element.scale,
-                        packKey = packKey,
-                        packVersion = packVersion,
-                        stickerId = stickerId
-                    )
-                }
-                else -> null
-            }
-        }
-    }
-
-    // Back-compat: older snapshots only include textElements.
-    return textElements.map { element ->
-        CanvasTextElement(
-            id = element.id,
-            text = element.text,
-            createdAt = element.createdAt,
-            center = StrokePoint(x = element.center.x, y = element.center.y),
-            rotationRad = element.rotationRad,
-            scale = element.scale,
-            boxWidth = element.boxWidth,
-            colorArgb = element.colorArgb,
-            backgroundPillEnabled = element.backgroundPillEnabled,
-            font = runCatching { CanvasTextFont.valueOf(element.font) }.getOrElse { CanvasTextFont.POPPINS },
-            alignment = runCatching { CanvasTextAlign.valueOf(element.alignment) }.getOrElse { CanvasTextAlign.CENTER }
-        )
     }
 }

@@ -14,6 +14,7 @@ class CanvasSyncJsonTest {
     @Test
     fun serializesAddStrokeOperationWithCanonicalPayload() {
         val operation = newClientOperation(
+            clientOperationId = "op-1",
             type = DrawingOperationType.ADD_STROKE,
             strokeId = "stroke-1",
             payload = SyncOperationPayload.AddStroke(
@@ -64,6 +65,7 @@ class CanvasSyncJsonTest {
     @Test
     fun serializesOperationBatchWithStableOperationOrder() {
         val first = newClientOperation(
+            clientOperationId = "op-2",
             type = DrawingOperationType.ADD_STROKE,
             strokeId = "stroke-1",
             payload = SyncOperationPayload.AddStroke(
@@ -75,6 +77,7 @@ class CanvasSyncJsonTest {
             )
         )
         val second = newClientOperation(
+            clientOperationId = "op-3",
             type = DrawingOperationType.FINISH_STROKE,
             strokeId = "stroke-1",
             payload = SyncOperationPayload.FinishStroke

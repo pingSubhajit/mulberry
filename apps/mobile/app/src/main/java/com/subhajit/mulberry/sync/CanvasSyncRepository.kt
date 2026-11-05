@@ -11,13 +11,6 @@ import com.subhajit.mulberry.drawing.geometry.containsLegacyGeometry
 import com.subhajit.mulberry.drawing.geometry.hasLegacyGeometry
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.drawing.model.DrawingOperationType
-import com.subhajit.mulberry.drawing.model.CanvasElement
-import com.subhajit.mulberry.drawing.model.CanvasStickerElement
-import com.subhajit.mulberry.drawing.model.Stroke
-import com.subhajit.mulberry.drawing.model.StrokePoint
-import com.subhajit.mulberry.drawing.model.CanvasTextAlign
-import com.subhajit.mulberry.drawing.model.CanvasTextElement
-import com.subhajit.mulberry.drawing.model.CanvasTextFont
 import com.subhajit.mulberry.network.MulberryApiService
 import java.util.TreeMap
 import java.util.UUID
@@ -53,6 +46,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
     private val canvasRuntime: CanvasRuntime,
     private val apiService: MulberryApiService,
     private val recoveryPolicy: CanvasRecoveryPolicy,
+    private val operationIds: LocalCanvasOperationIds,
     @com.subhajit.mulberry.app.di.ApplicationScope private val applicationScope: CoroutineScope
 ) : CanvasSyncRepository {
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Disconnected)
@@ -69,7 +63,6 @@ class DefaultCanvasSyncRepository @Inject constructor(
     private var syncStorageInitialized = false
     private var started = false
     private var activeConnectionGeneration: Long? = null
-    private var currentUserId: String? = null
     private var activeAccessToken: String? = null
     private var activePairSessionId: String? = null
     private var lastForegroundStoppedAt: Long? = null
@@ -260,7 +253,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
     }
 
     private fun scheduleStreakBootstrapRefreshIfNeeded(operations: List<ServerCanvasOperation>) {
-        if (operations.none { it.type.isStreakMeaningfulOperation() }) return
+        if (operations.none { it.type?.isStreakMeaningfulOperation() == true }) return
 
         val nowMs = System.currentTimeMillis()
         val lastRefreshMs = lastStreakBootstrapRefreshAtMs
@@ -319,9 +312,15 @@ class DefaultCanvasSyncRepository @Inject constructor(
             message.latestRevision > 0 &&
                 message.latestRevision == lastApplied &&
                 canvasRuntime.renderState.value.isEmpty
+        // Builds before lineages skipped the same account's operations from other devices while
+        // still moving the cursor past them, so the canvas is reloaded once to bring them back.
+        val needsCanvasReload = operationIds.needsCanvasReload
+        if (needsCanvasReload) {
+            Log.i(TAG, "Reloading canvas from snapshot reason=lineage_repair lastApplied=$lastApplied")
+        }
 
         if (
-            (recoveryPolicy.shouldUseSnapshot(input) || shouldValidateCurrentSnapshot) &&
+            (recoveryPolicy.shouldUseSnapshot(input) || shouldValidateCurrentSnapshot || needsCanvasReload) &&
             canReplaceFromSnapshot()
         ) {
             recoverFromSnapshot()
@@ -500,6 +499,11 @@ class DefaultCanvasSyncRepository @Inject constructor(
         syncMetadataRepository.setLastAppliedServerRevision(revision)
     }
 
+    private suspend fun replaceLastAppliedRevision(revision: Long) {
+        lastAppliedRevisionCache = revision
+        syncMetadataRepository.setLastAppliedServerRevision(revision)
+    }
+
     private suspend fun preparePairSessionScope(pairSessionId: String): Long {
         val metadata = syncMetadataRepository.metadata.first()
         if (metadata.pairSessionId == pairSessionId) {
@@ -526,9 +530,15 @@ class DefaultCanvasSyncRepository @Inject constructor(
         return 0L
     }
 
+    /**
+     * Only this device's own operations are skipped: they are already on its canvas. The same
+     * account drawing on another device is applied like a partner, as on iOS and the Mac.
+     */
+    private fun List<ServerCanvasOperation>.withoutLocalOperations(): List<ServerCanvasOperation> =
+        filterNot { operation -> operationIds.isLocal(operation.clientOperationId) }
+
     private suspend fun applyServerBatchBeforeAdvancing(operations: List<ServerCanvasOperation>) {
-        val userId = currentUserId
-        val remoteOperations = operations.filterNot { it.actorUserId == userId }
+        val remoteOperations = operations.withoutLocalOperations()
         if (remoteOperations.isNotEmpty()) {
             canvasRuntime.submitAndAwait(CanvasRuntimeEvent.RemoteBatch(remoteOperations))
         }
@@ -566,7 +576,9 @@ class DefaultCanvasSyncRepository @Inject constructor(
                 serverRevision = snapshot.snapshotRevision
             )
         )
-        persistLastAppliedRevision(snapshot.snapshotRevision)
+        // The canvas now stands at the snapshot, even when the cursor had already moved further,
+        // so the tail after it is applied rather than filtered out as already seen.
+        replaceLastAppliedRevision(snapshot.snapshotRevision)
         revisionBuffer.clear()
         if (snapshot.latestRevision > snapshot.snapshotRevision) {
             fetchAndApplyTailFrom(snapshot.snapshotRevision)
@@ -628,8 +640,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
         if (ordered.isEmpty()) return
 
         val compacted = recoveryPolicy.compactTailOperations(ordered)
-        val userId = currentUserId
-        val remoteOperations = compacted.filterNot { it.actorUserId == userId }
+        val remoteOperations = compacted.withoutLocalOperations()
         if (remoteOperations.isNotEmpty()) {
             canvasRuntime.submitAndAwait(
                 CanvasRuntimeEvent.RecoveryOperations(
@@ -660,6 +671,7 @@ class DefaultCanvasSyncRepository @Inject constructor(
         )
         queueLocalOperation(
             newClientOperation(
+                clientOperationId = operationIds.newClientOperationId(),
                 type = DrawingOperationType.CLEAR_CANVAS,
                 strokeId = null,
                 payload = SyncOperationPayload.ClearCanvas
@@ -705,7 +717,6 @@ class DefaultCanvasSyncRepository @Inject constructor(
 
             syncOutboxStore.resetInFlightToPending()
             val lastAppliedRevision = preparePairSessionScope(pairSessionId)
-            currentUserId = session.userId
             activeAccessToken = session.accessToken
             activePairSessionId = pairSessionId
             lastAppliedRevisionCache = lastAppliedRevision
@@ -800,7 +811,6 @@ class DefaultCanvasSyncRepository @Inject constructor(
             )
         }
         activeConnectionGeneration = null
-        currentUserId = null
         activeAccessToken = null
         activePairSessionId = null
         revisionBuffer.clear()
@@ -849,77 +859,4 @@ private fun CanvasSyncMessage.logLabel(): String = when (this) {
     CanvasSyncMessage.ResyncRequired -> "RESYNC_REQUIRED"
     is CanvasSyncMessage.Error -> "ERROR"
     CanvasSyncMessage.Closed -> "CLOSED"
-}
-
-private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainStrokes(): List<Stroke> =
-    strokes.map { stroke ->
-        Stroke(
-            id = stroke.id,
-            colorArgb = stroke.colorArgb,
-            width = stroke.width,
-            createdAt = stroke.createdAt,
-            points = stroke.points.map { point ->
-                StrokePoint(x = point.x, y = point.y)
-            }
-        )
-    }
-
-private fun com.subhajit.mulberry.network.CanvasSnapshotPayload.toDomainElements(): List<CanvasElement> {
-    val unified = elements.orEmpty()
-    if (unified.isNotEmpty()) {
-        return unified.mapNotNull { element ->
-            when (element.kind) {
-                "TEXT" -> {
-                    CanvasTextElement(
-                        id = element.id,
-                        text = element.text.orEmpty(),
-                        createdAt = element.createdAt,
-                        center = StrokePoint(x = element.center.x, y = element.center.y),
-                        rotationRad = element.rotationRad,
-                        scale = element.scale,
-                        boxWidth = element.boxWidth ?: 0.7f,
-                        colorArgb = element.colorArgb ?: 0xff111111,
-                        backgroundPillEnabled = element.backgroundPillEnabled ?: false,
-                        font = runCatching { CanvasTextFont.valueOf(element.font ?: "POPPINS") }
-                            .getOrElse { CanvasTextFont.POPPINS },
-                        alignment = runCatching { CanvasTextAlign.valueOf(element.alignment ?: "CENTER") }
-                            .getOrElse { CanvasTextAlign.CENTER }
-                    )
-                }
-                "STICKER" -> {
-                    val packKey = element.packKey?.trim().orEmpty()
-                    val stickerId = element.stickerId?.trim().orEmpty()
-                    val packVersion = element.packVersion ?: 0
-                    if (packKey.isBlank() || stickerId.isBlank() || packVersion <= 0) return@mapNotNull null
-                    CanvasStickerElement(
-                        id = element.id,
-                        createdAt = element.createdAt,
-                        center = StrokePoint(x = element.center.x, y = element.center.y),
-                        rotationRad = element.rotationRad,
-                        scale = element.scale,
-                        packKey = packKey,
-                        packVersion = packVersion,
-                        stickerId = stickerId
-                    )
-                }
-                else -> null
-            }
-        }
-    }
-
-    return textElements.map { element ->
-        CanvasTextElement(
-            id = element.id,
-            text = element.text,
-            createdAt = element.createdAt,
-            center = StrokePoint(x = element.center.x, y = element.center.y),
-            rotationRad = element.rotationRad,
-            scale = element.scale,
-            boxWidth = element.boxWidth,
-            colorArgb = element.colorArgb,
-            backgroundPillEnabled = element.backgroundPillEnabled,
-            font = runCatching { CanvasTextFont.valueOf(element.font) }.getOrElse { CanvasTextFont.POPPINS },
-            alignment = runCatching { CanvasTextAlign.valueOf(element.alignment) }.getOrElse { CanvasTextAlign.CENTER }
-        )
-    }
 }

@@ -12,6 +12,7 @@ import com.subhajit.mulberry.data.bootstrap.PairingStatus
 import com.subhajit.mulberry.data.bootstrap.PartnerWallpaperStatus
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapState
+import com.subhajit.mulberry.drawing.model.DrawingOperationType
 import com.subhajit.mulberry.network.AcceptInviteResponse
 import com.subhajit.mulberry.network.AuthResponse
 import com.subhajit.mulberry.network.BootstrapResponse
@@ -63,6 +64,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import okhttp3.MultipartBody
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
+import com.google.gson.JsonObject
+import com.subhajit.mulberry.network.CanvasOperationEnvelopeResponse
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -268,16 +272,307 @@ class CanvasSyncRepositoryTest {
         fixture.close()
     }
 
+    @Test
+    fun skipsUnknownServerOperationsAndKeepsAdvancingTheAppliedRevision() = runTest {
+        val client = FakeCanvasSyncClient(mutableListOf())
+        val fixture = repository(scope = this, client = client, initialPairSessionId = "pair-1")
+
+        fixture.repository.start()
+        advanceUntilIdle()
+        client.emit(1L, CanvasSyncMessage.Ready(latestRevision = 0, missedOperations = emptyList()))
+        advanceUntilIdle()
+
+        // A partner on a newer app adds a photo between known operations, and ends on one.
+        client.emit(
+            1L,
+            CanvasSyncMessage.ServerOperationBatch(
+                listOf(
+                    serverOperation(revision = 1, type = "CLEAR_CANVAS"),
+                    serverOperation(revision = 2, type = "ADD_PHOTO_ELEMENT"),
+                    serverOperation(revision = 3, type = "UPDATE_PHOTO_ELEMENT")
+                )
+            )
+        )
+        advanceUntilIdle()
+        assertEquals(3L, fixture.metadata.metadata.first().lastAppliedServerRevision)
+
+        client.emit(1L, CanvasSyncMessage.ServerOperation(serverOperation(revision = 4, type = "CLEAR_CANVAS")))
+        advanceUntilIdle()
+
+        assertEquals(4L, fixture.metadata.metadata.first().lastAppliedServerRevision)
+        assertEquals(emptyList<Long>(), fixture.api.canvasOperationRequests)
+        assertEquals(listOf(1L, 2L, 3L, 4L), fixture.runtime.remoteOperations.map { it.serverRevision })
+        assertEquals(
+            listOf(null, "ADD_PHOTO_ELEMENT", "UPDATE_PHOTO_ELEMENT", null),
+            fixture.runtime.remoteOperations.map { (it.payload as? SyncOperationPayload.Unsupported)?.type }
+        )
+        assertTrue(fixture.repository.syncState.value is SyncState.Connected)
+        fixture.close()
+    }
+
+    @Test
+    fun appliesTheSameAccountsLiveOperationsFromAnotherDevice() = runTest {
+        val client = FakeCanvasSyncClient(mutableListOf())
+        val fixture = repository(scope = this, client = client, initialPairSessionId = "pair-1")
+
+        fixture.repository.start()
+        advanceUntilIdle()
+        client.emit(1L, CanvasSyncMessage.Ready(latestRevision = 0, missedOperations = emptyList()))
+        advanceUntilIdle()
+
+        // The same account clears on its iPhone, then draws and erases there.
+        client.emit(
+            1L,
+            CanvasSyncMessage.ServerOperation(
+                accountOperation(1, "iphone-op-1", DrawingOperationType.CLEAR_CANVAS)
+            )
+        )
+        advanceUntilIdle()
+        client.emit(
+            1L,
+            CanvasSyncMessage.ServerOperationBatch(
+                listOf(
+                    accountOperation(2, "iphone-op-2", DrawingOperationType.FINISH_STROKE),
+                    accountOperation(3, "iphone-op-3", DrawingOperationType.DELETE_STROKE)
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(listOf(1L, 2L, 3L), fixture.runtime.remoteOperations.map { it.serverRevision })
+        assertEquals(
+            DrawingOperationType.CLEAR_CANVAS,
+            fixture.runtime.remoteOperations.first().type
+        )
+        assertEquals(3L, fixture.metadata.metadata.first().lastAppliedServerRevision)
+        fixture.close()
+    }
+
+    @Test
+    fun appliesTheSameAccountsMissedOperationsOnReadyButNotThisDevicesOwn() = runTest {
+        val client = FakeCanvasSyncClient(mutableListOf())
+        val operationIds = establishedOperationIds()
+        val fixture = repository(
+            scope = this,
+            client = client,
+            initialPairSessionId = "pair-1",
+            operationIds = operationIds
+        )
+
+        fixture.repository.start()
+        advanceUntilIdle()
+        client.emit(
+            1L,
+            CanvasSyncMessage.Ready(
+                latestRevision = 4,
+                missedOperations = listOf(
+                    accountOperation(1, "iphone-op-1", DrawingOperationType.CLEAR_CANVAS),
+                    accountOperation(2, operationIds.newClientOperationId(), DrawingOperationType.FINISH_STROKE),
+                    accountOperation(3, "iphone-op-3", DrawingOperationType.FINISH_STROKE),
+                    accountOperation(4, "partner-op-4", DrawingOperationType.DELETE_STROKE, actorUserId = "partner-1")
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(0, fixture.api.snapshotRequests)
+        assertEquals(listOf(1L, 3L, 4L), fixture.runtime.remoteOperations.map { it.serverRevision })
+        assertEquals(4L, fixture.metadata.metadata.first().lastAppliedServerRevision)
+        assertTrue(fixture.repository.syncState.value is SyncState.Connected)
+        fixture.close()
+    }
+
+    @Test
+    fun doesNotApplyThisDevicesOwnEchoedOperationsAgain() = runTest {
+        val client = FakeCanvasSyncClient(mutableListOf())
+        val operationIds = establishedOperationIds()
+        val outbox = FakeCanvasSyncOutboxStore(mutableListOf())
+        val clearId = operationIds.newClientOperationId()
+        val strokeId = operationIds.newClientOperationId()
+        outbox.seedInFlight(operation(clearId), batchId = "batch-1")
+        outbox.seedInFlight(operation(strokeId), batchId = "batch-2")
+        val fixture = repository(
+            scope = this,
+            client = client,
+            outbox = outbox,
+            initialPairSessionId = "pair-1",
+            operationIds = operationIds
+        )
+
+        fixture.repository.start()
+        advanceUntilIdle()
+        client.emit(1L, CanvasSyncMessage.Ready(latestRevision = 0, missedOperations = emptyList()))
+        advanceUntilIdle()
+
+        // A CLEAR_CANVAS echoed after this device drew again would wipe the new drawing.
+        client.emit(
+            1L,
+            CanvasSyncMessage.Ack(
+                clientOperationId = clearId,
+                serverRevision = 1,
+                operation = accountOperation(1, clearId, DrawingOperationType.CLEAR_CANVAS)
+            )
+        )
+        client.emit(
+            1L,
+            CanvasSyncMessage.AckBatch(
+                batchId = "batch-2",
+                ackedClientOperationIds = listOf(strokeId),
+                ackedThroughRevision = 2,
+                operations = listOf(accountOperation(2, strokeId, DrawingOperationType.FINISH_STROKE))
+            )
+        )
+        client.emit(
+            1L,
+            CanvasSyncMessage.ServerOperation(
+                accountOperation(3, "iphone-op-3", DrawingOperationType.FINISH_STROKE)
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(listOf(3L), fixture.runtime.remoteOperations.map { it.serverRevision })
+        assertEquals(3L, fixture.metadata.metadata.first().lastAppliedServerRevision)
+        assertTrue(!outbox.containsOperation(clearId) && !outbox.containsOperation(strokeId))
+        fixture.close()
+    }
+
+    @Test
+    fun recognisesItsOwnOperationsInAReplayAfterARestart() = runTest {
+        val lineageFile = newLineageFile()
+        val beforeRestart = establishedOperationIds(lineageFile)
+        val ownStroke = beforeRestart.newClientOperationId()
+        val ownClear = beforeRestart.newClientOperationId()
+        val ownErase = beforeRestart.newClientOperationId()
+
+        // A new process reads the same lineage back from disk.
+        val afterRestart = FileLocalCanvasOperationIds(lineageFile)
+        val client = FakeCanvasSyncClient(mutableListOf())
+        val fixture = repository(
+            scope = this,
+            client = client,
+            initialPairSessionId = "pair-1",
+            operationIds = afterRestart
+        )
+
+        fixture.repository.start()
+        advanceUntilIdle()
+        client.emit(
+            1L,
+            CanvasSyncMessage.Ready(
+                latestRevision = 5,
+                missedOperations = listOf(
+                    accountOperation(1, ownStroke, DrawingOperationType.FINISH_STROKE),
+                    accountOperation(2, ownClear, DrawingOperationType.CLEAR_CANVAS),
+                    accountOperation(3, "iphone-op-3", DrawingOperationType.FINISH_STROKE),
+                    accountOperation(4, ownErase, DrawingOperationType.DELETE_STROKE),
+                    accountOperation(5, "partner-op-5", DrawingOperationType.FINISH_STROKE, actorUserId = "partner-1")
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        assertTrue(!afterRestart.needsCanvasReload)
+        assertEquals(0, fixture.api.snapshotRequests)
+        assertEquals(listOf(3L, 5L), fixture.runtime.remoteOperations.map { it.serverRevision })
+        assertEquals(5L, fixture.metadata.metadata.first().lastAppliedServerRevision)
+        fixture.close()
+    }
+
+    @Test
+    fun reloadsTheCanvasOnceToRecoverOperationsAnEarlierBuildSkipped() = runTest {
+        val client = FakeCanvasSyncClient(mutableListOf())
+        // A lineage file that doesn't exist yet: the first launch after updating.
+        val lineageFile = newLineageFile()
+        val operationIds = FileLocalCanvasOperationIds(lineageFile)
+        assertTrue(operationIds.needsCanvasReload)
+        val drawnBeforeReload = operationIds.newClientOperationId()
+        val fixture = repository(
+            scope = this,
+            client = client,
+            initialPairSessionId = "pair-1",
+            operationIds = operationIds
+        )
+        // The earlier build moved its cursor past the iPhone's operations without applying them.
+        fixture.metadata.setLastAppliedServerRevision(4)
+        fixture.api.snapshotRevision = 2
+        fixture.api.latestRevision = 4
+        fixture.api.serverOperations = listOf(
+            accountEnvelope(3, "iphone-op-3", DrawingOperationType.FINISH_STROKE),
+            accountEnvelope(4, drawnBeforeReload, DrawingOperationType.DELETE_STROKE)
+        )
+
+        fixture.repository.start()
+        advanceUntilIdle()
+        client.emit(1L, CanvasSyncMessage.Ready(latestRevision = 4, missedOperations = emptyList()))
+        advanceUntilIdle()
+
+        assertEquals(listOf(2L), fixture.runtime.snapshotRevisions)
+        assertEquals(listOf(2L), fixture.api.canvasOperationRequests)
+        // The snapshot replaced what this device drew too, so its own operations apply again.
+        assertEquals(listOf(3L, 4L), fixture.runtime.remoteOperations.map { it.serverRevision })
+        assertEquals(4L, fixture.metadata.metadata.first().lastAppliedServerRevision)
+        assertTrue(!operationIds.needsCanvasReload)
+        assertTrue(!FileLocalCanvasOperationIds(lineageFile).needsCanvasReload)
+
+        // Reconnecting doesn't reload again.
+        client.emit(1L, CanvasSyncMessage.Error("socket failed"))
+        advanceUntilIdle()
+        client.emit(2L, CanvasSyncMessage.Ready(latestRevision = 4, missedOperations = emptyList()))
+        advanceUntilIdle()
+        assertEquals(1, fixture.api.snapshotRequests)
+        fixture.close()
+    }
+
+    /** An operation from the signed-in account, `user-1`, made on any of its devices. */
+    private fun accountEnvelope(
+        revision: Long,
+        clientOperationId: String,
+        type: DrawingOperationType,
+        actorUserId: String = "user-1"
+    ): CanvasOperationEnvelopeResponse = CanvasOperationEnvelopeResponse(
+        clientOperationId = clientOperationId,
+        actorUserId = actorUserId,
+        pairSessionId = "pair-1",
+        type = type.name,
+        strokeId = if (type == DrawingOperationType.CLEAR_CANVAS) null else "stroke-$revision",
+        payload = JsonObject(),
+        clientCreatedAt = "2026-11-05T00:00:00.000Z",
+        serverRevision = revision,
+        createdAt = "2026-11-05T00:00:01.000Z"
+    )
+
+    private fun accountOperation(
+        revision: Long,
+        clientOperationId: String,
+        type: DrawingOperationType,
+        actorUserId: String = "user-1"
+    ): ServerCanvasOperation =
+        accountEnvelope(revision, clientOperationId, type, actorUserId).toDomainOperation()
+
+    private fun serverOperation(revision: Long, type: String): ServerCanvasOperation =
+        CanvasOperationEnvelopeResponse(
+            clientOperationId = "partner-op-$revision",
+            actorUserId = "partner-1",
+            pairSessionId = "pair-1",
+            type = type,
+            strokeId = "element-$revision",
+            payload = JsonObject(),
+            clientCreatedAt = "2026-11-05T00:00:00.000Z",
+            serverRevision = revision,
+            createdAt = "2026-11-05T00:00:01.000Z"
+        ).toDomainOperation()
+
     private fun repository(
         scope: TestScope,
         client: FakeCanvasSyncClient,
         outbox: FakeCanvasSyncOutboxStore = FakeCanvasSyncOutboxStore(mutableListOf()),
-        initialPairSessionId: String? = null
+        initialPairSessionId: String? = null,
+        operationIds: LocalCanvasOperationIds = establishedOperationIds()
     ): RepositoryFixture {
         val sessionBootstrapRepository = FakeSessionBootstrapRepository()
         val bootstrapRepository = FakeBootstrapRepository(sessionBootstrapRepository)
         val metadataRepository = FakeSyncMetadataRepository(initialPairSessionId)
-        val runtime = FakeCanvasRuntime()
+        val runtime = FakeCanvasRuntime(operationIds)
         val apiService = FakeMulberryApiService()
         val applicationScope = CoroutineScope(
             StandardTestDispatcher(scope.testScheduler) + SupervisorJob()
@@ -291,9 +586,10 @@ class CanvasSyncRepositoryTest {
             canvasRuntime = runtime,
             apiService = apiService,
             recoveryPolicy = CanvasRecoveryPolicy(),
+            operationIds = operationIds,
             applicationScope = applicationScope
         )
-        return RepositoryFixture(repository, applicationScope)
+        return RepositoryFixture(repository, metadataRepository, runtime, apiService, applicationScope)
     }
 
     private fun operation(id: String): CanvasSyncOperation = CanvasSyncOperation(
@@ -307,6 +603,9 @@ class CanvasSyncRepositoryTest {
 
 private data class RepositoryFixture(
     val repository: DefaultCanvasSyncRepository,
+    val metadata: FakeSyncMetadataRepository,
+    val runtime: FakeCanvasRuntime,
+    val api: FakeMulberryApiService,
     private val applicationScope: CoroutineScope
 ) {
     fun close() {
@@ -595,7 +894,10 @@ private class FakeSyncMetadataRepository(
     }
 }
 
-private class FakeCanvasRuntime : CanvasRuntime {
+/** Starts a new lineage on a snapshot, as [com.subhajit.mulberry.canvas.DefaultCanvasRuntime] does. */
+private class FakeCanvasRuntime(
+    private val operationIds: LocalCanvasOperationIds
+) : CanvasRuntime {
     private val render = MutableStateFlow(CanvasRenderState())
 
     override val renderState: StateFlow<CanvasRenderState> = render
@@ -611,7 +913,26 @@ private class FakeCanvasRuntime : CanvasRuntime {
 
     override fun submit(event: CanvasRuntimeEvent) = Unit
 
-    override suspend fun submitAndAwait(event: CanvasRuntimeEvent) = Unit
+    /** Server operations handed to the canvas, in the order they arrived. */
+    val remoteOperations = mutableListOf<ServerCanvasOperation>()
+
+    /** The revision of each snapshot the canvas was replaced with. */
+    val snapshotRevisions = mutableListOf<Long>()
+
+    override suspend fun submitAndAwait(event: CanvasRuntimeEvent) {
+        when (event) {
+            is CanvasRuntimeEvent.RemoteBatch -> remoteOperations += event.operations
+            is CanvasRuntimeEvent.RecoveryOperations -> remoteOperations += event.operations
+            is CanvasRuntimeEvent.RecoverySnapshot -> {
+                operationIds.startNewLineage()
+                snapshotRevisions += event.serverRevision
+                render.update {
+                    it.copy(committedStrokes = event.strokes, committedElements = event.elements)
+                }
+            }
+            else -> Unit
+        }
+    }
 
     override fun setSyncState(syncState: SyncState) {
         render.update { it.copy(syncState = syncState) }
@@ -693,17 +1014,37 @@ private class FakeMulberryApiService : MulberryApiService {
     override suspend fun clearStreakActivityDay(request: ClearStreakActivityDayRequest): DebugActionResponse =
         error("unused")
 
-    override suspend fun getCanvasOperations(afterRevision: Long): CanvasOpsResponse =
-        CanvasOpsResponse(operations = emptyList())
+    /** Each `afterRevision` asked for; a request means sync saw a gap and went to recover. */
+    val canvasOperationRequests = mutableListOf<Long>()
+
+    /** Every operation the server holds; each request gets those after its revision. */
+    var serverOperations: List<CanvasOperationEnvelopeResponse> = emptyList()
+
+    override suspend fun getCanvasOperations(afterRevision: Long): CanvasOpsResponse {
+        canvasOperationRequests += afterRevision
+        return CanvasOpsResponse(
+            operations = serverOperations.filter { it.serverRevision > afterRevision }
+        )
+    }
 
     override suspend fun postCanvasOperationBatch(request: CanvasOperationBatchRequest): CanvasOpsResponse =
         error("unused")
 
+    var snapshotRevision = 0L
+    var latestRevision = 0L
+    var snapshotRequests = 0
+        private set
+
+    override suspend fun uploadCanvasPhoto(image: okhttp3.MultipartBody.Part): com.subhajit.mulberry.network.CanvasPhotoUploadResponse =
+        error("Not used")
+
+    override suspend fun getCanvasPhoto(photoId: String): okhttp3.ResponseBody = error("Not used")
+
     override suspend fun getCanvasSnapshot(): CanvasSnapshotResponse = CanvasSnapshotResponse(
         pairSessionId = "pair-1",
-        revision = 0L,
-        snapshotRevision = 0L,
-        latestRevision = 0L,
+        revision = snapshotRevision,
+        snapshotRevision = snapshotRevision,
+        latestRevision = latestRevision,
         snapshot = CanvasSnapshotPayload(
             strokes = listOf(
                 com.subhajit.mulberry.network.CanvasSnapshotStroke(
@@ -716,7 +1057,7 @@ private class FakeMulberryApiService : MulberryApiService {
             )
         ),
         updatedAt = null
-    )
+    ).also { snapshotRequests += 1 }
 
     override suspend fun getWallpapers(cursor: String?, limit: Int): WallpaperCatalogResponse =
         WallpaperCatalogResponse(items = emptyList(), nextCursor = null)
