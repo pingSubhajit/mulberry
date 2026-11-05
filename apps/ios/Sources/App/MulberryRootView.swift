@@ -119,8 +119,12 @@ struct MulberryRootView: View {
         }
         .sheet(isPresented: $pairingConfirmationOpen, onDismiss: { model.showPairingConfirmation = false }) {
             PairingConfirmedSheet(userName: model.bootstrap?.userDisplayName ?? "",
-                                  partnerName: model.bootstrap?.partnerDisplayName ?? "your partner") {
+                                  partnerName: model.bootstrap?.partnerDisplayName?.nonEmpty) {
                 pairingConfirmationOpen = false
+            } onUnpair: {
+                await model.disconnect()
+                guard model.bootstrap?.isPaired == true else { pairingConfirmationOpen = false; return nil }
+                return model.errorMessage
             }
             .analyticsStep(.pairedCelebration)
         }
@@ -137,6 +141,16 @@ struct MulberryRootView: View {
         ), presenting: model.inviteNotice) { _ in
             Button("OK", role: .cancel) {}
         } message: { notice in Text(notice.message) }
+        .alert("Already paired", isPresented: Binding(
+            get: { model.pairedInvite != nil },
+            set: { if !$0 { model.pairedInvite = nil } }
+        ), presenting: model.pairedInvite) { invite in
+            Button("Unpair & switch", role: .destructive) { Task { await model.unpairAndSwitch(invite) } }
+            Button("Keep current pairing", role: .cancel) { model.keepPairing(invite) }
+        } message: { invite in
+            let question = PairedInvite.message(partnerName: model.bootstrap?.isPaired == true ? model.bootstrap?.partnerDisplayName : nil)
+            Text(invite.error.map { "\(question)\n\n\($0)" } ?? question)
+        }
         // Invite links arrive here once Mulberry is installed, and from Safari's app banner.
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
             if let url = activity.webpageURL { inviteLinks.receive(url) }

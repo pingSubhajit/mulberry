@@ -27,6 +27,10 @@ final class MulberryModel: ObservableObject {
     /// True while an invite from a link is being used, so onboarding doesn't flash past.
     @Published private(set) var joiningInvite = false
     @Published var inviteNotice: InviteNotice?
+    /// An invite link opened while paired, waiting for the person to unpair or keep their partner.
+    @Published var pairedInvite: PairedInvite?
+    /// The code last put to the person, so it isn't asked about again before they answer.
+    private var askedInviteCode: String?
     @Published var showWallpaperOnboarding = false
     @Published var showSettings = false
     @Published var drawingConnection: DrawingConnection = .connecting
@@ -142,8 +146,7 @@ final class MulberryModel: ObservableObject {
         guard !restoring, !busy, !joiningInvite, let state = bootstrap, let code = links.pending else { return }
         switch state.pairingStatus {
         case "PAIRED":
-            links.finish(code)
-            inviteNotice = .alreadyPaired
+            askAboutPairedInvite(code)
             return
         case "INVITE_PENDING_ACCEPTANCE":
             // The invite screen is already showing the invite this account took.
@@ -160,12 +163,41 @@ final class MulberryModel: ObservableObject {
             links.finish(code)
             showInviteEntry = false
             await apply(response.bootstrapState)
+        } catch BackendError.rejected(_, _, "ALREADY_PAIRED"?) {
+            // Paired from another device since the last refresh.
+            askAboutPairedInvite(code)
         } catch BackendError.rejected(_, _, let reason) {
             links.finish(code)
             inviteNotice = InviteNotice(code: reason)
         } catch {
             // Offline or interrupted: the code waits for the next chance.
         }
+    }
+
+    private func askAboutPairedInvite(_ code: String) {
+        guard askedInviteCode != code else { return }
+        askedInviteCode = code
+        pairedInvite = PairedInvite(code: code)
+    }
+
+    /// Keep current pairing: the invite is dropped.
+    func keepPairing(_ invite: PairedInvite) {
+        InviteLinks.shared.finish(invite.code)
+        if askedInviteCode == invite.code { askedInviteCode = nil }
+        if pairedInvite?.code == invite.code { pairedInvite = nil }
+    }
+
+    /// Unpair & switch: unpairs, then joins the invite. If unpairing fails, the invite stays and the
+    /// person is asked again, with the reason.
+    func unpairAndSwitch(_ invite: PairedInvite) async {
+        guard !busy else { pairedInvite = invite; return }
+        await disconnect()
+        guard bootstrap?.isPaired != true else {
+            pairedInvite = PairedInvite(code: invite.code, error: errorMessage)
+            return
+        }
+        if askedInviteCode == invite.code { askedInviteCode = nil }
+        await redeemLinkedInvite()
     }
 
     /// Text pasted from the invite page or the partner's message.
@@ -304,6 +336,7 @@ final class MulberryModel: ObservableObject {
         bootstrap = nil; canvas.reset(); draft = ProfileDraft()
         TimeTogetherStore.save(anniversary: nil, pairSessionId: nil)
         createdInvite = nil; showSettings = false; showInviteEntry = false
+        pairedInvite = nil; askedInviteCode = nil
         showWallpaperOnboarding = false; errorMessage = nil; busy = false
         canvasSaveError = nil; retryCanvasSave = nil
     }

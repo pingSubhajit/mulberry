@@ -308,25 +308,51 @@ private struct StreakWeekRow: View {
 
 struct PairingConfirmedSheet: View {
     let userName: String
-    let partnerName: String
+    /// Nil when the partner has no name yet.
+    let partnerName: String?
     let onContinue: () -> Void
+    /// Unpairs, for the wrong partner. Returns why it failed, or nil.
+    let onUnpair: () async -> String?
+    @State private var confirmingUnpair = false
+    @State private var unpairing = false
+    @State private var unpairError: String?
+
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
                 Text("Welcome \(userName)").font(MulberryDesign.font(18, weight: "SemiBold"))
                     .foregroundStyle(MulberryDesign.accent)
-                Text("You and \(partnerName) are paired on Mulberry")
+                Text("You and \(partnerName ?? "your partner") are paired on Mulberry")
                     .font(MulberryDesign.font(24, weight: "SemiBold", relativeTo: .title2))
                     .accessibilityAddTraits(.isHeader)
                 Image("PairingCouple").resizable().scaledToFit().frame(height: 236).accessibilityHidden(true)
-                Button(action: onContinue) {
-                    Text("Continue").font(MulberryDesign.font(17, weight: "SemiBold"))
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }.buttonStyle(.glassProminent).tint(MulberryDesign.accent)
+                VStack(spacing: 4) {
+                    Button(action: onContinue) {
+                        Text("Continue").font(MulberryDesign.font(17, weight: "SemiBold"))
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }.buttonStyle(.glassProminent).tint(MulberryDesign.accent)
+                    .disabled(unpairing)
+                    // Quiet, under Continue: the way out for someone who joined the wrong invite.
+                    Button { confirmingUnpair = true } label: {
+                        let question = Text(partnerName.map { "Not \($0)?" } ?? "Wrong partner?").foregroundStyle(MulberryDesign.muted)
+                        let action = Text(unpairing ? "Unpairing…" : "Unpair").fontWeight(.semibold).foregroundStyle(MulberryDesign.accent)
+                        Text("\(question) \(action)").font(MulberryDesign.font(14, relativeTo: .footnote))
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.plain).disabled(unpairing)
+                }
+                InlineError(message: unpairError)
             }.multilineTextAlignment(.center).padding(.horizontal, 24).padding(.top, 36).padding(.bottom, 24)
         }.scrollBounceBehavior(.basedOnSize)
             .overlay { CelebrationConfetti() }
-            .presentationDetents([.height(480), .large]).presentationDragIndicator(.visible)
+            .presentationDetents([.height(520), .large]).presentationDragIndicator(.visible)
+            .interactiveDismissDisabled(unpairing)
+            .confirmationDialog("Unpair from \(partnerName ?? "your partner")?", isPresented: $confirmingUnpair, titleVisibility: .visible) {
+                Button("Unpair", role: .destructive) {
+                    unpairing = true; unpairError = nil
+                    Task { unpairError = await onUnpair(); unpairing = false }
+                }
+            } message: { Text("Your profile stays, but you won’t share doodles until you pair again.") }
     }
 }
 

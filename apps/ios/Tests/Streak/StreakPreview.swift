@@ -79,7 +79,7 @@ private struct StreakPreviewRoot: View {
         }
         .onChange(of: streakOpen) { _, open in if !open { streakClosings += 1 } }
         .sheet(isPresented: $pairingOpen) {
-            PairingConfirmedSheet(userName: "Alex", partnerName: "Sam") { pairingOpen = false }
+            PairingConfirmedSheet(userName: "Alex", partnerName: "Sam") { pairingOpen = false } onUnpair: { pairingOpen = false; return nil }
                 }
         .task { model.bind(userId: "visual", pairSessionId: UUID().uuidString, baselineDays: 1); await model.refresh(api: api) }
     }

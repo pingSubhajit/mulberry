@@ -105,8 +105,6 @@ struct InviteNotice: Equatable {
     let title: String
     let message: String
 
-    static let alreadyPaired = InviteNotice(title: "You’re already paired",
-                                            message: "Unpair in Settings to join a new invite.")
     static let notAnInvite = InviteNotice(title: "That isn’t an invite",
                                           message: "Copy the link your partner sent you, then tap Paste again.")
 
@@ -114,7 +112,6 @@ struct InviteNotice: Equatable {
     init?(code: String?) {
         switch code {
         case "OWN_INVITE": return nil
-        case "ALREADY_PAIRED": self = .alreadyPaired
         case "INVITE_EXPIRED", "INVITE_NO_LONGER_VALID":
             self.init(title: "This invite has expired", message: "Ask your partner to send you a new one.")
         case "INVITE_NOT_FOUND":
@@ -127,5 +124,21 @@ struct InviteNotice: Equatable {
     init(title: String, message: String) {
         self.title = title
         self.message = message
+    }
+}
+
+/// An invite from a link that arrived while already paired. It waits until the person unpairs to
+/// join it or keeps their current pairing.
+struct PairedInvite: Equatable {
+    let code: String
+    /// Why the last try to unpair failed.
+    var error: String?
+
+    /// The question, with the partner's name when there is one.
+    static func message(partnerName: String?) -> String {
+        if let partnerName = partnerName?.nonEmpty {
+            return "You’re already paired with \(partnerName). To join a new invite, unpair first."
+        }
+        return "You’re already paired on Mulberry. To join a new invite, unpair first."
     }
 }
