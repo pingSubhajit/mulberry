@@ -88,6 +88,9 @@ export type CanvasBatchProperties = {
   sticker_updated_count: number
   sticker_deleted_count: number
   sticker_pack_keys: string[]
+  photo_added_count: number
+  photo_updated_count: number
+  photo_deleted_count: number
   canvas_stroke_render_mode: string
 }
 

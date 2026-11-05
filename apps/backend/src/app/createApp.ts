@@ -42,6 +42,7 @@ import { ProfileService } from "../modules/profile/service.js"
 import { PairingService } from "../modules/pairing/service.js"
 import { ReactionsService } from "../modules/reactions/service.js"
 import { CanvasService } from "../modules/canvas/service.js"
+import { CanvasPhotoService } from "../modules/canvas/photos.js"
 import { CanvasSyncHub } from "../modules/canvasSync/hub.js"
 import { registerAuthRoutes } from "../modules/auth/routes.js"
 import { registerDeviceRoutes } from "../modules/devices/routes.js"
@@ -151,6 +152,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   const pairingService = new PairingService(db, bootstrapService, pushDispatchService, analytics)
   const reactionsService = new ReactionsService(db, pushDispatchService, analytics)
   const canvasService = new CanvasService(db, streakService, pushDispatchService, analytics)
+  const canvasPhotoService = new CanvasPhotoService(db)
   const canvasSyncHub = new CanvasSyncHub(canvasService)
   const feedbackService = new FeedbackService(db, config.cannySsoPrivateKey)
   const accountService = new AccountService(db, pushDispatchService, storage, canvasSyncHub, appleCredentials, analytics)
@@ -207,7 +209,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   registerProfileRoutes(app, profileService)
   registerPairingRoutes(app, pairingService)
   registerReactionRoutes(app, reactionsService)
-  registerCanvasRoutes(app, canvasService)
+  registerCanvasRoutes(app, canvasService, canvasPhotoService)
   registerCatalogAdminHooks(app, config.adminPassword)
   registerWallpaperRoutes(app, wallpaperCatalogService, wallpaperStorage)
   registerStickerRoutes(app, stickerCatalogService, stickerStorage)

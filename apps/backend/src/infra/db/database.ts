@@ -503,6 +503,22 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
     -- When mulberry_invite_expired was recorded for the invite.
     ALTER TABLE invites
       ADD COLUMN IF NOT EXISTS analytics_expired_at TIMESTAMPTZ;
+
+    -- Photos placed on a pair's canvas, normalised to JPEG or PNG. They go with the pair: ending
+    -- it, or deleting either account, removes them.
+    CREATE TABLE IF NOT EXISTS canvas_photos (
+      id TEXT PRIMARY KEY,
+      pair_session_id TEXT NOT NULL REFERENCES pair_sessions(id) ON DELETE CASCADE,
+      uploader_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      content_type TEXT NOT NULL,
+      width INTEGER NOT NULL,
+      height INTEGER NOT NULL,
+      bytes BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS canvas_photos_pair_idx
+      ON canvas_photos(pair_session_id);
   `)
 
   await runBackfills(db)

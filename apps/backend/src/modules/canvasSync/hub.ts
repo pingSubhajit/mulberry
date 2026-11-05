@@ -2,6 +2,7 @@ import type { WebSocket } from "@fastify/websocket"
 import type { CanvasOperationEnvelope, ClientCanvasOperation, ClientCanvasOperationBatch } from "../../contracts/canvas.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import type { CanvasService } from "../canvas/service.js"
+import { operationForClient, operationsForClient } from "../canvas/featureCompat.js"
 
 type ClientMessage =
   | {
@@ -21,6 +22,9 @@ type ClientMessage =
       type: "PING"
     }
 
+/** A message the server sends; `type` names it. */
+type ServerMessage = { type: string } & Record<string, unknown>
+
 interface ConnectionContext {
   accessToken: string
   pairSessionId: string
@@ -30,11 +34,14 @@ interface ConnectionContext {
 export class CanvasSyncHub {
   private readonly connectionsByPairSession = new Map<string, Set<WebSocket>>()
   private readonly contexts = new WeakMap<WebSocket, ConnectionContext>()
+  /** From each socket's upgrade request: legacy sockets get photo content translated. */
+  private readonly photoSupport = new WeakMap<WebSocket, boolean>()
   private readonly pairQueues = new Map<string, Promise<void>>()
 
   constructor(private readonly service: CanvasService) {}
 
-  attach(socket: WebSocket): void {
+  attach(socket: WebSocket, supportsPhotos = false): void {
+    this.photoSupport.set(socket, supportsPhotos)
     socket.on("message", (data) => {
       void this.handleMessage(socket, data.toString())
     })
@@ -118,7 +125,7 @@ export class CanvasSyncHub {
       pairSessionId: bootstrap.pairSessionId,
       userId: bootstrap.userId,
       latestRevision: bootstrap.latestRevision,
-      missedOperations: bootstrap.missedOperations,
+      missedOperations: operationsForClient(bootstrap.missedOperations, this.supportsPhotos(socket)),
     })
   }
 
@@ -145,12 +152,12 @@ export class CanvasSyncHub {
       type: "ACK",
       clientOperationId: accepted.clientOperationId,
       serverRevision: accepted.serverRevision,
-      operation: accepted,
+      operation: operationForClient(accepted, this.supportsPhotos(socket)),
     })
-    this.broadcast(context.pairSessionId, {
+    this.broadcast(context.pairSessionId, (supportsPhotos) => ({
       type: "SERVER_OP",
-      operation: accepted,
-    }, socket)
+      operation: operationForClient(accepted, supportsPhotos),
+    }), socket)
   }
 
   private async handleClientOperationBatch(
@@ -185,12 +192,12 @@ export class CanvasSyncHub {
       batchId,
       ackedClientOperationIds,
       ackedThroughRevision,
-      operations: accepted,
+      operations: operationsForClient(accepted, this.supportsPhotos(socket)),
     })
-    this.broadcast(context.pairSessionId, {
+    this.broadcast(context.pairSessionId, (supportsPhotos) => ({
       type: "SERVER_OP_BATCH",
-      operations: accepted,
-    }, socket, batchId)
+      operations: operationsForClient(accepted, supportsPhotos),
+    }), socket, batchId)
     this.send(socket, {
       type: "FLOW_CONTROL",
       mode: operations.length >= SLOW_DOWN_OPERATION_THRESHOLD ? "SLOW_DOWN" : "NORMAL",
@@ -218,27 +225,32 @@ export class CanvasSyncHub {
     return next
   }
 
+  /** Builds the message per recipient, as legacy sockets get photo content translated. */
   private broadcast(
     pairSessionId: string,
-    payload: unknown,
+    payloadFor: (supportsPhotos: boolean) => ServerMessage,
     excludedSocket?: WebSocket,
     batchId?: string,
   ): void {
     const connections = this.connectionsByPairSession.get(pairSessionId)
     if (!connections) return
+    const payloads = new Map<boolean, ServerMessage>()
+    const payloadForSocket = (socket: WebSocket): ServerMessage => {
+      const supportsPhotos = this.supportsPhotos(socket)
+      const payload = payloads.get(supportsPhotos) ?? payloadFor(supportsPhotos)
+      payloads.set(supportsPhotos, payload)
+      return payload
+    }
     let recipientCount = 0
     connections.forEach((socket) => {
       if (socket === excludedSocket) {
         return
       }
-      if (this.send(socket, payload)) {
+      if (this.send(socket, payloadForSocket(socket))) {
         recipientCount += 1
       }
     })
-    const payloadType =
-      typeof payload === "object" && payload !== null && "type" in payload
-        ? String((payload as { type?: unknown }).type ?? "unknown")
-        : "unknown"
+    const payloadType = (payloads.values().next().value ?? payloadFor(true)).type
     console.info("[sync] broadcast", {
       pairSessionId,
       payloadType,
@@ -246,6 +258,10 @@ export class CanvasSyncHub {
       recipientCount,
       excludedOrigin: excludedSocket != null,
     })
+  }
+
+  private supportsPhotos(socket: WebSocket): boolean {
+    return this.photoSupport.get(socket) ?? false
   }
 
   private send(socket: WebSocket, payload: unknown): boolean {

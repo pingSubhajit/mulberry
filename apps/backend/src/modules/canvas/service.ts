@@ -8,8 +8,11 @@ import type {
   CanvasSyncBootstrap,
   ClientCanvasOperation,
   ClientCanvasOperationBatch,
+  CanvasPhotoElement,
+  CanvasPhotoElementPayload,
+  CanvasPhotoStyle,
 } from "../../contracts/canvas.js"
-import { DRAWING_OPERATION_TYPES } from "../../contracts/canvas.js"
+import { CanvasPhotoStyles, DRAWING_OPERATION_TYPES } from "../../contracts/canvas.js"
 import type { CanvasOperationRecord } from "../../contracts/dbRecords.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
 import { disabledAnalytics, type Analytics } from "../../infra/analytics/recorder.js"
@@ -60,7 +63,23 @@ interface MaterializedCanvasTextElement extends MaterializedTextElement {
   kind: "TEXT"
 }
 
-type MaterializedCanvasElement = MaterializedCanvasTextElement | MaterializedStickerElement
+type MaterializedCanvasElement = MaterializedCanvasTextElement | MaterializedStickerElement | CanvasPhotoElement
+
+/** How far a photo can be scaled, as a fraction of the canvas width (the stickers' range on the apps). */
+const PHOTO_SCALE_RANGE = { min: 0.12, max: 1.2 } as const
+
+/** The signed-in person's current pair, or 403 `NOT_PAIRED`. */
+export async function requirePairedCanvasContext(
+  db: Pick<Database, "query">,
+  accessToken: string,
+): Promise<CanvasSessionContext> {
+  const context = await requireSessionContext(db, accessToken)
+  const pairSession = await getPairSession(db, context.user.id)
+  if (!pairSession) {
+    throw new HttpError(403, "User is not paired", { code: "NOT_PAIRED" })
+  }
+  return { ...context, pairSession }
+}
 
 export class CanvasService {
   constructor(
@@ -395,6 +414,9 @@ export class CanvasService {
         sticker_updated_count: count("UPDATE_STICKER_ELEMENT"),
         sticker_deleted_count: count("DELETE_STICKER_ELEMENT"),
         sticker_pack_keys: stickerPackKeys,
+        photo_added_count: count("ADD_PHOTO_ELEMENT"),
+        photo_updated_count: count("UPDATE_PHOTO_ELEMENT"),
+        photo_deleted_count: count("DELETE_PHOTO_ELEMENT"),
         canvas_stroke_render_mode: mode,
       },
     })
@@ -446,12 +468,7 @@ export class CanvasService {
   }
 
   private async requireDefaultCanvasSessionContext(accessToken: string): Promise<CanvasSessionContext> {
-    const context = await requireSessionContext(this.db, accessToken)
-    const pairSession = await getPairSession(this.db, context.user.id)
-    if (!pairSession) {
-      throw new HttpError(403, "User is not paired", { code: "NOT_PAIRED" })
-    }
-    return { ...context, pairSession }
+    return requirePairedCanvasContext(this.db, accessToken)
   }
 
   private async requireCanvasSessionContext(accessToken: string, pairSessionId: string): Promise<CanvasSessionContext> {
@@ -604,9 +621,18 @@ export class CanvasService {
         snapshot.elements.push(payload)
         return true
       }
-      case "DELETE_STICKER_ELEMENT": {
+      case "DELETE_STICKER_ELEMENT":
+      case "DELETE_PHOTO_ELEMENT": {
         if (!operation.stroke_id) return false
         snapshot.elements = snapshot.elements.filter((element) => element.id !== operation.stroke_id)
+        return true
+      }
+      case "ADD_PHOTO_ELEMENT":
+      case "UPDATE_PHOTO_ELEMENT": {
+        const element = normalizePhotoElement(operation.payload_json)
+        if (!element) return false
+        snapshot.elements = snapshot.elements.filter((existing) => existing.id !== element.id)
+        snapshot.elements.push(element)
         return true
       }
       default:
@@ -813,6 +839,44 @@ function normalizeStickerElement(raw: unknown): MaterializedStickerElement | nul
   }
 }
 
+function normalizePhotoElement(raw: unknown): CanvasPhotoElement | null {
+  if (typeof raw !== "object" || raw === null) return null
+  const candidate = raw as { [Key in keyof CanvasPhotoElementPayload]?: unknown }
+  if (typeof candidate.id !== "string" || !candidate.id.trim()) return null
+  const center = normalizeCanvasPoint(candidate.center)
+  if (!center || !Number.isFinite(center.x) || !Number.isFinite(center.y)) return null
+  const photoId = typeof candidate.photoId === "string" ? candidate.photoId.trim() : ""
+  const aspectRatio = Number(candidate.aspectRatio)
+  if (!photoId || !Number.isFinite(aspectRatio) || aspectRatio <= 0) return null
+  const createdAt = Number(candidate.createdAt ?? Date.now())
+  const rotationRad = Number(candidate.rotationRad ?? 0)
+  const scale = Number(candidate.scale ?? 0.5)
+
+  const cutoutPhotoId = typeof candidate.cutoutPhotoId === "string" ? candidate.cutoutPhotoId.trim() : ""
+
+  return {
+    kind: "PHOTO",
+    id: candidate.id,
+    createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+    center,
+    rotationRad: Number.isFinite(rotationRad) ? rotationRad : 0,
+    scale: clampPhotoScale(scale),
+    photoId,
+    aspectRatio,
+    style: normalizePhotoStyle(candidate.style),
+    ...(cutoutPhotoId ? { cutoutPhotoId } : {}),
+  }
+}
+
+function normalizePhotoStyle(raw: unknown): CanvasPhotoStyle {
+  return CanvasPhotoStyles.find((style) => style === raw) ?? "FRAME"
+}
+
+function clampPhotoScale(scale: number): number {
+  if (!Number.isFinite(scale)) return PHOTO_SCALE_RANGE.min
+  return Math.min(PHOTO_SCALE_RANGE.max, Math.max(PHOTO_SCALE_RANGE.min, scale))
+}
+
 function normalizeCanvasElement(raw: unknown): MaterializedCanvasElement | null {
   if (typeof raw !== "object" || raw === null || !("kind" in raw)) return null
   const candidate = raw as { kind?: unknown }
@@ -822,6 +886,9 @@ function normalizeCanvasElement(raw: unknown): MaterializedCanvasElement | null 
   }
   if (candidate.kind === "STICKER") {
     return normalizeStickerElement(raw)
+  }
+  if (candidate.kind === "PHOTO") {
+    return normalizePhotoElement(raw)
   }
   return null
 }
