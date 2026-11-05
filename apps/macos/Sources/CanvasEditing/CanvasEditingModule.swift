@@ -13,6 +13,8 @@ public enum CanvasEditingTool: String, Codable, CaseIterable, Sendable {
     case text = "TEXT"
     case sticker = "STICKER"
     case eyedropper = "EYEDROPPER"
+    /// The Camera: places photos, and moves and edits the ones on the canvas.
+    case photo = "PHOTO"
 
     /// The eyedropper is a moment's detour: picking a colour returns to the tool before it.
     public var isReturnedTo: Bool {

@@ -35,7 +35,7 @@ import Testing
 @Test func aToolIsAlwaysSelectedStartingWithTheBrush() {
     let state = CanvasEditingToolState()
     #expect(state.activeTool == .draw)
-    #expect(CanvasEditingTool.allCases == [.draw, .erase, .text, .sticker, .eyedropper])
+    #expect(CanvasEditingTool.allCases == [.draw, .erase, .text, .sticker, .eyedropper, .photo])
 }
 
 @Test func selectedColorAndEyedropperMatchAndroidToolBehavior() {

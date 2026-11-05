@@ -95,6 +95,15 @@ struct FullAppCanvasEditor: View {
     @State private var stickerPlacement: CGPoint?
     /// The panel's anchor, kept while it closes.
     @State private var placementAnchor = CGPoint.zero
+    @State private var selectedPhotoID: String?
+    /// The selected photo while its frame is dragged, resized or rotated, before the change is saved.
+    @State private var photoPreview: CanvasPhotoElement?
+    /// The photo whose sticker cut-out is being made.
+    @State private var cuttingOutPhotoID: String?
+    /// Photos with no clear subject to cut out, by photo id.
+    @State private var photosWithoutSubject: Set<String> = []
+    /// Cut-outs already made and uploaded, by photo id, so choosing Sticker again reuses them.
+    @State private var madeCutouts: [String: String] = [:]
     @State private var drag: ElementDrag?
     /// A text or sticker pressed with the eraser: lifting without moving deletes it.
     @State private var elementToErase: (id: String, start: CGPoint)?
@@ -127,6 +136,9 @@ struct FullAppCanvasEditor: View {
             model.handleEscape = { escape() }
             model.finishEditing = { finishTyping(keepSelection: false) }
             model.stickerPanel = { AnyView(stickerPanel(current: nil) { placeSticker($0, at: nil) }) }
+            // The camera opens beside the Camera tool, in the window and in Quick Draw alike.
+            model.cameraPanel = { AnyView(CanvasCameraPanel(add: addPhoto, cancel: cancelCamera)) }
+            model.cameraDismissed = { cancelCamera() }
         }
         // Leaving the Text tool finishes any typing and drops the selection, from any toolbar.
         .onChange(of: editor.toolState.activeTool) { _, tool in
@@ -134,6 +146,10 @@ struct FullAppCanvasEditor: View {
             if tool != .sticker {
                 selectedStickerID = nil
                 replacingSticker = false
+            }
+            if tool != .photo {
+                selectedPhotoID = nil
+                model.cameraOpen = false
             }
             guard tool != .text else { return }
             finishTyping(keepSelection: false)
@@ -215,6 +231,10 @@ struct FullAppCanvasEditor: View {
         if selectedStickerID != nil {
             selectedStickerID = nil
             replacingSticker = false
+            return true
+        }
+        if selectedPhotoID != nil {
+            selectedPhotoID = nil
             return true
         }
         if editor.toolState.activeTool == .eyedropper {
@@ -315,6 +335,7 @@ struct FullAppCanvasEditor: View {
 
                 textLayers(canvasSize: proxy.size)
                 stickerLayers(canvasSize: proxy.size)
+                photoLayers(canvasSize: proxy.size)
 
                 // The sticker panel, opened where empty canvas was clicked; the sticker lands there.
                 Color.clear
@@ -355,6 +376,7 @@ struct FullAppCanvasEditor: View {
                 placeSticker(sticker, at: normalized(location, canvasSize: proxy.size))
                 return true
             }
+
             // The canvas keeps its 9:20 geometry from the window's top, cropped under the title bar.
             .mask(alignment: .top) {
                 VStack(spacing: 0) {
@@ -378,27 +400,37 @@ struct FullAppCanvasEditor: View {
 
     // MARK: Toolbar
 
-    /// As on iPhone: the tools in one compact row, with colour and width standing apart in a
-    /// clear-glass column at the window's right edge, under the toolbar's right end. Undo and redo sit by the traffic lights and reactions
-    /// by the streak. The circles scale with the window.
+    /// As on iPhone: the tools in one compact row, with width, colour and clear standing apart in
+    /// a clear-glass column at the window's right edge, under the toolbar's right end. Width is
+    /// there for the brush and colour for the brush and eyedropper; what the tool in hand can't use
+    /// slides away to the side. Undo and redo sit by the traffic lights and reactions by the
+    /// streak. The circles scale with the window.
     private func toolbar(width: CGFloat) -> some View {
         let size = min(52, max(32, (width - 56) / 6.9))
+        let slide: AnyTransition = reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity)
         return VStack(spacing: 28) {
             // Lined up with the right edge of the window toolbar's streak and profile group.
             HStack {
                 Spacer()
                 VStack(spacing: 10) {
-                    CanvasColourButton(model: model, size: size, glass: .clear)
-                    CanvasWidthButton(model: model, size: size, glass: .clear)
+                    if tool == .draw {
+                        CanvasWidthButton(model: model, size: size, glass: .clear).transition(slide)
+                    }
+                    if tool == .draw || tool == .eyedropper {
+                        CanvasColourButton(model: model, size: size, glass: .clear).transition(slide)
+                    }
+                    CanvasToolButton(.clear, model: model, size: size, canvasIsEmpty: canvasIsEmpty, glass: .clear)
                 }
+                .animation(reduceMotion ? .easeInOut(duration: 0.15) : .snappy(duration: 0.26), value: tool)
             }
             .padding(.trailing, 8)
             .frame(width: width)
             GlassEffectContainer(spacing: 4) {
                 HStack(spacing: 0) {
-                    ForEach(CanvasToolSlot.allCases) { slot in
+                    ForEach(CanvasToolSlot.windowRow) { slot in
                         if slot != .brush { Spacer(minLength: 4) }
-                        CanvasToolSlotButton(slot: slot, model: model, size: size, canvasIsEmpty: canvasIsEmpty, panelEdge: .top)
+                        CanvasToolSlotButton(slot: slot, model: model, size: size, canvasIsEmpty: canvasIsEmpty, panelEdge: .top,
+                                             cameraInPopover: true)
                     }
                 }
                 .padding(8)
@@ -490,7 +522,7 @@ struct FullAppCanvasEditor: View {
             state: syncController.drawing,
             size: surfaceSize,
             mode: canvasModel.strokeRenderMode,
-            stickers: stickerLoader.images.count
+            stickers: stickerLoader.images.count + stickerLoader.photoImages.count
         )
         if colourSampler.key != key {
             colourSampler.key = key
@@ -500,7 +532,8 @@ struct FullAppCanvasEditor: View {
                 strokeRenderMode: key.mode,
                 surface: .fullApp,
                 showsEditingBackground: false,
-                stickerImages: stickerLoader.images
+                stickerImages: stickerLoader.images,
+                photoImages: stickerLoader.photoImages
             ))
         }
         return colourSampler.sampler?.colour(at: editor.viewportTransform.contentPoint(fromRenderedPoint: renderedPoint))
@@ -526,6 +559,7 @@ struct FullAppCanvasEditor: View {
         where include: (CanvasElement) -> Bool = { _ in true }
     ) -> CanvasElement? {
         elementRenderer.stickerImages = stickerLoader.images
+        elementRenderer.photoImages = stickerLoader.photoImages
         let point = editor.viewportTransform.contentPoint(fromRenderedPoint: renderedPoint)
         return elementRenderer.hit(summary.elements, at: point, canvasSize: canvasSize, where: include)
     }
@@ -550,6 +584,23 @@ struct FullAppCanvasEditor: View {
                 element: CanvasTextElement(center: normalized(point, canvasSize: canvasSize), colorArgb: editor.toolState.textColorArgb),
                 isNew: true
             )
+            return
+        }
+        if editor.toolState.activeTool == .photo {
+            if let hit = element(at: point, canvasSize: canvasSize, where: { $0.photo != nil }) {
+                selectedPhotoID = hit.id
+                drag = ElementDrag(original: hit, start: point, current: hit)
+                syncCanvasModel()
+                return
+            }
+            // Empty canvas lets go of the photo, or with none selected opens the camera beside the
+            // Camera tool, in the window and in Quick Draw alike, as on iPad.
+            if selectedPhotoID != nil {
+                selectedPhotoID = nil
+                syncCanvasModel()
+            } else {
+                model.cameraOpen = true
+            }
             return
         }
         guard editor.toolState.activeTool == .sticker else { return }
@@ -585,7 +636,7 @@ struct FullAppCanvasEditor: View {
         switch moved {
         case let .text(text): textPreview = text
         case let .sticker(sticker): stickerPreview = sticker
-        case .photo: break
+        case let .photo(photo): photoPreview = photo
         }
         syncCanvasModel()
     }
@@ -596,6 +647,7 @@ struct FullAppCanvasEditor: View {
         self.drag = nil
         textPreview = nil
         stickerPreview = nil
+        photoPreview = nil
         formatBarEpoch += 1
         if drag.moved {
             submit(editor.update(drag.current, in: syncController.drawing))
@@ -655,9 +707,8 @@ struct FullAppCanvasEditor: View {
         case let .sticker(sticker):
             selectSticker(sticker.id)
             replacingSticker = true
-        // Photos are edited on iPhone and iPad for now.
-        case .photo:
-            return false
+        case let .photo(photo):
+            selectPhoto(photo.id)
         }
         return true
     }
@@ -677,7 +728,7 @@ struct FullAppCanvasEditor: View {
             return element(at: point, canvasSize: canvasSize, where: { $0.text != nil }) == nil ? .iBeam : .arrow
         case .eyedropper:
             return CanvasCursors.eyedropper
-        case .sticker:
+        case .sticker, .photo:
             return .arrow
         }
     }
@@ -905,6 +956,194 @@ struct FullAppCanvasEditor: View {
         return true
     }
 
+    // MARK: Camera tool
+
+    private var selectedPhoto: CanvasPhotoElement? {
+        guard let selectedPhotoID else { return nil }
+        return summary.elements.first { $0.id == selectedPhotoID }?.photo
+    }
+
+    /// The selected photo as it looks right now: mid-drag, mid-resize, or as saved.
+    private var shownPhoto: CanvasPhotoElement? {
+        if let drag, drag.moved, case let .photo(photo) = drag.current, photo.id == selectedPhotoID { return photo }
+        return photoPreview ?? selectedPhoto
+    }
+
+    @ViewBuilder private func photoLayers(canvasSize: CGSize) -> some View {
+        if let selected = selectedPhoto, let shown = shownPhoto, textEdit == nil {
+            let geometry = photoGeometry(shown, canvasSize: canvasSize)
+            ElementSelectionFrame(
+                geometry: geometry,
+                original: selected,
+                canvasSize: canvasSize,
+                zoom: editor.viewportTransform.scale,
+                label: "Selected photo",
+                onChange: { changed in
+                    photoPreview = changed
+                    syncCanvasModel()
+                },
+                onCommit: { changed in
+                    photoPreview = nil
+                    submit(editor.update(.photo(changed), in: syncController.drawing))
+                    formatBarEpoch += 1
+                    focusRequest += 1
+                    syncCanvasModel()
+                },
+                onEdit: {}
+            )
+            let natural = formatBarPosition(geometry, canvasSize: canvasSize)
+            FloatingBar {
+                PhotoBar(
+                    photo: shown,
+                    cuttingOut: cuttingOutPhotoID == shown.id,
+                    noSubject: photosWithoutSubject.contains(shown.photoId),
+                    onStyle: { style in stylePhoto(selected, style) },
+                    onStraighten: { straightenPhoto(selected) },
+                    onDuplicate: { duplicatePhoto(selected) },
+                    onDelete: { deletePhoto(selected) }
+                )
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { formatBarSize = $0 }
+            }
+            .frame(width: 1, height: 1)
+            .position(anchoredFormatBar(natural: natural, geometry: geometry))
+            .onChange(of: FormatBarPlacement(
+                id: shown.id, center: shown.center, rotation: shown.rotationRad,
+                zoom: editor.viewportTransform.scale, offset: editor.viewportTransform.offset, canvas: canvasSize, epoch: formatBarEpoch
+            ), initial: true) {
+                formatBarAnchor = natural
+            }
+        }
+    }
+
+    /// Where a photo sits on screen, at its drawn size.
+    private func photoGeometry(_ photo: CanvasPhotoElement, canvasSize: CGSize) -> ElementFrameGeometry {
+        .photo(photo, cutout: photo.cutoutPhotoId.flatMap { stickerLoader.photoImages[$0] }, canvasSize: canvasSize,
+               zoom: editor.viewportTransform.scale, offset: editor.viewportTransform.offset)
+    }
+
+    private func selectPhoto(_ id: String) {
+        if editor.toolState.activeTool != .photo { editor.toolState.setActiveTool(.photo) }
+        model.cameraOpen = false
+        selectedPhotoID = id
+        formatBarEpoch += 1
+        focusRequest += 1
+        syncCanvasModel()
+    }
+
+    /// A taken or chosen photo: uploaded, then in the middle of the canvas, selected, as on iPad.
+    private func addPhoto(_ image: CGImage) async throws {
+        guard let userID, let data = CanvasPhotoProcessing.jpeg(image) else { throw CocoaError(.fileWriteUnknown) }
+        let upload = try await stickerLoader.uploadPhoto(data, contentType: "image/jpeg", image: NSImage(canvasPhoto: image), user: userID)
+        let photo = CanvasPhotoElement(
+            center: DrawingPoint(x: 0.5, y: 0.5),
+            photoId: upload.photoId,
+            aspectRatio: Double(image.width) / Double(max(1, image.height))
+        )
+        submit(editor.commit(.photo(photo), isNew: true, in: syncController.drawing))
+        finishTyping(keepSelection: false)
+        selectedTextID = nil
+        selectedStickerID = nil
+        selectPhoto(photo.id)
+        Haptics.select()
+    }
+
+    /// Closing the camera without a photo leaves the tool, unless there are photos to move, as on
+    /// iPhone and iPad.
+    private func cancelCamera() {
+        model.cameraOpen = false
+        if editor.toolState.activeTool == .photo, !summary.elements.contains(where: { $0.photo != nil }) {
+            editor.toolState.setActiveTool(.draw)
+        }
+    }
+
+    /// A new style. The sticker style needs the subject cut out: made, uploaded once, then the
+    /// cut-out and the style are saved together as one step.
+    private func stylePhoto(_ photo: CanvasPhotoElement, _ style: CanvasPhotoStyle) {
+        guard style != photo.style, cuttingOutPhotoID == nil else { return }
+        var styled = photo
+        styled.style = style
+        if style != .sticker || photo.cutoutPhotoId != nil {
+            submit(editor.update(.photo(styled), in: syncController.drawing))
+            focusRequest += 1
+            return
+        }
+        if let made = madeCutouts[photo.photoId] {
+            styled.cutoutPhotoId = made
+            submit(editor.update(.photo(styled), in: syncController.drawing))
+            return
+        }
+        guard let userID, let source = stickerLoader.photoImages[photo.photoId]?.canvasCGImage else { return NSSound.beep() }
+        cuttingOutPhotoID = photo.id
+        Task {
+            defer { cuttingOutPhotoID = nil }
+            let cut = await Task.detached(priority: .userInitiated) { CanvasPhotoProcessing.cutout(source) }.value
+            guard let cut, let data = CanvasPhotoProcessing.png(cut) else {
+                photosWithoutSubject.insert(photo.photoId)
+                NSSound.beep()
+                return
+            }
+            guard let upload = try? await stickerLoader.uploadPhoto(data, contentType: "image/png", image: NSImage(canvasPhoto: cut), user: userID) else {
+                NSSound.beep()
+                return
+            }
+            madeCutouts[photo.photoId] = upload.photoId
+            // The photo as it is now: it may have moved while its subject was cut out.
+            guard var latest = summary.elements.first(where: { $0.id == photo.id })?.photo else { return }
+            latest.style = .sticker
+            latest.cutoutPhotoId = upload.photoId
+            submit(editor.update(.photo(latest), in: syncController.drawing))
+            formatBarEpoch += 1
+        }
+    }
+
+    private func straightenPhoto(_ photo: CanvasPhotoElement) {
+        var level = photo
+        level.rotationRad = 0
+        submit(editor.update(.photo(level), in: syncController.drawing))
+        formatBarEpoch += 1
+        focusRequest += 1
+    }
+
+    /// A copy a little down and to the right, selected. It shares the uploads, which never change.
+    private func duplicatePhoto(_ photo: CanvasPhotoElement) {
+        let copy = CanvasPhotoElement(
+            center: DrawingPoint(x: min(1, photo.center.x + 0.04), y: min(1, photo.center.y + 0.025)),
+            rotationRad: photo.rotationRad, scale: photo.scale, photoId: photo.photoId,
+            cutoutPhotoId: photo.cutoutPhotoId, aspectRatio: photo.aspectRatio, style: photo.style
+        )
+        submit(editor.commit(.photo(copy), isNew: true, in: syncController.drawing))
+        selectPhoto(copy.id)
+    }
+
+    private func deletePhoto(_ photo: CanvasPhotoElement) {
+        submit(editor.delete(elementID: photo.id, in: syncController.drawing))
+        selectedPhotoID = nil
+        focusRequest += 1
+        syncCanvasModel()
+    }
+
+    private func handlePhotoKey(_ key: CanvasKey, photo: CanvasPhotoElement, canvasSize: CGSize) -> Bool {
+        switch key {
+        case .delete:
+            deletePhoto(photo)
+        case .duplicate:
+            duplicatePhoto(photo)
+        case .escape:
+            selectedPhotoID = nil
+        case let .arrow(dx, dy):
+            let zoom = editor.viewportTransform.scale
+            var moved = photo
+            moved.center = DrawingPoint(
+                x: min(1, max(0, photo.center.x + dx / (canvasSize.width * zoom))),
+                y: min(1, max(0, photo.center.y + dy / (canvasSize.height * zoom)))
+            )
+            submit(editor.update(.photo(moved), in: syncController.drawing))
+        case .return, .undo, .redo, .clearCanvas, .tool:
+            return false
+        }
+        return true
+    }
+
     /// Where a text sits on screen. Text with nothing typed yet takes the
     /// height of one line at its wrap width.
     private func textGeometry(_ text: CanvasTextElement, canvasSize: CGSize) -> ElementFrameGeometry {
@@ -1013,6 +1252,9 @@ struct FullAppCanvasEditor: View {
         if let sticker = selectedSticker {
             return handleStickerKey(key, sticker: sticker, canvasSize: canvasSize)
         }
+        if let photo = selectedPhoto {
+            return handlePhotoKey(key, photo: photo, canvasSize: canvasSize)
+        }
         guard let selected = selectedText else { return false }
         switch key {
         case .delete:
@@ -1055,6 +1297,9 @@ struct FullAppCanvasEditor: View {
         if let stickerPreview {
             try? state.apply(.update(.sticker(stickerPreview)))
         }
+        if let photoPreview {
+            try? state.apply(.update(.photo(photoPreview)))
+        }
         // Text being typed shows itself.
         if let editing = textEdit.map({ CanvasElement.text($0.element) }),
            state.canvasElements.contains(where: { $0.id == editing.id }) {
@@ -1064,6 +1309,7 @@ struct FullAppCanvasEditor: View {
         canvasModel.activeStroke = editor.activeStroke
         canvasModel.stickerImages = stickerLoader.images
         canvasModel.stickerTimeline = stickerLoader.timeline
+        if canvasModel.photoImages != stickerLoader.photoImages { canvasModel.photoImages = stickerLoader.photoImages }
         canvasModel.strokeRenderMode = CanvasStrokeRenderMode(
             rawBackendValue: appStateController.loadState.bootstrap?.canvasStrokeRenderMode
         )
@@ -1260,7 +1506,7 @@ private struct CanvasInputOverlayView: NSViewRepresentable {
             case .erase:
                 isErasing = true
                 configuration.onEraseDown(point)
-            case .text, .sticker:
+            case .text, .sticker, .photo:
                 isMovingElement = true
                 configuration.onElementDown(point)
             }

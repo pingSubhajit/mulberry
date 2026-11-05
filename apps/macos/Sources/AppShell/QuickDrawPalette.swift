@@ -36,9 +36,9 @@ struct QuickDrawPalette: View {
         .onReceive(syncController.$drawing.map { $0.strokes.isEmpty && $0.elements.isEmpty }.removeDuplicates()) { canvasIsEmpty = $0 }
     }
 
-    /// Eleven circles and the grip in the iPad's rhythm, as large as the overlay's height allows.
+    /// Twelve circles and the grip in the iPad's rhythm, as large as the overlay's height allows.
     private func buttonSize(for height: CGFloat) -> CGFloat {
-        min(52, max(30, (height - 16) / 14.8))
+        min(52, max(30, (height - 16) / 16.0))
     }
 
     private func toolColumn(_ size: CGFloat) -> some View {
@@ -51,8 +51,9 @@ struct QuickDrawPalette: View {
                 CanvasWidthButton(model: model, size: size, arrowEdge: towardCanvas)
             }
             VStack(spacing: size * 0.18) {
-                ForEach(CanvasToolSlot.allCases) { slot in
-                    CanvasToolSlotButton(slot: slot, model: model, size: size, canvasIsEmpty: canvasIsEmpty, panelEdge: towardCanvas)
+                ForEach(CanvasToolSlot.quickDrawColumn) { slot in
+                    CanvasToolSlotButton(slot: slot, model: model, size: size, canvasIsEmpty: canvasIsEmpty, panelEdge: towardCanvas,
+                                         cameraInPopover: true)
                 }
             }
             doneButton(size)

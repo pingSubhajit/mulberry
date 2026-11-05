@@ -205,12 +205,22 @@ struct CanvasToolSlotButton: View {
     let canvasIsEmpty: Bool
     /// Which side of the button the panel opens on.
     var panelEdge: Edge = .top
+    /// The camera opens in a popover beside the button, in the window and in Quick Draw.
+    var cameraInPopover = false
 
     var body: some View {
         if slot == .stickers {
             CanvasToolButton(slot, model: model, size: size, canvasIsEmpty: canvasIsEmpty)
                 .popover(isPresented: $model.stickerPanelOpen, arrowEdge: panelEdge) {
                     model.stickerPanel()
+                }
+        } else if slot == .camera, cameraInPopover {
+            CanvasToolButton(slot, model: model, size: size, canvasIsEmpty: canvasIsEmpty)
+                // Clicking away closes it as Cancel does.
+                .popover(isPresented: Binding(get: { model.cameraOpen }, set: { open in
+                    if open { model.cameraOpen = true } else if model.cameraOpen { model.cameraDismissed() }
+                }), arrowEdge: panelEdge) {
+                    model.cameraPanel()
                 }
         } else {
             CanvasToolButton(slot, model: model, size: size, canvasIsEmpty: canvasIsEmpty)

@@ -19,8 +19,14 @@ final class CanvasEditorModel: ObservableObject {
     @Published var isTyping = false
     /// The sticker panel beside the Sticker tool's button.
     @Published var stickerPanelOpen = false
+    /// The Camera tool's camera, over the window's canvas.
+    @Published var cameraOpen = false
     /// Set by the canvas: the sticker panel's contents, which place what is picked.
     var stickerPanel: () -> AnyView = { AnyView(EmptyView()) }
+    /// Set by the canvas: the camera, for the popover beside the Camera tool.
+    var cameraPanel: () -> AnyView = { AnyView(EmptyView()) }
+    /// Set by the canvas: the camera popover was clicked away, which counts as Cancel.
+    var cameraDismissed: () -> Void = {}
     /// The colour under the eyedropper before a click picks it, shown on the colour and width
     /// buttons as the iPhone shows it while a finger slides.
     @Published var eyedropperPreview: UInt32?
@@ -38,8 +44,21 @@ final class CanvasEditorModel: ObservableObject {
 
     var tool: CanvasEditingTool { engine.toolState.activeTool }
 
-    /// Choosing the Sticker tool opens its panel; choosing it again closes it.
+    /// Choosing the Sticker tool opens its panel; choosing it again closes it. Choosing the Camera
+    /// opens the camera at once, as on iPhone and iPad; choosing it again returns to the brush.
     func select(_ tool: CanvasEditingTool) {
+        if tool == .photo {
+            stickerPanelOpen = false
+            if engine.toolState.activeTool == .photo {
+                cameraOpen = false
+                engine.toolState.setActiveTool(.draw)
+            } else {
+                engine.toolState.setActiveTool(.photo)
+                cameraOpen = true
+            }
+            return
+        }
+        cameraOpen = false
         if tool == .sticker {
             stickerPanelOpen = engine.toolState.activeTool == .sticker ? !stickerPanelOpen : true
         } else {
@@ -118,9 +137,14 @@ struct CanvasToolButton: View {
     }
 }
 
-/// The six drawing tools, in the iOS order.
+/// The drawing tools, and Clear, in the iOS order.
 enum CanvasToolSlot: CaseIterable, Identifiable {
-    case brush, text, stickers, eraser, eyedropper, clear
+    case brush, text, stickers, camera, eraser, eyedropper, clear
+
+    /// The window's tool row, as on iPhone. Clear stands apart, under width and colour.
+    static let windowRow: [CanvasToolSlot] = [.brush, .text, .stickers, .camera, .eraser, .eyedropper]
+    /// Quick Draw's column: the drawing tools, then Clear.
+    static let quickDrawColumn: [CanvasToolSlot] = [.brush, .text, .stickers, .camera, .eraser, .eyedropper, .clear]
 
     var id: Self { self }
 
@@ -129,22 +153,27 @@ enum CanvasToolSlot: CaseIterable, Identifiable {
         case .brush: "Brush"
         case .text: "Text"
         case .stickers: "Stickers"
+        case .camera: "Camera"
         case .eraser: "Eraser"
         case .eyedropper: "Eyedropper"
         case .clear: "Clear canvas"
         }
     }
 
-    var artwork: String {
+    /// The iOS illustration; Clear is the iOS trash symbol instead.
+    var artwork: String? {
         switch self {
         case .brush: "brush.png"
         case .text: "text.svg"
         case .stickers: "sticker.png"
+        case .camera: "camera.png"
         case .eraser: "eraser.png"
         case .eyedropper: "eyedropper.png"
-        case .clear: "clear.png"
+        case .clear: nil
         }
     }
+
+    var symbol: String? { self == .clear ? "trash" : nil }
 
     /// The single key that picks the tool, as in Photoshop and Figma.
     var shortcut: String? {
@@ -152,6 +181,7 @@ enum CanvasToolSlot: CaseIterable, Identifiable {
         case .brush: "b"
         case .text: "t"
         case .stickers: "s"
+        case .camera: nil
         case .eraser: "e"
         case .eyedropper: "i"
         case .clear: nil
@@ -169,6 +199,7 @@ enum CanvasToolSlot: CaseIterable, Identifiable {
         case .brush: .draw
         case .text: .text
         case .stickers: .sticker
+        case .camera: .photo
         case .eraser: .erase
         case .eyedropper: .eyedropper
         case .clear: nil
@@ -178,13 +209,15 @@ enum CanvasToolSlot: CaseIterable, Identifiable {
 
 extension CanvasToolButton {
     /// A drawing tool's button: selects the tool, or asks before clearing the canvas.
-    init(_ slot: CanvasToolSlot, model: CanvasEditorModel, size: CGFloat, canvasIsEmpty: Bool) {
+    init(_ slot: CanvasToolSlot, model: CanvasEditorModel, size: CGFloat, canvasIsEmpty: Bool, glass: Glass = .regular) {
         if let tool = slot.tool {
-            self.init(title: slot.title, help: slot.help, artwork: slot.artwork, size: size, selected: model.tool == tool) {
+            self.init(title: slot.title, help: slot.help, artwork: slot.artwork, symbol: slot.symbol, size: size,
+                      selected: model.tool == tool, glass: glass) {
                 model.select(tool)
             }
         } else {
-            self.init(title: slot.title, help: slot.help, artwork: slot.artwork, size: size, enabled: !canvasIsEmpty) {
+            self.init(title: slot.title, help: slot.help, artwork: slot.artwork, symbol: slot.symbol, size: size,
+                      enabled: !canvasIsEmpty, glass: glass) {
                 model.engine.requestClearCanvas()
             }
         }
