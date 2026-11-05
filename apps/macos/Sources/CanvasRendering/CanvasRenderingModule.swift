@@ -150,6 +150,8 @@ public final class CanvasRenderer {
             scale = text.scale
         case let .sticker(sticker):
             scale = sticker.scale
+        case let .photo(photo):
+            scale = photo.scale
         }
         let point = CGPoint(x: element.center.x * canvasSize.width, y: element.center.y * canvasSize.height)
         let radius = max(16, CGFloat(scale) * canvasSize.width * 0.14)
@@ -212,7 +214,8 @@ public final class CanvasRenderView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
-        for layerView in [settledView, liveView, elementsView] as [NSView] {
+        // Strokes sit above every element, as on every platform.
+        for layerView in [elementsView, settledView, liveView] as [NSView] {
             layerView.frame = bounds
             layerView.autoresizingMask = [.width, .height]
             addSubview(layerView)
@@ -404,9 +407,17 @@ private final class LiveStrokesView: NSView {
 
 /// Text and stickers, above every stroke.
 private final class CanvasElementsView: NSView {
-    var elements: [CanvasElement] = []
-    var stickerImages: [StickerReference: CanvasImage] = [:]
-    var stickerTimeline: StickerArtworkTimeline?
+    var elements: [CanvasElement] = [] { didSet { renderer.retain(elements) } }
+    var stickerImages: [StickerReference: CanvasImage] {
+        get { renderer.stickerImages }
+        set { renderer.stickerImages = newValue }
+    }
+    var stickerTimeline: StickerArtworkTimeline? {
+        get { renderer.stickerTimeline }
+        set { renderer.stickerTimeline = newValue }
+    }
+    /// Kept between draws, so text stays laid out and photos rendered while only positions change.
+    private let renderer = CanvasElementRenderer()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -425,8 +436,7 @@ private final class CanvasElementsView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard !elements.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
-        DoodleRenderer.draw([], elements: elements, stickerImages: stickerImages, stickerTimeline: stickerTimeline,
-                            dry: true, in: context, size: bounds.size)
+        renderer.draw(elements, in: context, canvasSize: bounds.size)
     }
 }
 

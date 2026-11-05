@@ -585,6 +585,7 @@ struct FullAppCanvasEditor: View {
         switch moved {
         case let .text(text): textPreview = text
         case let .sticker(sticker): stickerPreview = sticker
+        case .photo: break
         }
         syncCanvasModel()
     }
@@ -606,10 +607,12 @@ struct FullAppCanvasEditor: View {
     // MARK: Eraser
 
     /// As on iPhone and iPad: pressing a text or sticker deletes it on release unless the pointer
-    /// moves; otherwise the eraser removes every stroke it passes over.
+    /// moves; otherwise the eraser removes every stroke it passes over. Strokes sit on top, so a
+    /// stroke over an element is erased first.
     private func eraseBegan(at point: CGPoint, canvasSize: CGSize) {
         erasedThisDrag = []
-        if let hit = element(at: point, canvasSize: canvasSize) {
+        if !editor.strokeIsUnder(point, in: syncController.drawing, surfaceSize: canvasSize),
+           let hit = element(at: point, canvasSize: canvasSize) {
             elementToErase = (hit.id, point)
             return
         }
@@ -652,6 +655,9 @@ struct FullAppCanvasEditor: View {
         case let .sticker(sticker):
             selectSticker(sticker.id)
             replacingSticker = true
+        // Photos are edited on iPhone and iPad for now.
+        case .photo:
+            return false
         }
         return true
     }

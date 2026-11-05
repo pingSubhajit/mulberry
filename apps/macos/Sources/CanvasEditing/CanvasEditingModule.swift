@@ -367,6 +367,14 @@ public struct CanvasStrokeEditingEngine: Sendable {
         return [operationFactory.makeDeleteStroke(strokeId: stroke.id, at: date)]
     }
 
+    /// Whether a stroke lies under the point. Strokes sit above every element, so the eraser takes
+    /// a stroke there before the text or sticker beneath it.
+    public func strokeIsUnder(_ renderedPoint: CGPoint, in state: DrawingState, surfaceSize: CGSize) -> Bool {
+        let point = viewportTransform.normalizedPoint(fromRenderedPoint: renderedPoint, surfaceSize: surfaceSize)
+            .denormalized(in: surfaceSize)
+        return Self.hitStroke(at: point, strokes: state.finishedStrokes, surfaceSize: surfaceSize) != nil
+    }
+
     public mutating func requestClearCanvas() {
         clearConfirmationRequested = true
     }
@@ -409,6 +417,8 @@ public struct CanvasStrokeEditingEngine: Sendable {
             empty = text.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case let .sticker(sticker):
             empty = sticker.sticker.stickerId.isEmpty
+        case let .photo(photo):
+            empty = photo.photoId.isEmpty
         }
         if isNew {
             guard !empty else { return [] }

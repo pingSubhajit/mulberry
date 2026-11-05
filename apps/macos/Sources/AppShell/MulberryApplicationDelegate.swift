@@ -887,6 +887,7 @@ public final class MulberryApplicationDelegate: NSObject, NSApplicationDelegate,
             switch element {
             case let .text(text): text.createdAt
             case let .sticker(sticker): sticker.createdAt
+            case let .photo(photo): photo.createdAt
             }
         }).max()
         let updated = latest.map { Date(timeIntervalSince1970: TimeInterval($0) / 1_000) }
