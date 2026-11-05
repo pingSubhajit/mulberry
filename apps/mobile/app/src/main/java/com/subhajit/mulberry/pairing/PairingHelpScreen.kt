@@ -1,6 +1,5 @@
 package com.subhajit.mulberry.pairing
 
-import android.provider.Settings
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -46,10 +45,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -60,6 +59,9 @@ import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.metadata.AppSystemBarStyle
 import com.subhajit.mulberry.core.ui.mulberryTapScale
+import com.subhajit.mulberry.core.ui.isLargeText
+import com.subhajit.mulberry.ui.animation.rememberSystemAnimationSettings
+import com.subhajit.mulberry.wallpaper.ui.HowItWorksLargeTextLayout
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import kotlinx.coroutines.delay
 
@@ -90,39 +92,6 @@ private const val EntryContentDurationMs = 140
 private const val EntryStaggerMs = 55
 private val EntryContentStartOffsetDp = 8.dp
 private const val EntryContentMinAlpha = 0.9f
-
-private data class SystemAnimationSettings(
-    val enabled: Boolean,
-    val durationScale: Float
-)
-
-@Composable
-private fun rememberSystemAnimationSettings(): SystemAnimationSettings {
-    val context = LocalContext.current
-    return remember(context) {
-        runCatching {
-            val windowScale = Settings.Global.getFloat(
-                context.contentResolver,
-                Settings.Global.WINDOW_ANIMATION_SCALE,
-                1f
-            )
-            val transitionScale = Settings.Global.getFloat(
-                context.contentResolver,
-                Settings.Global.TRANSITION_ANIMATION_SCALE,
-                1f
-            )
-            val animatorScale = Settings.Global.getFloat(
-                context.contentResolver,
-                Settings.Global.ANIMATOR_DURATION_SCALE,
-                1f
-            )
-            SystemAnimationSettings(
-                enabled = windowScale != 0f && transitionScale != 0f && animatorScale != 0f,
-                durationScale = animatorScale
-            )
-        }.getOrDefault(SystemAnimationSettings(enabled = true, durationScale = 1f))
-    }
-}
 
 @Composable
 fun PairingHelpRoute(
@@ -165,7 +134,18 @@ private fun PairingHelpScreen(
     var startNanos by remember { mutableLongStateOf(0L) }
 
     LaunchedEffect(systemAnimationsEnabled) {
-        if (!systemAnimationsEnabled) return@LaunchedEffect
+        if (!systemAnimationsEnabled) {
+            // With animations removed every block simply shows, as under Reduce Motion on iPhone.
+            closeEntered = true
+            heartEntered = true
+            pillEntered = true
+            titleEntered = true
+            bodyEntered = true
+            bulletsEntered = true
+            noteEntered = true
+            ctaEntered = true
+            return@LaunchedEffect
+        }
         startNanos = 0L
         closeEntered = false
         heartEntered = false
@@ -286,6 +266,25 @@ private fun PairingHelpScreen(
         label = "pairingHelpCtaOffset"
     )
 
+    if (isLargeText()) {
+        HowItWorksLargeTextLayout(
+            title = stringResource(R.string.pairing_help_title),
+            body = stringResource(R.string.pairing_help_body),
+            steps = listOf(
+                stringResource(R.string.pairing_help_bullet_one),
+                stringResource(R.string.pairing_help_bullet_two),
+                stringResource(R.string.pairing_help_bullet_three)
+            ),
+            note = stringResource(R.string.pairing_help_note),
+            ctaText = stringResource(R.string.pairing_help_cta),
+            onCta = onClose,
+            onClose = onClose,
+            modifier = Modifier.testTag(TestTags.PAIRING_HELP_SCREEN),
+            ctaModifier = Modifier.testTag(TestTags.PAIRING_HELP_CTA_BUTTON)
+        )
+        return
+    }
+
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -329,7 +328,7 @@ private fun PairingHelpScreen(
                 )
                 .size(25.dp * scale)
                 .mulberryTapScale()
-                .clickable(onClick = onClose)
+                .clickable(role = Role.Button, onClick = onClose)
                 .graphicsLayer { alpha = closeAlpha }
         )
 

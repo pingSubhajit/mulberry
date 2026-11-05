@@ -38,6 +38,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -48,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.ui.ApplySystemBarStyle
+import com.subhajit.mulberry.core.ui.isLargeText
 import com.subhajit.mulberry.core.ui.rememberOnboardingSystemBarStyle
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
@@ -141,8 +146,9 @@ private fun WallpaperCatalogScreen(
                         modifier = Modifier.align(Alignment.Center)
                     )
 
+                    // One column at the large text sizes, as on iPhone.
                     else -> LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
+                        columns = GridCells.Fixed(if (isLargeText()) 1 else 2),
                         state = gridState,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -198,7 +204,8 @@ private fun RemoteWallpaperCard(
             .fillMaxWidth()
             .aspectRatio(171f / 133f)
             .clip(RoundedCornerShape(15.38.dp))
-            .clickable(enabled = !isApplying, onClick = onClick)
+            .clickable(enabled = !isApplying, role = Role.Button, onClick = onClick)
+            .semantics { selected = isSelected }
     ) {
         AsyncImage(
             model = wallpaper.thumbnailUrl,
@@ -238,8 +245,10 @@ private fun CatalogBackButton(onClick: () -> Unit) {
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
+                role = Role.Button,
                 onClick = onClick
-            ),
+            )
+            .semantics { contentDescription = "Back" },
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.size(24.dp)) {
@@ -322,7 +331,7 @@ private fun ErrorCatalogState(
             text = stringResource(R.string.wallpaper_catalog_retry),
             color = MulberryPrimary,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.clickable(onClick = onRetry)
+            modifier = Modifier.clickable(role = Role.Button, onClick = onRetry)
         )
     }
 }

@@ -42,6 +42,15 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
+import com.subhajit.mulberry.core.ui.ColourNames
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 
@@ -99,6 +108,7 @@ fun RgbColorPickerSheet(
                     saturation = nextS
                     value = nextV
                 },
+                colourName = ColourNames.name(previewColorArgb),
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
@@ -139,9 +149,19 @@ private fun SaturationValueSquare(
     saturation: Float,
     value: Float,
     onChange: (saturation: Float, value: Float) -> Unit,
+    colourName: String,
     modifier: Modifier = Modifier
 ) {
     val hueColor = Color(hsvToArgbLong(hue = hue, saturation = 1f, value = 1f))
+
+    // TalkBack can't drag across the square, so it names the colour and offers steps instead.
+    fun step(saturationChange: Float, valueChange: Float): Boolean {
+        onChange(
+            (saturation + saturationChange).coerceIn(0f, 1f),
+            (value + valueChange).coerceIn(0f, 1f)
+        )
+        return true
+    }
 
     fun updateFromOffset(offset: Offset, width: Float, height: Float) {
         val s = (offset.x / width).coerceIn(0f, 1f)
@@ -151,6 +171,16 @@ private fun SaturationValueSquare(
 
     Canvas(
         modifier = modifier
+            .semantics {
+                contentDescription = "Colour"
+                stateDescription = colourName
+                customActions = listOf(
+                    CustomAccessibilityAction("More vivid") { step(ACCESSIBILITY_STEP, 0f) },
+                    CustomAccessibilityAction("Less vivid") { step(-ACCESSIBILITY_STEP, 0f) },
+                    CustomAccessibilityAction("Lighter") { step(0f, ACCESSIBILITY_STEP) },
+                    CustomAccessibilityAction("Darker") { step(0f, -ACCESSIBILITY_STEP) }
+                )
+            }
             .pointerInput(Unit) {
                 detectTapGestures { pos ->
                     val w = size.width.coerceAtLeast(1).toFloat()
@@ -209,6 +239,16 @@ private fun HueBar(
 
     Canvas(
         modifier = modifier
+            // An adjustable slider for TalkBack, named by the colour of each hue.
+            .semantics {
+                contentDescription = "Hue"
+                stateDescription = ColourNames.name(hsvToArgbLong(hue = hue, saturation = 1f, value = 1f))
+                progressBarRangeInfo = ProgressBarRangeInfo(hue.coerceIn(0f, 360f), 0f..360f, steps = 23)
+                setProgress { target ->
+                    onHueChanged(target.coerceIn(0f, 360f))
+                    true
+                }
+            }
             .pointerInput(Unit) {
                 detectTapGestures { pos ->
                     val w = size.width.coerceAtLeast(1).toFloat()
@@ -253,6 +293,9 @@ private fun HueBar(
         )
     }
 }
+
+/** How far one TalkBack step moves the picked colour's vividness or lightness. */
+private const val ACCESSIBILITY_STEP = 0.1f
 
 private data class Hsv(val h: Float, val s: Float, val v: Float)
 

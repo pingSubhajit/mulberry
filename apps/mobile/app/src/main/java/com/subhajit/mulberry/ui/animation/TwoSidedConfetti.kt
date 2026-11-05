@@ -15,6 +15,8 @@ import java.util.concurrent.TimeUnit
 
 @Composable
 fun TwoSidedConfettiBurst(modifier: Modifier = Modifier) {
+    // Confetti never plays with animations removed, as under iOS's Reduce Motion.
+    if (!rememberSystemAnimationsEnabled()) return
     val parties = remember {
         val colors = listOf(
             0xFFB31329.toInt(),

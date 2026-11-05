@@ -3,6 +3,8 @@ package com.subhajit.mulberry.pairing
 import com.subhajit.mulberry.analytics.OnboardingStep
 import com.subhajit.mulberry.analytics.TrackOnboardingStep
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -68,6 +70,7 @@ private fun PairingHubScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp)
             .testTag(TestTags.PAIRING_HUB_SCREEN),
         verticalArrangement = Arrangement.spacedBy(20.dp)

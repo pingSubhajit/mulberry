@@ -51,7 +51,15 @@ import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerAssetVariant
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import com.subhajit.mulberry.core.ui.HapticOnChange
+import com.subhajit.mulberry.core.ui.MulberryHaptic
 import kotlin.math.PI
+import kotlin.math.roundToInt
 
 data class StickerSelection(
     val packKey: String,
@@ -88,6 +96,10 @@ fun StickerEditorOverlay(
     }
     var panel by remember(session.element.id) { mutableStateOf(StickerEditorPanel.PICKER) }
     var enter by remember(session.element.id) { mutableStateOf(false) }
+
+    // A tick for each sticker picked, and as the rotation settles on level, as on iOS.
+    HapticOnChange(Triple(draft.packKey, draft.packVersion, draft.stickerId), MulberryHaptic.Selection)
+    HapticOnChange(rotationDeg == 0f, MulberryHaptic.RotationSnap)
 
     LaunchedEffect(session.element.id) {
         enter = true
@@ -181,7 +193,8 @@ fun StickerEditorOverlay(
                     .align(Alignment.TopEnd)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = null
+                        indication = null,
+                        role = Role.Button
                     ) {
                         commitAndExit()
                     }
@@ -254,7 +267,12 @@ fun StickerEditorOverlay(
                                 commitDraftUpdate(draft.copy(scale = next))
                             },
                             valueRange = SCALE_MIN..SCALE_MAX,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics {
+                                    contentDescription = "Size"
+                                    stateDescription = "${(scale / DEFAULT_SCALE * 100).roundToInt()} percent"
+                                }
                         )
                     }
                 }
@@ -264,11 +282,18 @@ fun StickerEditorOverlay(
                         Slider(
                             value = rotationDeg.coerceIn(ROTATION_MIN_DEG, ROTATION_MAX_DEG),
                             onValueChange = { value ->
-                                val nextDeg = value.coerceIn(ROTATION_MIN_DEG, ROTATION_MAX_DEG)
+                                val nextDeg = ElementRotation.settleSliderDegrees(
+                                    value.coerceIn(ROTATION_MIN_DEG, ROTATION_MAX_DEG)
+                                )
                                 commitDraftUpdate(draft.copy(rotationRad = degToRad(nextDeg)))
                             },
                             valueRange = ROTATION_MIN_DEG..ROTATION_MAX_DEG,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics {
+                                    contentDescription = "Rotation"
+                                    stateDescription = "${rotationDeg.roundToInt()} degrees"
+                                }
                         )
                     }
                 }
@@ -359,8 +384,10 @@ private fun EditorIconButton(
             )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { onClick() },
+                indication = null,
+                role = Role.Button
+            ) { onClick() }
+            .semantics(mergeDescendants = true) { this.selected = selected },
         contentAlignment = Alignment.Center
     ) {
         Icon(

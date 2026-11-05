@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -19,6 +19,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -50,6 +54,7 @@ fun OnboardingTextField(
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
+                role = Role.Button,
                 onClick = onClick
             )
     } else {
@@ -61,7 +66,10 @@ fun OnboardingTextField(
             value = value,
             label = label,
             placeholder = placeholder,
-            modifier = clickableModifier
+            // The placeholder is a sample value, so TalkBack hears "Not selected" instead, as on iPhone.
+            modifier = clickableModifier.semantics {
+                if (value.isEmpty()) stateDescription = "Not selected"
+            }
         )
         return
     }
@@ -109,7 +117,7 @@ private fun OnboardingTextFieldContainer(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(66.dp)
+            .heightIn(min = 66.dp)
             .background(appColors.inputSurface, RoundedCornerShape(15.38.dp))
             .padding(horizontal = 13.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.Center
@@ -133,6 +141,7 @@ private fun OnboardingTextFieldContainer(
                 Text(
                     text = placeholder,
                     color = appColors.mutedText,
+                    modifier = if (innerTextField == null) Modifier.clearAndSetSemantics {} else Modifier,
                     style = TextStyle(
                         fontFamily = PoppinsFontFamily,
                         fontWeight = FontWeight.Normal,

@@ -165,8 +165,9 @@ private fun LegalDocumentSheetContent(
                 fontSize = 13.sp,
                 lineHeight = 21.sp
             ),
+            // Shorter at the large text sizes, so the title and button still fit in the sheet.
             modifier = Modifier
-                .heightIn(max = 420.dp)
+                .heightIn(max = if (isLargeText()) 240.dp else 420.dp)
                 .verticalScroll(rememberScrollState())
         )
 

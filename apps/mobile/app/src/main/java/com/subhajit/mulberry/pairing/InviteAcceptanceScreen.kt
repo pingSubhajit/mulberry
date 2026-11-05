@@ -6,6 +6,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -39,6 +42,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -123,51 +129,52 @@ private fun InviteAcceptanceScreen(
             .imePadding()
             .testTag(TestTags.INVITE_ACCEPTANCE_SCREEN)
     ) {
-        InviteAcceptanceTopBar(
-            onNavigateBack = onDecline,
-            onHelpRequested = onHelpRequested,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 11.dp)
-        )
-
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(top = 107.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(36.dp)
-        ) {
-            InviteAcceptanceHeader(
-                recipientName = recipientName,
-                inviterName = inviterName
+        Column(modifier = Modifier.fillMaxSize()) {
+            InviteAcceptanceTopBar(
+                onNavigateBack = onDecline,
+                onHelpRequested = onHelpRequested,
+                modifier = Modifier.padding(top = 11.dp)
             )
 
-            Image(
-                painter = painterResource(R.drawable.invite_acceptance_couple),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.size(276.dp)
-            )
+            // Scrolls above the privacy notice when large text makes it taller than the screen.
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 48.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(36.dp)
+            ) {
+                InviteAcceptanceHeader(
+                    recipientName = recipientName,
+                    inviterName = inviterName
+                )
 
-            InviteAcceptanceActions(
-                isEnabled = invite != null && !uiState.isLoading,
-                isLoading = uiState.isLoading,
-                errorMessage = uiState.errorMessage,
-                inviterName = invite?.inviterDisplayName?.takeIf { it.isNotBlank() },
-                onAccept = onAccept,
-                onDecline = onDecline
+                Image(
+                    painter = painterResource(R.drawable.invite_acceptance_couple),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(276.dp)
+                )
+
+                InviteAcceptanceActions(
+                    isEnabled = invite != null && !uiState.isLoading,
+                    isLoading = uiState.isLoading,
+                    errorMessage = uiState.errorMessage,
+                    inviterName = invite?.inviterDisplayName?.takeIf { it.isNotBlank() },
+                    onAccept = onAccept,
+                    onDecline = onDecline
+                )
+            }
+
+            OnboardingPrivacyNotice(
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 12.dp, bottom = 26.dp)
             )
         }
-
-        OnboardingPrivacyNotice(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 26.dp)
-        )
 
         if (uiState.isLoading) {
             CircularProgressIndicator(
@@ -188,7 +195,7 @@ private fun InviteAcceptanceTopBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .heightIn(min = 48.dp)
             .padding(start = 4.dp, end = 20.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -203,10 +210,14 @@ private fun InviteAcceptanceTopBar(
                 fontSize = 14.sp,
                 lineHeight = 24.sp
             ),
+            textAlign = TextAlign.End,
             modifier = Modifier
+                .weight(1f, fill = false)
+                .padding(start = 12.dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
+                    role = Role.Button,
                     onClick = onHelpRequested
                 )
                 .padding(vertical = 8.dp)
@@ -224,8 +235,10 @@ private fun BackButton(onClick: () -> Unit) {
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
+                role = Role.Button,
                 onClick = onClick
-            ),
+            )
+            .semantics { contentDescription = "Back" },
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.size(24.dp)) {
@@ -331,7 +344,7 @@ private fun InviteAcceptanceActions(
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp)
+                .heightIn(min = 50.dp)
                 .testTag(TestTags.INVITE_ACCEPT_BUTTON)
                 .mulberryTapScale(enabled = isEnabled)
         ) {
@@ -375,6 +388,7 @@ private fun InviteAcceptanceActions(
                     enabled = isEnabled,
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
+                    role = Role.Button,
                     onClick = onDecline
                 )
                 .testTag(TestTags.INVITE_DECLINE_BUTTON)

@@ -24,7 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -65,6 +65,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -84,6 +85,7 @@ import com.subhajit.mulberry.ui.theme.MulberryError
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
+import com.subhajit.mulberry.ui.animation.rememberSystemAnimationsEnabled
 import com.subhajit.mulberry.wallpaper.WallpaperPreset
 import com.subhajit.mulberry.wallpaper.WallpaperIntentFactory
 import com.subhajit.mulberry.wallpaper.ui.WallpaperBackgroundSelectionSection
@@ -180,11 +182,17 @@ private fun OnboardingWallpaperScreen(
     val helpSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showHelp by remember { mutableStateOf(false) }
     val appColors = MaterialTheme.mulberryAppColors
+    val animationsEnabled = rememberSystemAnimationsEnabled()
 
     LaunchedEffect(uiState.wallpaperStatus.isWallpaperSelected) {
         if (uiState.wallpaperStatus.isWallpaperSelected) {
             withFrameNanos { }
-            scrollState.animateScrollTo(scrollState.maxValue)
+            // Jumps straight to the finish when animations are removed.
+            if (animationsEnabled) {
+                scrollState.animateScrollTo(scrollState.maxValue)
+            } else {
+                scrollState.scrollTo(scrollState.maxValue)
+            }
         }
     }
 
@@ -226,7 +234,16 @@ private fun OnboardingWallpaperScreen(
                 assetPath = previewAssetPath,
                 assetUpdatedAt = uiState.backgroundImageState.lastUpdatedAt,
                 fallbackBackgroundRes = selectedPreviewResId,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+                selectedTitle = presets.firstOrNull { it.id == uiState.selectedPresetId }?.label
+                    ?: uiState.recentRemoteWallpapers
+                        .firstOrNull { it.id == uiState.selectedRemoteWallpaperId }
+                        ?.title
+                    ?: when {
+                        uiState.selectedRemoteWallpaperId != null -> null
+                        previewAssetPath != null -> "Your photo"
+                        else -> "Mulberry"
+                    }
             )
 
             val isSelectedOnHome = uiState.wallpaperStatus.isWallpaperSelectedOnHome
@@ -376,6 +393,7 @@ private fun WallpaperCompletionSection(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
+                        role = Role.Button,
                         onClick = onSkipWithoutSetup
                     )
                     .padding(vertical = 4.dp)
@@ -398,6 +416,7 @@ private fun WallpaperHelpSheet(onDismiss: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .navigationBarsPadding()
             .padding(horizontal = 24.dp)
             .padding(bottom = 28.dp),
@@ -482,7 +501,8 @@ private fun WallpaperHeader(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 20.sp,
                     lineHeight = 27.sp
-                )
+                ),
+                modifier = Modifier.weight(1f, fill = false)
             )
             Text(
                 text = stringResource(R.string.onboarding_wallpaper_help),
@@ -497,6 +517,7 @@ private fun WallpaperHeader(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
+                        role = Role.Button,
                         onClick = onHelp
                     )
                     .padding(start = 16.dp, bottom = 16.dp)
@@ -546,7 +567,7 @@ private fun PrimaryOnboardingButton(
         ),
         modifier = modifier
             .fillMaxWidth()
-            .height(50.dp)
+            .heightIn(min = 50.dp)
             .mulberryTapScale(enabled = enabled)
     ) {
         Text(

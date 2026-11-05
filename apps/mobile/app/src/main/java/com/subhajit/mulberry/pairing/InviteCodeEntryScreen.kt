@@ -13,12 +13,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -44,6 +47,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -63,6 +70,7 @@ import com.subhajit.mulberry.ui.theme.MulberryError
 import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
+import com.subhajit.mulberry.ui.animation.rememberSystemAnimationsEnabled
 import kotlinx.coroutines.delay
 
 data class InviteCodeEntryUiState(
@@ -112,8 +120,7 @@ private fun InviteCodeEntryScreen(
     onNavigateBack: () -> Unit,
     onHelpRequested: () -> Unit
 ) {
-    val appColors = MaterialTheme.mulberryAppColors
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
@@ -125,16 +132,17 @@ private fun InviteCodeEntryScreen(
         InviteCodeTopBar(
             onNavigateBack = onNavigateBack,
             onHelpRequested = onHelpRequested,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 11.dp)
+            modifier = Modifier.padding(top = 11.dp)
         )
 
+        // Scrolls above the privacy notice when large text makes it taller than the screen.
         Column(
             modifier = Modifier
+                .weight(1f)
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
-                .padding(top = 102.dp),
+                .padding(top = 43.dp),
             verticalArrangement = Arrangement.spacedBy(35.dp)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -188,7 +196,7 @@ private fun InviteCodeEntryScreen(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp)
+                        .heightIn(min = 50.dp)
                         .testTag(TestTags.INVITE_CODE_SUBMIT_BUTTON)
                         .mulberryTapScale(enabled = uiState.code.length == 6 && !uiState.isSubmitting)
                 ) {
@@ -226,9 +234,8 @@ private fun InviteCodeEntryScreen(
 
         OnboardingPrivacyNotice(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 26.dp)
+                .padding(top = 12.dp, bottom = 26.dp)
         )
     }
 }
@@ -243,7 +250,7 @@ private fun InviteCodeTopBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .heightIn(min = 48.dp)
             .padding(start = 4.dp, end = 20.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -258,10 +265,14 @@ private fun InviteCodeTopBar(
                 fontSize = 14.sp,
                 lineHeight = 24.sp
             ),
+            textAlign = TextAlign.End,
             modifier = Modifier
+                .weight(1f, fill = false)
+                .padding(start = 12.dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
+                    role = Role.Button,
                     onClick = onHelpRequested
                 )
                 .padding(vertical = 8.dp)
@@ -278,8 +289,10 @@ private fun BackButton(onClick: () -> Unit) {
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
+                role = Role.Button,
                 onClick = onClick
-            ),
+            )
+            .semantics { contentDescription = "Back" },
         contentAlignment = Alignment.Center
     ) {
         val arrowColor = MaterialTheme.mulberryAppColors.iconMuted
@@ -319,13 +332,17 @@ private fun InviteCodeInput(
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     var showCursor by remember { mutableStateOf(true) }
+    val animationsEnabled = rememberSystemAnimationsEnabled()
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
         keyboardController?.show()
     }
 
-    LaunchedEffect(Unit) {
+    // The cursor stays lit when animations are removed.
+    LaunchedEffect(animationsEnabled) {
+        showCursor = true
+        if (!animationsEnabled) return@LaunchedEffect
         while (true) {
             delay(530)
             showCursor = !showCursor
@@ -344,11 +361,15 @@ private fun InviteCodeInput(
         keyboardActions = KeyboardActions(onDone = { onSubmit() }),
         modifier = Modifier
             .fillMaxWidth()
-            .focusRequester(focusRequester),
+            .focusRequester(focusRequester)
+            .semantics { contentDescription = "Six-digit invite code" },
         decorationBox = { innerTextField ->
             Box(modifier = Modifier.fillMaxWidth()) {
+                // The cells mirror the field's value, which TalkBack already reads.
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clearAndSetSemantics {},
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -381,7 +402,8 @@ private fun CodeCell(
     val appColors = MaterialTheme.mulberryAppColors
     Row(
         modifier = Modifier
-            .size(width = 51.dp, height = 66.dp)
+            .width(51.dp)
+            .heightIn(min = 66.dp)
             .background(appColors.inputSurface, RoundedCornerShape(15.38.dp)),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically

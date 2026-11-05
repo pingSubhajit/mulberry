@@ -20,12 +20,18 @@ import android.view.WindowInsets
 import android.view.WindowManager
 import androidx.core.content.res.ResourcesCompat
 import com.subhajit.mulberry.R
+import com.subhajit.mulberry.core.ui.MulberryHaptic
+import com.subhajit.mulberry.core.ui.performMulberryHapticWithoutView
+import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
 import com.subhajit.mulberry.reactions.PendingReactionBatch
 import com.subhajit.mulberry.reactions.PendingReactionStore
 import com.subhajit.mulberry.reactions.ReactionGifAssets
 import com.subhajit.mulberry.reactions.ReactionLocalStore
 import com.subhajit.mulberry.reactions.ReactionRepository
 import com.subhajit.mulberry.reactions.ReactionType
+import com.subhajit.mulberry.reactions.announceToScreenReader
+import com.subhajit.mulberry.reactions.reactionArrivalAnnouncement
+import com.subhajit.mulberry.ui.animation.systemAnimationsEnabled
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import javax.inject.Inject
@@ -52,6 +58,7 @@ class MulberryWallpaperService : WallpaperService() {
     @Inject lateinit var pendingReactionStore: PendingReactionStore
     @Inject lateinit var reactionRepository: ReactionRepository
     @Inject lateinit var reactionLocalStore: ReactionLocalStore
+    @Inject lateinit var sessionBootstrapRepository: SessionBootstrapRepository
 
     override fun onCreateEngine(): Engine = MulberryWallpaperEngine()
 
@@ -74,6 +81,8 @@ class MulberryWallpaperService : WallpaperService() {
         private var reactionAnimation: ReactionAnimationState? = null
         private var reactionRetryJob: Job? = null
         private var receiverRegistered: Boolean = false
+        /** Who sends the reactions, for the spoken note as they arrive. */
+        private var partnerName: String? = null
 
         private val emojiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
@@ -121,6 +130,11 @@ class MulberryWallpaperService : WallpaperService() {
                 wallpaperCoordinator.wallpaperStatus().collectLatest { status ->
                     latestWallpaperStatus = status
                     evaluateReactionPlayback("wallpaper_status")
+                }
+            }
+            engineScope.launch {
+                sessionBootstrapRepository.state.collectLatest { state ->
+                    partnerName = state.partnerDisplayName
                 }
             }
             engineScope.launch {
@@ -403,8 +417,19 @@ class MulberryWallpaperService : WallpaperService() {
                 generation = batch.generation,
                 durationMs = durationMs,
                 glyphs = glyphs,
-                spamText = spamText
+                spamText = spamText,
+                announcement = reactionArrivalAnnouncement(batch, partnerName),
+                still = !systemAnimationsEnabled()
             )
+        }
+
+        /**
+         * As the reactions first show: a firm tap, and a spoken note for TalkBack, as the iPhone
+         * gives when they arrive.
+         */
+        private fun announceReactionArrival(animation: ReactionAnimationState) {
+            performMulberryHapticWithoutView(MulberryHaptic.ReactionArrived)
+            announceToScreenReader(animation.announcement)
         }
 
         private fun getReactionMovie(type: ReactionType): Movie? {
@@ -422,6 +447,7 @@ class MulberryWallpaperService : WallpaperService() {
             val now = System.currentTimeMillis()
             if (animation.firstRenderedAtMs == null) {
                 animation.firstRenderedAtMs = now
+                engineScope.launch { announceReactionArrival(animation) }
             }
             val elapsed = reactionAnimationElapsedMs(
                 firstRenderedAtMs = animation.firstRenderedAtMs,
@@ -448,11 +474,14 @@ class MulberryWallpaperService : WallpaperService() {
                 else -> 1f - (fadeOutProgress * fadeOutProgress)
             }
             val alpha = (alphaFloat * 255f).toInt().coerceIn(0, 255)
+            // With animations removed they fade in and out in place, as under iOS's Reduce Motion.
+            val still = animation.still
 
             val startOffsetPx = canvas.height * 0.06f
             val endUpOffsetPx = -canvas.height * 0.035f
             val fallEndOffsetPx = canvas.height * 0.09f
             val yOffsetPx = when {
+                still -> 0f
                 tMs < slideMs -> lerp(
                     startOffsetPx,
                     endUpOffsetPx,
@@ -474,7 +503,7 @@ class MulberryWallpaperService : WallpaperService() {
             val baseSize = (minOf(canvas.width, canvas.height) * 0.24f).coerceAtLeast(28f)
 
             // Leaf-like drift during fall.
-            val xDriftPx = if (tMs < slideMs + wiggleMs) 0f else run {
+            val xDriftPx = if (still || tMs < slideMs + wiggleMs) 0f else run {
                 val fallSeconds = (tMs - slideMs - wiggleMs) / 1000f
                 val amplitude = canvas.width * 0.035f
                 sin((2f * PI.toFloat() * 1.15f) * fallSeconds) * amplitude * (1f - fallProgress * 0.35f)
@@ -488,8 +517,11 @@ class MulberryWallpaperService : WallpaperService() {
                 val slideRamp = (tMs / slideMs).coerceIn(0f, 1f)
                 val fallDamp = if (tMs < slideMs + wiggleMs) 1f else (1f - fallProgress * 0.55f).coerceIn(0f, 1f)
                 val wiggleAmp = baseAmp * slideRamp * fallDamp
-                val rotationDeg =
+                val rotationDeg = if (still) {
+                    0f
+                } else {
                     sin((2f * PI.toFloat() * 3.2f) * wigglePhaseSeconds + idx * 0.7f) * wiggleAmp
+                }
 
                 val movie = getReactionMovie(glyph.type)
                 if (movie == null) {
@@ -827,6 +859,10 @@ private data class ReactionAnimationState(
     val durationMs: Long,
     val glyphs: List<ReactionGlyph>,
     val spamText: String?,
+    /** What TalkBack says as they arrive. */
+    val announcement: String,
+    /** Whether they play without motion, because animations are removed. */
+    val still: Boolean,
     var firstRenderedAtMs: Long? = null,
     var hasRendered: Boolean = false
 )

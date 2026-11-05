@@ -6,8 +6,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -41,6 +43,10 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -113,7 +119,7 @@ private fun OnboardingNameScreen(
         keyboardController?.show()
     }
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
@@ -122,9 +128,12 @@ private fun OnboardingNameScreen(
             .imePadding()
             .testTag(TestTags.ONBOARDING_NAME_SCREEN)
     ) {
+        // Scrolls above the privacy notice when large text makes it taller than the screen.
         Column(
             modifier = Modifier
+                .weight(1f)
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(top = 66.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -175,7 +184,7 @@ private fun OnboardingNameScreen(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
                     .testTag(TestTags.ONBOARDING_NAME_CONTINUE_BUTTON)
                     .mulberryTapScale(enabled = uiState.isStepOneValid)
             ) {
@@ -196,9 +205,8 @@ private fun OnboardingNameScreen(
         if (!isImeVisible) {
             OnboardingPrivacyNotice(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
                     .padding(horizontal = 20.dp)
-                    .padding(bottom = 26.dp)
+                    .padding(top = 12.dp, bottom = 26.dp)
             )
         }
     }
@@ -208,38 +216,38 @@ private fun OnboardingNameScreen(
 private fun EnterCodePrompt(onEnterCode: () -> Unit) {
     val appColors = MaterialTheme.mulberryAppColors
     val interactionSource = remember { MutableInteractionSource() }
+    val prompt = stringResource(R.string.onboarding_enter_code_prompt)
+    val action = stringResource(R.string.onboarding_enter_code_action)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .heightIn(min = 48.dp)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
+                role = Role.Button,
                 onClick = onEnterCode
             )
             .testTag(TestTags.ONBOARDING_ENTER_CODE_BUTTON),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // One text, so the prompt and its action wrap together at large text sizes.
         Text(
-            text = stringResource(R.string.onboarding_enter_code_prompt),
-            color = appColors.mutedText,
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(color = appColors.mutedText, fontWeight = FontWeight.Medium)) {
+                    append(prompt)
+                }
+                withStyle(SpanStyle(color = MulberryPrimary, fontWeight = FontWeight.SemiBold)) {
+                    append(" $action")
+                }
+            },
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
-                fontWeight = FontWeight.Medium,
                 fontSize = 15.sp,
                 lineHeight = 24.sp
-            )
-        )
-        Text(
-            text = " ${stringResource(R.string.onboarding_enter_code_action)}",
-            color = MulberryPrimary,
-            style = TextStyle(
-                fontFamily = PoppinsFontFamily,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp,
-                lineHeight = 24.sp
-            )
+            ),
+            textAlign = TextAlign.Center
         )
     }
 }

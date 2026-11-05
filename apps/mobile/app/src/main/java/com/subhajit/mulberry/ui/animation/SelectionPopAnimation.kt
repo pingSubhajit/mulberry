@@ -25,7 +25,8 @@ fun Modifier.mulberrySelectionPop(
     pressedRotationDegrees: Float = -14f,
     wiggleRotationDegrees: Float = 9f
 ): Modifier = composed {
-    if (!enabled) return@composed this
+    // The pop is decorative, so it doesn't play with animations removed.
+    if (!enabled || !rememberSystemAnimationsEnabled()) return@composed this
 
     val scale = remember { Animatable(1f) }
     val rotation = remember { Animatable(0f) }

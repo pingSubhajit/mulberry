@@ -170,7 +170,7 @@ fun WhatsNewBottomSheet(
                     onClick = onDismiss,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
+                        .heightIn(min = 50.dp),
                     shape = RoundedCornerShape(15.38.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFFB31329),

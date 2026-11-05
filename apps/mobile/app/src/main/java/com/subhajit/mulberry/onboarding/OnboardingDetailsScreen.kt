@@ -4,6 +4,8 @@ import com.subhajit.mulberry.analytics.OnboardingStep
 import com.subhajit.mulberry.analytics.TrackOnboardingStep
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -126,7 +129,7 @@ private fun OnboardingDetailsScreen(
         keyboardController?.show()
     }
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
@@ -135,9 +138,12 @@ private fun OnboardingDetailsScreen(
             .imePadding()
             .testTag(TestTags.ONBOARDING_DETAILS_SCREEN)
     ) {
+        // Scrolls above the privacy notice when large text makes it taller than the screen.
         Column(
             modifier = Modifier
+                .weight(1f)
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(top = 66.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -210,7 +216,7 @@ private fun OnboardingDetailsScreen(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp)
+                        .heightIn(min = 50.dp)
                         .testTag(TestTags.ONBOARDING_DETAILS_SUBMIT_BUTTON)
                         .mulberryTapScale(enabled = uiState.draft.isComplete && !uiState.isSubmitting)
                 ) {
@@ -249,9 +255,8 @@ private fun OnboardingDetailsScreen(
         if (!isImeVisible) {
             OnboardingPrivacyNotice(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
                     .padding(horizontal = 20.dp)
-                    .padding(bottom = 26.dp)
+                    .padding(top = 12.dp, bottom = 26.dp)
             )
         }
 

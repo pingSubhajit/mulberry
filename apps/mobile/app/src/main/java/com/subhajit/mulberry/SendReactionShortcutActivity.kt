@@ -20,11 +20,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.subhajit.mulberry.app.shortcut.ReactionShortcutPublisher
+import com.subhajit.mulberry.core.ui.MulberryHaptic
+import com.subhajit.mulberry.core.ui.rememberMulberryHaptics
 import com.subhajit.mulberry.reactions.ReactionGif
 import com.subhajit.mulberry.reactions.ReactionLocalStore
 import com.subhajit.mulberry.reactions.ReactionRepository
 import com.subhajit.mulberry.reactions.ReactionSendRateLimiter
 import com.subhajit.mulberry.reactions.ReactionType
+import com.subhajit.mulberry.ui.animation.rememberSystemAnimationsEnabled
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -75,8 +78,21 @@ private fun ReactionShortcutOverlay(reactionType: ReactionType) {
     val offsetYDp = remember { Animatable(12f) }
     val offsetXDp = remember { Animatable(0f) }
     val rotationZAnim = remember { Animatable(0f) }
+    val animate = rememberSystemAnimationsEnabled()
+    val haptics = rememberMulberryHaptics()
 
     LaunchedEffect(reactionType) {
+        // A light tap as the reaction goes, as in the app.
+        haptics.perform(MulberryHaptic.LightImpact)
+        if (!animate) {
+            // With animations removed it shows in place and goes, with no rise, sway or fall.
+            scale.snapTo(1f)
+            offsetYDp.snapTo(0f)
+            alpha.animateTo(1f, tween(durationMillis = 90, easing = FastOutSlowInEasing))
+            delay(390)
+            alpha.animateTo(0f, tween(durationMillis = 220, easing = FastOutSlowInEasing))
+            return@LaunchedEffect
+        }
         scale.snapTo(0.95f)
         alpha.snapTo(0f)
         offsetYDp.snapTo(12f)

@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -45,6 +45,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -71,7 +76,9 @@ fun WallpaperLockScreenPreview(
     @DrawableRes fallbackBackgroundRes: Int,
     modifier: Modifier = Modifier,
     width: Dp = 233.dp,
-    height: Dp = 428.dp
+    height: Dp = 428.dp,
+    /** The chosen wallpaper's name, read by TalkBack; without it the preview is decorative. */
+    selectedTitle: String? = null
 ) {
     val appColors = MaterialTheme.mulberryAppColors
     val imageBitmap = remember(assetPath, assetUpdatedAt) {
@@ -83,6 +90,10 @@ fun WallpaperLockScreenPreview(
 
     Box(
         modifier = modifier
+            // Its clock is a placeholder, so TalkBack hears only which wallpaper is chosen, as on iPhone.
+            .clearAndSetSemantics {
+                selectedTitle?.let { contentDescription = "Selected wallpaper: $it" }
+            }
             .size(width = width, height = height)
             .clip(previewShape)
             .background(appColors.previewFrame)
@@ -212,7 +223,7 @@ fun WallpaperPrimaryButton(
         ),
         modifier = modifier
             .fillMaxWidth()
-            .height(50.dp)
+            .heightIn(min = 50.dp)
             .mulberryTapScale(enabled = enabled)
     ) {
         Text(
@@ -258,6 +269,8 @@ fun WallpaperSetupStatusBadge(
         Text(
             text = iconText,
             color = Color.White,
+            // The mark repeats the badge's words, so TalkBack skips it.
+            modifier = Modifier.clearAndSetSemantics {},
             style = TextStyle(
                 fontFamily = PoppinsFontFamily,
                 fontWeight = FontWeight.Bold,
@@ -343,11 +356,11 @@ private fun UploadBackgroundButton(onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(115.dp)
+            .heightIn(min = 115.dp)
             .clip(RoundedCornerShape(radius))
             .background(appColors.softSurfaceAlt)
             .dashedBorder(MulberryPrimary, radius)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .testTag(TestTags.ONBOARDING_WALLPAPER_UPLOAD_BUTTON),
         contentAlignment = Alignment.Center
     ) {
@@ -375,10 +388,10 @@ private fun MoreWallpapersButton(onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .heightIn(min = 52.dp)
             .clip(RoundedCornerShape(15.38.dp))
             .background(MulberryPrimary.copy(alpha = 0.08f))
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -438,7 +451,8 @@ private fun PresetCard(
         modifier = modifier
             .aspectRatio(171f / 133f)
             .clip(shape)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { selected = isSelected }
     ) {
         Image(
             painter = painterResource(preset.thumbnailDrawableResId),
@@ -472,7 +486,8 @@ private fun RemoteWallpaperCard(
         modifier = modifier
             .aspectRatio(171f / 133f)
             .clip(shape)
-            .clickable(enabled = !isApplying, onClick = onClick)
+            .clickable(enabled = !isApplying, role = Role.Button, onClick = onClick)
+            .semantics { selected = isSelected }
     ) {
         AsyncImage(
             model = wallpaper.thumbnailUrl,
