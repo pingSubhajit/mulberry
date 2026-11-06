@@ -10,6 +10,8 @@ struct DoodleCanvasView: View {
     @State private var clearConfirmation = false
     /// The reactions, opened from their button.
     @State private var reactionsOpen = false
+    /// On iPhone, the reactions button's glass opens into a bar of reactions.
+    @State private var reactionRailOpen = false
     @State private var toolbarFrame = CGRect.zero
     /// The floating palette a Pencil squeeze or double-tap asked for, at the Pencil's tip.
     @State private var pencilPalette: PencilRequest?
@@ -95,7 +97,7 @@ struct DoodleCanvasView: View {
             }
         }
         // Touching the canvas, or choosing a tool anywhere, puts the palette away; the touch still draws.
-        .onChange(of: editor.canvasTouches) { _, _ in closeRadial() }
+        .onChange(of: editor.canvasTouches) { _, _ in closeRadial(); setReactionRail(open: false) }
         // After the selection highlight has moved, when the tool was chosen on the arc itself.
         .onChange(of: editor.tool) { _, _ in
             Task { try? await Task.sleep(for: .milliseconds(reduceMotion ? 0 : 100)); closeRadial() }
@@ -105,7 +107,7 @@ struct DoodleCanvasView: View {
         .background { if editor.editsInPlace { MulberryDesign.background.ignoresSafeArea() } }
             .onChange(of: model.canvasClearVersion) { _, _ in editor.resetHistory() }
             .onChange(of: scenePhase) { _, value in
-                if value != .active { editor.end(); radialAt = nil; editor.reactionRequest = nil }
+                if value != .active { editor.end(); radialAt = nil; editor.reactionRequest = nil; reactionRailOpen = false }
                 else if editor.errorMessage != nil { editor.retry() }
                 model.reactions.watching = value == .active
             }
@@ -178,12 +180,19 @@ struct DoodleCanvasView: View {
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
             ReactionStage(reactions: model.reactions, partnerName: model.bootstrap?.partnerDisplayName)
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
+            // While the reactions are open, a touch on the canvas only folds them, so it leaves no mark.
+            if reactionRailOpen {
+                Color.clear.contentShape(.rect)
+                    .onTapGesture { setReactionRail(open: false) }
+                    .gesture(DragGesture(minimumDistance: 0).onEnded { _ in setReactionRail(open: false) })
+                    .accessibilityHidden(true)
+            }
             // Actions stand apart from the tools, in one column on the right. Undo and redo are in the
             // navigation bar.
             VStack(spacing: 28) {
                 HStack(alignment: .bottom) {
                     Spacer()
-                    actionColumn
+                    actionColumn(reactionSpace: geometry.size.width - 32)
                 }
                 .padding(.horizontal, 8)
                 compactToolbar
@@ -448,6 +457,60 @@ struct DoodleCanvasView: View {
             }
     }
 
+    /// On iPhone, the reactions grow out of their button: its glass stretches to the left into a bar
+    /// of every reaction, and shrinks back into the button once one is sent or the canvas is touched.
+    /// The column keeps one button's place, so nothing around it moves.
+    private func reactionRail(space: CGFloat) -> some View {
+        let reactions = CGFloat(ReactionType.allCases.count)
+        // The picker's own size: its 52 pt reactions 6 pt apart, inside 12 pt of padding.
+        let natural = reactions * 52 + (reactions - 1) * 6 + 24
+        let scale = min(1, max(0.5, space / natural))
+        return GlassEffectContainer {
+            if reactionRailOpen {
+                ReactionPicker { type in
+                    setReactionRail(open: false)
+                    Task { await model.reactions.send(type) }
+                }
+                .glassEffect(.regular, in: .capsule)
+                .glassEffectID(Self.reactionGlass, in: glassSpace)
+                .glassEffectTransition(reduceMotion ? .materialize : .matchedGeometry)
+                .scaleEffect(scale, anchor: .trailing)
+                // A modal bar for VoiceOver; the scrub gesture folds it.
+                .accessibilityElement(children: .contain)
+                .accessibilityAddTraits(.isModal)
+                .accessibilityLabel("Reactions")
+                .accessibilityAction(.escape) { setReactionRail(open: false) }
+            } else {
+                Button { setReactionRail(open: true) } label: {
+                    Image(systemName: "heart")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(MulberryDesign.ink)
+                        .frame(width: 56, height: 56)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.clear.interactive(), in: .circle)
+                .glassEffectID(Self.reactionGlass, in: glassSpace)
+                .glassEffectTransition(reduceMotion ? .materialize : .matchedGeometry)
+                .accessibilityLabel("Reactions")
+            }
+        }
+        // Open, the bar reaches past the button to the left; the column still sees one button.
+        .frame(width: reactionRailOpen ? space : 56, height: 56, alignment: .trailing)
+        .frame(width: 56, height: 56, alignment: .trailing)
+        .sensoryFeedback(.selection, trigger: reactionRailOpen)
+    }
+
+    /// The glass the reactions button and its bar share as one becomes the other.
+    private static let reactionGlass = "reactions"
+
+    private func setReactionRail(open: Bool) {
+        guard reactionRailOpen != open else { return }
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.34, bounce: 0.2)) { reactionRailOpen = open }
+        // VoiceOver moves into the bar as it opens.
+        if open { UIAccessibility.post(notification: .layoutChanged, argument: nil) }
+    }
+
     /// The reactions on an arc over a finger held on the phone's canvas, kept on screen. A tap
     /// anywhere else puts them away without drawing.
     @ViewBuilder private func reactionArc(in size: CGSize) -> some View {
@@ -529,9 +592,9 @@ struct DoodleCanvasView: View {
     /// the brush and the eyedropper, and clear. What the tool in hand can't use slides away to the
     /// side but keeps its place, so nothing above it moves.
     /// Clear glass lets them blend into the canvas, apart from the tools below.
-    private var actionColumn: some View {
+    private func actionColumn(reactionSpace: CGFloat) -> some View {
         VStack(spacing: 10) {
-            reactionButton(edge: .trailing, glass: .clear)
+            reactionRail(space: reactionSpace)
             shareButton
             widthButton(edge: .trailing, glass: .clear)
                 .modifier(SlideAway(hidden: editor.tool != .brush))
