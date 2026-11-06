@@ -1,0 +1,66 @@
+{
+  "layoutVersion": 1,
+  "key": "plain",
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "content": {
+    "kind": "phone",
+    "aspectRatio": 0.4612676056338028,
+    "quad": {
+      "topLeft": {
+        "x": 300.94236,
+        "y": 329.60267
+      },
+      "topRight": {
+        "x": 861.56165,
+        "y": 368.80499
+      },
+      "bottomRight": {
+        "x": 776.57342,
+        "y": 1584.19338
+      },
+      "bottomLeft": {
+        "x": 215.95412,
+        "y": 1544.99106
+      }
+    }
+  },
+  "caption": {
+    "position": {
+      "x": 1040.0,
+      "y": 1503.072
+    },
+    "anchor": "bottomRight",
+    "rotationDegrees": -7,
+    "maxWidth": 580,
+    "maxLines": 3,
+    "maxFontSize": 64,
+    "minFontSize": 40,
+    "lineHeight": 1.05,
+    "align": "right",
+    "inkColor": "#B31329",
+    "backing": {
+      "color": "#FFF4DF",
+      "paddingX": 12,
+      "paddingY": 7
+    }
+  },
+  "brand": {
+    "position": {
+      "x": 163,
+      "y": 1535.5
+    },
+    "anchor": "center",
+    "markHeight": 37,
+    "fontSize": 24,
+    "color": "#8C1729",
+    "backing": {
+      "color": "#FFF9EB",
+      "paddingX": 13,
+      "paddingY": 8,
+      "cornerRadius": 15
+    }
+  }
+}

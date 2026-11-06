@@ -249,6 +249,11 @@ public actor BackendClient {
             .init(name: "stickerId", value: sticker.stickerId), .init(name: "variant", value: variant.rawValue)
         ], quick: quick)
     }
+    /// Every published share frame, in or out of its date window: the app filters by its own date.
+    public func shareFrames() async throws -> [ShareFrameCatalogItem] {
+        let result: ShareFrameCatalogList = try await get("share-frames")
+        return result.items
+    }
     public func canvasSnapshot() async throws -> DrawingSnapshot { try await get("canvas/snapshot") }
     public func canvasOperations(after revision: Int64, quick: Bool = false) async throws -> [DrawingOperation] {
         let result: DrawingOperations = try await get("canvas/ops", query: [.init(name: "afterRevision", value: String(revision))], quick: quick)

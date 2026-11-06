@@ -9,6 +9,9 @@ public enum AnalyticsEventName: String, Codable, Sendable {
     case onboardingStepViewed = "mulberry_onboarding_step_viewed"
     case wallpaperSetupStep = "mulberry_wallpaper_setup_step"
     case pushOpened = "mulberry_push_opened"
+    case shareOpened = "mulberry_share_opened"
+    case shareFrameSelected = "mulberry_share_frame_selected"
+    case shareCompleted = "mulberry_share_completed"
 }
 
 /// An onboarding or pairing screen.
@@ -74,12 +77,22 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case wallpaperSetupStep(surface: PresenceSurfaceType, step: WallpaperSetupStep, outcome: WallpaperSetupOutcome,
                             failureReason: WallpaperSetupFailure? = nil)
     case pushOpened(PushType)
+    /// The share screen opened from the canvas.
+    case shareOpened
+    /// A frame tapped on the share screen.
+    case shareFrameSelected(frameKey: String)
+    /// The system share sheet finished sharing the image. `activityType` is where it went, when
+    /// the system says.
+    case shareCompleted(frameKey: String, usedRealWallpaper: Bool, captionEdited: Bool, activityType: String? = nil)
 
     public var name: AnalyticsEventName {
         switch self {
         case .onboardingStepViewed: .onboardingStepViewed
         case .wallpaperSetupStep: .wallpaperSetupStep
         case .pushOpened: .pushOpened
+        case .shareOpened: .shareOpened
+        case .shareFrameSelected: .shareFrameSelected
+        case .shareCompleted: .shareCompleted
         }
     }
 
@@ -93,6 +106,15 @@ public enum AnalyticsEvent: Equatable, Sendable {
             return properties
         case let .pushOpened(type):
             return ["push_type": type.rawValue]
+        case .shareOpened:
+            return [:]
+        case let .shareFrameSelected(frameKey):
+            return ["frame_key": frameKey]
+        case let .shareCompleted(frameKey, usedRealWallpaper, captionEdited, activityType):
+            var properties = ["frame_key": frameKey, "used_real_wallpaper": String(usedRealWallpaper),
+                              "caption_edited": String(captionEdited)]
+            if let activityType, !activityType.isEmpty { properties["activity_type"] = String(activityType.prefix(128)) }
+            return properties
         }
     }
 }
