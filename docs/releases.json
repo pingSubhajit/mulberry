@@ -57,7 +57,9 @@
       "build": 28,
       "commit": "c7166dcd9def2d8fe04b6f92599718b9ef7abeaf",
       "channel": "play-beta",
-      "uploadedAt": "2026-11-06"
+      "uploadedAt": "2026-11-06",
+      "releasedAt": "2026-11-06",
+      "tag": "android-v1.2.0"
     }
   ]
 }
