@@ -121,6 +121,9 @@ other two.
 | `mulberry_onboarding_step_viewed` | An onboarding or pairing screen appears | `step` |
 | `mulberry_wallpaper_setup_step` | A wallpaper, Shortcut or overlay setup step appears, finishes, fails or is skipped | `surface_type`, `step`, `outcome`, optional `failure_reason` |
 | `mulberry_push_opened` | The person opens a notification | `push_type` |
+| `mulberry_share_opened` | The share sheet opens from the canvas | None |
+| `mulberry_share_frame_selected` | The person taps a frame on the share sheet | `frame_key` |
+| `mulberry_share_completed` | The image goes to the system share sheet (iOS: after sharing finishes; Android: when the chooser opens) | `frame_key`, `used_real_wallpaper`, `caption_edited`, `activity_type` (iOS only, optional) |
 
 **`step` (onboarding):** `welcome`, `sign_in`, `profile_name`, `partner_details`, `pairing_choice`,
 `invite_code_shown`, `redeem_code_entry`, `invite_review`, `waiting_for_partner`,

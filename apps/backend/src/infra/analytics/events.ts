@@ -132,6 +132,14 @@ export type ClientEventProperties = {
     failure_reason?: string
   }
   mulberry_push_opened: { push_type: PushType }
+  mulberry_share_opened: Record<string, never>
+  mulberry_share_frame_selected: { frame_key: string }
+  mulberry_share_completed: {
+    frame_key: string
+    used_real_wallpaper: boolean
+    caption_edited: boolean
+    activity_type?: string
+  }
 }
 
 export type AnalyticsEventProperties = ServerEventProperties & ClientEventProperties
@@ -143,6 +151,9 @@ export const ClientEventNames = [
   "mulberry_onboarding_step_viewed",
   "mulberry_wallpaper_setup_step",
   "mulberry_push_opened",
+  "mulberry_share_opened",
+  "mulberry_share_frame_selected",
+  "mulberry_share_completed",
 ] as const satisfies readonly ClientEventName[]
 
 /** Where an event came from: the server, an app, or the one-time backfill of earlier history. */

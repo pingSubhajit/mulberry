@@ -118,9 +118,51 @@ export function validClientEvent(raw: unknown, now: number): ValidClientEvent | 
       const pushType = oneOf(PushTypes, properties.push_type)
       return pushType ? { id, event, occurredAt: at, properties: { push_type: pushType } } : null
     }
+    case "mulberry_share_opened":
+      return { id, event, occurredAt: at, properties: {} }
+    case "mulberry_share_frame_selected": {
+      const frameKey = frameKeyOf(properties.frame_key)
+      return frameKey ? { id, event, occurredAt: at, properties: { frame_key: frameKey } } : null
+    }
+    case "mulberry_share_completed": {
+      const frameKey = frameKeyOf(properties.frame_key)
+      const usedRealWallpaper = booleanOf(properties.used_real_wallpaper)
+      const captionEdited = booleanOf(properties.caption_edited)
+      const activityType = properties.activity_type
+      if (!frameKey || usedRealWallpaper === null || captionEdited === null) return null
+      if (activityType !== undefined && (typeof activityType !== "string" || !ACTIVITY_TYPE_PATTERN.test(activityType))) return null
+      return {
+        id,
+        event,
+        occurredAt: at,
+        properties: {
+          frame_key: frameKey,
+          used_real_wallpaper: usedRealWallpaper,
+          caption_edited: captionEdited,
+          ...(activityType ? { activity_type: activityType } : {}),
+        },
+      }
+    }
     case null:
       return null
   }
+}
+
+/** A share frame key, as the catalog writes them: lowercase words joined by hyphens. */
+const FRAME_KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+/** Where the iOS share sheet sent the image, e.g. `com.apple.UIKit.activity.Message`. */
+const ACTIVITY_TYPE_PATTERN = /^[A-Za-z0-9._-]{1,128}$/
+
+function frameKeyOf(value: unknown): string | null {
+  return typeof value === "string" && value.length <= 64 && FRAME_KEY_PATTERN.test(value) ? value : null
+}
+
+/** The apps send these flags as booleans or as the strings "true" and "false". */
+function booleanOf(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value
+  if (value === "true") return true
+  if (value === "false") return false
+  return null
 }
 
 function oneOf<const T extends readonly string[]>(allowed: T, value: unknown): T[number] | null {
