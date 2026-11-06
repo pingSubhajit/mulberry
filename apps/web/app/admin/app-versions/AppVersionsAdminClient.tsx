@@ -32,7 +32,7 @@ type AppVersionsResponse = {
 
 const PLATFORMS: readonly { platform: AppPlatform; name: string; caveat: string }[] = [
   { platform: "ios", name: "iOS", caveat: "Only raise it once the build is live in the App Store." },
-  { platform: "android", name: "Android", caveat: "Only raise it once the Play rollout is at 100%." }
+  { platform: "android", name: "Android", caveat: "Only raise it once the build is live on open testing." }
 ]
 
 const FIELDS: readonly { field: PolicyField; label: string }[] = [

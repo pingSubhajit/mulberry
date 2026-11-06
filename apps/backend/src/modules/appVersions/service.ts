@@ -52,7 +52,7 @@ const PLATFORM_NAMES: Record<AppPlatform, string> = { ios: "iOS", android: "Andr
 /** When a build counts as live, for the messages that ask for it. */
 const FULLY_LIVE: Record<AppPlatform, string> = {
   ios: "showing in the App Store in every region",
-  android: "at 100% of the Play rollout",
+  android: "rolled out to everyone on Play's open testing track, Mulberry's public Android channel",
 }
 const PATCH_FIELDS: readonly (keyof AppVersionsPatch)[] = [...POLICY_FIELDS, "confirm"]
 const FIELD_NAMES: Record<PolicyField, string> = {
