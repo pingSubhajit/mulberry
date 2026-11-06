@@ -24,6 +24,7 @@ P=.agents/skills/mulberry-skills/public-release/scripts
 | Play API | service account `mulberry-play-release@mulberry-494003.iam.gserviceaccount.com`, key in `secrets/google-play/service-account.json` |
 | Firebase | `apps/mobile/app/src/prod/google-services.json` (ignored; client config only) |
 | API | `https://api.mulberry.my/`, passed to the build by `release.sh` |
+| Play Console | [Publishing overview](https://play.google.com/console/u/0/developers/8723427666531361541/app/4975097493817977950/publishing), where the user sends changes for review |
 | Artifacts | ignored `temp/android-release/<YYYY-MM-DD>-android-<version>-<build>/`: the bundle, its manifest and BuildConfig, logs, `play.json` |
 
 **Secrets.** Everything under `secrets/` stays there. Never print, copy or commit the keystore, its passwords or the service account key.
@@ -97,10 +98,10 @@ git push origin main
 
 ### 7. Report
 
-Keep it short: the version, build and source commit, that verification passed, and that the upload was rolled out to everyone on open testing.
+Every report ends with direct links to the user's remaining steps, never just menu names. Keep it short: the version, build and source commit, that verification passed, and that the upload was rolled out to everyone on open testing.
 
 Then remind the user:
-- Press **Send changes for review**, always with the link to where it is: the `PUBLISHING_OVERVIEW` link in `scripts/play.py` (Play Console → Mulberry → Publishing overview). Skip this if the script said it was sent automatically. Every release summary ends with the links for the user's remaining steps.
+- Press **Send changes for review** on [Publishing overview](https://play.google.com/console/u/0/developers/8723427666531361541/app/4975097493817977950/publishing). Always give this link; skip the step only if the script said it was sent automatically.
 - Google reviews the update before people get it, usually within a few hours, sometimes a few days. Play Console shows the review state.
 
 ### 8. Release

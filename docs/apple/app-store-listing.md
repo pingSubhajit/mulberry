@@ -82,7 +82,7 @@ The Google Sign-In SDK's own manifest also lists phone number, coarse location a
 
 | Field | Value |
 | --- | --- |
-| Promotional text (149/170) | `Leave a little doodle where they'll see it first: their wallpaper. A private canvas for just the two of you, with no feed, no followers and no noise.` |
+| Promotional text (129/170) | `New: photos on your canvas. Snap a moment, doodle a heart around it, and it lands on their lock screen, the first thing they see.` Written fresh for each release, as `promotional_text` in the version's iOS What's New note; the `ios-release` subskill sets it. |
 | Keywords (97/100) | `love,long distance,ldr,relationship,partner,boyfriend,girlfriend,lock screen,sketch,note,miss you` |
 | Support URL | `https://mulberry.my/support` |
 | Marketing URL | `https://mulberry.my` |

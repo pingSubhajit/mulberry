@@ -17,6 +17,8 @@ Each subskill has its own `SKILL.md`. Read the matching one in full and follow i
 | [`app-versions`](app-versions/SKILL.md) | The user asks to force or nudge an update, change the minimum, recommended or live build for iOS or Android, or check those values. |
 | [`wallpaper-shortcut-link`](wallpaper-shortcut-link/SKILL.md) | The iOS wallpaper Shortcut template changed, a build needs an iCloud link for its bundle ID, a link is broken, or the user wants the `WALLPAPER_SHORTCUT_LINKS` value. Keeps [`ledger.md`](wallpaper-shortcut-link/ledger.md) of every link. |
 
+**Release reports.** Whenever a subskill leaves the user a step to take in App Store Connect or Play Console (Submit for Review, Send changes for review), end the report with the direct link to that exact page, never only the menu path. The links are in `ios-release` and `android-release`.
+
 Paths are relative to this folder: `.agents/skills/mulberry-skills/` (reached through `.claude/skills/mulberry-skills`).
 
 To add a subskill, give it a folder with a `SKILL.md` and add a row to this table. A subskill that needs a record of past runs keeps a ledger file beside its `SKILL.md`, and its steps say when to update it.

@@ -7,10 +7,13 @@ Run through `uv run --with pyjwt --with cryptography --with requests` (see SKILL
 Usage:
   asc.py wait <version> <build> [--timeout-minutes 60]   wait until the uploaded build has processed
   asc.py whats-new <version>                             print the App Store text made from the note
-  asc.py prepare <version> <build> [--whats-new-file FILE] [--manual-release] [--dry-run]
+  asc.py prepare <version> <build> [--whats-new-file FILE] [--promo-file FILE] [--manual-release] [--dry-run]
                                                          attach the build to the App Store version,
-                                                         set What's New, and put it in a draft review
-                                                         submission; the user presses Submit for Review
+                                                         set What's New and the promotional text, and
+                                                         put it in a draft review submission; the user
+                                                         presses Submit for Review
+  asc.py promo <version> [--promo-file FILE] [--dry-run] set a version's promotional text (allowed at
+                                                         any time, without review)
   asc.py status [<version>]                              the iOS versions' App Store states
 """
 import argparse
@@ -89,6 +92,65 @@ def whats_new_text(version: str) -> str | None:
     return plain
 
 
+PROMO_LIMIT = 170
+
+
+def note_promotional_text(version: str) -> str | None:
+    """The `promotional_text` field of the version's What's New note, if it has one."""
+    note = NOTES / f"{version}.md"
+    if not note.exists() or not note.read_text().startswith("---\n"):
+        return None
+    front = note.read_text().split("\n---", 1)[0]
+    match = re.search(r"^promotional_text:\s*(.+)$", front, re.M)
+    return match[1].strip().strip('"') if match else None
+
+
+def promotional_text(client: "Client", version: str, promo_file: str | None) -> tuple[str, str]:
+    """The promotional text for a version, and where it came from: a file, the version's note, or
+    the live version (carried over). Stops when there's none, so a release never ships without it."""
+    if promo_file:
+        text, source = pathlib.Path(promo_file).read_text().strip(), promo_file
+    elif note_promotional_text(version):
+        text, source = note_promotional_text(version), f"the {version} note"
+    else:
+        live = [v for v in client.versions() if v["attributes"]["appStoreState"] == "READY_FOR_SALE"]
+        text, source = "", ""
+        if live:
+            for loc in client.call("GET", f"/appStoreVersions/{live[0]['id']}/appStoreVersionLocalizations",
+                                   "reading the live version's text").get("data", []):
+                if loc["attributes"].get("promotionalText"):
+                    text = loc["attributes"]["promotionalText"]
+                    source = f"the live version {live[0]['attributes']['versionString']} (carried over)"
+                    break
+    if not text:
+        sys.exit(f"No promotional text for {version}: add promotional_text to its What's New note, or pass --promo-file.")
+    if len(text) > PROMO_LIMIT:
+        sys.exit(f"Promotional text allows {PROMO_LIMIT} characters; this has {len(text)}.")
+    return text, source
+
+
+def set_localized(client: "Client", version_id: str, attributes: dict) -> None:
+    """Sets fields on every language the version's listing has (Mulberry's is English)."""
+    for localization in client.call("GET", f"/appStoreVersions/{version_id}/appStoreVersionLocalizations",
+                                    "reading the version's languages").get("data", []):
+        client.call("PATCH", f"/appStoreVersionLocalizations/{localization['id']}", "setting the listing text", json={
+            "data": {"type": "appStoreVersionLocalizations", "id": localization["id"], "attributes": attributes}})
+
+
+def promo(version: str, promo_file: str | None, dry_run: bool) -> None:
+    client = Client()
+    found = client.versions(version)
+    if not found:
+        sys.exit(f"iOS {version} doesn't exist in App Store Connect yet")
+    text, source = promotional_text(client, version, promo_file)
+    print(f"promotional text ({len(text)}/{PROMO_LIMIT}, from {source}):\n{text}")
+    if dry_run:
+        print("dry run: nothing changed")
+        return
+    set_localized(client, found[0]["id"], {"promotionalText": text})
+    print(f"set iOS {version}'s promotional text")
+
+
 def wait(version: str, build: str, timeout_minutes: int) -> None:
     client = Client()
     deadline = time.time() + timeout_minutes * 60
@@ -106,7 +168,7 @@ def wait(version: str, build: str, timeout_minutes: int) -> None:
         time.sleep(60)
 
 
-def prepare(version: str, build: str, whats_new_file: str | None, manual_release: bool, dry_run: bool) -> None:
+def prepare(version: str, build: str, whats_new_file: str | None, promo_file: str | None, manual_release: bool, dry_run: bool) -> None:
     client = Client()
     text = pathlib.Path(whats_new_file).read_text().strip() if whats_new_file else whats_new_text(version)
     if not text:
@@ -126,7 +188,9 @@ def prepare(version: str, build: str, whats_new_file: str | None, manual_release
     print(f"iOS {version}: {'update the existing' if existing else 'create the'} App Store version, attach build {build}, "
           f"draft a review submission for you to submit, "
           f"release {'by hand after approval' if manual_release else 'automatically after approval'}")
+    promo_text, promo_source = promotional_text(client, version, promo_file)
     print("--- What's New ---\n" + text + "\n------------------")
+    print(f"--- Promotional text ({len(promo_text)}/{PROMO_LIMIT}, from {promo_source}) ---\n" + promo_text + "\n------------------")
     if dry_run:
         print("dry run: nothing changed")
         return
@@ -144,12 +208,8 @@ def prepare(version: str, build: str, whats_new_file: str | None, manual_release
     client.call("PATCH", f"/appStoreVersions/{version_id}/relationships/build", "attaching the build",
                 json={"data": {"type": "builds", "id": found["id"]}})
 
-    # What's New, in every language the listing has (Mulberry's is English).
-    localizations = client.call("GET", f"/appStoreVersions/{version_id}/appStoreVersionLocalizations",
-                                "reading the version's languages").get("data", [])
-    for localization in localizations:
-        client.call("PATCH", f"/appStoreVersionLocalizations/{localization['id']}", "setting What's New", json={
-            "data": {"type": "appStoreVersionLocalizations", "id": localization["id"], "attributes": {"whatsNew": text}}})
+    # What's New and the promotional text. A new version doesn't carry promotional text over.
+    set_localized(client, version_id, {"whatsNew": text, "promotionalText": promo_text})
 
     # The review submission, left as a draft for the user to submit: reuse an open one (as after a
     # rejection), or start one.
@@ -188,7 +248,9 @@ def main() -> None:
     p = sub.add_parser("wait"); p.add_argument("version"); p.add_argument("build"); p.add_argument("--timeout-minutes", type=int, default=60)
     p = sub.add_parser("whats-new"); p.add_argument("version")
     p = sub.add_parser("prepare"); p.add_argument("version"); p.add_argument("build")
-    p.add_argument("--whats-new-file"); p.add_argument("--manual-release", action="store_true"); p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--whats-new-file"); p.add_argument("--promo-file")
+    p.add_argument("--manual-release", action="store_true"); p.add_argument("--dry-run", action="store_true")
+    p = sub.add_parser("promo"); p.add_argument("version"); p.add_argument("--promo-file"); p.add_argument("--dry-run", action="store_true")
     p = sub.add_parser("status"); p.add_argument("version", nargs="?")
     args = parser.parse_args()
     if args.command == "wait":
@@ -196,7 +258,9 @@ def main() -> None:
     elif args.command == "whats-new":
         print(whats_new_text(args.version) or f"(no note for {args.version})")
     elif args.command == "prepare":
-        prepare(args.version, args.build, args.whats_new_file, args.manual_release, args.dry_run)
+        prepare(args.version, args.build, args.whats_new_file, args.promo_file, args.manual_release, args.dry_run)
+    elif args.command == "promo":
+        promo(args.version, args.promo_file, args.dry_run)
     else:
         status(args.version)
 

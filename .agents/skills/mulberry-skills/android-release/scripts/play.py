@@ -22,9 +22,8 @@ KEY = ROOT / "secrets/google-play/service-account.json"
 PACKAGE = "com.subhajit.mulberry"
 BASE = f"https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{PACKAGE}"
 UPLOAD = f"https://androidpublisher.googleapis.com/upload/androidpublisher/v3/applications/{PACKAGE}"
-# Play Console's direct links need the developer and app IDs, which the API doesn't expose; replace
-# this with the Publishing overview URL once the user shares it.
-PUBLISHING_OVERVIEW = "https://play.google.com/console/u/0/developers (Mulberry → Publishing overview)"
+# Play Console → Mulberry → Publishing overview, where the user presses Send changes for review.
+PUBLISHING_OVERVIEW = "https://play.google.com/console/u/0/developers/8723427666531361541/app/4975097493817977950/publishing"
 
 
 def session() -> AuthorizedSession:

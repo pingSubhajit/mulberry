@@ -49,6 +49,7 @@ asc status
 ```
 
 - If a version is in progress (not released yet), keep it. Otherwise tell the user the suggested version and why, and use the one they confirm (version rule in `public-release`).
+- **Promotional text** (170 characters, above the description) must never be empty: a new App Store version doesn't carry it over. Write it per release, from a marketer's eye: lead with the release's headline benefit in the couple's terms, keep the lock-screen promise (Mulberry's differentiator; say "lock screen", not "wallpaper"), concrete and warm, under 170 characters. Put it in the version's iOS What's New note as `promotional_text:`; if there's no note, save it to a file for `--promo-file`. Without either, `asc prepare` carries the live version's text over, which is a fallback, not a substitute; propose fresh text to the user.
 - The App Store needs "What's New in This Version" text. It comes from the version's What's New note, `apps/backend/whats-new/ios/<version>.md`, if there is one (`asc whats-new <version>` shows the text). Not every version has a note; without one, ask the user for the App Store text and save it to a file for step 6.
 
 ### 3. Bump, commit and push
@@ -91,7 +92,8 @@ asc prepare <version> <N> --dry-run [--whats-new-file FILE]
 asc prepare <version> <N> [--whats-new-file FILE]
 ```
 
-- It creates the App Store version (or reuses it while it's still editable, as after a rejection), attaches the build, sets What's New, and puts the version in a draft review submission. It never submits; that's the user's click.
+- It creates the App Store version (or reuses it while it's still editable, as after a rejection), attaches the build, sets What's New and the promotional text, and puts the version in a draft review submission. It never submits; that's the user's click.
+- The dry run prints both texts and where each came from; show them to the user.
 - By default the app goes live automatically once approved. `--manual-release` holds it for the user to release in App Store Connect; use it only when they ask.
 - If App Store Connect refuses a step (a missing answer or document), the script prints Apple's reason. Relay it; the user fixes it in App Store Connect, then rerun `asc prepare`.
 
@@ -108,7 +110,7 @@ That tags the build, publishes its GitHub Release and dates its What's New note.
 
 ### 8. Report
 
-Keep it short: version, build, source commit, verification passed, upload succeeded, the review prepared, the tag and the GitHub Release link.
+Keep it short: version, build, source commit, verification passed, upload succeeded, the review prepared with its promotional text, the tag and the GitHub Release link. Every report ends with direct links to the user's remaining steps, never just menu names.
 
 Then tell the user to press **Submit for Review**, always with the link to where it is: [App Review](https://appstoreconnect.apple.com/apps/6829284245/distribution/reviewsubmissions), or the [version page](https://appstoreconnect.apple.com/apps/6829284245/distribution/ios/version/inflight). Every release summary ends with the links for the user's remaining steps. Apple's review usually takes about a day; once approved, the version goes live on its own (unless `--manual-release`).
 
@@ -137,6 +139,7 @@ If the rejection only needs a reply or metadata change, no new build is needed: 
 ```sh
 asc status            # every iOS version's state
 asc status 1.1.0
+asc promo 1.1.0 [--promo-file FILE] [--dry-run]   # change promotional text; allowed any time, no review
 ```
 
 `liveBuild` for the update prompts is separate: set it with the `app-versions` subskill once a version is live, typically when the user wants to nudge or force updates.
