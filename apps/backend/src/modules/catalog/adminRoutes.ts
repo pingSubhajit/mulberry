@@ -2,29 +2,42 @@ import type { FastifyInstance } from "fastify"
 import { HttpError } from "../../infra/http/HttpError.js"
 import { readAdminPassword, requireAdminPassword } from "../../infra/http/adminAuth.js"
 
+/** Admin catalog routes: authenticated before any upload is read, with stable error codes. */
+export const CATALOG_ADMIN_ROUTE = /^\/admin\/(stickers|wallpapers|share-frames)(\/|\?|$)/
+
+/** A JSON field's expected type; `date` is a YYYY-MM-DD string or null, checked in full by the service. */
+type FieldType = "string" | "number" | "boolean" | "date"
+
+function matchesType(value: unknown, type: FieldType): boolean {
+  if (type === "date") return value === null || typeof value === "string"
+  if (typeof value !== type) return false
+  return typeof value !== "number" || (Number.isSafeInteger(value) && value >= -2147483648 && value <= 2147483647)
+}
+
 export function registerCatalogAdminHooks(app: FastifyInstance, password?: string): void {
   app.addHook("preValidation", async (request) => {
-    if (!/^\/admin\/(stickers|wallpapers)(\/|$)/.test(request.url)) return
+    if (!CATALOG_ADMIN_ROUTE.test(request.url)) return
     requireAdminPassword(password, readAdminPassword(request))
     if (request.body === undefined) return
     if (!request.body || typeof request.body !== "object" || Array.isArray(request.body) || Buffer.isBuffer(request.body)) {
       throw new HttpError(400, "Supply a JSON object", { code: "INVALID_CATALOG_INPUT" })
     }
     const body = request.body as Record<string, unknown>
-    let allowed: Record<string, string> = {}
+    let allowed: Record<string, FieldType> = {}
     if (request.method === "DELETE" || request.url.split("?")[0].endsWith("/restore")) allowed = { confirm: "boolean" }
     else if (request.method === "POST" && request.url.split("?")[0].endsWith("/copy")) allowed = { newVersion: "number" }
     else if (request.method === "PATCH" && /\/stickers\/[^/]+(?:\?|$)/.test(request.url)) allowed = { sortOrder: "number" }
+    else if (request.method === "PATCH" && request.url.startsWith("/admin/share-frames")) allowed = { title: "string", sortOrder: "number", availableFrom: "date", availableUntil: "date", published: "boolean" }
     else if (request.method === "PATCH") allowed = { title: "string", description: "string", sortOrder: "number", published: "boolean", ...(request.url.startsWith("/admin/stickers") ? { featured: "boolean" } : {}) }
     for (const [key, value] of Object.entries(body)) {
-      if (!allowed[key] || typeof value !== allowed[key] || (typeof value === "number" && (!Number.isSafeInteger(value) || value < -2147483648 || value > 2147483647))) {
+      if (!allowed[key] || !matchesType(value, allowed[key])) {
         throw new HttpError(400, `Invalid field ${key}. Use the documented fields and types.`, { code: "INVALID_CATALOG_INPUT" })
       }
     }
     if (typeof body.title === "string" && !body.title.trim()) throw new HttpError(400, "title must not be empty", { code: "INVALID_CATALOG_INPUT" })
   })
   app.addHook("preSerialization", async (request, _reply, payload) => {
-    if (!/^\/admin\/(stickers|wallpapers)(\/|$)/.test(request.url) || !payload || typeof payload !== "object") return payload
+    if (!CATALOG_ADMIN_ROUTE.test(request.url) || !payload || typeof payload !== "object") return payload
     const result = payload as Record<string, unknown>
     if (_reply.statusCode >= 400) {
       return { ...result, code: result.code ?? (_reply.statusCode === 401 ? "ADMIN_UNAUTHORIZED" : _reply.statusCode === 404 ? "CATALOG_NOT_FOUND" : _reply.statusCode === 503 ? "CATALOG_UNAVAILABLE" : _reply.statusCode >= 500 ? "CATALOG_FAILURE" : "INVALID_CATALOG_INPUT") }

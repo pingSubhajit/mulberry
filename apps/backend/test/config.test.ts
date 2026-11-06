@@ -13,6 +13,7 @@ describe("loadConfig", () => {
       GOOGLE_SERVER_CLIENT_ID: "server-client",
       STICKER_LOCAL_STORAGE_DIR: "",
       WALLPAPER_LOCAL_STORAGE_DIR: "",
+      SHARE_FRAME_LOCAL_STORAGE_DIR: "",
       CANVAS_PHOTO_LOCAL_STORAGE_DIR: "",
     }
     expect(loadConfig(production).enableDebugRoutes).toBe(false)

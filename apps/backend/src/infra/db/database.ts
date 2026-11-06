@@ -346,6 +346,33 @@ export async function runMigrations(db: Pick<Database, "query">): Promise<void> 
     CREATE INDEX IF NOT EXISTS admin_catalog_changes_history_idx
       ON catalog_admin.admin_catalog_changes(content_type, created_at DESC, id DESC);
 
+    -- Share frames: one image and one layout per (frame_key, frame_version). Publishing locks the
+    -- image and layout for good; title, order, date window and visibility stay editable.
+    -- available_from and available_until are inclusive local calendar dates; NULL means open.
+    CREATE TABLE IF NOT EXISTS share_frames (
+      frame_key TEXT NOT NULL,
+      frame_version INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      available_from DATE,
+      available_until DATE,
+      original_path TEXT NOT NULL,
+      full_path TEXT NOT NULL,
+      thumbnail_path TEXT NOT NULL,
+      width INTEGER NOT NULL,
+      height INTEGER NOT NULL,
+      layout JSONB NOT NULL,
+      published_at TIMESTAMPTZ,
+      content_locked BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (frame_key, frame_version)
+    );
+
+    CREATE INDEX IF NOT EXISTS share_frames_public_catalog_idx
+      ON share_frames(sort_order ASC, frame_key ASC, frame_version DESC)
+      WHERE published_at IS NOT NULL;
+
     CREATE TABLE IF NOT EXISTS reaction_inboxes (
       recipient_user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       pair_session_id TEXT REFERENCES pair_sessions(id) ON DELETE CASCADE,

@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto"
 import type { Database } from "../../infra/db/database.js"
 import { HttpError } from "../../infra/http/HttpError.js"
+import { shareFrameSnapshot } from "../shareFrames/rows.js"
 
-type CatalogType = "stickers" | "wallpapers"
+export type CatalogType = "stickers" | "wallpapers" | "share-frames"
+
+/** Versioned catalog items are keyed `key:version` in locks and history. */
+const isVersioned = (type: CatalogType) => type !== "wallpapers"
 
 // Identity locks also cover creates and restores while the catalog row is absent.
 // Snapshots and the write commit together; credentials and signed URLs never enter the log.
@@ -10,12 +14,12 @@ export async function catalogMutation<T>(
   db: Database, type: CatalogType, key: string, version: number | undefined,
   action: string, mutate: (db: Database) => Promise<T>,
 ): Promise<T> {
-  if (!key || (type === "stickers" && (!Number.isInteger(version) || Number(version) < 1 || Number(version) > 2147483647))) {
-    throw new HttpError(400, "Supply a content key and a positive 32-bit integer pack version", { code: "INVALID_CATALOG_INPUT" })
+  if (!key || (isVersioned(type) && (!Number.isInteger(version) || Number(version) < 1 || Number(version) > 2147483647))) {
+    throw new HttpError(400, `Supply a content key and a positive 32-bit integer ${type === "share-frames" ? "frame" : "pack"} version`, { code: "INVALID_CATALOG_INPUT" })
   }
   try {
     return await db.transaction(async (tx) => {
-      const contentKey = type === "stickers" ? `${key}:${version}` : key
+      const contentKey = isVersioned(type) ? `${key}:${version}` : key
       await tx.query(`INSERT INTO catalog_admin.catalog_item_locks (content_type, content_key)
         VALUES ($1, $2) ON CONFLICT (content_type, content_key) DO NOTHING`, [type, contentKey])
       await tx.query(`SELECT content_key FROM catalog_admin.catalog_item_locks
@@ -25,6 +29,7 @@ export async function catalogMutation<T>(
         if (type === "wallpapers") {
           return (await tx.query("SELECT * FROM wallpapers WHERE id = $1 FOR UPDATE", [key])).rows[0] ?? null
         }
+        if (type === "share-frames") return shareFrameSnapshot(tx, key, Number(version), true)
         const pack = (await tx.query("SELECT * FROM sticker_packs WHERE pack_key = $1 AND pack_version = $2 FOR UPDATE", [key, version])).rows[0]
         if (!pack) return null
         const stickers = (await tx.query("SELECT * FROM stickers WHERE pack_key = $1 AND pack_version = $2 ORDER BY sticker_id", [key, version])).rows
@@ -42,7 +47,8 @@ export async function catalogMutation<T>(
     })
   } catch (error) {
     if ((error as { code?: string }).code === "23505") {
-      throw new HttpError(409, "This catalog item already exists. Read it and use PATCH, or choose a new version.", { code: "PACK_VERSION_EXISTS" })
+      throw new HttpError(409, "This catalog item already exists. Read it and use PATCH, or choose a new version.",
+        { code: type === "share-frames" ? "FRAME_VERSION_EXISTS" : "PACK_VERSION_EXISTS" })
     }
     throw error
   }
@@ -67,11 +73,13 @@ export async function restoreCatalogChange(db: Database, type: CatalogType, chan
   if (!change) throw new HttpError(404, "Catalog change not found", { code: "CATALOG_CHANGE_NOT_FOUND" })
   if (confirm !== true) throw new HttpError(409, "Restoring this change affects live content. Read previous and current in history, then resend with confirm:true after explicit approval.",
     { code: "CONFIRMATION_REQUIRED", current: change.current_json, proposed: change.previous_json })
-  const [key, version] = type === "stickers" ? change.content_key.split(":") : [change.content_key, undefined]
+  const [key, version] = isVersioned(type) ? change.content_key.split(":") : [change.content_key, undefined]
   return catalogMutation(db, type, key, version === undefined ? undefined : Number(version), `restore:${changeId}`, async (tx) => {
     const current = type === "wallpapers"
       ? (await tx.query("SELECT * FROM wallpapers WHERE id = $1", [key])).rows[0] ?? null
-      : await stickerSnapshot(tx, key, Number(version))
+      : type === "share-frames"
+        ? await shareFrameSnapshot(tx, key, Number(version))
+        : await stickerSnapshot(tx, key, Number(version))
     if (stableJson(current) !== stableJson(change.current_json)) {
       throw new HttpError(409, "The item changed after this history entry. Read current content and undo newer changes first.", { code: "CATALOG_STATE_CHANGED" })
     }
@@ -79,6 +87,13 @@ export async function restoreCatalogChange(db: Database, type: CatalogType, chan
     if (type === "wallpapers") {
       if (previous) await upsertSnapshot(tx, "wallpapers", ["id"], previous)
       else await tx.query("DELETE FROM wallpapers WHERE id = $1", [key])
+    } else if (type === "share-frames") {
+      if (previous) {
+        // Undoing a publish must not make a once-published frame's art or layout editable again.
+        const frame = { ...previous }
+        frame.content_locked = Boolean(frame.content_locked || (current as { content_locked?: boolean } | null)?.content_locked)
+        await upsertSnapshot(tx, "share_frames", ["frame_key", "frame_version"], frame)
+      } else await tx.query("DELETE FROM share_frames WHERE frame_key = $1 AND frame_version = $2", [key, Number(version)])
     } else {
       const pack = previous?.pack as Record<string, unknown> | undefined
       if (pack) {
@@ -116,6 +131,7 @@ const SNAPSHOT_COLUMNS = {
   wallpapers: ["id", "title", "description", "storage_path", "thumbnail_path", "preview_path", "full_path", "width", "height", "dominant_color", "sort_order", "published_at", "created_at", "updated_at"],
   sticker_packs: ["pack_key", "pack_version", "title", "description", "cover_thumbnail_path", "cover_full_path", "sort_order", "featured", "published_at", "content_locked", "created_at", "updated_at"],
   stickers: ["pack_key", "pack_version", "sticker_id", "sort_order", "thumbnail_path", "full_path", "width", "height", "created_at", "updated_at"],
+  share_frames: ["frame_key", "frame_version", "title", "sort_order", "available_from", "available_until", "original_path", "full_path", "thumbnail_path", "width", "height", "layout", "published_at", "content_locked", "created_at", "updated_at"],
 }
 async function upsertSnapshot(db: Pick<Database, "query">, table: keyof typeof SNAPSHOT_COLUMNS, keys: string[], row: Record<string, unknown>) {
   const columns = SNAPSHOT_COLUMNS[table]

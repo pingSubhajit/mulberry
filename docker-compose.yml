@@ -48,6 +48,8 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       STICKER_LOCAL_STORAGE_DIR: ${STICKER_LOCAL_STORAGE_DIR:-}
       WALLPAPER_LOCAL_STORAGE_DIR: ${WALLPAPER_LOCAL_STORAGE_DIR:-}
+      # Defaults to local disk, so a local backend never writes share frames into the shared Supabase project.
+      SHARE_FRAME_LOCAL_STORAGE_DIR: ${SHARE_FRAME_LOCAL_STORAGE_DIR:-/data/share-frame-assets}
       # Defaults to local disk, so a local backend never writes canvas photos into the shared Supabase project.
       CANVAS_PHOTO_LOCAL_STORAGE_DIR: ${CANVAS_PHOTO_LOCAL_STORAGE_DIR-/data/canvas-photos}
       CANNY_SSO_PRIVATE_KEY: ${CANNY_SSO_PRIVATE_KEY:-}
@@ -62,6 +64,7 @@ services:
     volumes:
       - mulberry-sticker-assets:/data/sticker-assets
       - mulberry-wallpaper-assets:/data/wallpaper-assets
+      - mulberry-share-frame-assets:/data/share-frame-assets
       - mulberry-canvas-photos:/data/canvas-photos
     healthcheck:
       test:
@@ -79,4 +82,5 @@ volumes:
   mulberry-postgres-data:
   mulberry-sticker-assets:
   mulberry-wallpaper-assets:
+  mulberry-share-frame-assets:
   mulberry-canvas-photos:

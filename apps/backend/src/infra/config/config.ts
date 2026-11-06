@@ -52,10 +52,12 @@ export interface AppConfig {
   supabaseStickerBucket?: string
   /** A private bucket for photos placed on canvases. `canvas-photos` once Supabase is configured. */
   supabaseCanvasPhotoBucket?: string
-  /** Unlocks every admin route: wallpapers, stickers and app versions. */
+  /** Unlocks every admin route: wallpapers, stickers, share frames and app versions. */
   adminPassword?: string
   stickerLocalStorageDir?: string
   wallpaperLocalStorageDir?: string
+  /** Development only: keep share frame assets on local disk instead of the wallpaper bucket. */
+  shareFrameLocalStorageDir?: string
   /** Development only: keep canvas photos on local disk instead of Supabase. */
   canvasPhotoLocalStorageDir?: string
   cannySsoPrivateKey?: string
@@ -164,6 +166,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     adminPassword: env.ADMIN_PASSWORD?.trim() ? env.ADMIN_PASSWORD.trim() : undefined,
     stickerLocalStorageDir: optionalLocalStorageDir("STICKER_LOCAL_STORAGE_DIR", env, isProduction),
     wallpaperLocalStorageDir: optionalLocalStorageDir("WALLPAPER_LOCAL_STORAGE_DIR", env, isProduction),
+    shareFrameLocalStorageDir: optionalLocalStorageDir("SHARE_FRAME_LOCAL_STORAGE_DIR", env, isProduction),
     canvasPhotoLocalStorageDir: optionalLocalStorageDir("CANVAS_PHOTO_LOCAL_STORAGE_DIR", env, isProduction),
     cannySsoPrivateKey: env.CANNY_SSO_PRIVATE_KEY?.trim() ? env.CANNY_SSO_PRIVATE_KEY : undefined,
     wallpaperShortcutLinks: wallpaperShortcutLinks(env.WALLPAPER_SHORTCUT_LINKS),
@@ -233,9 +236,9 @@ function canvasPhotoBucket(env: NodeJS.ProcessEnv): string | undefined {
   return env.SUPABASE_URL?.trim() && env.SUPABASE_SERVICE_ROLE_KEY?.trim() ? DEFAULT_CANVAS_PHOTO_BUCKET : undefined
 }
 
-// Local sticker, wallpaper and canvas photo files exist only for development against the local database.
+// Local sticker, wallpaper, share frame and canvas photo files exist only for development against the local database.
 function optionalLocalStorageDir(
-  name: "STICKER_LOCAL_STORAGE_DIR" | "WALLPAPER_LOCAL_STORAGE_DIR" | "CANVAS_PHOTO_LOCAL_STORAGE_DIR",
+  name: "STICKER_LOCAL_STORAGE_DIR" | "WALLPAPER_LOCAL_STORAGE_DIR" | "SHARE_FRAME_LOCAL_STORAGE_DIR" | "CANVAS_PHOTO_LOCAL_STORAGE_DIR",
   env: NodeJS.ProcessEnv,
   isProduction: boolean,
 ): string | undefined {

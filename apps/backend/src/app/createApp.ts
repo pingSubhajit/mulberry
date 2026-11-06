@@ -1,4 +1,4 @@
-import { registerCatalogAdminHooks } from "../modules/catalog/adminRoutes.js"
+import { CATALOG_ADMIN_ROUTE, registerCatalogAdminHooks } from "../modules/catalog/adminRoutes.js"
 import Fastify, { type FastifyInstance } from "fastify"
 import fastifyCors from "@fastify/cors"
 import fastifyMultipart from "@fastify/multipart"
@@ -33,6 +33,10 @@ import {
 } from "../modules/wallpapers/service.js"
 import { LocalWallpaperStorage } from "../modules/wallpapers/localStorage.js"
 import { createStickerStorage, StickerCatalogService } from "../modules/stickers/service.js"
+import { ShareFrameCatalogService } from "../modules/shareFrames/service.js"
+import { createShareFrameStorage, type ShareFrameStorage } from "../modules/shareFrames/storage.js"
+import { registerShareFrameRoutes } from "../modules/shareFrames/routes.js"
+import { requireSessionContext } from "../modules/_shared/session.js"
 import { registerWhatsNewRoutes } from "../modules/whatsNew/routes.js"
 import { StreakService } from "../modules/streak/service.js"
 import { BootstrapService } from "../modules/bootstrap/service.js"
@@ -90,6 +94,8 @@ export interface CreateAppOptions {
   widgetPushSender?: WidgetPushSender
   wallpaperStorage?: WallpaperStorage
   wallpaperImageProcessor?: WallpaperImageProcessor
+  /** Replaces where share frame files live, as in tests; null leaves it unconfigured. */
+  shareFrameStorage?: ShareFrameStorage | null
   /** Replaces where canvas photo files live, as in tests; null leaves it unconfigured. */
   canvasPhotoStorage?: CanvasPhotoStorage | null
   /** The unused-photo sweep's timing, or false to leave it off. */
@@ -150,6 +156,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     stickerLocalStorageDir: config.stickerLocalStorageDir,
   })
   const stickerCatalogService = new StickerCatalogService(db, stickerStorage, config.adminPassword)
+  // Frames use the public wallpaper bucket, or local disk in development.
+  const shareFrameStorage = options.shareFrameStorage !== undefined ? options.shareFrameStorage : createShareFrameStorage(config)
+  const shareFrameCatalogService = new ShareFrameCatalogService(db, shareFrameStorage, config.adminPassword)
   const remoteConfig = options.remoteConfig !== undefined ? options.remoteConfig : remoteConfigFor(firebaseCredentials)
   const appVersionsService = new AppVersionsService(remoteConfig, config.adminPassword)
   void appVersionsService.refreshMinimums()
@@ -222,7 +231,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       return
     }
     const status = (error as { statusCode?: number }).statusCode
-    if (/^\/admin\/(stickers|wallpapers)(\/|$)/.test(request.url) && status && status >= 400 && status < 500) {
+    if (CATALOG_ADMIN_ROUTE.test(request.url) && status && status >= 400 && status < 500) {
       void reply.code(status).send({ code: "INVALID_CATALOG_INPUT", message: (error as Error).message })
       return
     }
@@ -241,6 +250,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
   registerCatalogAdminHooks(app, config.adminPassword)
   registerWallpaperRoutes(app, wallpaperCatalogService, wallpaperStorage)
   registerStickerRoutes(app, stickerCatalogService, stickerStorage)
+  registerShareFrameRoutes(app, shareFrameCatalogService, shareFrameStorage, (token) => requireSessionContext(db, token))
   registerCanvasSyncRoutes(app, canvasSyncHub)
   registerFeedbackRoutes(app, feedbackService)
   registerAccountRoutes(app, accountService)
