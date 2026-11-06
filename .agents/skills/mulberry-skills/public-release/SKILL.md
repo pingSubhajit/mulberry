@@ -1,14 +1,15 @@
 ---
 name: public-release
-description: Mark a Mulberry iOS, macOS or Android version as publicly released, and keep the release ledger. Tags the build that went public, publishes its GitHub Release, dates its What's New note, and sets the live build for the update prompts. Also answers "what's live", "what's the next version", and "what changed since the last release".
+description: Release a Mulberry iOS, macOS or Android version when it's sent for public review, and keep the release ledger. Tags the build, publishes its GitHub Release and dates its What's New note; after a rejection, moves the tag to the resubmitted build. Also answers "what's released", "what's the next version", and "what changed since the last release".
 ---
 
 # Mulberry public release
 
 Builds and releases are different things.
 
-- A **build** is any upload: a TestFlight build (`testflight-release`) or a Play upload (`play-release`). A version usually has several builds before one goes public. Builds are recorded in the ledger, never tagged.
-- A **release** is the moment a version goes public: the App Store version is live, or the Android build is rolled out on Play's open testing track, which is Mulberry's public Android channel. Only a release gets a git tag and a GitHub Release, and a GitHub Release always means a public release.
+- A **build** is any upload: a TestFlight build (`testflight-release`) or a Play upload (`play-release`). A version usually has several builds. Builds are recorded in the ledger, never tagged.
+- A version is **released** when it's sent for public review: submitted for App Store review, or uploaded and rolled out on Play's open testing track (Mulberry's public Android channel). Only then does it get a git tag and a GitHub Release.
+- If Apple or Google rejects that build, a newer build of the **same version** goes in, and the tag and GitHub Release move to it (`--move`). The version number doesn't change.
 
 Run from the repository root. The script is `scripts/releases.py` next to this file, below `$S`:
 
@@ -43,24 +44,36 @@ It answers either `inProgress` (the repository's version isn't public yet: keep 
 
 ## Releasing a version
 
-When the user says a version is public (it's showing in the App Store, or Play has finished reviewing and rolled out the Android build):
+Run this when the version is sent for public review: when the user says they've submitted an iOS or macOS version for App Store review, and right after `play-release` uploads an Android build.
 
 1. Dry run, and show the user what will happen:
    ```sh
    $S/releases.py publish <ios|macos|android> <version> --dry-run
    ```
-   It picks the newest uploaded build of that version (`--build N` picks another, if a different build went public) and prints the tag, the GitHub Release text and the live-build change.
+   It picks the newest uploaded build of that version (`--build N` picks another, if a different build was submitted) and prints the tag and the GitHub Release text.
 2. Run it:
    ```sh
    $S/releases.py publish <platform> <version>
    ```
-   - It records the release in the ledger. If the version has a What's New note, it writes today's date into the note's `released_at`, so What's New history starts listing it. It commits both and pushes. A pushed note deploys the backend.
-   - It tags the commit the public build came from (`ios-v1.1.0`, `android-v1.1.10`, `macos-v0.2.0`), pushes the tag, and creates the GitHub Release. The release text is the What's New note when there is one; otherwise it lists the `feat`, `fix` and `perf` commits since the previous tag.
-   - For iOS and Android it sets `liveBuild` through the app-versions API if the new build is higher. macOS has no update gate.
-   - `--date YYYY-MM-DD` records a different release day, for a release recorded late.
-3. Report the tag, the GitHub Release link and the `liveBuild` change.
+   - It records the release in the ledger. If the version has a What's New note, it writes today's date into the note's `released_at`, so What's New history lists it. It commits both and pushes; a pushed note deploys the backend.
+   - It tags the commit the build came from (`ios-v1.1.0`, `android-v1.2.0`, `macos-v0.2.0`), pushes the tag, and creates the GitHub Release. The release text is the What's New note when there is one; otherwise it lists the `feat`, `fix` and `perf` commits since the previous tag.
+   - `--date YYYY-MM-DD` records a different day, for a release recorded late.
+3. Report the tag and the GitHub Release link.
 
-Raising `recommendedBuild` or `minimumBuild` is a separate decision: use the `app-versions` subskill, only when the user asks.
+### After a rejection
+
+The user uploads a newer build of the same version (`testflight-release` or `play-release` as usual) and resubmits it. Then move the release to it:
+
+```sh
+$S/releases.py publish <platform> <version> --move --dry-run
+$S/releases.py publish <platform> <version> --move
+```
+
+It moves the ledger's release to the newest build of that version, force-moves the tag to that build's commit, and refreshes the GitHub Release text. The note's date stays.
+
+### The live build
+
+Releasing doesn't touch the update prompts. `liveBuild` caps how high `recommendedBuild` and `minimumBuild` can go, so it must only name a build people can download. Set it with the `app-versions` subskill once the build is actually live in the store, normally when the user wants to nudge or force an update.
 
 ## What changed since the last release
 

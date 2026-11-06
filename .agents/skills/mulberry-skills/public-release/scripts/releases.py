@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Mulberry's release ledger, version suggestions and public releases, for iOS, macOS and Android.
+"""Mulberry's release ledger, version suggestions and releases, for iOS, macOS and Android.
 
 Builds and releases are two things. A build is anything uploaded: a TestFlight build or a Play
-upload. A version usually has several. A release is the moment a version goes public; only then
-does it get a git tag (`ios-v1.1.0`) and a GitHub Release.
+upload, and a version usually has several. A version is released when it's sent for public review
+(App Store review, or Play's review of the open testing rollout). Only then does it get a git tag
+(`ios-v1.1.0`) and a GitHub Release. If that build is rejected and a newer build of the same
+version goes in, `publish --move` points the tag and release at it.
 
 The ledger is docs/releases.json (read by the scripts) and docs/releases.md (rendered from it,
 for people). Both are committed.
@@ -12,7 +14,7 @@ Usage:
   releases.py show [platform]
   releases.py next-version <platform>
   releases.py record-build <platform> --version X.Y.Z --build N --channel testflight|play-beta [--commit SHA] [--date YYYY-MM-DD]
-  releases.py publish <platform> <version> [--build N] [--date YYYY-MM-DD] [--dry-run]
+  releases.py publish <platform> <version> [--build N] [--date YYYY-MM-DD] [--move] [--dry-run]
 """
 from __future__ import annotations
 
@@ -31,19 +33,18 @@ ROOT = pathlib.Path(__file__).resolve().parents[5]
 LEDGER_JSON = ROOT / "docs/releases.json"
 LEDGER_MD = ROOT / "docs/releases.md"
 NOTES = ROOT / "apps/backend/whats-new"
-API = "https://api.mulberry.my"
+API = "https://api.mulberry.my"  # hero images in GitHub Release text
 
 
 class Platform(TypedDict):
     label: str
     paths: list[str]
-    gate: str | None  # the app-versions platform whose liveBuild a release sets, if any
 
 
 PLATFORMS: dict[str, Platform] = {
-    "ios": {"label": "iOS", "paths": ["apps/ios", "packages/apple"], "gate": "ios"},
-    "macos": {"label": "macOS", "paths": ["apps/macos", "packages/apple"], "gate": None},
-    "android": {"label": "Android", "paths": ["apps/mobile"], "gate": "android"},
+    "ios": {"label": "iOS", "paths": ["apps/ios", "packages/apple"]},
+    "macos": {"label": "macOS", "paths": ["apps/macos", "packages/apple"]},
+    "android": {"label": "Android", "paths": ["apps/mobile"]},
 }
 
 
@@ -135,11 +136,11 @@ def render(ledger: Ledger) -> str:
         "`.agents/skills/mulberry-skills/public-release/scripts/releases.py`; edit through the script,",
         "not by hand.",
         "",
-        "A build is any TestFlight or Play upload. A release is the build that went public; only",
-        "releases get a git tag and a GitHub Release.",
+        "A build is any TestFlight or Play upload. A release is the build sent for public review;",
+        "only releases get a git tag and a GitHub Release.",
     ]
     for platform, info in PLATFORMS.items():
-        lines += ["", f"## {info['label']}", "", "| Version | Build | Commit | Uploaded | Channel | Public |", "| --- | --- | --- | --- | --- | --- |"]
+        lines += ["", f"## {info['label']}", "", "| Version | Build | Commit | Uploaded | Channel | Released |", "| --- | --- | --- | --- | --- | --- |"]
         builds = sorted(ledger.get(platform, []), key=lambda b: (semver(b["version"]), b["build"]), reverse=True)
         if not builds:
             lines.append("| | | | | | |")
@@ -245,92 +246,77 @@ def release_body(platform: str, version: str, previous_tag: str | None, build: B
     return f"Changes since `{previous_tag}`:\n\n{listed}" + footer
 
 
-def admin_api(method: str, path: str, password: str, body: dict | None = None) -> dict:
-    """Calls the app-versions admin API with curl (the system's certificates); the password goes
-    in on stdin, never on the command line."""
-    args = ["curl", "-sS", "--fail-with-body", "-X", method, f"{API}{path}", "-H", "@-"]
-    if body is not None:
-        args += ["--data", json.dumps(body)]
-    headers = f"x-admin-password: {password}\ncontent-type: application/json\n"
-    result = subprocess.run(args, input=headers, text=True, capture_output=True)
-    if result.returncode != 0:
-        sys.exit(f"app-versions {method} {path} failed: {result.stdout.strip() or result.stderr.strip()}")
-    return json.loads(result.stdout)
-
-
-def set_live_build(gate: str, build: int, dry_run: bool) -> None:
-    env = (ROOT / ".env").read_text() if (ROOT / ".env").exists() else ""
-    match = re.search(r"^ADMIN_PASSWORD=(.*)$", env, re.M)
-    if not match:
-        print(f"! no ADMIN_PASSWORD in .env: set {gate} liveBuild to {build} with the app-versions skill")
-        return
-    password = match[1].strip().strip("'\"")
-    before = admin_api("GET", "/admin/app-versions", password)["policies"][gate]["liveBuild"]
-    if before >= build:
-        print(f"{gate} liveBuild is already {before}; left as it is")
-        return
-    if dry_run:
-        print(f"would set {gate} liveBuild {before} -> {build}")
-        return
-    reply = admin_api("PATCH", f"/admin/app-versions/{gate}", password, {"liveBuild": build})
-    print(f"{gate} liveBuild {before} -> {build}: {reply.get('message', '')}")
-
-
-def publish(platform: str, version: str, build_number: int | None, date: str | None, dry_run: bool) -> None:
+def publish(platform: str, version: str, build_number: int | None, date: str | None, dry_run: bool, move: bool) -> None:
+    """Releases a version when it's sent for public review: ledger, note date, tag, GitHub Release.
+    With move, points an existing release at a newer build of the same version (after a rejection)."""
     semver(version)
     date = date or today()
     ledger = load()
-    candidates = [b for b in ledger[platform] if b["version"] == version and (build_number is None or b["build"] == build_number)]
+    builds = [b for b in ledger[platform] if b["version"] == version]
+    candidates = [b for b in builds if build_number is None or b["build"] == build_number]
     if not candidates:
         sys.exit(f"no uploaded {platform} {version}{' build ' + str(build_number) if build_number else ''} in the ledger")
     build = max(candidates, key=lambda b: b["build"])
-    if build.get("releasedAt"):
-        sys.exit(f"{platform} {version} was already released on {build['releasedAt']} as {build.get('tag')}")
+    released = next((b for b in builds if b.get("releasedAt")), None)
     tag = tag_name(platform, version)
-    if run("git", "tag", "-l", tag) or run("git", "ls-remote", "--tags", "origin", tag):
-        sys.exit(f"tag {tag} already exists")
-    previous = last_release(ledger, platform)
-    previous_tag = previous.get("tag") if previous else None
+    tag_exists = bool(run("git", "tag", "-l", tag) or run("git", "ls-remote", "--tags", "origin", tag))
     label = PLATFORMS[platform]["label"]
 
-    print(f"{label} {version} build {build['build']} goes public: tag {tag} on {build['commit'][:8]}, released {date}")
-    if dry_run and run("git", "status", "--porcelain"):
-        print("! the working tree has uncommitted changes; a real run stops on them")
-    elif run("git", "status", "--porcelain"):
-        sys.exit("commit or stash the working tree first: the release commits the ledger and note")
+    if move:
+        if not released or not tag_exists:
+            sys.exit(f"{platform} {version} isn't released yet; run publish without --move")
+        if build["build"] <= released["build"]:
+            sys.exit(f"{tag} is on build {released['build']}; --move needs a newer build of {version}")
+    elif released or tag_exists:
+        sys.exit(f"{platform} {version} is already released as {tag} (build {released['build'] if released else '?'}). "
+                 "If that build was rejected and a newer one resubmitted, run with --move.")
 
+    previous = last_release({platform: [b for b in ledger[platform] if b["version"] != version]}, platform)
+    previous_tag = previous.get("tag") if previous else None
     body = release_body(platform, version, previous_tag, build)
     note = note_path(platform, version)
-    if dry_run:
-        print(f"would {'date ' + str(note.relative_to(ROOT)) if note.exists() else 'find no note for ' + version}")
-        print("--- GitHub Release ---\n" + body)
-        if PLATFORMS[platform]["gate"]:
-            set_live_build(PLATFORMS[platform]["gate"], build["build"], dry_run=True)
-        return
+    action = f"moves {tag} from build {released['build']} to" if move else f"releases {label} {version} as {tag}:"
+    print(f"{action} build {build['build']} ({build['commit'][:8]}), {date}")
 
-    # 1. The ledger and the note's release date, committed and pushed (this deploys the backend,
-    #    which shows the note in What's New history from today).
-    changed = [str(note)] if note.exists() and set_release_date(note, date) else []
+    dirty = run("git", "status", "--porcelain")
+    if dry_run:
+        if dirty:
+            print("! the working tree has uncommitted changes; a real run stops on them")
+        if not move:
+            print(f"would {'date ' + str(note.relative_to(ROOT)) if note.exists() else 'find no note for ' + version}")
+        print("--- GitHub Release ---\n" + body)
+        return
+    if dirty:
+        sys.exit("commit or stash the working tree first: the release commits the ledger and note")
+
+    # 1. The ledger, and for a first release the note's date, which puts it in What's New history.
+    #    Committed and pushed; a pushed note deploys the backend.
+    changed = [str(note)] if not move and note.exists() and set_release_date(note, date) else []
+    if move:
+        released.pop("releasedAt", None); released.pop("tag", None)
     build["releasedAt"], build["tag"] = date, tag
     save(ledger)
     run("git", "add", str(LEDGER_JSON), str(LEDGER_MD), *changed)
-    run("git", "commit", "-m", f"chore(release): release {label} {version}", "-m",
-        "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>")
+    subject = f"chore(release): move {label} {version} to build {build['build']}" if move else f"chore(release): release {label} {version}"
+    run("git", "commit", "-m", subject, "-m", "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>")
     run("git", "push", "origin", "HEAD")
 
-    # 2. The tag, on the commit the public build came from, and its GitHub Release.
-    run("git", "tag", "-a", tag, build["commit"], "-m", f"Mulberry for {label} {version} (build {build['build']})")
-    run("git", "push", "origin", tag)
+    # 2. The tag on the commit the build came from, and its GitHub Release. A moved tag keeps its
+    #    release, which GitHub ties to the tag's name.
+    message = f"Mulberry for {label} {version} (build {build['build']})"
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as handle:
         handle.write(body)
-    run("gh", "release", "create", tag, "--verify-tag", "--title", f"Mulberry for {label} {version}",
-        "--notes-file", handle.name, "--latest=false")
+    if move:
+        run("git", "tag", "-f", "-a", tag, build["commit"], "-m", message)
+        run("git", "push", "-f", "origin", tag)
+        run("gh", "release", "edit", tag, "--notes-file", handle.name)
+    else:
+        run("git", "tag", "-a", tag, build["commit"], "-m", message)
+        run("git", "push", "origin", tag)
+        run("gh", "release", "create", tag, "--verify-tag", "--title", f"Mulberry for {label} {version}",
+            "--notes-file", handle.name, "--latest=false")
     os.unlink(handle.name)
-    print(f"tagged and released {tag}: {run('gh', 'release', 'view', tag, '--json', 'url', '--jq', '.url')}")
-
-    # 3. The newest build in the store, for the update prompts' thresholds.
-    if PLATFORMS[platform]["gate"]:
-        set_live_build(PLATFORMS[platform]["gate"], build["build"], dry_run=False)
+    print(f"{'moved' if move else 'released'} {tag}: {run('gh', 'release', 'view', tag, '--json', 'url', '--jq', '.url')}")
 
 
 def main() -> None:
@@ -345,6 +331,7 @@ def main() -> None:
     p = sub.add_parser("publish")
     p.add_argument("platform", choices=PLATFORMS); p.add_argument("version")
     p.add_argument("--build", type=int); p.add_argument("--date"); p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--move", action="store_true", help="point the version's release at a newer build, after a rejection")
     args = parser.parse_args()
 
     if args.command == "show":
@@ -354,7 +341,7 @@ def main() -> None:
     elif args.command == "record-build":
         record_build(args.platform, args.version, args.build, args.channel, args.commit, args.date)
     else:
-        publish(args.platform, args.version, args.build, args.date, args.dry_run)
+        publish(args.platform, args.version, args.build, args.date, args.dry_run, args.move)
 
 
 if __name__ == "__main__":

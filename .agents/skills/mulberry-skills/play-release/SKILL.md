@@ -5,7 +5,7 @@ description: Build Mulberry's Android app for Google Play. Choose the version, b
 
 # Mulberry Play release
 
-Mulberry's public Android channel is Play's **open testing** track (`beta`); the production track is unused. Every upload goes to open testing and is rolled out to everyone, so once Play has reviewed it, it is public. There are no internal or closed test uploads.
+Mulberry's public Android channel is Play's **open testing** track (`beta`); the production track is unused. Every upload goes to open testing and is rolled out to everyone, so once Play has reviewed it, it is public, and the upload itself counts as the release. There are no internal or closed test uploads.
 
 Run from the release checkout's repository root. Scripts are in `scripts/` next to this file, below `$S`; the shared ledger script is `$P`:
 
@@ -100,8 +100,18 @@ git push origin main
 Keep it short: the version, build and source commit, that verification passed, and that the upload was rolled out to everyone on open testing.
 
 Then remind the user:
+- Press **Send changes for review** in Play Console → Publishing overview (unless the script said it was sent automatically).
 - Google reviews the update before people get it, usually within a few hours, sometimes a few days. Play Console shows the review state.
-- Once it's live, mark it public with the `public-release` subskill (`releases.py publish android <version>`), which tags it, publishes the GitHub Release and sets the live build.
+
+### 8. Release
+
+The upload is the submission, so release the version straight away with the `public-release` subskill:
+
+```sh
+$P/releases.py publish android <version>
+```
+
+That tags the build, publishes its GitHub Release and dates its What's New note. If the version was already released and this build replaces a rejected one, use `--move` instead. Report the tag and the release link with the rest.
 
 ## Checking Play
 

@@ -7,7 +7,7 @@ description: Build Mulberry's iOS and/or macOS app for App Store Connect. Bump t
 
 Run from the release checkout's repository root. The scripts are in `scripts/` next to this file (`.agents/skills/mulberry-skills/testflight-release/scripts/`), referred to below as `$S`. The shared release ledger script is `$P`, `.agents/skills/mulberry-skills/public-release/scripts/`.
 
-A TestFlight build is a **build**, not a release: a version usually gets several before one goes public. Builds are recorded in the ledger (`docs/releases.md`) and never tagged. When a version goes live in the App Store, the `public-release` subskill tags it and publishes its GitHub Release.
+A TestFlight build is a **build**, not a release: a version usually gets several before one is submitted for App Store review. Builds are recorded in the ledger (`docs/releases.md`) and never tagged. When a version is submitted for review, the `public-release` subskill tags it and publishes its GitHub Release.
 
 ## Fixed facts
 
@@ -140,7 +140,7 @@ Then remind them:
 - App Store Connect processes builds before they appear in TestFlight, usually within 10–30 minutes, and Apple emails when a build is ready or rejected.
 - Encryption compliance is already answered in the plists (`ITSAppUsesNonExemptEncryption` = false).
 - They still need to add the build to tester groups. External groups need beta review for the first build of a version.
-- When a version goes live in the App Store, mark it public with the `public-release` subskill (`releases.py publish <platform> <version>`). That tags the build that shipped, publishes its GitHub Release, dates its What's New note and sets the live build.
+- When they submit a version for App Store review, release it with the `public-release` subskill (`releases.py publish <platform> <version>`): that tags the submitted build, publishes its GitHub Release and dates its What's New note. If Apple rejects it, the next build of the same version goes in and `publish --move` moves the tag to it.
 
 ## Common failures
 
