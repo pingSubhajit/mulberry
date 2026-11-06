@@ -1,6 +1,6 @@
 # Server-driven content
 
-Mulberry's backend owns the sticker and wallpaper catalogs. Apps fetch the catalog and image URLs; adding content does not require an app release. New content kinds still need client rendering and backend support before content can be added.
+Mulberry's backend owns the sticker, wallpaper and share frame catalogs. Apps fetch the catalog and image URLs; adding content does not require an app release. New content kinds still need client rendering and backend support before content can be added.
 
 This guide is the reference for agents and for adding future content kinds. The agent workflow lives in [the catalog skill](../.agents/skills/mulberry-skills/catalog/SKILL.md). Build gates remain separate in [app-versions](../.agents/skills/mulberry-skills/app-versions/SKILL.md): they use Firebase Remote Config, while catalogs use Postgres and object storage.
 
@@ -8,7 +8,7 @@ This guide is the reference for agents and for adding future content kinds. The 
 
 Real catalog management uses `https://api.mulberry.my` and `x-admin-password`. Credentials remain server-side or in the agent's secret input; never put a Supabase service key in an app. The web admin and agents call the same APIs. Agents must not edit production tables or storage objects directly.
 
-A local backend uses its configured `DATABASE_URL` and storage buckets. A local database does not imply local storage. In development, `STICKER_LOCAL_STORAGE_DIR` and `WALLPAPER_LOCAL_STORAGE_DIR` keep catalog assets on the backend's disk. The backend serves them under `/dev/sticker-assets/` (signed) and `/dev/wallpaper-assets/` (public, like the bucket). Production refuses both. Profile photos always use the Supabase bucket, because their URLs leave in bootstrap and push payloads. The import scripts are development tools, not the agent path for production.
+A local backend uses its configured `DATABASE_URL` and storage buckets. A local database does not imply local storage. In development, `STICKER_LOCAL_STORAGE_DIR`, `WALLPAPER_LOCAL_STORAGE_DIR` and `SHARE_FRAME_LOCAL_STORAGE_DIR` keep catalog assets on the backend's disk. The backend serves them under `/dev/sticker-assets/` (signed), `/dev/wallpaper-assets/` and `/dev/share-frame-assets/` (public, like the bucket). Production refuses all three. docker-compose sets the share frame directory by default. Profile photos always use the Supabase bucket, because their URLs leave in bootstrap and push payloads. The import scripts are development tools, not the agent path for production.
 
 Admin authorization runs before multipart processing. Service methods also check authorization. Admin responses keep their existing top-level content fields and add `message`; errors include a stable `code`. Public routes keep their existing contracts.
 
@@ -61,14 +61,34 @@ Images must be valid JPEG, PNG or WebP, at least 800px on both sides and at most
 
 Public discovery is `GET /wallpapers?limit=24&cursor=...`, with a maximum page size of 50. It returns published items and `nextCursor`. File URLs are public, so hiding or deleting a row is not access revocation for anyone who already has a URL.
 
+### Share frames
+
+Frames for the share image. [share-frames.md](share-frames.md) is the full contract: the layout schema, rendering and client rules. Identity is `(frameKey, frameVersion)`; keys are lowercase words joined by hyphens. Publishing locks a version's image and layout for good, even after hiding. Title, sort order, date window and visibility stay editable.
+
+| Method and route | Input | Result |
+| --- | --- | --- |
+| `GET /admin/share-frames` | None | `items`: every version, drafts included, with metadata, `published`, `contentLocked`, URLs and layout |
+| `GET /admin/share-frames/:key/:version` | None | One version |
+| `POST /admin/share-frames` | Multipart: `frameKey`, `frameVersion` (default 1), `title`, optional `sortOrder`, `availableFrom`, `availableUntil`, `published`; `layout` (JSON as a field or a file); one `image` file | New version; draft by default. Duplicate or used versions return 409 |
+| `PATCH /admin/share-frames/:key/:version` | JSON: any of `title`, `sortOrder`, `availableFrom`, `availableUntil` (`YYYY-MM-DD` or null), `published` | Updated metadata; publishing locks content |
+| `PUT /admin/share-frames/:key/:version/content` | Multipart: optional `image`, optional `layout` | Replaces a draft's image and/or layout; 409 `FRAME_VERSION_IMMUTABLE` once locked |
+| `POST /admin/share-frames/:key/:version/copy` | JSON `newVersion`, greater than source and never used | Unpublished, unlocked draft sharing the source's files |
+| `DELETE /admin/share-frames/:key/:version` | JSON `confirm:true` after approval | Removes the row; retains assets and history |
+
+The image must be a PNG of exactly 1080×1920 with an alpha channel, at most 20 MB. The layout must match the schema with `layoutVersion` 1, `key` equal to `frameKey`, a parallelogram quad whose side ratio is within 1% of `aspectRatio`, and every pixel with alpha below 255 inside the quad. Replacing only the layout checks it against the stored image. `availableFrom` must not be after `availableUntil`; both are inclusive and either may be null. Processing keeps the original PNG and adds a full WebP (quality 90, lossless alpha) and a 270×480 WebP thumbnail at new UUID paths in the public wallpaper bucket, under `share-frames/`.
+
+Public discovery is `GET /share-frames` with a bearer token: every published frame, in or out of its window, ordered by `sortOrder`. Apps filter by their own local date.
+
 ### History and restore
 
 | Method and route | Input | Result |
 | --- | --- | --- |
 | `GET /admin/stickers/history` | Optional `limit` (1–100, default 50) | Recent sticker changes |
 | `GET /admin/wallpapers/history` | Same | Recent wallpaper changes |
+| `GET /admin/share-frames/history` | Same | Recent share frame changes |
 | `POST /admin/stickers/history/:changeId/restore` | JSON `confirm:true` after approval | Restores the previous state and writes a new history entry |
 | `POST /admin/wallpapers/history/:changeId/restore` | Same | Same for wallpapers |
+| `POST /admin/share-frames/history/:changeId/restore` | Same | Same for share frames; undoing a publish keeps the content locked |
 
 `catalog_admin.admin_catalog_changes` is in a private schema, outside the usual public Data API schema. It stores `id`, `content_type`, `content_key`, `action`, `actor`, `previous_json`, `current_json`, and `created_at`. The shared password cannot identify a person; `actor` is honestly recorded as `shared-admin`. Never log the password, service keys, request headers or signed URLs.
 
@@ -84,9 +104,11 @@ Old objects are retained indefinitely for history and version copies. There is n
 | --- | --- |
 | 400 `INVALID_CATALOG_INPUT` | Fix the field, type, version, file or dimensions named in `message` |
 | 401 `ADMIN_UNAUTHORIZED` | Missing/wrong admin password; stop |
-| 404 `CATALOG_NOT_FOUND`, `PACK_NOT_FOUND`, `STICKER_NOT_FOUND`, `CATALOG_CHANGE_NOT_FOUND` | Re-read exact identifiers |
-| 409 `PACK_VERSION_EXISTS` | Existing or previously used version; use metadata PATCH, restore deletion, or a new version |
-| 409 `PACK_VERSION_IMMUTABLE` | Copy published/locked content into a new draft |
+| 400 `INVALID_FRAME_IMAGE` | The frame isn't a decodable 1080×1920 PNG with alpha |
+| 400 `INVALID_FRAME_LAYOUT` | The layout fails the schema or geometry, or transparent pixels lie outside its quad (`outsidePixels`, `outsideBounds`) |
+| 404 `CATALOG_NOT_FOUND`, `PACK_NOT_FOUND`, `STICKER_NOT_FOUND`, `FRAME_NOT_FOUND`, `CATALOG_CHANGE_NOT_FOUND` | Re-read exact identifiers |
+| 409 `PACK_VERSION_EXISTS`, `FRAME_VERSION_EXISTS` | Existing or previously used version; use metadata PATCH, restore deletion, or a new version |
+| 409 `PACK_VERSION_IMMUTABLE`, `FRAME_VERSION_IMMUTABLE` | Copy published/locked content into a new draft |
 | 409 `CONFIRMATION_REQUIRED` | Show the impact; confirm only after explicit approval |
 | 409 `CATALOG_STATE_CHANGED` | Live state differs from history; read and resolve newer edits |
 | 503 `CATALOG_UNAVAILABLE` | Storage/admin configuration unavailable |

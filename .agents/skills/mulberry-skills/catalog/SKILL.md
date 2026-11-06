@@ -1,6 +1,6 @@
 ---
 name: catalog
-description: Read and manage Mulberry's server-driven sticker packs and wallpapers through the admin API, including draft uploads, version copies, publishing, ordering, history and recovery. Use when the user asks to add, change, hide, remove, reorder or restore stickers or wallpapers, or manage server-driven content.
+description: Read and manage Mulberry's server-driven sticker packs, wallpapers and share frames through the admin API, including draft uploads, version copies, publishing, ordering, date windows, history and recovery. Use when the user asks to add, change, hide, remove, reorder or restore stickers, wallpapers or share frames, or manage server-driven content.
 ---
 
 # Catalog
@@ -16,6 +16,7 @@ API=https://api.mulberry.my
 ADMIN_PASSWORD="$(node --input-type=module -e 'process.loadEnvFile(".env"); process.stdout.write(process.env.ADMIN_PASSWORD ?? "")')"
 curl --fail-with-body -sS "$API/admin/stickers/packs" -H "x-admin-password: $ADMIN_PASSWORD"
 curl --fail-with-body -sS "$API/admin/wallpapers" -H "x-admin-password: $ADMIN_PASSWORD"
+curl --fail-with-body -sS "$API/admin/share-frames" -H "x-admin-password: $ADMIN_PASSWORD"
 ```
 
 An empty password or 401 means stop. Use the runtime's secret input tool if available. Never guess credentials.
@@ -26,12 +27,12 @@ Never use local services, direct SQL, seed scripts or storage consoles for real 
 
 Use the local backend only when the user asks for the local database. Local work needs a local database and local storage. The local `.env` points at the production Supabase project and bucket, so do not use Supabase from a local backend.
 
-1. Check that the repo-root `.env` sets `STICKER_LOCAL_STORAGE_DIR=/data/sticker-assets` and `WALLPAPER_LOCAL_STORAGE_DIR=/data/wallpaper-assets`. docker-compose mounts a volume at each path. If either is missing, add it. The backend refuses both in production.
+1. Check that the repo-root `.env` sets `STICKER_LOCAL_STORAGE_DIR=/data/sticker-assets`, `WALLPAPER_LOCAL_STORAGE_DIR=/data/wallpaper-assets` and `SHARE_FRAME_LOCAL_STORAGE_DIR=/data/share-frame-assets`. docker-compose mounts a volume at each path (and defaults the share frame one). If any is missing, add it. The backend refuses all three in production.
 2. Start or restart the backend with `hun` (`hun status`, then `hun restart mulberry:backend`; this rebuilds the image). Wait until `docker inspect -f '{{.State.Health.Status}}' mulberry-backend-1` says `healthy`.
 3. Use `API=http://localhost:8080` with the same password, routes and rules as production. Run loops under `bash`, not zsh: zsh arrays start at 1.
-4. Check that every returned URL starts with `http://localhost:8080/dev/sticker-assets/` or `http://localhost:8080/dev/wallpaper-assets/`, and that each URL loads. A Supabase URL means local storage is off: stop and fix it before uploading anything else.
+4. Check that every returned URL starts with `http://localhost:8080/dev/sticker-assets/`, `http://localhost:8080/dev/wallpaper-assets/` or `http://localhost:8080/dev/share-frame-assets/`, and that each URL loads. A Supabase URL means local storage is off: stop and fix it before uploading anything else.
 
-Local stickers and wallpapers can be published without asking, since nothing outside this machine sees them. Clients get local URLs on whichever host they called, such as a LAN IP for a device. Profile photos still use the Supabase bucket.
+Local stickers, wallpapers and share frames can be published without asking, since nothing outside this machine sees them. Clients get local URLs on whichever host they called, such as a LAN IP for a device. Profile photos still use the Supabase bucket.
 
 ## Working rules
 
@@ -44,6 +45,25 @@ To edit published stickers, POST `/admin/stickers/packs/:key/:version/copy` with
 To hide content, PATCH `{"published":false}`. This keeps its files and references. Delete only when the user explicitly requests deletion and accepts the saved-link or saved-canvas impact. A 409 `CONFIRMATION_REQUIRED` means show its message and wait for explicit approval before resending `{"confirm":true}`. Never add confirmation automatically. Prior approval counts only if it covers this exact content and effect.
 
 Stickers use `image` multipart uploads; pack creation uses a `cover` file (the existing route accepts one file field). PNG is preferred for transparent art. Files must be at most 20 MB. The backend makes full PNGs and 256px thumbnails while preserving alpha. Wallpapers require valid JPEG, PNG or WebP, at least 800px on each side and at most 20 MB. Upload wallpaper replacements to `PUT /admin/wallpapers/:id/image` using the `image` field. Existing devices may keep a downloaded wallpaper until they select or fetch it again.
+
+## Share frames
+
+Each frame version is one 1080×1920 PNG with alpha plus a `layout.json` (see [share-frames.md](../../../../docs/share-frames.md)). Create a draft, check it, then publish:
+
+```sh
+curl --fail-with-body -sS "$API/admin/share-frames" -H "x-admin-password: $ADMIN_PASSWORD" \
+  -F frameKey=christmas -F frameVersion=1 -F "title=Christmas" -F sortOrder=60 \
+  -F availableFrom=2026-12-15 -F availableUntil=2026-12-26 -F published=false \
+  -F 'layout=</absolute/path/layout.json' -F 'image=@/absolute/path/frame.png;type=image/png'
+curl --fail-with-body -sS -X PATCH "$API/admin/share-frames/christmas/1" -H "x-admin-password: $ADMIN_PASSWORD" \
+  -H 'content-type: application/json' -d '{"published":true}'
+```
+
+`layout.key` must equal `frameKey`. Publishing locks the image and layout forever; to change either, POST `/admin/share-frames/:key/:version/copy` with `{"newVersion":N}`, replace the draft's content with `PUT /admin/share-frames/:key/:version/content` (multipart `image` and/or `layout`), then publish it and hide the old version. Title, `sortOrder`, visibility and the window stay editable with PATCH; reset seasonal windows each year by PATCHing `availableFrom`/`availableUntil` (`YYYY-MM-DD`, or null for none). Titles are short: one or two words naming the frame, as `Polaroid` or `Spring Kittens`. History is `/admin/share-frames/history`.
+
+Seasonal windows: Christmas 15–26 December, Halloween 20 October–1 November, Diwali from about 10 days before to the day after (it moves every year). Valentine's has no window: it is always available.
+
+`INVALID_FRAME_IMAGE` means the file isn't a 1080×1920 PNG with alpha. `INVALID_FRAME_LAYOUT` names the failing field, or reports `outsidePixels` when transparent pixels fall outside the quad; fix the art or the layout, never the check.
 
 ## Wallpaper titles and descriptions
 
@@ -64,7 +84,7 @@ Numeric fields must be integers. Booleans are JSON booleans, or the strings `tru
 
 ## History and recovery
 
-GET `/admin/stickers/history` or `/admin/wallpapers/history` (`?limit=50`, max 100) before recovery. Each entry records the shared admin actor, action, exact key, time and full previous/current database snapshots. Paths are durable; signed image URLs are not history.
+GET `/admin/stickers/history`, `/admin/wallpapers/history` or `/admin/share-frames/history` (`?limit=50`, max 100) before recovery. Each entry records the shared admin actor, action, exact key, time and full previous/current database snapshots. Paths are durable; signed image URLs are not history.
 
 POST `/admin/:type/history/:changeId/restore` to inspect the confirmation response. Restore needs explicit approval and `{"confirm":true}`. It writes a new history entry and refuses to erase a later edit with `CATALOG_STATE_CHANGED`. Undo newer changes first. Undoing publication never unlocks a sticker version. Assets are retained, including after deletion, so copies and history remain usable. A missing storage object still needs separate recovery; do not claim history alone repairs it.
 
@@ -72,4 +92,4 @@ After every write, read the exact target and history. For a new pack, verify sti
 
 ## Error handling
 
-`PACK_VERSION_EXISTS`: read the version, then PATCH metadata or choose a never-used version. `PACK_VERSION_IMMUTABLE`: copy to a draft. `CONFIRMATION_REQUIRED`: obtain explicit approval for the stated effect. `CATALOG_STATE_CHANGED`: read current state and history; never force it. `INVALID_CATALOG_INPUT`: fix the named field or image. `CATALOG_NOT_FOUND`, `PACK_NOT_FOUND`, `STICKER_NOT_FOUND` or `CATALOG_CHANGE_NOT_FOUND`: re-read identifiers. `ADMIN_UNAUTHORIZED`: stop. `CATALOG_UNAVAILABLE` or `CATALOG_FAILURE`: report the failure, inspect state and avoid retry loops.
+`PACK_VERSION_EXISTS` or `FRAME_VERSION_EXISTS`: read the version, then PATCH metadata or choose a never-used version. `PACK_VERSION_IMMUTABLE` or `FRAME_VERSION_IMMUTABLE`: copy to a draft. `CONFIRMATION_REQUIRED`: obtain explicit approval for the stated effect. `CATALOG_STATE_CHANGED`: read current state and history; never force it. `INVALID_CATALOG_INPUT`: fix the named field or image. `CATALOG_NOT_FOUND`, `PACK_NOT_FOUND`, `STICKER_NOT_FOUND`, `FRAME_NOT_FOUND` or `CATALOG_CHANGE_NOT_FOUND`: re-read identifiers. `ADMIN_UNAUTHORIZED`: stop. `CATALOG_UNAVAILABLE` or `CATALOG_FAILURE`: report the failure, inspect state and avoid retry loops.
