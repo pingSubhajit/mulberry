@@ -28,7 +28,9 @@
       "build": 12,
       "commit": "9be0500f54ecc8ce8c49de6fce55b92d0095c295",
       "channel": "testflight",
-      "uploadedAt": "2026-11-06"
+      "uploadedAt": "2026-11-06",
+      "releasedAt": "2026-11-06",
+      "tag": "ios-v1.1.0"
     }
   ],
   "macos": [

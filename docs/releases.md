@@ -11,7 +11,7 @@ only releases get a git tag and a GitHub Release.
 
 | Version | Build | Commit | Uploaded | Channel | Released |
 | --- | --- | --- | --- | --- | --- |
-| 1.1.0 | 12 | `9be0500f` | 2026-11-06 | testflight |  |
+| 1.1.0 | 12 | `9be0500f` | 2026-11-06 | testflight | 2026-11-06 (`ios-v1.1.0`) |
 | 1.1.0 | 11 | `a33007e7` | 2026-11-05 | testflight |  |
 | 1.0.1 | 10 | `53ac24e7` | 2026-11-04 | testflight | 2026-11-05 (`ios-v1.0.1`) |
 | 1.0.1 | 9 | `9226eb8b` | 2026-11-04 | testflight |  |
