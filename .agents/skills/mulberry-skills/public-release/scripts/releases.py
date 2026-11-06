@@ -168,7 +168,8 @@ def next_version(platform: str) -> None:
     last = last_release(ledger, platform)
     if not last:
         print(json.dumps({"repository": version, "lastRelease": None,
-                          "advice": "No public release is recorded for this platform. Record the version that's live "
+                          "advice": "No public release is recorded for this platform. If it has never been public, keep "
+                                    "the repository's version until its first release. If a version is live, record it "
                                     "first (releases.py publish, with --date), then ask again."}, indent=2))
         return
     if semver(version) > semver(last["version"]):
