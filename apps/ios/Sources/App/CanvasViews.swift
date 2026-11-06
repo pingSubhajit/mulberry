@@ -118,13 +118,19 @@ struct DoodleCanvasView: View {
             // On iPhone, undo and redo sit at the top left, as in the Mac app's main window.
             .toolbar {
                 if sizeClass != .regular {
+                    // The toolbar draws its symbols in ink whether or not they are enabled, so a
+                    // disabled one takes the system's disabled colour itself.
                     ToolbarItemGroup(placement: .topBarLeading) {
-                        Button(action: editor.undo) { Image(systemName: "arrow.uturn.backward") }
-                        .tint(MulberryDesign.ink)
+                        Button(action: editor.undo) {
+                            Image(systemName: "arrow.uturn.backward")
+                                .foregroundStyle(editor.canUndo ? AnyShapeStyle(MulberryDesign.ink) : AnyShapeStyle(.tertiary))
+                        }
                         .disabled(!editor.canUndo)
                         .accessibilityLabel("Undo")
-                        Button(action: editor.redo) { Image(systemName: "arrow.uturn.forward") }
-                        .tint(MulberryDesign.ink)
+                        Button(action: editor.redo) {
+                            Image(systemName: "arrow.uturn.forward")
+                                .foregroundStyle(editor.canRedo ? AnyShapeStyle(MulberryDesign.ink) : AnyShapeStyle(.tertiary))
+                        }
                         .disabled(!editor.canRedo)
                         .accessibilityLabel("Redo")
                     }
