@@ -52,7 +52,7 @@ describe("LocalWallpaperStorage", () => {
 
   it("leaves other URLs alone and is refused in production", () => {
     expect(absolutizeLocalWallpaperUrls({ url: "https://cdn/x.webp" }, "http://h")).toEqual({ url: "https://cdn/x.webp" })
-    expect(() => loadConfig({ NODE_ENV: "production", DATABASE_URL: "postgres://x", WALLPAPER_LOCAL_STORAGE_DIR: "/tmp/x" }))
+    expect(() => loadConfig({ NODE_ENV: "production", DATABASE_URL: "postgres://x", GOOGLE_SERVER_CLIENT_ID: "test-client", WALLPAPER_LOCAL_STORAGE_DIR: "/tmp/x" }))
       .toThrow("local development only")
   })
 })

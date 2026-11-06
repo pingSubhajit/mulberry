@@ -55,7 +55,7 @@ describe("LocalStickerStorage", () => {
 
   it("leaves other URLs alone and is refused in production", () => {
     expect(absolutizeLocalStickerUrls({ url: "https://cdn/x.png" }, "http://h")).toEqual({ url: "https://cdn/x.png" })
-    expect(() => loadConfig({ NODE_ENV: "production", DATABASE_URL: "postgres://x", STICKER_LOCAL_STORAGE_DIR: "/tmp/x" }))
+    expect(() => loadConfig({ NODE_ENV: "production", DATABASE_URL: "postgres://x", GOOGLE_SERVER_CLIENT_ID: "test-client", STICKER_LOCAL_STORAGE_DIR: "/tmp/x" }))
       .toThrow("local development only")
   })
 })
