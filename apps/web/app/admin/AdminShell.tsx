@@ -1,6 +1,6 @@
 "use client"
 
-import { ImageIcon, Lock, Smartphone, Sticker, type LucideIcon } from "lucide-react"
+import { Frame, ImageIcon, Lock, Smartphone, Sticker, type LucideIcon } from "lucide-react"
 import type { Route } from "next"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -23,7 +23,8 @@ const NAV_GROUPS: readonly { label: string; items: readonly NavItem[] }[] = [
     label: "Catalog",
     items: [
       { href: "/admin/stickers", label: "Stickers", icon: Sticker },
-      { href: "/admin/wallpapers", label: "Wallpapers", icon: ImageIcon }
+      { href: "/admin/wallpapers", label: "Wallpapers", icon: ImageIcon },
+      { href: "/admin/share-frames", label: "Share frames", icon: Frame }
     ]
   }
 ]
