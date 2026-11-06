@@ -1,8 +1,9 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify"
 import { describe, expect, it, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { fileURLToPath } from "node:url"
 import { registerWhatsNewRoutes, type WhatsNewPlatform } from "../src/modules/whatsNew/routes.js"
 
 type ListBody = { items: { version: string; rawMarkdown: string }[]; nextCursor: string | null }
@@ -172,6 +173,30 @@ describe("whats-new routes", () => {
     expect(otherPlatform.statusCode).toBe(404)
     const escape = await app.inject({ method: "GET", url: "/whats-new/android/assets/..%2F..%2Fios%2Fassets%2F1.0.0%2Fhero.webp" })
     expect(escape.statusCode).toBe(400)
+  })
+
+  it("names every shipped note after its version, with a hero image that exists", async () => {
+    const shipped = Fastify({ logger: false })
+    registerWhatsNewRoutes(shipped)
+    await shipped.ready()
+    const root = join(fileURLToPath(new URL("..", import.meta.url)), "whats-new")
+    try {
+      for (const platform of ["android", "ios", "macos"] as const) {
+        const dir = join(root, platform)
+        if (!existsSync(dir)) continue
+        for (const file of readdirSync(dir).filter((name) => /^\d+\.\d+\.\d+\.md$/.test(name))) {
+          const text = readFileSync(join(dir, file), "utf8")
+          expect(/^version: (.+)$/m.exec(text)?.[1]?.trim(), `${platform}/${file}`).toBe(file.slice(0, -3))
+          const hero = /^hero_image: (.+)$/m.exec(text)?.[1]?.trim()
+          if (hero && !hero.startsWith("http")) {
+            const image = await shipped.inject({ method: "GET", url: hero })
+            expect(image.statusCode, `${platform}/${file} hero ${hero}`).toBe(200)
+          }
+        }
+      }
+    } finally {
+      await shipped.close()
+    }
   })
 
   it("serves the notes checked into the repository", async () => {
