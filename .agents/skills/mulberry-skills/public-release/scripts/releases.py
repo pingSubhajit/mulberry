@@ -25,7 +25,6 @@ import re
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from typing import TypedDict
 
 ROOT = pathlib.Path(__file__).resolve().parents[5]
@@ -245,6 +244,19 @@ def release_body(platform: str, version: str, previous_tag: str | None, build: B
     return f"Changes since `{previous_tag}`:\n\n{listed}" + footer
 
 
+def admin_api(method: str, path: str, password: str, body: dict | None = None) -> dict:
+    """Calls the app-versions admin API with curl (the system's certificates); the password goes
+    in on stdin, never on the command line."""
+    args = ["curl", "-sS", "--fail-with-body", "-X", method, f"{API}{path}", "-H", "@-"]
+    if body is not None:
+        args += ["--data", json.dumps(body)]
+    headers = f"x-admin-password: {password}\ncontent-type: application/json\n"
+    result = subprocess.run(args, input=headers, text=True, capture_output=True)
+    if result.returncode != 0:
+        sys.exit(f"app-versions {method} {path} failed: {result.stdout.strip() or result.stderr.strip()}")
+    return json.loads(result.stdout)
+
+
 def set_live_build(gate: str, build: int, dry_run: bool) -> None:
     env = (ROOT / ".env").read_text() if (ROOT / ".env").exists() else ""
     match = re.search(r"^ADMIN_PASSWORD=(.*)$", env, re.M)
@@ -252,18 +264,14 @@ def set_live_build(gate: str, build: int, dry_run: bool) -> None:
         print(f"! no ADMIN_PASSWORD in .env: set {gate} liveBuild to {build} with the app-versions skill")
         return
     password = match[1].strip().strip("'\"")
-    headers = {"x-admin-password": password, "content-type": "application/json"}
-    current = json.loads(urllib.request.urlopen(urllib.request.Request(f"{API}/admin/app-versions", headers=headers)).read())
-    before = current["policies"][gate]["liveBuild"]
+    before = admin_api("GET", "/admin/app-versions", password)["policies"][gate]["liveBuild"]
     if before >= build:
         print(f"{gate} liveBuild is already {before}; left as it is")
         return
     if dry_run:
         print(f"would set {gate} liveBuild {before} -> {build}")
         return
-    request = urllib.request.Request(f"{API}/admin/app-versions/{gate}", method="PATCH", headers=headers,
-                                     data=json.dumps({"liveBuild": build}).encode())
-    reply = json.loads(urllib.request.urlopen(request).read())
+    reply = admin_api("PATCH", f"/admin/app-versions/{gate}", password, {"liveBuild": build})
     print(f"{gate} liveBuild {before} -> {build}: {reply.get('message', '')}")
 
 
