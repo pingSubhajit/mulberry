@@ -7,7 +7,7 @@ description: Release a Mulberry iOS, macOS or Android version when it's sent for
 
 Builds and releases are different things.
 
-- The release procedure for each platform is its own subskill: `ios-release` (build, upload, submit for App Store review) and `android-release` (build, upload, roll out on Play's open testing track). Both record every build in the ledger and finish by running this subskill's `publish`.
+- The release procedure for each platform is its own subskill: `ios-release` (build, upload, prepare the App Store review) and `android-release` (build, upload, roll out on Play's open testing track). Both record every build in the ledger and finish by running this subskill's `publish`.
 - A version is **released** when it's sent for public review: submitted for App Store review, or uploaded and rolled out on Play's open testing track (Mulberry's public Android channel). Only then does it get a git tag and a GitHub Release. Builds are recorded in the ledger, never tagged.
 - If Apple or Google rejects that build, a newer build of the **same version** goes in, and the tag and GitHub Release move to it (`--move`). The version number doesn't change.
 
@@ -44,7 +44,7 @@ It answers either `inProgress` (the repository's version isn't public yet: keep 
 
 ## Releasing a version
 
-`ios-release` runs this right after submitting for App Store review, and `android-release` right after its upload. Run it by hand only for a release made outside those procedures, with `--date` if it's recorded late.
+`ios-release` runs this right after preparing the App Store review, and `android-release` right after its upload; in both cases the user then sends it for review with one button. Run it by hand only for a release made outside those procedures, with `--date` if it's recorded late.
 
 1. Dry run, and show the user what will happen:
    ```sh

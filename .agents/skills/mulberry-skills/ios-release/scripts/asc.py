@@ -7,9 +7,10 @@ Run through `uv run --with pyjwt --with cryptography --with requests` (see SKILL
 Usage:
   asc.py wait <version> <build> [--timeout-minutes 60]   wait until the uploaded build has processed
   asc.py whats-new <version>                             print the App Store text made from the note
-  asc.py submit <version> <build> [--whats-new-file FILE] [--manual-release] [--dry-run]
+  asc.py prepare <version> <build> [--whats-new-file FILE] [--manual-release] [--dry-run]
                                                          attach the build to the App Store version,
-                                                         set What's New, and submit it for review
+                                                         set What's New, and put it in a draft review
+                                                         submission; the user presses Submit for Review
   asc.py status [<version>]                              the iOS versions' App Store states
 """
 import argparse
@@ -105,7 +106,7 @@ def wait(version: str, build: str, timeout_minutes: int) -> None:
         time.sleep(60)
 
 
-def submit(version: str, build: str, whats_new_file: str | None, manual_release: bool, dry_run: bool) -> None:
+def prepare(version: str, build: str, whats_new_file: str | None, manual_release: bool, dry_run: bool) -> None:
     client = Client()
     text = pathlib.Path(whats_new_file).read_text().strip() if whats_new_file else whats_new_text(version)
     if not text:
@@ -121,8 +122,9 @@ def submit(version: str, build: str, whats_new_file: str | None, manual_release:
     existing = client.versions(version)
     if existing and existing[0]["attributes"]["appStoreState"] not in EDITABLE:
         state = existing[0]["attributes"]["appStoreState"]
-        sys.exit(f"iOS {version} is {state} in App Store Connect, so it can't take a new build or be submitted now")
+        sys.exit(f"iOS {version} is {state} in App Store Connect, so it can't take a new build or be prepared now")
     print(f"iOS {version}: {'update the existing' if existing else 'create the'} App Store version, attach build {build}, "
+          f"draft a review submission for you to submit, "
           f"release {'by hand after approval' if manual_release else 'automatically after approval'}")
     print("--- What's New ---\n" + text + "\n------------------")
     if dry_run:
@@ -149,7 +151,8 @@ def submit(version: str, build: str, whats_new_file: str | None, manual_release:
         client.call("PATCH", f"/appStoreVersionLocalizations/{localization['id']}", "setting What's New", json={
             "data": {"type": "appStoreVersionLocalizations", "id": localization["id"], "attributes": {"whatsNew": text}}})
 
-    # The review submission: reuse an open one (as after a rejection), or start one.
+    # The review submission, left as a draft for the user to submit: reuse an open one (as after a
+    # rejection), or start one.
     open_submissions = client.call("GET", "/reviewSubmissions", "reading review submissions", params={
         "filter[app]": client.app, "filter[platform]": "IOS",
         "filter[state]": "READY_FOR_REVIEW,UNRESOLVED_ISSUES", "include": "items"}).get("data", [])
@@ -168,10 +171,9 @@ def submit(version: str, build: str, whats_new_file: str | None, manual_release:
             "data": {"type": "reviewSubmissionItems", "relationships": {
                 "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": submission_id}},
                 "appStoreVersion": {"data": {"type": "appStoreVersions", "id": version_id}}}}})
-    client.call("PATCH", f"/reviewSubmissions/{submission_id}", "submitting for review", json={
-        "data": {"type": "reviewSubmissions", "id": submission_id, "attributes": {"submitted": True}}})
-    state = client.versions(version)[0]["attributes"]["appStoreState"]
-    print(f"submitted iOS {version} build {build} for App Store review ({state})")
+    print(f"prepared iOS {version} build {build} for App Store review")
+    print("now press Submit for Review: App Store Connect → Apps → Mulberry → App Review "
+          f"(or the iOS {version} page)")
 
 
 def status(version: str | None) -> None:
@@ -185,7 +187,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("wait"); p.add_argument("version"); p.add_argument("build"); p.add_argument("--timeout-minutes", type=int, default=60)
     p = sub.add_parser("whats-new"); p.add_argument("version")
-    p = sub.add_parser("submit"); p.add_argument("version"); p.add_argument("build")
+    p = sub.add_parser("prepare"); p.add_argument("version"); p.add_argument("build")
     p.add_argument("--whats-new-file"); p.add_argument("--manual-release", action="store_true"); p.add_argument("--dry-run", action="store_true")
     p = sub.add_parser("status"); p.add_argument("version", nargs="?")
     args = parser.parse_args()
@@ -193,8 +195,8 @@ def main() -> None:
         wait(args.version, args.build, args.timeout_minutes)
     elif args.command == "whats-new":
         print(whats_new_text(args.version) or f"(no note for {args.version})")
-    elif args.command == "submit":
-        submit(args.version, args.build, args.whats_new_file, args.manual_release, args.dry_run)
+    elif args.command == "prepare":
+        prepare(args.version, args.build, args.whats_new_file, args.manual_release, args.dry_run)
     else:
         status(args.version)
 

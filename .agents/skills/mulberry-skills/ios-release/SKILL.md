@@ -1,11 +1,11 @@
 ---
 name: ios-release
-description: Release Mulberry's iOS app on the App Store. Choose the version, bump the build, commit and push, archive with distribution signing, verify, upload, wait for processing, attach the build to the App Store version with its What's New text, submit it for App Store review, and release it (tag and GitHub Release). Use when the user asks to release iOS, submit iOS for App Store review, or resubmit after a rejection. Not for personal TestFlight builds, which use testflight-release.
+description: Release Mulberry's iOS app on the App Store. Choose the version, bump the build, commit and push, archive with distribution signing, verify, upload, wait for processing, attach the build to the App Store version with its What's New text, prepare it for App Store review, and release it (tag and GitHub Release); the user presses Submit for Review. Use when the user asks to release iOS, send iOS for App Store review, or resubmit after a rejection. Not for personal TestFlight builds, which use testflight-release.
 ---
 
 # Mulberry iOS release
 
-The public iOS release procedure, from build to App Store review. It is separate from `testflight-release`, the user's personal TestFlight skill: never edit that skill or call its scripts from here. This skill has its own copies of the build scripts.
+The public iOS release procedure, from build to App Store review. As on Android, everything is automated except the final button: the user presses **Submit for Review** in App Store Connect. It is separate from `testflight-release`, the user's personal TestFlight skill: never edit that skill or call its scripts from here. This skill has its own copies of the build scripts.
 
 Run from the release checkout's repository root. Scripts are in `scripts/` next to this file, below `$S`; the shared ledger script is `$P`:
 
@@ -83,21 +83,21 @@ git commit -m "chore(release): record iOS <version> build <N>" -m "Co-Authored-B
 git push origin main
 ```
 
-### 6. Wait for processing, then submit for review
+### 6. Wait for processing, then prepare the review
 
 ```sh
 asc wait <version> <N>                               # usually 10–30 minutes: run in the background
-asc submit <version> <N> --dry-run [--whats-new-file FILE]
-asc submit <version> <N> [--whats-new-file FILE]
+asc prepare <version> <N> --dry-run [--whats-new-file FILE]
+asc prepare <version> <N> [--whats-new-file FILE]
 ```
 
-- It creates the App Store version (or reuses it while it's still editable, as after a rejection), attaches the build, sets What's New, and submits for review.
+- It creates the App Store version (or reuses it while it's still editable, as after a rejection), attaches the build, sets What's New, and puts the version in a draft review submission. It never submits; that's the user's click.
 - By default the app goes live automatically once approved. `--manual-release` holds it for the user to release in App Store Connect; use it only when they ask.
-- If Apple refuses the submission (a missing answer or document), the script prints Apple's reason. Relay it; the user fixes it in App Store Connect, then rerun `asc submit`.
+- If App Store Connect refuses a step (a missing answer or document), the script prints Apple's reason. Relay it; the user fixes it in App Store Connect, then rerun `asc prepare`.
 
 ### 7. Release
 
-The version is now sent for public review, so release it:
+The version is ready for the user to send for review, so release it:
 
 ```sh
 $P/releases.py publish ios <version> --dry-run
@@ -108,7 +108,9 @@ That tags the build, publishes its GitHub Release and dates its What's New note.
 
 ### 8. Report
 
-Keep it short: version, build, source commit, verification passed, upload and submission succeeded, the tag and the GitHub Release link. Apple's review usually takes about a day; once approved, the version goes live on its own (unless `--manual-release`).
+Keep it short: version, build, source commit, verification passed, upload succeeded, the review prepared, the tag and the GitHub Release link.
+
+Then tell the user to press **Submit for Review** in App Store Connect → Apps → Mulberry → App Review (or the version's page). Apple's review usually takes about a day; once approved, the version goes live on its own (unless `--manual-release`).
 
 ## Submitting a build that's already uploaded
 
@@ -122,7 +124,7 @@ Then commit and push the ledger, and continue at step 6.
 
 ## After a rejection
 
-Keep the version. Fix what Apple asked for, then repeat steps 1 and 3–6 with the next build number (a new upload of the same version), and move the release to it:
+Keep the version. Fix what Apple asked for, then repeat steps 1 and 3–6 with the next build number (a new upload of the same version); the user resubmits with the same button. Move the release to the new build:
 
 ```sh
 $P/releases.py publish ios <version> --move
