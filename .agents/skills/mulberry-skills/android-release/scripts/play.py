@@ -22,6 +22,9 @@ KEY = ROOT / "secrets/google-play/service-account.json"
 PACKAGE = "com.subhajit.mulberry"
 BASE = f"https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{PACKAGE}"
 UPLOAD = f"https://androidpublisher.googleapis.com/upload/androidpublisher/v3/applications/{PACKAGE}"
+# Play Console's direct links need the developer and app IDs, which the API doesn't expose; replace
+# this with the Publishing overview URL once the user shares it.
+PUBLISHING_OVERVIEW = "https://play.google.com/console/u/0/developers (Mulberry → Publishing overview)"
 
 
 def session() -> AuthorizedSession:
@@ -121,7 +124,7 @@ def upload(release: pathlib.Path, track: str, notes_file: str | None, validate_o
     (release / "play.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
     print("upload ok" + ("" if sent_for_review else
-          " (not sent for review: open Play Console → Publishing overview → Send changes for review)"))
+          f" (not sent for review: press Send changes for review at {PUBLISHING_OVERVIEW})"))
 
 
 def main() -> None:

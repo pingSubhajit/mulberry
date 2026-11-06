@@ -100,7 +100,7 @@ git push origin main
 Keep it short: the version, build and source commit, that verification passed, and that the upload was rolled out to everyone on open testing.
 
 Then remind the user:
-- Press **Send changes for review** in Play Console → Publishing overview (unless the script said it was sent automatically).
+- Press **Send changes for review**, always with the link to where it is: the `PUBLISHING_OVERVIEW` link in `scripts/play.py` (Play Console → Mulberry → Publishing overview). Skip this if the script said it was sent automatically. Every release summary ends with the links for the user's remaining steps.
 - Google reviews the update before people get it, usually within a few hours, sometimes a few days. Play Console shows the review state.
 
 ### 8. Release

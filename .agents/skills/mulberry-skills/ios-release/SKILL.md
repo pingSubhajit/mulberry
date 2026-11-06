@@ -110,7 +110,7 @@ That tags the build, publishes its GitHub Release and dates its What's New note.
 
 Keep it short: version, build, source commit, verification passed, upload succeeded, the review prepared, the tag and the GitHub Release link.
 
-Then tell the user to press **Submit for Review** in App Store Connect → Apps → Mulberry → App Review (or the version's page). Apple's review usually takes about a day; once approved, the version goes live on its own (unless `--manual-release`).
+Then tell the user to press **Submit for Review**, always with the link to where it is: [App Review](https://appstoreconnect.apple.com/apps/6829284245/distribution/reviewsubmissions), or the [version page](https://appstoreconnect.apple.com/apps/6829284245/distribution/ios/version/inflight). Every release summary ends with the links for the user's remaining steps. Apple's review usually takes about a day; once approved, the version goes live on its own (unless `--manual-release`).
 
 ## Submitting a build that's already uploaded
 

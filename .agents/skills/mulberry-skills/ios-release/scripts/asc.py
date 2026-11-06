@@ -172,8 +172,8 @@ def prepare(version: str, build: str, whats_new_file: str | None, manual_release
                 "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": submission_id}},
                 "appStoreVersion": {"data": {"type": "appStoreVersions", "id": version_id}}}}})
     print(f"prepared iOS {version} build {build} for App Store review")
-    print("now press Submit for Review: App Store Connect → Apps → Mulberry → App Review "
-          f"(or the iOS {version} page)")
+    print(f"now press Submit for Review: https://appstoreconnect.apple.com/apps/{client.app}/distribution/reviewsubmissions")
+    print(f"  (or on the version page: https://appstoreconnect.apple.com/apps/{client.app}/distribution/ios/version/inflight)")
 
 
 def status(version: str | None) -> None:
