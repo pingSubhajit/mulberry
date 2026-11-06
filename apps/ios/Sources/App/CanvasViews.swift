@@ -23,14 +23,19 @@ struct DoodleCanvasView: View {
     @State private var radialAt: CGPoint?
     /// The drawing surface's frame on the canvas screen, for placing Pencil palettes at the tip.
     @State private var surfaceFrame = CGRect.zero
+    /// Share sits with the canvas's actions on iPhone, and its sheet zooms out of the button.
+    let shareZoom: Namespace.ID
+    let onShare: () -> Void
     private static let pencilSpace = "pencilSpace"
     private static let space = "canvasScreen"
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(model: MulberryModel) {
+    init(model: MulberryModel, shareZoom: Namespace.ID, onShare: @escaping () -> Void) {
         self.model = model
+        self.shareZoom = shareZoom
+        self.onShare = onShare
         _editor = StateObject(wrappedValue: DoodleEditor(model: model))
     }
 
@@ -167,12 +172,10 @@ struct DoodleCanvasView: View {
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
             ReactionStage(reactions: model.reactions, partnerName: model.bootstrap?.partnerDisplayName)
                 .frame(height: tools.minY).frame(maxHeight: .infinity, alignment: .top)
-            // Actions stand apart from the tools: the reactions on the left; width, colour and clear on
-            // the right. Undo and redo are in the navigation bar.
+            // Actions stand apart from the tools, in one column on the right. Undo and redo are in the
+            // navigation bar.
             VStack(spacing: 28) {
                 HStack(alignment: .bottom) {
-                    // Clear glass lets them blend into the canvas, apart from the tools below.
-                    reactionButton(edge: .bottom, glass: .clear)
                     Spacer()
                     actionColumn
                 }
@@ -368,7 +371,7 @@ struct DoodleCanvasView: View {
         }
     }
 
-    /// Phones: only the tools, spread across the row; the actions stand above it at either end.
+    /// Phones: only the tools, spread across the row; the actions stand in a column above its right end.
     private var compactToolbar: some View {
         GlassEffectContainer(spacing: 4) {
             ViewThatFits(in: .horizontal) {
@@ -516,23 +519,27 @@ struct DoodleCanvasView: View {
             }
     }
 
-    /// The phone's right-hand column: width for the brush, colour for the brush and the eyedropper,
-    /// and clear always. What the tool in hand can't use slides away to the side.
+    /// The phone's right-hand column: reactions and share, then width for the brush, colour for
+    /// the brush and the eyedropper, and clear. What the tool in hand can't use slides away to the
+    /// side but keeps its place, so nothing above it moves.
+    /// Clear glass lets them blend into the canvas, apart from the tools below.
     private var actionColumn: some View {
         VStack(spacing: 10) {
-            if editor.tool == .brush {
-                widthButton(edge: .trailing, glass: .clear).transition(actionTransition)
-            }
-            if editor.tool == .brush || editor.tool == .eyedropper {
-                paletteButton(edge: .trailing, glass: .clear).transition(actionTransition)
-            }
+            reactionButton(edge: .trailing, glass: .clear)
+            shareButton
+            widthButton(edge: .trailing, glass: .clear)
+                .modifier(SlideAway(hidden: editor.tool != .brush))
+            paletteButton(edge: .trailing, glass: .clear)
+                .modifier(SlideAway(hidden: editor.tool != .brush && editor.tool != .eyedropper))
             clearButton(glass: .clear)
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : .snappy(duration: 0.26), value: editor.tool)
     }
 
-    private var actionTransition: AnyTransition {
-        reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity)
+    /// Its sheet zooms out of the button.
+    private var shareButton: some View {
+        toolButton("Share", image: "", symbol: "square.and.arrow.up", glass: .clear, action: onShare)
+            .matchedTransitionSource(id: ToolbarZoomSource.share, in: shareZoom)
     }
 
     /// Coming soon.
@@ -803,6 +810,21 @@ private struct ReactionStage: View {
             }
         }
         .allowsHitTesting(false)
+    }
+}
+
+/// A button the tool in hand can't use: it slides off to the side and fades, keeping its place in
+/// the column so the buttons above it stay where they are.
+private struct SlideAway: ViewModifier {
+    let hidden: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(hidden ? 0 : 1)
+            .offset(x: hidden && !reduceMotion ? 64 : 0)
+            .allowsHitTesting(!hidden)
+            .accessibilityHidden(hidden)
     }
 }
 

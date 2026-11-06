@@ -26,6 +26,7 @@ struct MulberryRootView: View {
     @ObservedObject private var updates = AppUpdateGate.shared
     /// This version's note, shown once over the canvas.
     @State private var whatsNewEntry: WhatsNewEntry?
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     init(model: MulberryModel, wallpapers: WallpaperLibrary) {
         self.model = model; self.wallpapers = wallpapers
@@ -289,7 +290,10 @@ struct MulberryRootView: View {
     private var mainCanvas: some View {
         NavigationStack {
             Group {
-                if model.bootstrap?.isPaired == true { DoodleCanvasView(model: model).id(model.bootstrap?.pairSessionId) }
+                if model.bootstrap?.isPaired == true {
+                    DoodleCanvasView(model: model, shareZoom: toolbarZoom) { shareOpen = true }
+                        .id(model.bootstrap?.pairSessionId)
+                }
                 else { UnpairedCanvasView(model: model) }
             }
             .toolbar { header }
@@ -334,7 +338,8 @@ struct MulberryRootView: View {
             // Its own capsule, apart from the wallpaper and profile pair.
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
         }
-        if model.bootstrap?.isPaired == true {
+        // On iPhone, Share is with the canvas's actions; on iPad it stays beside the wallpaper.
+        if model.bootstrap?.isPaired == true && sizeClass == .regular {
             // Shares what the partner drew, framed, beside the wallpaper it shows on.
             ToolbarItem(placement: .topBarTrailing) {
                 Button { shareOpen = true } label: { Image(systemName: "square.and.arrow.up") }
@@ -366,5 +371,6 @@ struct MulberryRootView: View {
     }
 }
 
-/// Besides the streak pill, the toolbar buttons whose sheets zoom out of them.
-private enum ToolbarZoomSource: Hashable { case settings, share }
+/// Besides the streak pill, the buttons whose sheets zoom out of them. Share is on the canvas on
+/// iPhone, so the canvas uses this too.
+enum ToolbarZoomSource: Hashable { case settings, share }
