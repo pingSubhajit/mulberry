@@ -7,8 +7,8 @@ description: Release a Mulberry iOS, macOS or Android version when it's sent for
 
 Builds and releases are different things.
 
-- A **build** is any upload: a TestFlight build (`testflight-release`) or a Play upload (`play-release`). A version usually has several builds. Builds are recorded in the ledger, never tagged.
-- A version is **released** when it's sent for public review: submitted for App Store review, or uploaded and rolled out on Play's open testing track (Mulberry's public Android channel). Only then does it get a git tag and a GitHub Release.
+- The release procedure for each platform is its own subskill: `ios-release` (build, upload, submit for App Store review) and `android-release` (build, upload, roll out on Play's open testing track). Both record every build in the ledger and finish by running this subskill's `publish`.
+- A version is **released** when it's sent for public review: submitted for App Store review, or uploaded and rolled out on Play's open testing track (Mulberry's public Android channel). Only then does it get a git tag and a GitHub Release. Builds are recorded in the ledger, never tagged.
 - If Apple or Google rejects that build, a newer build of the **same version** goes in, and the tag and GitHub Release move to it (`--move`). The version number doesn't change.
 
 Run from the repository root. The script is `scripts/releases.py` next to this file, below `$S`:
@@ -44,7 +44,7 @@ It answers either `inProgress` (the repository's version isn't public yet: keep 
 
 ## Releasing a version
 
-Run this when the version is sent for public review: when the user says they've submitted an iOS or macOS version for App Store review, and right after `play-release` uploads an Android build.
+`ios-release` runs this right after submitting for App Store review, and `android-release` right after its upload. Run it by hand only for a release made outside those procedures, with `--date` if it's recorded late.
 
 1. Dry run, and show the user what will happen:
    ```sh
@@ -62,7 +62,7 @@ Run this when the version is sent for public review: when the user says they've 
 
 ### After a rejection
 
-The user uploads a newer build of the same version (`testflight-release` or `play-release` as usual) and resubmits it. Then move the release to it:
+A newer build of the same version is uploaded and resubmitted through `ios-release` or `android-release`, which then move the release to it:
 
 ```sh
 $S/releases.py publish <platform> <version> --move --dry-run

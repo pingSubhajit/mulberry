@@ -1,16 +1,16 @@
 ---
-name: play-release
-description: Build Mulberry's Android app for Google Play. Choose the version, bump the build, commit and push the bump, build the signed production bundle, verify it, upload it to Play's open testing track and roll it out to everyone, and record the build. Use when the user asks for a new Android build, an Android release, or a Play upload.
+name: android-release
+description: Release Mulberry's Android app on Google Play. Choose the version, bump the build, commit and push the bump, build the signed production bundle, verify it, upload it to Play's open testing track and roll it out to everyone, and record the build. Use when the user asks for a new Android build, an Android release, or a Play upload.
 ---
 
-# Mulberry Play release
+# Mulberry Android release
 
 Mulberry's public Android channel is Play's **open testing** track (`beta`); the production track is unused. Every upload goes to open testing and is rolled out to everyone, so once Play has reviewed it, it is public, and the upload itself counts as the release. There are no internal or closed test uploads.
 
 Run from the release checkout's repository root. Scripts are in `scripts/` next to this file, below `$S`; the shared ledger script is `$P`:
 
 ```sh
-S=.agents/skills/mulberry-skills/play-release/scripts
+S=.agents/skills/mulberry-skills/android-release/scripts
 P=.agents/skills/mulberry-skills/public-release/scripts
 ```
 
@@ -38,7 +38,7 @@ If `google-services.json` is missing, fetch the `com.subhajit.mulberry` app's co
 git fetch -q origin && git status -sb && git log --oneline -1
 ```
 
-The same rules as `testflight-release`: build only committed work based on a fresh `origin/main`, and stop and ask if uncommitted work seems needed.
+Build only committed work based on a freshly fetched `origin/main`. Never include uncommitted work the user hasn't asked to ship; if it seems needed, stop and ask.
 
 ### 2. Version and build number
 

@@ -13,7 +13,7 @@ for people). Both are committed.
 Usage:
   releases.py show [platform]
   releases.py next-version <platform>
-  releases.py record-build <platform> --version X.Y.Z --build N --channel testflight|play-beta [--commit SHA] [--date YYYY-MM-DD]
+  releases.py record-build <platform> --version X.Y.Z --build N --channel app-store|testflight|play-beta [--commit SHA] [--date YYYY-MM-DD]
   releases.py publish <platform> <version> [--build N] [--date YYYY-MM-DD] [--move] [--dry-run]
 """
 from __future__ import annotations
@@ -326,7 +326,7 @@ def main() -> None:
     p = sub.add_parser("next-version"); p.add_argument("platform", choices=PLATFORMS)
     p = sub.add_parser("record-build")
     p.add_argument("platform", choices=PLATFORMS); p.add_argument("--version", required=True)
-    p.add_argument("--build", type=int, required=True); p.add_argument("--channel", required=True, choices=["testflight", "play-beta"])
+    p.add_argument("--build", type=int, required=True); p.add_argument("--channel", required=True, choices=["app-store", "testflight", "play-beta"])
     p.add_argument("--commit"); p.add_argument("--date")
     p = sub.add_parser("publish")
     p.add_argument("platform", choices=PLATFORMS); p.add_argument("version")

@@ -11,7 +11,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../../../.." && pwd)"
-SCRIPTS="$ROOT/.agents/skills/mulberry-skills/play-release/scripts"
+SCRIPTS="$ROOT/.agents/skills/mulberry-skills/android-release/scripts"
 MOBILE="$ROOT/apps/mobile"
 SIGNING="$ROOT/secrets/android/signing.env"
 PROD_API_BASE_URL="https://api.mulberry.my/"
