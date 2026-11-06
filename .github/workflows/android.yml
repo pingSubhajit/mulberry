@@ -1,0 +1,65 @@
+name: Android
+
+# Unit tests for every change to the Android app.
+
+on:
+  pull_request:
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/android.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Placeholder Firebase config
+        # The real google-services.json files stay out of git. Unit tests never reach Firebase,
+        # but the Google Services plugin needs a file naming the dev package.
+        run: |
+          mkdir -p apps/mobile/app/src/dev
+          cat > apps/mobile/app/src/dev/google-services.json <<'EOF'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "mulberry-ci",
+              "storage_bucket": "mulberry-ci.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+                  "android_client_info": { "package_name": "com.subhajit.mulberry.dev" }
+                },
+                "oauth_client": [],
+                "api_key": [{ "current_key": "AIzaSyCI000000000000000000000000000000" }],
+                "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+      - name: Unit tests
+        run: ./gradlew --console=plain :app:testDevDebugUnitTest
+        working-directory: apps/mobile
+      - name: Keep the test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-unit-test-report
+          path: apps/mobile/app/build/reports/tests/testDevDebugUnitTest

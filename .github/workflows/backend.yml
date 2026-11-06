@@ -1,0 +1,63 @@
+name: Backend
+
+# Tests every backend change, and deploys main to Fly (`mulberry`, api.mulberry.my) only once the
+# tests pass. The deploy runs while the repository variable DEPLOY_FROM_ACTIONS is "true"; Fly's
+# own deploy-on-push GitHub integration must then be off, so one push makes one deploy.
+
+on:
+  pull_request:
+    paths:
+      - "apps/backend/**"
+      - "Dockerfile"
+      - "fly.toml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/backend.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/backend/**"
+      - "Dockerfile"
+      - "fly.toml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/backend.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --filter @mulberry/backend --frozen-lockfile
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit -p tsconfig.json
+        working-directory: apps/backend
+      - name: Test
+        run: pnpm exec vitest run
+        working-directory: apps/backend
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_FROM_ACTIONS == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: fly-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only --app mulberry
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
