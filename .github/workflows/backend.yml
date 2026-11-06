@@ -1,8 +1,7 @@
 name: Backend
 
-# Tests every backend change, and deploys main to Fly (`mulberry`, api.mulberry.my) only once the
-# tests pass. The deploy runs while the repository variable DEPLOY_FROM_ACTIONS is "true"; Fly's
-# own deploy-on-push GitHub integration must then be off, so one push makes one deploy.
+# Typechecks and tests every backend change. Deploys stay with Fly's own GitHub integration, which
+# deploys every push to main; this workflow reports problems, it doesn't gate the deploy.
 
 on:
   pull_request:
@@ -48,16 +47,3 @@ jobs:
         run: pnpm exec vitest run
         working-directory: apps/backend
 
-  deploy:
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_FROM_ACTIONS == 'true'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: fly-deploy
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only --app mulberry
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
