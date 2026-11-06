@@ -26,4 +26,4 @@ releases get a git tag and a GitHub Release.
 
 | Version | Build | Commit | Uploaded | Channel | Public |
 | --- | --- | --- | --- | --- | --- |
-| 1.1.9 | 27 | `a04ac703` | 2026-05-16 | play-beta |  |
+| 1.1.9 | 27 | `a04ac703` | 2026-05-16 | play-beta | 2026-05-16 (`android-v1.1.9`) |

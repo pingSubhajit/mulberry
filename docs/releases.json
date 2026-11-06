@@ -44,7 +44,9 @@
       "build": 27,
       "commit": "a04ac7031fcb3841fcfb67b3d26aa5f54ff4be41",
       "channel": "play-beta",
-      "uploadedAt": "2026-05-16"
+      "uploadedAt": "2026-05-16",
+      "releasedAt": "2026-05-16",
+      "tag": "android-v1.1.9"
     }
   ]
 }
