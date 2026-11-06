@@ -136,6 +136,10 @@ interface MulberryApiService {
         @Query("limit") limit: Int
     ): WallpaperCatalogResponse
 
+    /** Every published share frame, in or out of its date window; the app filters by its own date. */
+    @GET("/share-frames")
+    suspend fun getShareFrames(): ShareFrameListResponse
+
     @GET("/stickers/packs")
     suspend fun getStickerPacks(): StickerPackListResponse
 

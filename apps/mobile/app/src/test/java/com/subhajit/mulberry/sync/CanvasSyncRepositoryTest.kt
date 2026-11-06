@@ -1063,6 +1063,8 @@ private class FakeMulberryApiService : MulberryApiService {
     override suspend fun getWallpapers(cursor: String?, limit: Int): WallpaperCatalogResponse =
         WallpaperCatalogResponse(items = emptyList(), nextCursor = null)
 
+    override suspend fun getShareFrames(): com.subhajit.mulberry.network.ShareFrameListResponse = error("unused")
+
     override suspend fun getStickerPacks(): StickerPackListResponse = error("unused")
 
     override suspend fun getStickerPackDetail(packKey: String, version: Int?): StickerPackDetailResponse =

@@ -188,6 +188,16 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/relationship_tracker_square_widget_info" />
         </receiver>
+        <!-- The share image, handed to other apps through the system share sheet. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.shareimages"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_image_paths" />
+        </provider>
     </application>
 
 </manifest>

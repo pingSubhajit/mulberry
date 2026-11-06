@@ -32,6 +32,32 @@ sealed interface AnalyticsEvent {
         override val name: String = "mulberry_push_opened"
         override val properties: Map<String, String> = mapOf("push_type" to pushType.wireValue)
     }
+
+    /** The share sheet opened from the canvas. */
+    data object ShareOpened : AnalyticsEvent {
+        override val name: String = "mulberry_share_opened"
+        override val properties: Map<String, String> = emptyMap()
+    }
+
+    /** A frame tapped on the share sheet. */
+    data class ShareFrameSelected(val frameKey: String) : AnalyticsEvent {
+        override val name: String = "mulberry_share_frame_selected"
+        override val properties: Map<String, String> = mapOf("frame_key" to frameKey)
+    }
+
+    /** The image went to the system share sheet. Android can't say where it went from there. */
+    data class ShareCompleted(
+        val frameKey: String,
+        val usedRealWallpaper: Boolean,
+        val captionEdited: Boolean
+    ) : AnalyticsEvent {
+        override val name: String = "mulberry_share_completed"
+        override val properties: Map<String, String> = mapOf(
+            "frame_key" to frameKey,
+            "used_real_wallpaper" to usedRealWallpaper.toString(),
+            "caption_edited" to captionEdited.toString()
+        )
+    }
 }
 
 enum class OnboardingStep(val wireValue: String) {

@@ -10,7 +10,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Movie
 import android.graphics.Paint
-import android.graphics.Rect
 import android.graphics.Typeface
 import android.service.wallpaper.WallpaperService
 import android.util.DisplayMetrics
@@ -618,8 +617,6 @@ class MulberryWallpaperService : WallpaperService() {
                 .getOrNull()
                 ?: return
             try {
-                canvas.drawColor(renderState.fallbackColorArgb)
-
                 if (renderState.backgroundImagePath == null) {
                     cachedBackgroundBitmap?.bitmap?.recycle()
                     cachedBackgroundBitmap = null
@@ -629,25 +626,38 @@ class MulberryWallpaperService : WallpaperService() {
                     cachedSnapshotBitmap = null
                 }
 
-                drawBitmapIfValid(
+                val background = decodeLayerIfValid(
                     canvas = canvas,
                     filePath = renderState.backgroundImagePath,
-                    scaleMode = BitmapScaleMode.CENTER_CROP_TO_CANVAS,
                     cacheSlot = BitmapCacheSlot.BACKGROUND,
                     onCorruptFile = {
                         backgroundImageRepository.clearBackground()
                     }
                 )
-                drawBitmapIfValid(
+                val snapshot = decodeLayerIfValid(
                     canvas = canvas,
                     filePath = renderState.snapshotPath,
-                    scaleMode = BitmapScaleMode.CENTERED_SCREEN_VIEWPORT,
                     cacheSlot = BitmapCacheSlot.SNAPSHOT,
                     onCorruptFile = {
                         File(it).delete()
                         wallpaperCoordinator.ensureSnapshotCurrent()
                         wallpaperCoordinator.notifyWallpaperUpdatedIfSelected()
                     }
+                )
+                val (viewportWidthPx, viewportHeightPx) = resolveViewportSizePx(
+                    surfaceWidthPx = canvas.width,
+                    surfaceHeightPx = canvas.height
+                )
+                // The share image draws the lock screen through the same composer.
+                LockScreenComposer.compose(
+                    canvas = canvas,
+                    layers = LockScreenLayers(
+                        fallbackColorArgb = renderState.fallbackColorArgb,
+                        background = background,
+                        snapshot = snapshot
+                    ),
+                    viewportWidthPx = viewportWidthPx,
+                    viewportHeightPx = viewportHeightPx
                 )
                 drawReactionOverlayIfNeeded(canvas)
             } finally {
@@ -661,58 +671,21 @@ class MulberryWallpaperService : WallpaperService() {
             }
         }
 
-        private suspend fun drawBitmapIfValid(
+        private suspend fun decodeLayerIfValid(
             canvas: Canvas,
             filePath: String?,
-            scaleMode: BitmapScaleMode,
             cacheSlot: BitmapCacheSlot,
             onCorruptFile: suspend (String) -> Unit
-        ) {
-            val path = filePath ?: return
+        ): Bitmap? {
+            val path = filePath ?: return null
             val bitmap = decodeBitmapForCanvas(
                 cacheSlot = cacheSlot,
                 path = path,
                 canvasWidth = canvas.width,
                 canvasHeight = canvas.height
             )
-            if (bitmap == null) {
-                onCorruptFile(path)
-                return
-            }
-
-            val (viewportWidthPx, viewportHeightPx) = resolveViewportSizePx(
-                surfaceWidthPx = canvas.width,
-                surfaceHeightPx = canvas.height
-            )
-            val sourceRect = when (scaleMode) {
-                BitmapScaleMode.CENTER_CROP_TO_CANVAS -> centerCropSourceRect(
-                    bitmapWidth = bitmap.width,
-                    bitmapHeight = bitmap.height,
-                    targetWidth = canvas.width,
-                    targetHeight = canvas.height
-                ).toAndroidRect()
-                BitmapScaleMode.CENTERED_SCREEN_VIEWPORT -> centeredScreenSourceRect(
-                    bitmapWidth = bitmap.width,
-                    bitmapHeight = bitmap.height,
-                    screenWidth = viewportWidthPx,
-                    screenHeight = viewportHeightPx
-                ).toAndroidRect()
-            }
-            val destinationRect = when (scaleMode) {
-                BitmapScaleMode.CENTER_CROP_TO_CANVAS -> Rect(0, 0, canvas.width, canvas.height)
-                BitmapScaleMode.CENTERED_SCREEN_VIEWPORT -> centeredScreenSourceRect(
-                    bitmapWidth = canvas.width,
-                    bitmapHeight = canvas.height,
-                    screenWidth = viewportWidthPx,
-                    screenHeight = viewportHeightPx
-                ).toAndroidRect()
-            }
-            canvas.drawBitmap(
-                bitmap,
-                sourceRect,
-                destinationRect,
-                null
-            )
+            if (bitmap == null) onCorruptFile(path)
+            return bitmap
         }
 
         private fun clearBitmapCaches() {
@@ -835,11 +808,6 @@ private enum class BitmapCacheSlot {
     SNAPSHOT
 }
 
-private enum class BitmapScaleMode {
-    CENTER_CROP_TO_CANVAS,
-    CENTERED_SCREEN_VIEWPORT
-}
-
 private const val TAG = "MulberryWallpaper"
 
 private data class Anchor(val x: Float, val y: Float)
@@ -947,5 +915,3 @@ internal data class ScreenSourceRect(
     val right: Int,
     val bottom: Int
 )
-
-private fun ScreenSourceRect.toAndroidRect(): Rect = Rect(left, top, right, bottom)

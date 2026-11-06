@@ -169,6 +169,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.subhajit.mulberry.R
+import com.subhajit.mulberry.share.ShareSheet
 import com.subhajit.mulberry.app.shortcut.AppShortcutAction
 import com.subhajit.mulberry.core.ui.TestTags
 import com.subhajit.mulberry.core.ui.mulberryTapScale
@@ -454,6 +455,8 @@ fun CanvasHomeRoute(
 		) {
     // The wallpapers open over the canvas from the top bar, as iOS pushes them.
     var wallpaperOpen by rememberSaveable { mutableStateOf(false) }
+    // The share screen, from the share button on the canvas.
+    var shareOpen by rememberSaveable { mutableStateOf(false) }
 	    var textEditorSession by remember { mutableStateOf<CanvasTextEditorSession?>(null) }
 	    var stickerEditorSession by remember { mutableStateOf<CanvasStickerEditorSession?>(null) }
 	    var photoSession by remember { mutableStateOf<CanvasPhotoSession?>(null) }
@@ -466,6 +469,10 @@ fun CanvasHomeRoute(
     val isHomeReady =
         uiState.bootstrapState.authStatus == AuthStatus.SIGNED_IN &&
             uiState.bootstrapState.hasCompletedOnboarding
+
+    LaunchedEffect(uiState.bootstrapState.pairingStatus) {
+        if (uiState.bootstrapState.pairingStatus != PairingStatus.PAIRED) shareOpen = false
+    }
 
     LaunchedEffect(wallpaperOpen, uiState.bootstrapState.pairingStatus) {
         if (!wallpaperOpen && uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
@@ -736,7 +743,9 @@ fun CanvasHomeRoute(
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .graphicsLayer {
-                    if (editorOpen && Build.VERSION.SDK_INT >= 31) {
+                    // The share screen sits over the same blurred, dimmed canvas as the editors.
+                    val backdropBlurred = editorOpen || shareOpen
+                    if (backdropBlurred && Build.VERSION.SDK_INT >= 31) {
                         renderEffect = RenderEffect.createBlurEffect(
                             18f,
                             18f,
@@ -745,7 +754,7 @@ fun CanvasHomeRoute(
                     } else {
                         renderEffect = null
                     }
-                    alpha = if (editorOpen) 0.92f else 1f
+                    alpha = if (backdropBlurred) 0.92f else 1f
                 }
                 .testTag(TestTags.HOME_SCREEN)
         ) {
@@ -800,7 +809,8 @@ fun CanvasHomeRoute(
                     onClearRequested = onClearRequested,
                     onUndoRequested = onUndoRequested,
                     onRedoRequested = onRedoRequested,
-                    onSendReaction = onSendReaction
+                    onSendReaction = onSendReaction,
+                    onShareRequested = { shareOpen = true }
                 )
             }
 
@@ -842,6 +852,10 @@ fun CanvasHomeRoute(
                 onPresetSelected = onWallpaperPresetSelected,
                 onRemoteWallpaperSelected = onRemoteWallpaperSelected
             )
+        }
+
+        if (shareOpen && uiState.bootstrapState.pairingStatus == PairingStatus.PAIRED) {
+            ShareSheet(onDismiss = { shareOpen = false })
         }
 
         val session = textEditorSession
@@ -1001,7 +1015,8 @@ private fun CanvasHomePane(
     onClearRequested: () -> Unit,
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit,
-    onSendReaction: suspend (ReactionType) -> Boolean
+    onSendReaction: suspend (ReactionType) -> Boolean,
+    onShareRequested: () -> Unit
 ) {
     val userName = uiState.bootstrapState.userDisplayName
         ?.takeIf { it.isNotBlank() }
@@ -1125,6 +1140,7 @@ private fun CanvasHomePane(
 	            onUndoRequested = onUndoRequested,
 	            onRedoRequested = onRedoRequested,
 	            onSendReaction = onSendReaction,
+	            onShareRequested = onShareRequested,
 	            modifier = Modifier.testTag(TestTags.HOME_OPEN_CANVAS_BUTTON)
 	        )
 	    }
@@ -1166,6 +1182,7 @@ private fun CanvasHomePane(
     onUndoRequested: () -> Unit,
     onRedoRequested: () -> Unit,
     onSendReaction: suspend (ReactionType) -> Boolean,
+    onShareRequested: () -> Unit,
     modifier: Modifier = Modifier
 ) {
         val viewConfig = LocalViewConfiguration.current
@@ -1455,8 +1472,8 @@ private fun CanvasHomePane(
                 }
             }
 
-            // Actions stand apart from the tools: reactions on the left; width, colour and clear on
-            // the right. Undo and redo are in the top bar, as in the Mac app.
+            // Actions stand apart from the tools: share and reactions on the left; width, colour and
+            // clear on the right. Undo and redo are in the top bar, as in the Mac app.
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1471,6 +1488,14 @@ private fun CanvasHomePane(
                     verticalAlignment = Alignment.Bottom
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(CanvasChromeMetrics.ColumnSpacing)) {
+                        CanvasChromeButton(
+                            contentDescription = stringResource(R.string.home_canvas_share_content_description),
+                            onClick = {
+                                reactionRailOpen = false
+                                onShareRequested()
+                            },
+                            floating = true
+                        ) { ChromeSymbol(R.drawable.ic_material_share) }
                         CanvasChromeButton(
                             contentDescription = stringResource(R.string.home_canvas_reactions_content_description),
                             onClick = { reactionRailOpen = !reactionRailOpen },

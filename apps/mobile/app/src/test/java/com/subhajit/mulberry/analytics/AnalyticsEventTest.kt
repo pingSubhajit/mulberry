@@ -35,6 +35,30 @@ class AnalyticsEventTest {
     }
 
     @Test
+    fun `share events carry the spec's names and properties`() {
+        assertEquals(
+            "mulberry_share_opened" to emptyMap<String, String>(),
+            AnalyticsEvent.ShareOpened.let { it.name to it.properties }
+        )
+        assertEquals(
+            "mulberry_share_frame_selected" to mapOf("frame_key" to "polaroid"),
+            AnalyticsEvent.ShareFrameSelected(frameKey = "polaroid").let { it.name to it.properties }
+        )
+        assertEquals(
+            "mulberry_share_completed" to mapOf(
+                "frame_key" to "valentines",
+                "used_real_wallpaper" to "false",
+                "caption_edited" to "true"
+            ),
+            AnalyticsEvent.ShareCompleted(
+                frameKey = "valentines",
+                usedRealWallpaper = false,
+                captionEdited = true
+            ).let { it.name to it.properties }
+        )
+    }
+
+    @Test
     fun `wire values match the tracking plan`() {
         assertEquals(
             listOf(

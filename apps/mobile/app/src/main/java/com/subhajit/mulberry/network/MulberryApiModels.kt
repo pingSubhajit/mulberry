@@ -1,5 +1,6 @@
 package com.subhajit.mulberry.network
 
+import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 
 data class GoogleAuthRequest(
@@ -303,6 +304,25 @@ data class RemoteWallpaperResponse(
     val width: Int,
     val height: Int,
     val dominantColor: String
+)
+
+data class ShareFrameListResponse(
+    val items: List<ShareFrameResponse>? = emptyList()
+)
+
+/** A share frame from `GET /share-frames`. Fields are nullable so one bad item can be skipped. */
+data class ShareFrameResponse(
+    val key: String?,
+    val version: Int?,
+    val title: String?,
+    val sortOrder: Int?,
+    val availableFrom: String?,
+    val availableUntil: String?,
+    val frameUrl: String?,
+    val thumbnailUrl: String?,
+    val width: Int?,
+    val height: Int?,
+    val layout: JsonElement?
 )
 
 data class StickerPackListResponse(
