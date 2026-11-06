@@ -34,7 +34,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -1592,55 +1591,6 @@ private fun EditorTertiaryBar(content: @Composable RowScope.() -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         content = content
     )
-}
-
-@Composable
-private fun EditorIconButton(
-    iconRes: Int,
-    contentDescription: String,
-    selected: Boolean,
-    tint: Color = Color.White,
-    stateDescription: String? = null,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(42.dp)
-            .background(Color.White.copy(alpha = 0.10f), CircleShape)
-            .then(
-                if (selected) {
-                    Modifier.border(2.dp, MulberryPrimary, CircleShape)
-                } else {
-                    Modifier.border(1.dp, Color.White.copy(alpha = 0.14f), CircleShape)
-                }
-            )
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Button
-            ) { onClick() }
-            .semantics(mergeDescendants = true) {
-                this.selected = selected
-                stateDescription?.let { this.stateDescription = it }
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        // Use Image for bitmap resources (e.g. the color icon); Icon for vectors.
-        if (tint == Color.Unspecified) {
-            Image(
-                painter = painterResource(iconRes),
-                contentDescription = contentDescription,
-                modifier = Modifier.size(22.dp)
-            )
-        } else {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = contentDescription,
-                tint = tint,
-                modifier = Modifier.size(22.dp)
-            )
-        }
-    }
 }
 
 private fun StrokePoint.denormalize(canvasSize: IntSize): Offset =

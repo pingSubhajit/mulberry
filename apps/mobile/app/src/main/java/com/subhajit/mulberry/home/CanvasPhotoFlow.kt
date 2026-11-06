@@ -555,18 +555,18 @@ private fun PhotoEditorControls(
                         }
                     }
                 }
-                PhotoEditorIconButton(
+                EditorIconButton(
                     iconRes = R.drawable.ic_text_toolbar_size,
                     contentDescription = stringResource(R.string.photo_editor_size),
                     selected = panel == PhotoPanel.SIZE
                 ) { onPanel(PhotoPanel.SIZE) }
-                PhotoEditorIconButton(
+                EditorIconButton(
                     iconRes = R.drawable.ic_sticker_toolbar_rotate,
                     contentDescription = stringResource(R.string.photo_editor_rotation),
                     selected = panel == PhotoPanel.ROTATION
                 ) { onPanel(PhotoPanel.ROTATION) }
                 Spacer(modifier = Modifier.weight(1f))
-                PhotoEditorIconButton(
+                EditorIconButton(
                     iconRes = R.drawable.ic_text_toolbar_delete,
                     contentDescription = stringResource(R.string.photo_editor_delete),
                     selected = false,
@@ -597,65 +597,6 @@ private fun PhotoSliderBar(content: @Composable RowScope.() -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         content = content
     )
-}
-
-/** The editors' round button: the sticker and text editors draw theirs the same way. */
-@Composable
-private fun PhotoEditorIconButton(
-    iconRes: Int,
-    contentDescription: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(42.dp)
-            .background(Color.White.copy(alpha = 0.10f), CircleShape)
-            .then(
-                if (selected) Modifier.border(2.dp, MulberryPrimary, CircleShape)
-                else Modifier.border(1.dp, Color.White.copy(alpha = 0.14f), CircleShape)
-            )
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Button,
-                onClick = onClick
-            )
-            .semantics(mergeDescendants = true) { this.selected = selected },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = contentDescription,
-            tint = Color.White,
-            modifier = Modifier.size(22.dp)
-        )
-    }
-}
-
-@Composable
-private fun RoundCameraButton(
-    iconRes: Int,
-    contentDescription: String,
-    enabled: Boolean = true,
-    tint: Color = Color.White,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.14f))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = contentDescription,
-            tint = tint.copy(alpha = if (enabled) 1f else 0.4f),
-            modifier = Modifier.size(22.dp)
-        )
-    }
 }
 
 private val fourByThree: ResolutionSelector = ResolutionSelector.Builder()

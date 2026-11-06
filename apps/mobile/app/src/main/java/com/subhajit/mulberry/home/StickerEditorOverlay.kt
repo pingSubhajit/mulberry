@@ -7,7 +7,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -23,8 +22,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,7 +37,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,7 +45,6 @@ import com.subhajit.mulberry.R
 import com.subhajit.mulberry.drawing.model.CanvasStickerElement
 import com.subhajit.mulberry.stickers.StickerAssetStore
 import com.subhajit.mulberry.stickers.StickerAssetVariant
-import com.subhajit.mulberry.ui.theme.MulberryPrimary
 import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -361,42 +356,6 @@ private fun EditorTertiaryBar(content: @Composable RowScope.() -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         content = content
     )
-}
-
-@Composable
-private fun EditorIconButton(
-    iconRes: Int,
-    contentDescription: String,
-    selected: Boolean,
-    tint: Color = Color.White,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(42.dp)
-            .background(Color.White.copy(alpha = 0.10f), CircleShape)
-            .then(
-                if (selected) {
-                    Modifier.border(2.dp, MulberryPrimary, CircleShape)
-                } else {
-                    Modifier.border(1.dp, Color.White.copy(alpha = 0.14f), CircleShape)
-                }
-            )
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Button
-            ) { onClick() }
-            .semantics(mergeDescendants = true) { this.selected = selected },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(22.dp)
-        )
-    }
 }
 
 private const val SCALE_MIN = 0.08f
