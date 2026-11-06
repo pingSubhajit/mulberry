@@ -1,0 +1,66 @@
+{
+  "layoutVersion": 1,
+  "key": "polaroid",
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "content": {
+    "kind": "polaroid",
+    "aspectRatio": 0.4612676056338028,
+    "quad": {
+      "topLeft": {
+        "x": 176.20314,
+        "y": 288.79452
+      },
+      "topRight": {
+        "x": 782.02422,
+        "y": 235.79204
+      },
+      "bottomRight": {
+        "x": 896.93035,
+        "y": 1549.17513
+      },
+      "bottomLeft": {
+        "x": 291.10928,
+        "y": 1602.17761
+      }
+    }
+  },
+  "caption": {
+    "position": {
+      "x": 40.0,
+      "y": 1503.072
+    },
+    "anchor": "bottomLeft",
+    "rotationDegrees": 7,
+    "maxWidth": 580,
+    "maxLines": 3,
+    "maxFontSize": 64,
+    "minFontSize": 40,
+    "lineHeight": 1.05,
+    "align": "left",
+    "inkColor": "#B31329",
+    "backing": {
+      "color": "#FFF4DF",
+      "paddingX": 12,
+      "paddingY": 7
+    }
+  },
+  "brand": {
+    "position": {
+      "x": 917,
+      "y": 1535.5
+    },
+    "anchor": "center",
+    "markHeight": 37,
+    "fontSize": 24,
+    "color": "#8C1729",
+    "backing": {
+      "color": "#FFF9EB",
+      "paddingX": 13,
+      "paddingY": 8,
+      "cornerRadius": 15
+    }
+  }
+}

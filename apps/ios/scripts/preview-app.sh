@@ -14,6 +14,7 @@ app,root=map(pathlib.Path,sys.argv[1:])
 fonts=list((root/'Resources').rglob('*.ttf'))
 for f in fonts: shutil.copyfile(f,app/f.name)
 shutil.copytree(root/'Resources/Legal',app/'Legal',dirs_exist_ok=True)
+shutil.copytree(root/'Resources/ShareFrames',app/'ShareFrames',dirs_exist_ok=True)
 shutil.copytree(root/'ShortcutTemplates',app/'ShortcutTemplates',dirs_exist_ok=True)
 source=plistlib.loads((root/'Configuration/Info.plist').read_bytes())
 plist={'CFBundleIdentifier':'my.mulberry.app-preview','CFBundleExecutable':'AppPreview','CFBundleName':'App Preview','CFBundlePackageType':'APPL',
@@ -36,7 +37,7 @@ done
 SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 # DEBUG, so the app's debug launch arguments work here too.
 xcrun --sdk iphonesimulator swiftc -sdk "$SDK_PATH" -target "$(uname -m)-apple-ios27.0-simulator" -parse-as-library -D DEBUG \
-  "$IOS_ROOT"/../../packages/apple/Sources/ProductCore/*.swift "$IOS_ROOT"/../../packages/apple/Sources/CanvasDrawing/*.swift "$IOS_ROOT"/../../packages/apple/Sources/StickerAssets/*.swift "$IOS_ROOT"/../../packages/apple/Sources/ProductUI/*.swift "$IOS_ROOT"/Sources/DeliveryCore/*.swift "$IOS_ROOT"/Sources/Shared/*.swift "${APP_FILES[@]}" \
+  "$IOS_ROOT"/../../packages/apple/Sources/ProductCore/*.swift "$IOS_ROOT"/../../packages/apple/Sources/CanvasDrawing/*.swift "$IOS_ROOT"/../../packages/apple/Sources/StickerAssets/*.swift "$IOS_ROOT"/../../packages/apple/Sources/ProductUI/*.swift "$IOS_ROOT"/../../packages/apple/Sources/ShareFrames/*.swift "$IOS_ROOT"/Sources/DeliveryCore/*.swift "$IOS_ROOT"/Sources/Shared/*.swift "${APP_FILES[@]}" \
   "$IOS_ROOT/Tests/AppPreview/AppPreview.swift" -o "$APP/AppPreview" 2>&1 | grep -E "error|warning: .*AppPreview" || true
 test -x "$APP/AppPreview"
 xcrun simctl install "$DEVICE" "$APP"

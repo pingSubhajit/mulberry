@@ -20,6 +20,7 @@ struct MulberryRootView: View {
     @State private var quickClearConfirmation = false
     @State private var profilePhoto: UIImage?
     @State private var wallpaperOpen = false
+    @State private var shareOpen = false
     @State private var pairingConfirmationOpen = false
     @ObservedObject private var whatsNew = WhatsNewModel.app
     @ObservedObject private var updates = AppUpdateGate.shared
@@ -83,7 +84,7 @@ struct MulberryRootView: View {
         .task(id: "\(model.bootstrap?.currentStreakDays ?? 0)|\(phase == .active)") {
             guard phase == .active, model.bootstrap?.isPaired == true, (model.bootstrap?.currentStreakDays ?? 0) >= 3 else { return }
             try? await Task.sleep(for: .seconds(2.5))
-            guard !Task.isCancelled, !model.showSettings, !model.showStreak, !setupOpen,
+            guard !Task.isCancelled, !model.showSettings, !model.showStreak, !setupOpen, !shareOpen,
                   ReviewPrompt.reserve(streakDays: model.bootstrap?.currentStreakDays ?? 0) else { return }
             requestReview()
         }
@@ -139,6 +140,10 @@ struct MulberryRootView: View {
                 .navigationTransition(.zoom(sourceID: ToolbarZoomSource.settings, in: toolbarZoom))
         }
         .sheet(isPresented: $setupOpen) { WallpaperSetupView(setup: setup, onDone: finishSetup) }
+        .sheet(isPresented: $shareOpen) {
+            ShareSheet(partnerName: model.bootstrap?.partnerDisplayName)
+                .navigationTransition(.zoom(sourceID: ToolbarZoomSource.share, in: toolbarZoom))
+        }
         // A new version's note, once the canvas is on screen with nothing over it.
         .task(id: whatsNewCanShow) {
             guard whatsNewCanShow else { return }
@@ -220,7 +225,7 @@ struct MulberryRootView: View {
         phase == .active && !model.restoring && model.bootstrap?.onboardingCompleted == true
             && model.bootstrap?.pairingStatus != "INVITE_PENDING_ACCEPTANCE" && !model.showWallpaperOnboarding
             && !model.showSettings && !model.showStreak && !model.showInviteEntry && !model.showPairingConfirmation
-            && !pairingConfirmationOpen && !setupShowing && !wallpaperOpen && !quickClearConfirmation
+            && !pairingConfirmationOpen && !setupShowing && !wallpaperOpen && !shareOpen && !quickClearConfirmation
             && model.inviteNotice == nil && model.pairedInvite == nil && inviteLinks.pending == nil
             && routes.pending == nil && quickActions.pending == nil && !updates.asksToUpdate
     }
@@ -329,6 +334,15 @@ struct MulberryRootView: View {
             // Its own capsule, apart from the wallpaper and profile pair.
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
         }
+        if model.bootstrap?.isPaired == true {
+            // Shares what the partner drew, framed, beside the wallpaper it shows on.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { shareOpen = true } label: { Image(systemName: "square.and.arrow.up") }
+                    .tint(MulberryDesign.ink)
+                    .accessibilityLabel("Share")
+            }
+            .matchedTransitionSource(id: ToolbarZoomSource.share, in: toolbarZoom)
+        }
         ToolbarItem(placement: .topBarTrailing) {
             Button { wallpaperOpen = true } label: {
                 Image("WallpaperNav").resizable().renderingMode(.template).scaledToFit()
@@ -353,4 +367,4 @@ struct MulberryRootView: View {
 }
 
 /// Besides the streak pill, the toolbar buttons whose sheets zoom out of them.
-private enum ToolbarZoomSource: Hashable { case settings }
+private enum ToolbarZoomSource: Hashable { case settings, share }

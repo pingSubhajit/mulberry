@@ -2,21 +2,25 @@ import UIKit
 
 /// The iPhone and iPad's wallpaper export and colour sampling, on the shared canvas renderer.
 extension DoodleRenderer {
-    static func wallpaper(background: UIImage, strokes: [DrawingStroke], elements: [CanvasElement] = [],
+    /// The lock screen image: `background` filling it, and the canvas over it. With no background
+    /// the canvas is drawn alone on a transparent image, placed exactly as over a background.
+    static func wallpaper(background: UIImage?, strokes: [DrawingStroke], elements: [CanvasElement] = [],
                           stickerImages: [StickerReference: UIImage] = [:], photoImages: [String: UIImage] = [:], dry: Bool, pixelSize: CGSize, displayScale: CGFloat, canvasSize: CGSize? = nil,
                           canvasRegion: CGSize? = nil) -> UIImage {
         // UIKit draws the canvas in points, then rasterizes at the screen scale.
         // Keep that coordinate space here too: using pixels as points changes
         // dry-brush minimum widths, bristle count and even its random seed.
         let size = CGSize(width: pixelSize.width / displayScale, height: pixelSize.height / displayScale)
-        let format = UIGraphicsImageRendererFormat(); format.scale = displayScale; format.opaque = true
+        let format = UIGraphicsImageRendererFormat(); format.scale = displayScale; format.opaque = background != nil
         format.preferredRange = .standard
         let rendered = UIGraphicsImageRenderer(size: size, format: format).image { renderer in
             renderer.cgContext.interpolationQuality = .high
-            UIColor.black.setFill(); renderer.fill(CGRect(origin: .zero, size: size))
-            let scale = max(size.width / background.size.width, size.height / background.size.height)
-            let fitted = CGSize(width: background.size.width * scale, height: background.size.height * scale)
-            background.draw(in: CGRect(x: (size.width - fitted.width) / 2, y: (size.height - fitted.height) / 2, width: fitted.width, height: fitted.height))
+            if let background {
+                UIColor.black.setFill(); renderer.fill(CGRect(origin: .zero, size: size))
+                let scale = max(size.width / background.size.width, size.height / background.size.height)
+                let fitted = CGSize(width: background.size.width * scale, height: background.size.height * scale)
+                background.draw(in: CGRect(x: (size.width - fitted.width) / 2, y: (size.height - fitted.height) / 2, width: fitted.width, height: fitted.height))
+            }
             // The canvas fits a centred region when only part of the image is always on screen.
             let region = canvasRegion.map { CGRect(x: (size.width - $0.width) / 2, y: (size.height - $0.height) / 2,
                                                    width: $0.width, height: $0.height) } ?? CGRect(origin: .zero, size: size)

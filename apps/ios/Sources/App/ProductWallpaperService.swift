@@ -67,26 +67,7 @@ final class ProductWallpaperService {
         }
         let background = WallpaperLibrary(); background.load(user: user)
         if let error = background.errorMessage { throw BackendError.rejected(0, error) }
-        let size = try WallpaperRenderSize.current()
-        let region = try WallpaperRenderSize.visibleRegion()
-        let elements = background.showDrawings ? canvas.canvasElements : []
-        // Like Android, a Shortcut run downloads any sticker artwork not cached yet.
-        var stickerImages: [StickerReference: UIImage] = [:]
-        for sticker in Set(elements.compactMap(\.sticker?.sticker)) {
-            stickerImages[sticker] = await StickerAssetStore.shared.image(sticker, variant: .full, user: user)
-        }
-        var photoImages: [String: UIImage] = [:]
-        for id in Set(elements.compactMap(\.photo).flatMap { [$0.photoId, $0.cutoutPhotoId].compactMap { $0 } }) {
-            photoImages[id] = await CanvasPhotoStore.shared.image(id, user: user)
-        }
-        let missingArtwork = elements.contains { $0.sticker.map { stickerImages[$0.sticker] == nil } ?? false }
-            || elements.contains { $0.photo.map { photoImages[$0.shownPhotoId] == nil } ?? false }
-        let rendered = DoodleRenderer.wallpaper(background: background.image, strokes: background.showDrawings ? canvas.strokes : [],
-                                                elements: elements, stickerImages: stickerImages, photoImages: photoImages,
-                                                dry: state.canvasStrokeRenderMode == "dry", pixelSize: size,
-                                                displayScale: try WallpaperRenderSize.displayScale(),
-                                                canvasSize: CanvasViewportStore.load(user: user, pair: state.pairSessionId),
-                                                canvasRegion: region)
+        let (rendered, missingArtwork) = try await render(canvas: canvas, background: background, state: state, user: user)
         guard user == (await api.signedInUserId) else { throw BackendError.sessionChanged }
         try await validateSession(state)
         guard let data = rendered.pngData() else { throw WallpaperImageError.invalidImage }
@@ -103,6 +84,55 @@ final class ProductWallpaperService {
         try await journal.append(.init(stage: "image_ready", revision: probe, detail: "Prepared canvas revision \(canvas.revision). Wallpaper has not been confirmed."))
         pruneExports(except: export.id)
         return file
+    }
+
+    /// The lock screen image as the Shortcut would set it now, from what is on this device: the
+    /// share image's real wallpaper. Nothing is written or recorded.
+    func currentWallpaperImage() async throws -> UIImage {
+        let (user, state, canvas) = try await localContent()
+        let background = WallpaperLibrary(); background.load(user: user)
+        if let error = background.errorMessage { throw BackendError.rejected(0, error) }
+        return try await render(canvas: canvas, background: background, state: state, user: user).image
+    }
+
+    /// The canvas alone, on a transparent image the size of the lock screen image and placed as on
+    /// it, for drawing over another background. Drawn whether or not the wallpaper shows the drawings.
+    func currentDoodleLayer() async throws -> UIImage {
+        let (user, state, canvas) = try await localContent()
+        return try await render(canvas: canvas, background: nil, state: state, user: user).image
+    }
+
+    /// The signed-in account's saved state and this device's copy of its canvas.
+    private func localContent() async throws -> (user: String, state: BootstrapState, canvas: DrawingState) {
+        guard let user = try await AppRuntime.api().signedInUserId, let state = cachedState(user: user) else { throw BackendError.signedOut }
+        return (user, state, try await localCanvas(state))
+    }
+
+    /// Draws the lock screen image: the account's background with the canvas over it when it shows
+    /// the drawings, or with no `background`, the canvas alone on transparency.
+    private func render(canvas: DrawingState, background: WallpaperLibrary?, state: BootstrapState, user: String) async throws -> (image: UIImage, missingArtwork: Bool) {
+        let size = try WallpaperRenderSize.current()
+        let region = try WallpaperRenderSize.visibleRegion()
+        let showDrawings = background?.showDrawings ?? true
+        let elements = showDrawings ? canvas.canvasElements : []
+        // Like Android, a Shortcut run downloads any sticker artwork not cached yet.
+        var stickerImages: [StickerReference: UIImage] = [:]
+        for sticker in Set(elements.compactMap(\.sticker?.sticker)) {
+            stickerImages[sticker] = await StickerAssetStore.shared.image(sticker, variant: .full, user: user)
+        }
+        var photoImages: [String: UIImage] = [:]
+        for id in Set(elements.compactMap(\.photo).flatMap { [$0.photoId, $0.cutoutPhotoId].compactMap { $0 } }) {
+            photoImages[id] = await CanvasPhotoStore.shared.image(id, user: user)
+        }
+        let missingArtwork = elements.contains { $0.sticker.map { stickerImages[$0.sticker] == nil } ?? false }
+            || elements.contains { $0.photo.map { photoImages[$0.shownPhotoId] == nil } ?? false }
+        let rendered = DoodleRenderer.wallpaper(background: background?.image, strokes: showDrawings ? canvas.strokes : [],
+                                                elements: elements, stickerImages: stickerImages, photoImages: photoImages,
+                                                dry: state.canvasStrokeRenderMode == "dry", pixelSize: size,
+                                                displayScale: try WallpaperRenderSize.displayScale(),
+                                                canvasSize: CanvasViewportStore.load(user: user, pair: state.pairSessionId),
+                                                canvasRegion: region)
+        return (rendered, missingArtwork)
     }
 
     func record(filename: String) async throws {

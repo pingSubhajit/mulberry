@@ -25,11 +25,11 @@ def quote(value, depth=0):
         return '(' + ', '.join(quote(v, depth) for v in value) + ')'
     return json.dumps(str(value))
 
-# ProductCore, CanvasDrawing, StickerAssets and ProductUI are shared with the Mac app from packages/apple. The
+# ProductCore, CanvasDrawing, StickerAssets, ProductUI and ShareFrames are shared with the Mac app from packages/apple. The
 # app compiles their sources directly, as the preview and check scripts do, rather than linking separate modules.
 shared = root.parent.parent / 'packages/apple/Sources'
 product_core = shared / 'ProductCore'
-sources = sorted(root.glob('Sources/**/*.swift')) + [file for target in ['ProductCore', 'CanvasDrawing', 'StickerAssets', 'ProductUI'] for file in sorted((shared / target).glob('*.swift'))]
+sources = sorted(root.glob('Sources/**/*.swift')) + [file for target in ['ProductCore', 'CanvasDrawing', 'StickerAssets', 'ProductUI', 'ShareFrames'] for file in sorted((shared / target).glob('*.swift'))]
 # The widget extension draws the reactions Live Activity and the Time together widget. It shares the
 # activity's attributes, the reaction types and the anniversary's arithmetic with the app, and nothing
 # else. The Time together widget's views are shared with the Mac's widget extension.
@@ -54,6 +54,9 @@ font_ref = add('fonts', isa='PBXFileReference', lastKnownFileType='folder', path
 font_build = add('fonts-build', isa='PBXBuildFile', fileRef=font_ref)
 legal_ref = add('legal', isa='PBXFileReference', lastKnownFileType='folder', path='Resources/Legal', sourceTree='<group>')
 legal_build = add('legal-build', isa='PBXBuildFile', fileRef=legal_ref)
+# The share frames bundled for offline use: a folder per frame, its image and layout.
+share_frames_ref = add('share-frames', isa='PBXFileReference', lastKnownFileType='folder', path='Resources/ShareFrames', sourceTree='<group>')
+share_frames_build = add('share-frames-build', isa='PBXBuildFile', fileRef=share_frames_ref)
 # Each bundle declares its own data use and API reasons.
 privacy_ref = add('privacy-manifest', isa='PBXFileReference', lastKnownFileType='text.xml', path='Resources/PrivacyInfo.xcprivacy', sourceTree='<group>')
 privacy_build = add('privacy-manifest-build', isa='PBXBuildFile', fileRef=privacy_ref)
@@ -106,9 +109,9 @@ widget_assets_ref = add('widget-assets', isa='PBXFileReference', lastKnownFileTy
 widget_assets_build = add('widget-assets-build', isa='PBXBuildFile', fileRef=widget_assets_ref)
 widget_plist_ref = add('widget-plist', isa='PBXFileReference', lastKnownFileType='text.plist.xml', path='Configuration/Widgets-Info.plist', sourceTree='<group>')
 products = add('products', isa='PBXGroup', name='Products', children=[product, widget_product], sourceTree='<group>')
-main = add('main', isa='PBXGroup', children=refs + icon_refs + [resources, asset_ref, font_ref, legal_ref, config_ref, debug_config_ref, widget_assets_ref, widget_plist_ref, privacy_ref, widget_privacy_ref] + time_together_refs + [products], sourceTree='<group>')
+main = add('main', isa='PBXGroup', children=refs + icon_refs + [resources, asset_ref, font_ref, legal_ref, share_frames_ref, config_ref, debug_config_ref, widget_assets_ref, widget_plist_ref, privacy_ref, widget_privacy_ref] + time_together_refs + [products], sourceTree='<group>')
 sources_phase = add('sources-phase', isa='PBXSourcesBuildPhase', buildActionMask='2147483647', files=builds, runOnlyForDeploymentPostprocessing='0')
-resources_phase = add('resources-phase', isa='PBXResourcesBuildPhase', buildActionMask='2147483647', files=[resource_build, asset_build, font_build, legal_build, privacy_build] + icon_builds, runOnlyForDeploymentPostprocessing='0')
+resources_phase = add('resources-phase', isa='PBXResourcesBuildPhase', buildActionMask='2147483647', files=[resource_build, asset_build, font_build, legal_build, share_frames_build, privacy_build] + icon_builds, runOnlyForDeploymentPostprocessing='0')
 frameworks_phase = add('frameworks-phase', isa='PBXFrameworksBuildPhase', buildActionMask='2147483647', files=[google_build, firebase_build, crashlytics_build, remote_config_build], runOnlyForDeploymentPostprocessing='0')
 project_configs, target_configs = [], []
 # Two environments crossed with two compilation modes, as Android's dev/prod flavours are.
