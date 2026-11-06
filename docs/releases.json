@@ -1,0 +1,50 @@
+{
+  "ios": [
+    {
+      "version": "1.0.1",
+      "build": 9,
+      "commit": "9226eb8b91a3096f3a0c430fb0fda45457ca3749",
+      "channel": "testflight",
+      "uploadedAt": "2026-11-04"
+    },
+    {
+      "version": "1.0.1",
+      "build": 10,
+      "commit": "53ac24e7e061084adf825ab41c834cd11045a6a1",
+      "channel": "testflight",
+      "uploadedAt": "2026-11-04"
+    },
+    {
+      "version": "1.1.0",
+      "build": 11,
+      "commit": "a33007e748b5d718841f07e3727754d2bd5c1a79",
+      "channel": "testflight",
+      "uploadedAt": "2026-11-05"
+    },
+    {
+      "version": "1.1.0",
+      "build": 12,
+      "commit": "9be0500f54ecc8ce8c49de6fce55b92d0095c295",
+      "channel": "testflight",
+      "uploadedAt": "2026-11-06"
+    }
+  ],
+  "macos": [
+    {
+      "version": "0.2.0",
+      "build": 9,
+      "commit": "a33007e748b5d718841f07e3727754d2bd5c1a79",
+      "channel": "testflight",
+      "uploadedAt": "2026-11-05"
+    }
+  ],
+  "android": [
+    {
+      "version": "1.1.9",
+      "build": 27,
+      "commit": "a04ac7031fcb3841fcfb67b3d26aa5f54ff4be41",
+      "channel": "play-beta",
+      "uploadedAt": "2026-05-16"
+    }
+  ]
+}

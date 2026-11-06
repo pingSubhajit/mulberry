@@ -5,7 +5,9 @@ description: Build Mulberry's iOS and/or macOS app for App Store Connect. Bump t
 
 # Mulberry TestFlight release
 
-Run from the release checkout's repository root. The scripts are in `scripts/` next to this file (`.agents/skills/mulberry-skills/testflight-release/scripts/`), referred to below as `$S`.
+Run from the release checkout's repository root. The scripts are in `scripts/` next to this file (`.agents/skills/mulberry-skills/testflight-release/scripts/`), referred to below as `$S`. The shared release ledger script is `$P`, `.agents/skills/mulberry-skills/public-release/scripts/`.
+
+A TestFlight build is a **build**, not a release: a version usually gets several before one goes public. Builds are recorded in the ledger (`docs/releases.md`) and never tagged. When a version goes live in the App Store, the `public-release` subskill tags it and publishes its GitHub Release.
 
 ## Fixed facts
 
@@ -44,6 +46,16 @@ git fetch -q origin && git status -sb && git log --oneline -1
 - Regenerate an Xcode project only if its generator inputs changed since the last release.
 
 ### 2. Bump the build number, commit and push
+
+Choose the version first, for each selected platform:
+
+```sh
+$P/releases.py next-version <ios|macos>
+```
+
+- If it says a version is in progress (not public yet), keep it.
+- Otherwise it suggests the next version from the commits since the last release (a `feat` means minor, otherwise patch). Tell the user the suggestion and why, and use the version they confirm. The full rule is in `public-release`.
+- Check for the version's What's New note, `apps/backend/whats-new/<ios|macos>/<version>.md`. Not every version has one. If there's none, mention it once and carry on; don't stop. A note for this version must be committed before the first build reaches people, or the app marks the version seen and never shows it.
 
 ```sh
 $S/bump-build.py <platforms> --dry-run   # shows current builds and the new one
@@ -108,6 +120,15 @@ $S/record.py "$R" <platforms> --validation "Exports verified: <one line listing 
 
 This writes `$R/source.json` with the commit, platforms, and each artifact's own version, build and hash. Shared top-level version/build fields appear only when all selected platforms match. It stays in ignored `temp/`; don't commit it.
 
+Then add each uploaded platform to the release ledger, and commit and push it:
+
+```sh
+$P/releases.py record-build <ios|macos> --version <version> --build <N> --channel testflight
+git add docs/releases.json docs/releases.md
+git commit -m "chore(release): record <iOS|macOS> <version> build <N>" -m "Co-Authored-By: <attribution from the current system reminder>"
+git push origin main
+```
+
 ### 7. Report to the user
 
 Keep it short:
@@ -119,6 +140,7 @@ Then remind them:
 - App Store Connect processes builds before they appear in TestFlight, usually within 10–30 minutes, and Apple emails when a build is ready or rejected.
 - Encryption compliance is already answered in the plists (`ITSAppUsesNonExemptEncryption` = false).
 - They still need to add the build to tester groups. External groups need beta review for the first build of a version.
+- When a version goes live in the App Store, mark it public with the `public-release` subskill (`releases.py publish <platform> <version>`). That tags the build that shipped, publishes its GitHub Release, dates its What's New note and sets the live build.
 
 ## Common failures
 

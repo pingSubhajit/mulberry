@@ -57,7 +57,7 @@ Every reply has a `message` saying what happened, or what to send instead. Relay
 
 1. **Read first.** Get the current values and tell the user what you're about to change from and to.
 2. **Never send `"confirm": true` on your own.** A 409 means the change would block everyone below the new minimum. Show the user the 409's `message` and send `confirm` only after they explicitly agree in this conversation. Lowering a minimum needs no confirmation.
-3. **Set `liveBuild` only once a build is fully available:** showing in the App Store (allow a few hours for every region), or at 100% of the Play rollout. Users outside a staged Play rollout can't get the build yet.
+3. **Set `liveBuild` only once a build is fully available:** showing in the App Store (allow a few hours for every region), or reviewed and rolled out to everyone on Play's open testing track, Mulberry's public Android channel. The `public-release` subskill sets it when a version is marked public, so it rarely needs setting by hand.
 4. **Don't raise `minimumBuild` past a build that dropped support for an OS version** (iOS or Android) unless the user means to strand people on it: they'd be blocked with no update they can install.
 5. **One platform per request.** iOS and Android releases go live at different times.
 
