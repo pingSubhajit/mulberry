@@ -77,7 +77,7 @@ export function registerWhatsNewRoutes(
 }
 
 function sendList(reply: FastifyReply, dir: string, query: ListQuery): FastifyReply {
-  const entries = listWhatsNewEntries(dir)
+  const entries = listReleasedEntries(dir)
   const offset = parseCursor(query.cursor)
   const limit = parseLimit(query.limit)
   const page = entries.slice(offset, offset + limit)
@@ -95,7 +95,7 @@ function sendList(reply: FastifyReply, dir: string, query: ListQuery): FastifyRe
 }
 
 function sendLatest(reply: FastifyReply, dir: string, ifNoneMatch: IfNoneMatch): FastifyReply {
-  const latest = listWhatsNewEntries(dir)[0]
+  const latest = listReleasedEntries(dir)[0]
   if (!latest) {
     return reply.code(404).send("No whats-new entries are configured.")
   }
@@ -217,6 +217,18 @@ function serveBinaryFile(
     .header("Cache-Control", cacheControl)
     .header("ETag", etag)
     .send(body)
+}
+
+/**
+ * The notes people can browse: those with a release day that has come. A note without
+ * `released_at` belongs to a version that isn't public yet; the release step adds the date. An
+ * app on that version still gets its own note by version, so testers see it before release.
+ */
+function listReleasedEntries(baseDir: string, now: number = Date.now()): WhatsNewEntryFile[] {
+  return listWhatsNewEntries(baseDir).filter((entry) => {
+    const releasedAt = parseDateMs(entry.frontmatter.released_at)
+    return releasedAt > 0 && releasedAt <= now
+  })
 }
 
 function listWhatsNewEntries(baseDir: string): WhatsNewEntryFile[] {

@@ -11,9 +11,14 @@ its own version numbers, so a note belongs to exactly one platform.
 `<platform>` is `android`, `ios` or `macos`. When a feature ships on several apps, write a note in
 each folder, with each app's own version and screenshots.
 
-An app shows a note on its own once, the first time it opens on that exact version. A version with
-no note is marked as seen, and a note added later never appears on its own for people who already
-opened that version. Publish the note before, or with, the store release.
+Not every version needs a note. An app shows a note on its own once, the first time it opens on
+that exact version. A version with no note is marked as seen, and a note added later never appears
+on its own for people who already opened that version, so commit the note before the first build
+of its version reaches people.
+
+Leave `released_at` out while the version isn't public. The note then stays out of What's New
+history and `latest.md`, but an app on that version (a TestFlight build, say) still gets it. The
+public-release step (`.agents/skills/mulberry-skills/public-release`) writes the release day in.
 
 ## Markdown format
 

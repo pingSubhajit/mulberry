@@ -100,6 +100,23 @@ describe("whats-new routes", () => {
     expect(listBody(macos.body)).toEqual({ items: [], nextCursor: null })
   })
 
+  it("keeps unreleased notes out of history and latest, but serves them to their own version", async () => {
+    writeEntry("ios", "1.0.0", "2026-01-01", "public")
+    mkdirSync(join(baseDir, "ios"), { recursive: true })
+    writeFileSync(join(baseDir, "ios", "1.1.0.md"), ["---", "version: 1.1.0", "---", "", "not public yet"].join("\n"), "utf8")
+    writeEntry("ios", "1.2.0", "2999-01-01", "later")
+
+    const list = await app.inject({ method: "GET", url: "/whats-new/ios" })
+    expect(listBody(list.body).items.map((item) => item.version)).toEqual(["1.0.0"])
+    const latest = await app.inject({ method: "GET", url: "/whats-new/ios/latest.md" })
+    expect(latest.body).toContain("public")
+
+    const own = await app.inject({ method: "GET", url: "/whats-new/ios/1.1.0.md" })
+    expect(own.statusCode).toBe(200)
+    expect(own.body).toContain("not public yet")
+    expect((await app.inject({ method: "GET", url: "/whats-new/ios/1.2.0.md" })).statusCode).toBe(200)
+  })
+
   it("rejects platforms it doesn't know", async () => {
     for (const url of ["/whats-new/windows", "/whats-new/windows/latest.md", "/whats-new/windows/1.0.0.md", "/whats-new/windows/assets/a.png"]) {
       const response = await app.inject({ method: "GET", url })
