@@ -349,11 +349,9 @@ struct MulberryRootView: View {
             .matchedTransitionSource(id: ToolbarZoomSource.share, in: toolbarZoom)
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Button { wallpaperOpen = true } label: {
-                Image("WallpaperNav").resizable().renderingMode(.template).scaledToFit()
-                    .frame(width: 30, height: 30)
-                    .foregroundStyle(MulberryDesign.ink)
-            }.accessibilityLabel("Wallpaper")
+            Button { wallpaperOpen = true } label: { Image(systemName: "photo") }
+                .tint(MulberryDesign.ink)
+                .accessibilityLabel("Wallpaper")
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button { model.showSettings = true } label: {
