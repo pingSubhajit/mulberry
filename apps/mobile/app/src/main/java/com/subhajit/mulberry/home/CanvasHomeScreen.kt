@@ -1,5 +1,10 @@
 package com.subhajit.mulberry.home
 
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.animation.core.animateFloatAsState
+import kotlin.math.roundToInt
 import com.subhajit.mulberry.analytics.OnboardingStep
 import com.subhajit.mulberry.analytics.TrackOnboardingStep
 import android.content.Intent
@@ -743,8 +748,8 @@ fun CanvasHomeRoute(
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .graphicsLayer {
-                    // The share screen sits over the same blurred, dimmed canvas as the editors.
-                    val backdropBlurred = editorOpen || shareOpen
+                    // The editors sit over a blurred, dimmed canvas; the share sheet brings its own scrim.
+                    val backdropBlurred = editorOpen
                     if (backdropBlurred && Build.VERSION.SDK_INT >= 31) {
                         renderEffect = RenderEffect.createBlurEffect(
                             18f,
@@ -1285,11 +1290,33 @@ private fun CanvasHomePane(
 
         val celebrationAnimationsEnabled = rememberSystemAnimationsEnabled()
 
+        val reduceMotion = !rememberSystemAnimationsEnabled()
         var showWidthPicker by remember { mutableStateOf(false) }
+        // The reactions bar, from the button (0) to fully out (1). It stays drawn until it has
+        // folded back into the button.
+        var reactionButtonBoundsInRoot by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        val reactionRailProgress = remember { Animatable(0f) }
+        LaunchedEffect(reactionRailOpen) {
+            val target = if (reactionRailOpen) 1f else 0f
+            if (reduceMotion) {
+                reactionRailProgress.animateTo(target, tween(durationMillis = 150))
+            } else {
+                reactionRailProgress.animateTo(
+                    target,
+                    spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow)
+                )
+            }
+        }
+        val reactionRailShown = reactionRailOpen || reactionRailProgress.value > 0.001f
+        val setReactionRail: (Boolean) -> Unit = { open ->
+            if (open != reactionRailOpen) {
+                reactionRailOpen = open
+                haptics.perform(MulberryHaptic.Selection)
+            }
+        }
         // A finger held on the canvas opens the reactions over it, whatever the tool, as on iPhone.
         var reactionArc by remember { mutableStateOf<ReactionArcRequest?>(null) }
         val reactionArcPointer = remember { ReactionArcPointer() }
-        val reduceMotion = !rememberSystemAnimationsEnabled()
         var showColorPicker by remember { mutableStateOf(false) }
         var showCustomColorPicker by remember { mutableStateOf(false) }
         val brushColorArgb = eyedropperLiveColorArgb ?: uiState.toolState.selectedColorArgb
@@ -1311,10 +1338,8 @@ private fun CanvasHomePane(
             val canvasMiddle = (CanvasChromeMetrics.HeaderHeight / 2 + toolsTop + CanvasChromeMetrics.ToolRowHeight / 2) / 2
             val canvasTop = canvasMiddle - canvasHeight / 2
             val controlsWidth = minOf(paneWidth - 16.dp, CanvasChromeMetrics.ControlsMaxWidth)
-            // Squee stands beside the reactions, undo and redo column rather than under it.
+            // Squee stands a button's width in from the controls' left edge, as on iPhone.
             val squeeStart = (paneWidth - controlsWidth) / 2 + 8.dp + CanvasChromeMetrics.ButtonSize + 8.dp
-            // The left column's top: the reactions button above the tools.
-            val columnsTop = toolsTop - CanvasChromeMetrics.ColumnsToTools - CanvasChromeMetrics.ButtonSize
 
             val canvasTopPx = with(density) { canvasTop.toPx() }
             // Transparent and unframed: drawings sit straight on the screen.
@@ -1472,8 +1497,8 @@ private fun CanvasHomePane(
                 }
             }
 
-            // Actions stand apart from the tools: share and reactions on the left; width, colour and
-            // clear on the right. Undo and redo are in the top bar, as in the Mac app.
+            // Actions stand apart from the tools, in one column on the right, as on iPhone: reactions
+            // and share on top, then width, colour and clear. Undo and redo are in the top bar.
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1487,28 +1512,34 @@ private fun CanvasHomePane(
                         .padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(CanvasChromeMetrics.ColumnSpacing)) {
-                        CanvasChromeButton(
-                            contentDescription = stringResource(R.string.home_canvas_share_content_description),
-                            onClick = {
-                                reactionRailOpen = false
-                                onShareRequested()
-                            },
-                            floating = true
-                        ) { ChromeSymbol(R.drawable.ic_material_share) }
-                        CanvasChromeButton(
-                            contentDescription = stringResource(R.string.home_canvas_reactions_content_description),
-                            onClick = { reactionRailOpen = !reactionRailOpen },
-                            selected = reactionRailOpen,
-                            floating = true
-                        ) { ChromeSymbol(R.drawable.ic_material_favorite_border) }
-                    }
                     Spacer(modifier = Modifier.weight(1f))
                     // Width for the brush, colour for the brush and the eyedropper, and clear always.
-                    // What the tool in hand can't use slides away to the side.
+                    // What the tool in hand can't use slides away but keeps its place, so reactions
+                    // and share above never move.
                     val brushInHand = !eyedropperArmed && shownTool == DrawingTool.DRAW
                     LaunchedEffect(brushInHand) { if (!brushInHand) showWidthPicker = false }
                     Column {
+                        // The bar grows out of this button; while it's out, the bar stands in for it.
+                        CanvasChromeButton(
+                            contentDescription = stringResource(R.string.home_canvas_reactions_content_description),
+                            onClick = { setReactionRail(!reactionRailOpen) },
+                            floating = true,
+                            modifier = Modifier
+                                .padding(bottom = CanvasChromeMetrics.ColumnSpacing)
+                                .alpha(if (reactionRailShown) 0f else 1f)
+                                .onGloballyPositioned { coordinates ->
+                                    reactionButtonBoundsInRoot = coordinates.boundsInRoot()
+                                }
+                        ) { ChromeSymbol(R.drawable.ic_material_favorite_border) }
+                        CanvasChromeButton(
+                            contentDescription = stringResource(R.string.home_canvas_share_content_description),
+                            onClick = {
+                                setReactionRail(false)
+                                onShareRequested()
+                            },
+                            floating = true,
+                            modifier = Modifier.padding(bottom = CanvasChromeMetrics.ColumnSpacing)
+                        ) { ChromeSymbol(R.drawable.ic_material_share) }
                         HudSlot(visible = brushInHand, reduceMotion = reduceMotion) {
                             BrushWidthControl(
                                 savedWidth = uiState.toolState.selectedWidth,
@@ -1634,7 +1665,7 @@ private fun CanvasHomePane(
             }
 
             if (reactionRailOpen) {
-                // A tap anywhere else puts the reactions away.
+                // A tap anywhere else puts the reactions away without drawing.
                 Box(
                     modifier = Modifier
                         .matchParentSize()
@@ -1643,18 +1674,23 @@ private fun CanvasHomePane(
                                 awaitFirstDown(requireUnconsumed = false)
                                 val up = waitForUpOrCancellation()
                                 if (up != null) {
-                                    reactionRailOpen = false
+                                    setReactionRail(false)
                                 }
                             }
                         }
                 )
-                // Over the reactions button, where iOS opens its picker.
+                BackHandler { setReactionRail(false) }
+            }
+            val reactionAnchor = reactionButtonBoundsInRoot
+            if (reactionRailShown && reactionAnchor != null) {
+                // Grown out of the reactions button, reaching left across the canvas.
                 ReactionRail(
-                    onReactionSelected = sendAndAnimate,
-                    onDismiss = { reactionRailOpen = false },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = maxHeight - columnsTop + 12.dp)
+                    progress = reactionRailProgress.value,
+                    open = reactionRailOpen,
+                    anchor = reactionAnchor.translate(-paneOriginInRoot),
+                    maxWidth = paneWidth - 32.dp,
+                    reduceMotion = reduceMotion,
+                    onReactionSelected = sendAndAnimate
                 )
             }
 
@@ -1750,7 +1786,7 @@ private fun CanvasHomePane(
 @Composable
 /**
  * Fills the visible canvas, as on iPhone: the prompt in its middle, and Squee at its foot, at
- * [squeeStart] so it stands beside the reactions, undo and redo column.
+ * [squeeStart], a button's width in from the controls' left edge, as on iPhone.
  */
 private fun AnimatedVisibilityScope.CanvasBlankStateGuidance(
     squeeStart: Dp,
@@ -1927,130 +1963,99 @@ private fun GuideCloseButton(
     }
 }
 
+/**
+ * The reactions bar, grown out of the reactions button as on iPhone: the button's surface
+ * stretches left into a capsule as the reactions arrive, right to left, and folds back into the
+ * button as they go. [progress] runs from the button (0) to the open bar (1); [anchor] is the
+ * button, in the pane's pixels. With animations removed the bar simply fades in and out.
+ */
 @Composable
 private fun ReactionRail(
-    onReactionSelected: (ReactionType) -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    progress: Float,
+    open: Boolean,
+    anchor: androidx.compose.ui.geometry.Rect,
+    maxWidth: Dp,
+    reduceMotion: Boolean,
+    onReactionSelected: (ReactionType) -> Unit
 ) {
-    // With animations removed, the rail and its reactions are simply there, as under iOS's Reduce Motion.
-    val animate = rememberSystemAnimationsEnabled()
-    val containerAlpha = remember { Animatable(if (animate) 0f else 1f) }
-    val containerOffsetYDp = remember { Animatable(if (animate) 26f else 0f) }
-    val containerScale = remember { Animatable(if (animate) 0.94f else 1f) }
+    val reactions = ReactionType.entries
+    val naturalWidth = REACTION_SLOT * reactions.size + REACTION_GAP * (reactions.size - 1) + REACTION_RAIL_PADDING * 2
+    // On a narrow screen the reactions shrink to fit, as iOS scales its picker.
+    val fit = (maxWidth / naturalWidth).coerceIn(0.5f, 1f)
+    val barWidth = naturalWidth * fit
+    val shown = progress.coerceIn(0f, 1f)
+    val width = if (reduceMotion) barWidth else lerp(CanvasChromeMetrics.ButtonSize, barWidth, progress.coerceAtLeast(0f))
+    val surface = MaterialTheme.mulberryAppColors.softSurfaceStrong
+    val label = stringResource(R.string.home_canvas_reactions_content_description)
+    val density = LocalDensity.current
+    val widthPx = with(density) { width.toPx() }
 
-    LaunchedEffect(Unit) {
-        if (!animate) return@LaunchedEffect
-        containerAlpha.snapTo(0f)
-        containerOffsetYDp.snapTo(26f)
-        containerScale.snapTo(0.94f)
-
-        launch {
-            containerAlpha.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing)
-            )
-        }
-        launch {
-            containerScale.animateTo(
-                targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMedium
-                )
-            )
-        }
-        containerOffsetYDp.animateTo(
-            targetValue = 0f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioLowBouncy,
-                stiffness = Spring.StiffnessMediumLow
-            )
-        )
-    }
-
-	    Row(
-	        modifier = modifier
-	            .padding(bottom = 14.dp)
-	            .graphicsLayer {
-	                alpha = containerAlpha.value
-	                scaleX = containerScale.value
-	                scaleY = containerScale.value
-	                translationY = containerOffsetYDp.value.dp.toPx()
-	            }
-	            .testTag(TestTags.REACTION_RAIL)
-	            .clip(RoundedCornerShape(999.dp))
-	            .background(MaterialTheme.mulberryAppColors.softSurfaceAlt)
-	            .border(
-	                width = 1.dp,
-	                color = MulberryPrimary.copy(alpha = 0.25f),
-	                shape = RoundedCornerShape(999.dp)
-	            )
-            .padding(horizontal = 12.dp, vertical = 9.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Box(
+        modifier = Modifier
+            .offset { IntOffset((anchor.right - widthPx).roundToInt(), anchor.top.roundToInt()) }
+            .size(width = width, height = CanvasChromeMetrics.ButtonSize)
+            .graphicsLayer { alpha = if (reduceMotion) shown else 1f }
+            .shadow(elevation = 6.dp * shown, shape = CircleShape, clip = false)
+            .clip(CircleShape)
+            // Translucent like the button, firmer once open so the reactions read over a drawing.
+            .background(surface.copy(alpha = 0.72f + 0.24f * shown))
+            .testTag(TestTags.REACTION_RAIL)
+            .semantics { paneTitle = label }
     ) {
-        ReactionType.entries.forEachIndexed { idx, reaction ->
-            val emojiAlpha = remember(reaction) { Animatable(if (animate) 0f else 1f) }
-            val emojiOffsetYDp = remember(reaction) { Animatable(if (animate) 24f else 0f) }
-            val emojiScale = remember(reaction) { Animatable(if (animate) 0.72f else 1f) }
+        // The button's heart, fading as the bar takes over.
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .size(CanvasChromeMetrics.ButtonSize)
+                .graphicsLayer { alpha = if (reduceMotion) 0f else (1f - shown * 3f).coerceIn(0f, 1f) }
+                .clearAndSetSemantics { },
+            contentAlignment = Alignment.Center
+        ) { ChromeSymbol(R.drawable.ic_material_favorite_border) }
 
-            LaunchedEffect(reaction) {
-                if (!animate) return@LaunchedEffect
-                emojiAlpha.snapTo(0f)
-                emojiOffsetYDp.snapTo(24f)
-                emojiScale.snapTo(0.72f)
-
-                // Stagger in quickly, container first.
-                delay(70L + (idx * 45L))
-                launch {
-                    emojiAlpha.animateTo(
-                        targetValue = 1f,
-                        animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing)
-                    )
+        Row(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .wrapContentWidth(align = Alignment.End, unbounded = true)
+                .graphicsLayer {
+                    scaleX = fit
+                    scaleY = fit
+                    transformOrigin = TransformOrigin(1f, 0.5f)
                 }
-                launch {
-                    emojiScale.animateTo(
-                        targetValue = 1f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
-                    )
-                }
-                emojiOffsetYDp.animateTo(
-                    targetValue = 0f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioLowBouncy,
-                        stiffness = Spring.StiffnessLow
-                    )
+                .padding(horizontal = REACTION_RAIL_PADDING),
+            horizontalArrangement = Arrangement.spacedBy(REACTION_GAP),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            reactions.forEachIndexed { index, reaction ->
+                // The ones nearest the button arrive first.
+                val fromButton = reactions.size - 1 - index
+                val arrived = if (reduceMotion) 1f else ((shown - 0.25f - fromButton * 0.07f) / 0.4f).coerceIn(0f, 1f)
+                ReactionGif(
+                    type = reaction,
+                    modifier = Modifier
+                        .size(REACTION_SLOT)
+                        .graphicsLayer {
+                            alpha = arrived
+                            scaleX = 0.6f + 0.4f * arrived
+                            scaleY = 0.6f + 0.4f * arrived
+                        }
+                        .mulberryTapScale()
+                        .clickable(
+                            enabled = open,
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            role = Role.Button
+                        ) { onReactionSelected(reaction) }
+                        .padding(3.dp)
+                        .semantics { contentDescription = reaction.shortcutLabel }
                 )
             }
-
-            ReactionGif(
-                type = reaction,
-                modifier = Modifier
-                    .size(34.dp)
-                    .graphicsLayer {
-                        alpha = emojiAlpha.value
-                        scaleX = emojiScale.value
-                        scaleY = emojiScale.value
-                        translationY = emojiOffsetYDp.value.dp.toPx()
-                    }
-                    .mulberryTapScale()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Button
-                    ) {
-                        onReactionSelected(reaction)
-                        onDismiss()
-                    }
-                    .semantics { contentDescription = reaction.shortcutLabel }
-            )
         }
     }
 }
+
+private val REACTION_SLOT = 44.dp
+private val REACTION_GAP = 4.dp
+private val REACTION_RAIL_PADDING = 6.dp
 
 @Composable
 private fun ReactionSentOverlay(
@@ -3720,9 +3725,9 @@ private fun BrushWidthControl(
 }
 
 /**
- * A place in the canvas's right-hand column that empties when the tool in hand has no use for it:
- * the control slides off to the side as the column closes up, and back again. With animations
- * removed it only fades.
+ * A place in the canvas's right-hand column whose control the tool in hand has no use for: it
+ * slides off to the side and fades, but keeps its place, so nothing above it moves. Hidden, it
+ * takes no touches and TalkBack skips it. With animations removed it only fades.
  */
 @Composable
 private fun HudSlot(
@@ -3730,23 +3735,28 @@ private fun HudSlot(
     reduceMotion: Boolean,
     content: @Composable () -> Unit
 ) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = if (reduceMotion) {
-            fadeIn(tween(durationMillis = 150))
-        } else {
-            slideInHorizontally(tween(durationMillis = 260, easing = FastOutSlowInEasing)) { width -> width * 2 } +
-                expandVertically(tween(durationMillis = 220), expandFrom = Alignment.Bottom) +
-                fadeIn(tween(durationMillis = 200))
-        },
-        exit = if (reduceMotion) {
-            fadeOut(tween(durationMillis = 150))
-        } else {
-            slideOutHorizontally(tween(durationMillis = 220, easing = FastOutSlowInEasing)) { width -> width * 2 } +
-                shrinkVertically(tween(durationMillis = 220), shrinkTowards = Alignment.Bottom) +
-                fadeOut(tween(durationMillis = 180))
-        }
+    val shown by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = if (reduceMotion) 150 else 240, easing = FastOutSlowInEasing),
+        label = "hudSlot"
+    )
+    Box(
+        modifier = Modifier
+            .padding(bottom = CanvasChromeMetrics.ColumnSpacing)
+            .graphicsLayer {
+                alpha = shown
+                translationX = if (reduceMotion) 0f else (1f - shown) * 64.dp.toPx()
+            }
+            .then(if (visible) Modifier else Modifier.clearAndSetSemantics { })
     ) {
-        Box(modifier = Modifier.padding(bottom = CanvasChromeMetrics.ColumnSpacing)) { content() }
+        content()
+        if (!visible) {
+            // Over the hidden control, so a tap where it was does nothing.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
+            )
+        }
     }
 }

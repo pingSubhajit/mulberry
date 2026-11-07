@@ -83,9 +83,9 @@ import com.subhajit.mulberry.ui.theme.PoppinsFontFamily
 import com.subhajit.mulberry.ui.theme.mulberryAppColors
 
 /**
- * The canvas screen's controls, laid out as on iPhone: the streak and a wallpaper-and-profile
- * capsule at the top right, reactions with undo and redo on the left, colour and width on the
- * right, and the tools in a row along the bottom. Android draws them as Material surfaces where
+ * The canvas screen's controls, laid out as on iPhone: undo and redo at the top left, the streak
+ * and a wallpaper-and-profile capsule at the top right, one column on the right (reactions, share,
+ * width, colour and clear), and the tools in a row along the bottom. Android draws them as Material surfaces where
  * iOS uses glass.
  */
 internal object CanvasChromeMetrics {
