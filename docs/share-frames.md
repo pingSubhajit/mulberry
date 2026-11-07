@@ -188,6 +188,10 @@ Admin items have the public item's fields (below) plus `originalUrl`, `published
   - Ship `plain` and `polaroid`, version 1 (frame image and layout), in each app.
   - Show them when the catalog can't be loaded.
   - When the catalog loads, its versions replace them.
+- **Opening without a swap:** the person must never see one frame replaced by another a moment after the sheet opens.
+  - Keep the catalog's last reply on the device and open on it (arranged for today), then refresh it in the background.
+  - The first time, before any reply is kept, wait up to 1.5 seconds for the catalog with the preview's spinner showing; then fall back to the bundled frames.
+  - Once a frame is on screen, a later reply never replaces it while that frame is still in the reply; new frames just join the row. An unreachable catalog changes nothing.
 - **Rendering:** do it on the device. Never upload the user's wallpaper.
 
 ## Share screen

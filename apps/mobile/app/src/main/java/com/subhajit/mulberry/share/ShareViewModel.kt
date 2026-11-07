@@ -22,6 +22,8 @@ import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -82,7 +84,6 @@ class ShareViewModel @Inject constructor(
     @Volatile private var frames: List<ShareFrame> = emptyList()
     @Volatile private var bundledFrames: List<ShareFrame> = emptyList()
     private var defaultCaption: String = ""
-    private var userPickedFrame = false
     @Volatile private var realWallpaperAvailable = true
     private var sessionActive = false
     private var loadJob: Job? = null
@@ -116,7 +117,6 @@ class ShareViewModel @Inject constructor(
     fun start() {
         if (sessionActive) return
         sessionActive = true
-        userPickedFrame = false
         analytics.track(AnalyticsEvent.ShareOpened)
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
@@ -127,11 +127,19 @@ class ShareViewModel @Inject constructor(
             defaultCaption = limitCaptionLength(context.getString(R.string.share_caption_default, partnerName))
             realWallpaperAvailable = true
             _uiState.value = ShareUiState(caption = defaultCaption, defaultCaption = defaultCaption)
+            frames = emptyList()
 
             bundledFrames = frameRepository.bundledFrames()
-            applyFrames(bundledFrames)
-            val catalog = frameRepository.catalogFrames()
-            applyFrames(chooseShareFrames(catalog, bundledFrames))
+            // Opens on the catalog as it last answered, so the frames don't swap a moment later.
+            val cached = frameRepository.cachedCatalogFrames()
+            if (cached != null) applyFrames(cached)
+            val fresh = async { frameRepository.catalogFrames() }
+            if (frames.isEmpty()) {
+                // The first time, the catalog gets a moment so the preview starts on the right
+                // frame; when it's slow or unreachable, the bundled frames stand in.
+                applyFrames(chooseShareFrames(withTimeoutOrNull(FIRST_CATALOG_WAIT_MS) { fresh.await() }, bundledFrames))
+            }
+            fresh.await()?.let { catalog -> applyFrames(chooseShareFrames(catalog, bundledFrames)) }
         }
     }
 
@@ -153,7 +161,6 @@ class ShareViewModel @Inject constructor(
 
     fun onFrameSelected(key: String) {
         if (frames.none { it.key == key }) return
-        userPickedFrame = true
         analytics.track(AnalyticsEvent.ShareFrameSelected(frameKey = key))
         if (_uiState.value.selectedKey == key) return
         _uiState.update { it.copy(selectedKey = key) }
@@ -205,11 +212,16 @@ class ShareViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Shows a set of frames. The frame on screen stays while the set still has it, so a catalog
+     * that answers late adds frames rather than swapping the preview out.
+     */
     private fun applyFrames(available: List<ShareFrame>) {
         val arrangement = ShareFrameSelector.arrange(available, CalendarDate.today())
+        if (arrangement.frames.isEmpty() || arrangement.frames == frames) return
         frames = arrangement.frames
         val current = _uiState.value.selectedKey
-        val selected = current?.takeIf { key -> userPickedFrame && frames.any { it.key == key } }
+        val selected = current?.takeIf { key -> frames.any { it.key == key } }
             ?: arrangement.preselectedKey
         _uiState.update { state ->
             state.copy(
@@ -324,5 +336,7 @@ class ShareViewModel @Inject constructor(
         private const val SHARE_IMAGE_DIR = "share_images"
         private const val DATE_PATTERN = "EEEE, d MMMM"
         private const val CAPTION_DEBOUNCE_MS = 150L
+        /** How long a first opening waits for the catalog before the bundled frames stand in. */
+        private const val FIRST_CATALOG_WAIT_MS = 1_500L
     }
 }

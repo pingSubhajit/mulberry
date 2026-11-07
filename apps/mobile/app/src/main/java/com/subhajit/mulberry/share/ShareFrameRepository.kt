@@ -10,6 +10,7 @@ import com.subhajit.mulberry.R
 import com.subhajit.mulberry.core.config.AppConfig
 import com.subhajit.mulberry.network.MulberryApiService
 import com.subhajit.mulberry.network.ShareFrameResponse
+import com.google.gson.Gson
 import com.subhajit.mulberry.stickers.downloadStickerAssetToTempFile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -25,6 +26,7 @@ import okhttp3.OkHttpClient
 
 /**
  * Share frames: Plain and Polaroid bundled in the app, and the catalog from `GET /share-frames`.
+ * The catalog's last reply is kept on disk, so the share sheet can open on it straight away.
  * Frame images are cached on disk by (key, version), as a published version never changes.
  */
 @Singleton
@@ -35,6 +37,7 @@ class ShareFrameRepository @Inject constructor(
     private val appConfig: AppConfig
 ) {
     private val downloadMutexes = ConcurrentHashMap<String, Mutex>()
+    private val gson = Gson()
 
     // Two decoded frames (about 8 MB each) so switching back and forth doesn't decode again.
     private val frameBitmaps = object : LruCache<String, Bitmap>(FRAME_BITMAP_CACHE_BYTES) {
@@ -62,11 +65,34 @@ class ShareFrameRepository @Inject constructor(
         }
     }
 
-    /** The published catalog, or null when it can't be loaded. */
+    /**
+     * The catalog as it last answered: what the share sheet opens on, so it starts on the right
+     * frames rather than swapping the bundled ones out a moment later. Null until the catalog has
+     * once answered with frames this build can draw.
+     */
+    suspend fun cachedCatalogFrames(): List<ShareFrame>? = withContext(Dispatchers.IO) {
+        val file = catalogCacheFile()
+        if (!file.exists()) return@withContext null
+        try {
+            val items = gson.fromJson(file.readText(), Array<ShareFrameResponse>::class.java) ?: return@withContext null
+            items.mapNotNull { it.toShareFrame(::resolveUrl) }.takeIf { it.isNotEmpty() }
+        } catch (error: Exception) {
+            Log.w(TAG, "Kept share frame catalog unreadable", error)
+            null
+        }
+    }
+
+    /** The published catalog, or null when it can't be loaded. Each reply is kept for [cachedCatalogFrames]. */
     suspend fun catalogFrames(): List<ShareFrame>? = withContext(Dispatchers.IO) {
         try {
-            val response = apiService.getShareFrames()
-            response.items.orEmpty().mapNotNull { it.toShareFrame(::resolveUrl) }
+            val items = apiService.getShareFrames().items.orEmpty()
+            runCatching {
+                val file = catalogCacheFile()
+                val temp = File(file.parentFile, "${file.name}.tmp")
+                temp.writeText(gson.toJson(items))
+                if (!temp.renameTo(file)) temp.delete()
+            }.onFailure { Log.w(TAG, "Unable to keep the share frame catalog", it) }
+            items.mapNotNull { it.toShareFrame(::resolveUrl) }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -116,6 +142,9 @@ class ShareFrameRepository @Inject constructor(
         }
     }
 
+    private fun catalogCacheFile(): File =
+        File(File(context.cacheDir, FRAME_CACHE_DIR).apply { mkdirs() }, CATALOG_CACHE_FILE)
+
     private fun frameCacheFile(key: String, version: Int): File {
         val directory = File(context.cacheDir, FRAME_CACHE_DIR).apply { mkdirs() }
         return File(directory, shareFrameCacheFileName(key, version))
@@ -134,6 +163,7 @@ class ShareFrameRepository @Inject constructor(
         const val BUNDLED_ASSET_DIR = "share_frames"
         const val BUNDLED_VERSION = 1
         const val FRAME_CACHE_DIR = "share_frames"
+        const val CATALOG_CACHE_FILE = "catalog.json"
         const val FRAME_BITMAP_CACHE_BYTES = 2 * SHARE_OUTPUT_WIDTH * SHARE_OUTPUT_HEIGHT * 4
 
         // Polaroid first: it's the frame picked when no seasonal frame is in its window.
