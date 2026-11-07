@@ -1,3 +1,4 @@
+import CryptoKit
 import LinkPresentation
 import SwiftUI
 import UIKit
@@ -46,6 +47,8 @@ final class ShareModel: ObservableObject {
     private var frameThumbnails: [String: CGImage] = [:]
     private var renderTask: Task<Void, Never>?
     private var thumbnailTask: Task<Void, Never>?
+    /// The frame the sheet opens on, whose preview is kept for the next opening.
+    private var openingKey: String?
 
     private struct ContentKey: Hashable {
         let real: Bool
@@ -69,8 +72,10 @@ final class ShareModel: ObservableObject {
         guard !started else { return }
         started = true
         AppAnalytics.track(.shareOpened)
-        // Opens on the catalog as it last answered, so the frames don't swap a moment later.
+        // Opens on the catalog as it last answered, so the frames don't swap a moment later, and on
+        // the images drawn last time, which the ones drawn below replace.
         if let cached = store.cachedLineup() { apply(cached, draw: false) }
+        restoreSaved()
         let store = store
         let fresh = Task { await store.catalogLineup() }
         Task {
@@ -82,6 +87,7 @@ final class ShareModel: ObservableObject {
                 // frame; when it's slow or unreachable, the bundled frames stand in.
                 let first = await Self.value(of: fresh, within: .milliseconds(1150))
                 apply(first.flatMap { $0 } ?? store.bundledLineup(), draw: false)
+                restoreSaved()
             }
             render()
             renderThumbnails()
@@ -115,6 +121,7 @@ final class ShareModel: ObservableObject {
     private func apply(_ lineup: ShareFrameLineup, draw: Bool = true) {
         guard !lineup.frames.isEmpty, lineup.frames != frames else { return }
         frames = lineup.frames
+        openingKey = lineup.preselected?.key
         let previous = selected
         if let key = previous?.key, let same = lineup.frames.first(where: { $0.key == key }) {
             selected = same
@@ -122,8 +129,28 @@ final class ShareModel: ObservableObject {
             selected = lineup.preselected
         }
         guard draw else { return }
+        restoreSaved()
         if selected != previous { render() }
         renderThumbnails()
+    }
+
+    /// Shows what was drawn last time for any image not drawn yet: the preview when the sheet is
+    /// as it opens, and each frame's thumbnail.
+    private func restoreSaved() {
+        let real = usesRealWallpaper
+        for frame in frames where thumbnails[frame.key] == nil {
+            if let saved = ShareRenderCache.thumbnail(frame: cacheKey(frame), real: real) { thumbnails[frame.key] = saved }
+        }
+        if preview == nil, let frame = selected, let key = savedPreviewKey(frame) {
+            preview = ShareRenderCache.preview(key)
+        }
+    }
+
+    /// The key the preview of `frame` is kept under, or nil unless the sheet is as it opens: the
+    /// opening frame, the starting caption and the switch on.
+    private func savedPreviewKey(_ frame: ShareFrame) -> String? {
+        guard frame.key == openingKey, caption == defaultCaption, useRealWallpaper || !realWallpaperAvailable else { return nil }
+        return "\(cacheKey(frame))\n\(caption)"
     }
 
     // MARK: Drawing
@@ -137,6 +164,7 @@ final class ShareModel: ObservableObject {
             guard !Task.isCancelled else { return }
             if let image = await compose(frame: frame, caption: caption, real: real, fonts: fonts), !Task.isCancelled {
                 preview = UIImage(cgImage: image)
+                if let key = savedPreviewKey(frame) { ShareRenderCache.save(preview: image, key: key) }
             }
         }
     }
@@ -228,6 +256,7 @@ final class ShareModel: ObservableObject {
                 }.value
                 guard !Task.isCancelled, let thumbnail else { return }
                 thumbnails[frame.key] = UIImage(cgImage: thumbnail)
+                ShareRenderCache.save(thumbnail: thumbnail, frame: key, real: real)
             }
         }
     }
@@ -278,6 +307,66 @@ final class ShareModel: ObservableObject {
             popover.permittedArrowDirections = .up
         }
         top.present(sheet, animated: true)
+    }
+}
+
+/// The share screen as it last looked, kept on disk: the preview the sheet opens on and every
+/// frame's thumbnail. The next opening shows them straight away while they are drawn afresh, so
+/// only the clock or a new doodle changes. They show this pair's lock screen, so signing out
+/// clears them.
+enum ShareRenderCache {
+    private static let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Mulberry/ShareRenders", isDirectory: true)
+    /// Writes in order, so the newest image is the one left.
+    private static let queue = DispatchQueue(label: "mulberry.share-renders", qos: .utility)
+
+    static func preview(_ key: String) -> UIImage? { image(previewFile(key)) }
+
+    static func thumbnail(frame: String, real: Bool) -> UIImage? { image(thumbnailFile(frame: frame, real: real)) }
+
+    /// Keeps `image` as the preview, replacing the one kept before.
+    static func save(preview image: CGImage, key: String) {
+        let file = previewFile(key)
+        write(image, to: file) { folder in
+            let others = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+            for other in others where other.lastPathComponent.hasPrefix("preview-") && other != file {
+                try? FileManager.default.removeItem(at: other)
+            }
+        }
+    }
+
+    static func save(thumbnail image: CGImage, frame: String, real: Bool) {
+        write(image, to: thumbnailFile(frame: frame, real: real))
+    }
+
+    static func clear() {
+        queue.async { try? FileManager.default.removeItem(at: root) }
+    }
+
+    private static func image(_ file: URL) -> UIImage? {
+        guard let data = try? Data(contentsOf: file) else { return nil }
+        return UIImage(data: data)
+    }
+
+    private static func write(_ image: CGImage, to file: URL, then: (@Sendable (URL) -> Void)? = nil) {
+        queue.async {
+            guard let data = ShareFrameRenderer.jpegData(image) else { return }
+            try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            guard (try? data.write(to: file, options: .atomic)) != nil else { return }
+            then?(root)
+        }
+    }
+
+    private static func previewFile(_ key: String) -> URL {
+        root.appendingPathComponent("preview-\(digest(key)).jpg")
+    }
+
+    private static func thumbnailFile(frame: String, real: Bool) -> URL {
+        root.appendingPathComponent("thumbnail-\(digest(frame))-\(real ? "real" : "mulberry").jpg")
+    }
+
+    private static func digest(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
     }
 }
 

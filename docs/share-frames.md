@@ -192,6 +192,10 @@ Admin items have the public item's fields (below) plus `originalUrl`, `published
   - Keep the catalog's last reply on the device and open on it (arranged for today), then refresh it in the background.
   - The first time, before any reply is kept, wait up to 1.5 seconds for the catalog with the preview's spinner showing; then fall back to the bundled frames.
   - Once a frame is on screen, a later reply never replaces it while that frame is still in the reply; new frames just join the row. An unreachable catalog changes nothing.
+- **Opening without a spinner:** keep the last drawn images on the device and show them at once while fresh ones are drawn, so a repeat opening changes only the clock or a new doodle.
+  - Keep the preview only while the sheet is as it opens: the preselected frame (key and version), the starting caption, and the switch on. One preview is kept; a new one replaces it. Edited captions and other frames aren't kept.
+  - iOS also keeps each frame's thumbnail (by frame version and switch state), since its thumbnails show the lock screen. Android's thumbnails are the frame images, which Coil already caches.
+  - They show the pair's lock screen and partner name, so sign-out, account deletion and an ended session delete them. They live in the platform cache folder (`Caches/Mulberry/ShareRenders` on iOS, `cacheDir/share_renders` on Android).
 - **Rendering:** do it on the device. Never upload the user's wallpaper.
 
 ## Share screen

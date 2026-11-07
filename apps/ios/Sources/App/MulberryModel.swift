@@ -343,6 +343,7 @@ final class MulberryModel: ObservableObject {
         pairedInvite = nil; askedInviteCode = nil
         showWallpaperOnboarding = false; errorMessage = nil; busy = false
         canvasSaveError = nil; retryCanvasSave = nil
+        ShareRenderCache.clear()
     }
 
     private func apply(_ state: BootstrapState) async {
@@ -440,6 +441,7 @@ final class MulberryModel: ObservableObject {
         if (try? await api.signedInUserId) == nil && bootstrap != nil {
             // The server ended the session: this account's private photos leave the device too.
             if let user = userId { await CanvasPhotoStore.shared.removeAll(user: user) }
+            ShareRenderCache.clear()
             await sync?.stop(); syncObserver?.cancel(); sync = nil
             streaks.bind(userId: nil, pairSessionId: nil)
             firstDrawing.bind(userId: nil, hasDrawn: nil)
