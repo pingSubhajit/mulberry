@@ -3,12 +3,10 @@ package com.subhajit.mulberry.share
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Paint
 import android.net.Uri
 import android.text.format.DateFormat
 import android.util.Log
 import androidx.core.content.FileProvider
-import androidx.core.graphics.createBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.subhajit.mulberry.R
@@ -21,7 +19,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.roundToInt
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +38,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 
 /** A frame in the row of thumbnails. [thumbnail] is a URL Coil can load. */
 data class ShareFrameOption(
@@ -59,9 +55,6 @@ data class ShareUiState(
     val useRealWallpaper: Boolean = true,
     /** False when this device's lock screen can't be drawn; Mulberry's stands in. */
     val realWallpaperAvailable: Boolean = true,
-    /** The two lock screens to choose between, small, for the wallpaper panel. */
-    val realWallpaperThumbnail: Bitmap? = null,
-    val fallbackWallpaperThumbnail: Bitmap? = null,
     val preview: Bitmap? = null,
     val isSharing: Boolean = false
 )
@@ -100,7 +93,6 @@ class ShareViewModel @Inject constructor(
     private var cachedContent: CachedContent? = null
 
     private val renderRequests = MutableStateFlow<RenderRequest?>(null)
-    private val thumbnailPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
     init {
         viewModelScope.launch(Dispatchers.Default) {
@@ -138,7 +130,6 @@ class ShareViewModel @Inject constructor(
 
             bundledFrames = frameRepository.bundledFrames()
             applyFrames(bundledFrames)
-            launch(Dispatchers.Default) { renderWallpaperThumbnails() }
             val catalog = frameRepository.catalogFrames()
             applyFrames(chooseShareFrames(catalog, bundledFrames))
         }
@@ -286,42 +277,6 @@ class ShareViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Both lock screens, small, for the wallpaper panel: the share image's content at thumbnail
-     * scale, clock and all. Drawn once the first preview is up, so the preview comes first.
-     */
-    private suspend fun renderWallpaperThumbnails() {
-        withTimeoutOrNull(THUMBNAILS_WAIT_FOR_PREVIEW_MS) { _uiState.first { it.preview != null } }
-        val clock = currentClockText()
-        for (real in listOf(true, false)) {
-            val thumbnail = try {
-                renderMutex.withLock {
-                    val (drawnReal, layer) = wallpaperLayer(real)
-                    if (drawnReal != real) null else smallContent(layer, clock)
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                Log.w(TAG, "Wallpaper thumbnail failed", error)
-                null
-            } ?: continue
-            _uiState.update {
-                if (real) it.copy(realWallpaperThumbnail = thumbnail) else it.copy(fallbackWallpaperThumbnail = thumbnail)
-            }
-        }
-    }
-
-    private fun smallContent(layer: Bitmap, clock: ShareClockText): Bitmap {
-        val width = (SHARE_CONTENT_WIDTH * THUMBNAIL_SCALE).roundToInt()
-        val height = (SHARE_CONTENT_HEIGHT * THUMBNAIL_SCALE).roundToInt()
-        val thumbnail = createBitmap(width, height)
-        val canvas = Canvas(thumbnail)
-        canvas.scale(width.toFloat() / layer.width, height.toFloat() / layer.height)
-        canvas.drawBitmap(layer, 0f, 0f, thumbnailPaint)
-        renderer.drawClock(canvas, clock)
-        return thumbnail
-    }
-
     private fun currentClockText(): ShareClockText {
         val now = Date()
         val locale = Locale.getDefault()
@@ -369,7 +324,5 @@ class ShareViewModel @Inject constructor(
         private const val SHARE_IMAGE_DIR = "share_images"
         private const val DATE_PATTERN = "EEEE, d MMMM"
         private const val CAPTION_DEBOUNCE_MS = 150L
-        private const val THUMBNAIL_SCALE = 0.25f
-        private const val THUMBNAILS_WAIT_FOR_PREVIEW_MS = 2_000L
     }
 }

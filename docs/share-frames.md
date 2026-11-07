@@ -192,19 +192,16 @@ Admin items have the public item's fields (below) plus `originalUrl`, `published
 
 ## Share screen
 
-- **Entry:** a share button on the canvas (SF Symbol `square.and.arrow.up` on iOS, the platform share icon on Android). It's available once paired.
-- **Screen:** a full-screen overlay laid out like the sticker, text and photo editors, over the same dimmed canvas.
-  - **Top bar:** a round Close button on the left; a prominent round share button on the right that opens the system share sheet with the image.
-  - **Middle:** the preview of the composed image, filling the space between the top bar and the tools.
-  - **Bottom:** a row of round tool buttons, each opening its panel above the row (tapping the open one closes it). The panel area keeps a fixed height, so switching panels never moves the preview; only the keyboard shrinks it.
-    - **Theme** (open first): the frame thumbnails, titled with the selected frame's name.
-    - **Wallpaper:** two tiles, "My wallpaper" and "Mulberry", each a small render of that lock screen.
-    - **Text:** the caption field; opening it focuses the field, and closing the keyboard closes the panel.
+- **Entry:** a share button on the canvas (SF Symbol `square.and.arrow.up` on iOS, the platform share icon on Android). It's available once paired. On phones it sits in the canvas's right-hand column, under the reactions button; on iPad it's in the navigation bar.
+- **Screen:** the platform's standard full-height sheet, following each platform's own patterns rather than copying the other's. Both show the same things in the same order: the preview, growing into whatever height the rest leaves; a row of frame thumbnails with no names, no title and no background (the selected one ringed in the accent colour; screen readers still read each name); the caption; and a "My wallpaper" switch (off: the fallback wallpaper; disabled when the lock screen can't be drawn).
+  - **iOS:** a `NavigationStack` and `Form` in a sheet. The navigation bar has Close on the left, the inline title "Share", and Share as the prominent confirmation action on the right. The caption and switch share one grouped section.
+  - **Android:** a Material `ModalBottomSheet` with the standard drag handle and no close button (it closes with a swipe down, Back or a tap outside) and no title. The caption is an outlined text field labelled "Caption", the switch is a list row, and Share is a full-width filled button at the foot.
 
-  Use the editors' components, keep copy minimal (no title, no helper text).
+  Keep copy minimal: no helper text.
 - **Copy (identical on every platform):**
-  - Tools: "Theme", "Wallpaper", "Text"
-  - Wallpaper tiles: "My wallpaper", "Mulberry"
+  - Title (iOS) and button: "Share"
+  - Caption field: "Caption"
+  - Switch: "My wallpaper"
   - Default caption: "Look what {name} drew on my lock screen"
   - Name fallback: "my love"
 - **Analytics:** through each app's existing client analytics:

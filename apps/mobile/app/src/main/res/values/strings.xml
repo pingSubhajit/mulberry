@@ -12,11 +12,7 @@
     <string name="share_action">Share</string>
     <string name="share_action_content_description">Share image</string>
     <string name="share_close">Close</string>
-    <string name="share_panel_theme">Theme</string>
-    <string name="share_panel_wallpaper">Wallpaper</string>
-    <string name="share_panel_text">Text</string>
     <string name="share_wallpaper_mine">My wallpaper</string>
-    <string name="share_wallpaper_mulberry">Mulberry</string>
     <string name="share_caption_default">Look what %1$s drew on my lock screen</string>
     <string name="share_partner_name_fallback">my love</string>
     <string name="share_caption_content_description">Caption</string>
