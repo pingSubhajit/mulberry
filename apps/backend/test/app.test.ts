@@ -1653,6 +1653,105 @@ describe("Mulberry backend", () => {
     expect(afterDue).toBeGreaterThan(beforeDue)
   })
 
+  it("relays live stroke points in four database round trips and answers a resent batch without a revision gap", async () => {
+    const { inviter, recipient } = await pairUsers()
+    const sender = await app.injectWS("/canvas/sync")
+    const partner = await app.injectWS("/canvas/sync")
+    for (const [socket, user] of [[sender, inviter], [partner, recipient]] as const) {
+      socket.send(JSON.stringify({
+        type: "HELLO",
+        accessToken: user.accessToken,
+        pairSessionId: user.pairSessionId,
+        lastAppliedServerRevision: 0,
+      }))
+      expect((await nextWsJson(socket)).type).toBe("READY")
+    }
+    type LiveTestOperation =
+      | ReturnType<typeof addStrokeOperation>
+      | ReturnType<typeof appendPointsOperation>
+      | ReturnType<typeof finishStrokeOperation>
+    const sendBatch = async (batchId: string, operations: LiveTestOperation[]) => {
+      const partnerMessage = nextWsJson(partner)
+      const senderMessages = nextNWsJson(sender, 2)
+      sender.send(JSON.stringify({ type: "CLIENT_OP_BATCH", batchId, clientCreatedAt: new Date().toISOString(), operations }))
+      const [ack] = await senderMessages
+      return { ack, relayed: await partnerMessage }
+    }
+    const revisionsOf = (message: { operations?: Array<{ serverRevision: number }> }) =>
+      (message.operations ?? []).map((operation) => operation.serverRevision)
+
+    // The pair's first operation creates its snapshot row.
+    const first = await sendBatch("live-1", [addStrokeOperation("live-op-1", "live-stroke", 1, 1)])
+    expect(first.ack.type).toBe("ACK_BATCH")
+
+    const points = [
+      appendPointsOperation("live-op-2", "live-stroke", [{ x: 2, y: 2 }]),
+      appendPointsOperation("live-op-3", "live-stroke", [{ x: 3, y: 3 }]),
+    ]
+    const { result: second, roundTrips } = await countRoundTrips(() => sendBatch("live-2", points))
+
+    expect(roundTrips).toBe(4)
+    const firstRevision = revisionsOf(first.ack)[0]
+    expect(revisionsOf(second.ack)).toEqual([firstRevision + 1, firstRevision + 2])
+    expect(second.relayed.type).toBe("SERVER_OP_BATCH")
+    expect(revisionsOf(second.relayed)).toEqual([firstRevision + 1, firstRevision + 2])
+
+    // A batch resent after a lost acknowledgement gets its stored revisions back and uses none.
+    const resent = await sendBatch("live-2-again", points)
+    expect(resent.ack.type).toBe("ACK_BATCH")
+    expect(revisionsOf(resent.ack)).toEqual([firstRevision + 1, firstRevision + 2])
+    const next = await sendBatch("live-3", [appendPointsOperation("live-op-4", "live-stroke", [{ x: 4, y: 4 }])])
+    expect(revisionsOf(next.ack)).toEqual([firstRevision + 3])
+
+    // Finishing the stroke still builds it, from every point, into the snapshot.
+    await sendBatch("live-4", [finishStrokeOperation("live-op-5", "live-stroke")])
+    sender.close()
+    partner.close()
+    const snapshot = await app.inject({ method: "GET", url: "/canvas/snapshot", headers: bearer(inviter.accessToken) })
+    expect(snapshot.json().latestRevision).toBe(firstRevision + 4)
+    expect(snapshot.json().snapshot.strokes[0].points).toEqual([{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }, { x: 4, y: 4 }])
+  })
+
+  it("answers the wallpaper downloads and a reaction in few database round trips", async () => {
+    const { inviter, recipient } = await pairUsers()
+    const drawn = await app.inject({
+      method: "POST",
+      url: "/canvas/ops/batch",
+      headers: bearer(inviter.accessToken),
+      payload: {
+        batchId: "wallpaper-batch",
+        clientCreatedAt: new Date().toISOString(),
+        operations: [addStrokeOperation("wallpaper-op-1", "wallpaper-stroke", 1, 1), finishStrokeOperation("wallpaper-op-2", "wallpaper-stroke")],
+      },
+    })
+    expect(drawn.statusCode).toBe(200)
+
+    const snapshot = await countRoundTrips(() =>
+      app.inject({ method: "GET", url: "/canvas/snapshot", headers: bearer(recipient.accessToken) }))
+    expect(snapshot.result.statusCode).toBe(200)
+    expect(snapshot.roundTrips).toBe(2)
+    const tail = await countRoundTrips(() =>
+      app.inject({ method: "GET", url: `/canvas/ops?afterRevision=${snapshot.result.json().snapshotRevision}`, headers: bearer(recipient.accessToken) }))
+    expect(tail.result.statusCode).toBe(200)
+    expect(tail.roundTrips).toBe(2)
+
+    // The canvas update push from the drawing above goes out first.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const reaction = await countRoundTrips(async () => {
+      const sent = await app.inject({ method: "POST", url: "/reactions/send", headers: bearer(inviter.accessToken), payload: { reactionType: "HUG" } })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      return sent
+    })
+    expect(reaction.result.statusCode).toBe(200)
+    // Session and pair, BEGIN, rate limit (read, write), the event, the inbox, COMMIT; then the
+    // push looks up the partner's devices for the reaction and for its Live Activity.
+    expect(reaction.roundTrips).toBe(9)
+    const pending = await countRoundTrips(() =>
+      app.inject({ method: "GET", url: "/reactions/pending", headers: bearer(recipient.accessToken) }))
+    expect(pending.result.json().pending).toMatchObject({ hugCount: 1 })
+    expect(pending.roundTrips).toBe(2)
+  })
+
   it("dispatches draw reminder pushes to the idle user and reschedules with backoff", async () => {
     const memoryDb = newDb({
       autoCreateForeignKeyIndices: true,
@@ -3449,6 +3548,28 @@ describe("Mulberry backend", () => {
         anniversaryDate,
       },
     })
+  }
+
+  /** Runs `work`, counting its database round trips: each query, plus BEGIN and COMMIT per transaction. */
+  async function countRoundTrips<T>(work: () => Promise<T>): Promise<{ result: T; roundTrips: number }> {
+    const original = { query: db.query, transaction: db.transaction }
+    let roundTrips = 0
+    const counted = (query: Database["query"]): Database["query"] =>
+      ((...args: Parameters<Database["query"]>) => {
+        roundTrips += 1
+        return query(...args)
+      }) as Database["query"]
+    db.query = counted(original.query)
+    db.transaction = (fn) => {
+      roundTrips += 2
+      return original.transaction((tx) => fn({ query: counted(tx.query) }))
+    }
+    try {
+      return { result: await work(), roundTrips }
+    } finally {
+      db.query = original.query
+      db.transaction = original.transaction
+    }
   }
 
   async function pairUsers() {

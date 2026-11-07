@@ -12,15 +12,14 @@ import type {
   CanvasPhotoElementPayload,
   CanvasPhotoStyle,
 } from "../../contracts/canvas.js"
-import { CanvasPhotoStyles, DRAWING_OPERATION_TYPES } from "../../contracts/canvas.js"
+import { CanvasPhotoStyles, DRAWING_OPERATION_TYPES, type CanvasOperationType } from "../../contracts/canvas.js"
 import type { CanvasOperationRecord } from "../../contracts/dbRecords.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
 import { disabledAnalytics, type Analytics } from "../../infra/analytics/recorder.js"
 import { StreakMilestones } from "../../infra/analytics/events.js"
 import { stableUuid } from "../../infra/analytics/outbox.js"
 import { recordPairActivity } from "../_shared/pairActivity.js"
-import { requireSessionContext, type CanvasSessionContext } from "../_shared/session.js"
-import { getPairSession } from "../_shared/pairs.js"
+import { requireSessionWithPair, type CanvasSessionContext } from "../_shared/session.js"
 import { validDateOrNow } from "../_shared/dates.js"
 import type { StreakService } from "../streak/service.js"
 
@@ -73,8 +72,7 @@ export async function requirePairedCanvasContext(
   db: Pick<Database, "query">,
   accessToken: string,
 ): Promise<CanvasSessionContext> {
-  const context = await requireSessionContext(db, accessToken)
-  const pairSession = await getPairSession(db, context.user.id)
+  const { pairSession, ...context } = await requireSessionWithPair(db, accessToken)
   if (!pairSession) {
     throw new HttpError(403, "User is not paired", { code: "NOT_PAIRED" })
   }
@@ -94,7 +92,15 @@ export class CanvasService {
     pairSessionId: string,
     lastAppliedRevision: number,
   ): Promise<CanvasSyncBootstrap> {
-    const context = await this.requireCanvasSessionContext(accessToken, pairSessionId)
+    const context = await this.resolveCanvasSessionContext(accessToken, pairSessionId)
+    return this.bootstrapCanvasSyncForContext(context, lastAppliedRevision)
+  }
+
+  /** The canvas sync socket checks the session once and keeps its context, see `CanvasSyncHub`. */
+  async bootstrapCanvasSyncForContext(
+    context: CanvasSessionContext,
+    lastAppliedRevision: number,
+  ): Promise<CanvasSyncBootstrap> {
     const missedOperations = await this.listCanvasOperationsForPair(
       context.pairSession.id,
       lastAppliedRevision,
@@ -113,9 +119,8 @@ export class CanvasService {
     pairSessionId: string,
     operation: ClientCanvasOperation,
   ): Promise<CanvasOperationEnvelope> {
-    const context = await this.requireCanvasSessionContext(accessToken, pairSessionId)
-    const accepted = await this.acceptCanvasOperationBatch(context, [operation])
-    return accepted[0]
+    const context = await this.resolveCanvasSessionContext(accessToken, pairSessionId)
+    return this.acceptCanvasOperation(context, operation)
   }
 
   async acceptCanvasOperationBatchForSession(
@@ -123,7 +128,14 @@ export class CanvasService {
     pairSessionId: string,
     batch: ClientCanvasOperationBatch,
   ): Promise<CanvasOperationEnvelope[]> {
-    const context = await this.requireCanvasSessionContext(accessToken, pairSessionId)
+    const context = await this.resolveCanvasSessionContext(accessToken, pairSessionId)
+    return this.acceptCanvasOperationBatchForContext(context, batch)
+  }
+
+  async acceptCanvasOperationBatchForContext(
+    context: CanvasSessionContext,
+    batch: ClientCanvasOperationBatch,
+  ): Promise<CanvasOperationEnvelope[]> {
     if (!batch.batchId.trim()) {
       throw new HttpError(400, "batchId is required")
     }
@@ -142,17 +154,7 @@ export class CanvasService {
     batch: ClientCanvasOperationBatch,
   ): Promise<CanvasOperationEnvelope[]> {
     const context = await this.requireDefaultCanvasSessionContext(accessToken)
-    if (!batch.batchId.trim()) {
-      throw new HttpError(400, "batchId is required")
-    }
-    if (!Array.isArray(batch.operations) || batch.operations.length === 0) {
-      throw new HttpError(400, "CLIENT_OP_BATCH requires operations")
-    }
-    if (batch.operations.length > 128) {
-      throw new HttpError(413, "CLIENT_OP_BATCH is too large")
-    }
-
-    return this.acceptCanvasOperationBatch(context, batch.operations)
+    return this.acceptCanvasOperationBatchForContext(context, batch)
   }
 
   async listCanvasOperations(accessToken: string, afterRevision: number): Promise<CanvasOpsResponse> {
@@ -197,6 +199,13 @@ export class CanvasService {
       }
     })
 
+    // Most batches carry the points of a stroke being drawn. They change nothing but the
+    // operation log, so they take a short transaction; anything else takes the full one below.
+    if (operations.every((operation) => LIVE_STROKE_OPERATION_TYPES.has(operation.type))) {
+      const accepted = await this.tryAcceptLiveStrokeOperations(context, operations)
+      if (accepted) return accepted
+    }
+
     const {
       accepted,
       latestRevision,
@@ -204,6 +213,7 @@ export class CanvasService {
       shouldPushCanvasUpdate,
       shouldEnqueueCanvasNudge,
       shouldRecordUserDrew,
+      markedFirstDrawing,
     } = await this.db.transaction(
       async (tx) => {
         const snapshotRow = await this.getOrCreateCanvasSnapshot(context.pairSession.id, tx, true)
@@ -216,68 +226,64 @@ export class CanvasService {
         let shouldPushCanvasUpdate = false
         let shouldEnqueueCanvasNudge = false
         let shouldRecordUserDrew = false
+        let markedFirstDrawing = false
         const durableCounts: Record<string, number> = {}
         let durableTotal = 0
         let firstCanvasAction: { at: Date; type: string } | null = null
 
+        // Operations already accepted, as when a client resends after a lost acknowledgement, are
+        // answered with the stored record. One query finds them all.
+        const known = new Map<string, CanvasOperationRecord>()
+        const duplicates = await tx.query<CanvasOperationRecord>(
+          `
+          SELECT ${CANVAS_OPERATION_COLUMNS}
+          FROM canvas_operations
+          WHERE pair_session_id = $1 AND actor_user_id = $2 AND client_operation_id = ANY($3::text[])
+          `,
+          [context.pairSession.id, context.user.id, operations.map((operation) => operation.clientOperationId)],
+        )
+        duplicates.rows.forEach((row) => known.set(row.client_operation_id, row))
+
+        const fresh: CanvasOperationRecordInput[] = []
+        const plannedClientIds = new Set<string>()
         for (const operation of operations) {
-          const duplicate = await tx.query<CanvasOperationRecord>(
-            `
-            SELECT id, pair_session_id, server_revision, client_operation_id, actor_user_id,
-              type, stroke_id, payload_json, client_created_at, created_at
-            FROM canvas_operations
-            WHERE pair_session_id = $1 AND actor_user_id = $2 AND client_operation_id = $3
-            LIMIT 1
-            `,
-            [context.pairSession.id, context.user.id, operation.clientOperationId],
-          )
-          if (duplicate.rows[0]) {
-            acceptedRecords.push(duplicate.rows[0])
-            latestRevision = Math.max(latestRevision, Number(duplicate.rows[0].server_revision))
+          const existing = known.get(operation.clientOperationId)
+          if (existing) {
+            latestRevision = Math.max(latestRevision, Number(existing.server_revision))
             continue
           }
-
+          if (plannedClientIds.has(operation.clientOperationId)) continue
+          plannedClientIds.add(operation.clientOperationId)
           latestRevision += 1
-          const id = randomUUID()
-          const clientCreatedAt = validDateOrNow(operation.clientCreatedAt)
-          const rows = await tx.query<CanvasOperationRecord>(
-            `
-            INSERT INTO canvas_operations (
-              id,
-              pair_session_id,
-              server_revision,
-              client_operation_id,
-              actor_user_id,
-              type,
-              stroke_id,
-              payload_json,
-              client_created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
-            RETURNING id, pair_session_id, server_revision, client_operation_id, actor_user_id,
-              type, stroke_id, payload_json, client_created_at, created_at
-            `,
-            [
-              id,
-              context.pairSession.id,
-              latestRevision,
-              operation.clientOperationId,
-              context.user.id,
-              operation.type,
-              operation.strokeId ?? null,
-              JSON.stringify(operation.payload ?? {}),
-              clientCreatedAt.toISOString(),
-            ],
-          )
-          const acceptedRecord = rows.rows[0]
+          fresh.push(canvasOperationRecordInput(context, operation, latestRevision))
+        }
+        const inserted = await this.insertCanvasOperations(tx, fresh)
+        inserted.forEach((row) => known.set(row.client_operation_id, row))
+
+        const markedActivityDays = new Set<string>()
+        for (const operation of operations) {
+          const acceptedRecord = known.get(operation.clientOperationId)
+          if (!acceptedRecord) {
+            throw new Error(`Canvas operation ${operation.clientOperationId} was neither found nor inserted`)
+          }
           acceptedRecords.push(acceptedRecord)
+          if (!plannedClientIds.delete(operation.clientOperationId)) {
+            // A duplicate, or the same operation twice in this batch: its effects are already applied.
+            continue
+          }
           if (this.shouldRecordPairActivityForOperation(acceptedRecord.type)) {
-            await this.streakService.recordPairActivityDay(tx, context.pairSession.id, operation.clientLocalDate)
-            if (!shouldRecordUserDrew) {
+            const activityDay = operation.clientLocalDate ?? ""
+            if (!markedActivityDays.has(activityDay)) {
+              markedActivityDays.add(activityDay)
+              await this.streakService.recordPairActivityDay(tx, context.pairSession.id, operation.clientLocalDate)
+            }
+            if (!shouldRecordUserDrew && context.user.first_drew_at === null) {
               // The account's first drawing, on any device or pair: the apps celebrate it once.
               await tx.query(
                 `UPDATE users SET first_drew_at = NOW() WHERE id = $1 AND first_drew_at IS NULL`,
                 [context.user.id],
               )
+              markedFirstDrawing = true
             }
             shouldEnqueueCanvasNudge = true
             shouldRecordUserDrew = true
@@ -303,23 +309,30 @@ export class CanvasService {
           }
         }
 
-        await tx.query(
-          `
-          UPDATE canvas_snapshots
-          SET latest_revision = $2,
-            revision = $3,
-            snapshot_json = CASE WHEN $4 THEN $5::jsonb ELSE snapshot_json END,
-            updated_at = CASE WHEN $4 THEN NOW() ELSE updated_at END
-          WHERE pair_session_id = $1
-          `,
-          [
-            context.pairSession.id,
-            latestRevision,
-            snapshotRevision,
-            snapshotChanged,
-            JSON.stringify(snapshot),
-          ],
-        )
+        // The snapshot is only sent back when it changed: it holds the whole canvas.
+        if (snapshotChanged) {
+          await tx.query(
+            `
+            UPDATE canvas_snapshots
+            SET latest_revision = $2,
+              revision = $3,
+              snapshot_json = $4::jsonb,
+              updated_at = NOW()
+            WHERE pair_session_id = $1
+            `,
+            [context.pairSession.id, latestRevision, snapshotRevision, JSON.stringify(snapshot)],
+          )
+        } else {
+          await tx.query(
+            `
+            UPDATE canvas_snapshots
+            SET latest_revision = $2,
+              revision = $3
+            WHERE pair_session_id = $1
+            `,
+            [context.pairSession.id, latestRevision, snapshotRevision],
+          )
+        }
 
         if (durableTotal > 0) {
           await this.recordCanvasAnalytics(tx, context, {
@@ -339,13 +352,19 @@ export class CanvasService {
           shouldPushCanvasUpdate,
           shouldEnqueueCanvasNudge,
           shouldRecordUserDrew,
-          firstCanvasAction,
+          markedFirstDrawing,
         }
       },
     )
 
+    if (markedFirstDrawing) {
+      // The canvas sync socket keeps this context; it need not mark the first drawing again.
+      context.user.first_drew_at = new Date()
+    }
+
     if (shouldRecordUserDrew) {
-      await this.recordStreakMilestone(context).catch((error: unknown) => {
+      // Its own transaction, and nothing waits for it: the partner gets the drawing first.
+      void this.recordStreakMilestone(context).catch((error: unknown) => {
         console.error("[analytics] streak milestone failed", { error: error instanceof Error ? error.message : String(error) })
       })
     }
@@ -372,6 +391,96 @@ export class CanvasService {
     }
 
     return accepted
+  }
+
+  /**
+   * Accepts a batch of `ADD_STROKE` and `APPEND_POINTS` in one short transaction: reserve the
+   * revisions, insert the operations. Returns null, having changed nothing, when the batch needs
+   * the full path: the pair has no snapshot row yet, or an operation was already accepted. (Should
+   * one be accepted concurrently, the unique constraint fails the insert and the rollback returns
+   * the reserved revisions.)
+   */
+  private async tryAcceptLiveStrokeOperations(
+    context: CanvasSessionContext,
+    operations: ClientCanvasOperation[],
+  ): Promise<CanvasOperationEnvelope[] | null> {
+    try {
+      return await this.db.transaction(async (tx) => {
+        // A resent batch reserves nothing: the full path answers it from the stored operations.
+        const reserved = await tx.query<{ latest_revision: string | number }>(
+          `
+          UPDATE canvas_snapshots
+          SET latest_revision = latest_revision + $2
+          WHERE pair_session_id = $1
+            AND NOT EXISTS (
+              SELECT 1 FROM canvas_operations
+              WHERE pair_session_id = $1 AND actor_user_id = $3 AND client_operation_id = ANY($4::text[])
+            )
+          RETURNING latest_revision
+          `,
+          [context.pairSession.id, operations.length, context.user.id, operations.map((operation) => operation.clientOperationId)],
+        )
+        const reservedThrough = reserved.rows[0] ? Number(reserved.rows[0].latest_revision) : null
+        if (reservedThrough === null) {
+          throw new NeedsFullCanvasTransaction()
+        }
+        const firstRevision = reservedThrough - operations.length + 1
+        const inserted = await this.insertCanvasOperations(
+          tx,
+          operations.map((operation, index) => canvasOperationRecordInput(context, operation, firstRevision + index)),
+        )
+        const byClientId = new Map(inserted.map((row) => [row.client_operation_id, row]))
+        return operations.map((operation) => {
+          const row = byClientId.get(operation.clientOperationId)
+          if (!row) throw new NeedsFullCanvasTransaction()
+          return this.canvasOperationToEnvelope(row)
+        })
+      })
+    } catch (error) {
+      if (error instanceof NeedsFullCanvasTransaction || isUniqueViolation(error)) return null
+      throw error
+    }
+  }
+
+  /** Inserts `operations` in one statement, returning the stored rows. */
+  private async insertCanvasOperations(
+    db: Pick<Database, "query">,
+    operations: CanvasOperationRecordInput[],
+  ): Promise<CanvasOperationRecord[]> {
+    if (operations.length === 0) return []
+    const columnsPerRow = 9
+    const values = operations.map((_, index) => {
+      const base = index * columnsPerRow
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}::jsonb, $${base + 9})`
+    })
+    const rows = await db.query<CanvasOperationRecord>(
+      `
+      INSERT INTO canvas_operations (
+        id,
+        pair_session_id,
+        server_revision,
+        client_operation_id,
+        actor_user_id,
+        type,
+        stroke_id,
+        payload_json,
+        client_created_at
+      ) VALUES ${values.join(", ")}
+      RETURNING ${CANVAS_OPERATION_COLUMNS}
+      `,
+      operations.flatMap((operation) => [
+        operation.id,
+        operation.pairSessionId,
+        operation.serverRevision,
+        operation.clientOperationId,
+        operation.actorUserId,
+        operation.type,
+        operation.strokeId,
+        operation.payloadJson,
+        operation.clientCreatedAt,
+      ]),
+    )
+    return rows.rows
   }
 
   private async recordCanvasAnalytics(
@@ -471,9 +580,9 @@ export class CanvasService {
     return requirePairedCanvasContext(this.db, accessToken)
   }
 
-  private async requireCanvasSessionContext(accessToken: string, pairSessionId: string): Promise<CanvasSessionContext> {
-    const context = await requireSessionContext(this.db, accessToken)
-    const pairSession = await getPairSession(this.db, context.user.id)
+  /** The session behind `accessToken`, in pair `pairSessionId`; 401 or 403 otherwise. */
+  async resolveCanvasSessionContext(accessToken: string, pairSessionId: string): Promise<CanvasSessionContext> {
+    const { pairSession, ...context } = await requireSessionWithPair(this.db, accessToken)
     if (!pairSession || pairSession.id !== pairSessionId) {
       throw new HttpError(403, "User is not in this pair session")
     }
@@ -547,15 +656,7 @@ export class CanvasService {
     snapshot_json: unknown
     updated_at: Date | string
   }> {
-    await db.query(
-      `
-      INSERT INTO canvas_snapshots (pair_session_id)
-      VALUES ($1)
-      ON CONFLICT (pair_session_id) DO NOTHING
-      `,
-      [pairSessionId],
-    )
-    const rows = await db.query<{
+    const select = async () => (await db.query<{
       revision: string | number
       latest_revision: string | number
       snapshot_json: unknown
@@ -568,8 +669,19 @@ export class CanvasService {
       ${lockForUpdate ? "FOR UPDATE" : ""}
       `,
       [pairSessionId],
+    )).rows[0]
+    // Every pair past its first operation has a snapshot, so reading first saves a round trip.
+    const existing = await select()
+    if (existing) return existing
+    await db.query(
+      `
+      INSERT INTO canvas_snapshots (pair_session_id)
+      VALUES ($1)
+      ON CONFLICT (pair_session_id) DO NOTHING
+      `,
+      [pairSessionId],
     )
-    return rows.rows[0]
+    return select()
   }
 
   private async materializeDurableOperation(
@@ -700,6 +812,55 @@ export class CanvasService {
       createdAt: new Date(row.created_at).toISOString(),
     }
   }
+}
+
+/** The columns of a `CanvasOperationRecord`. */
+const CANVAS_OPERATION_COLUMNS = `id, pair_session_id, server_revision, client_operation_id, actor_user_id,
+  type, stroke_id, payload_json, client_created_at, created_at`
+
+/** Operations of a stroke still being drawn: logged and relayed, never part of the snapshot. */
+const LIVE_STROKE_OPERATION_TYPES: ReadonlySet<CanvasOperationType> = new Set<CanvasOperationType>([
+  "ADD_STROKE",
+  "APPEND_POINTS",
+])
+
+/** A canvas operation about to be inserted. */
+interface CanvasOperationRecordInput {
+  id: string
+  pairSessionId: string
+  serverRevision: number
+  clientOperationId: string
+  actorUserId: string
+  type: CanvasOperationType
+  strokeId: string | null
+  payloadJson: string
+  clientCreatedAt: string
+}
+
+function canvasOperationRecordInput(
+  context: CanvasSessionContext,
+  operation: ClientCanvasOperation,
+  serverRevision: number,
+): CanvasOperationRecordInput {
+  return {
+    id: randomUUID(),
+    pairSessionId: context.pairSession.id,
+    serverRevision,
+    clientOperationId: operation.clientOperationId,
+    actorUserId: context.user.id,
+    type: operation.type,
+    strokeId: operation.strokeId ?? null,
+    payloadJson: JSON.stringify(operation.payload ?? {}),
+    clientCreatedAt: validDateOrNow(operation.clientCreatedAt).toISOString(),
+  }
+}
+
+/** The live-stroke transaction can't take this batch; it rolls back and the full path runs. */
+class NeedsFullCanvasTransaction extends Error {}
+
+/** Postgres's unique_violation: here, an operation the pair already has. */
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "23505"
 }
 
 function normalizeCanvasSnapshot(raw: unknown): {

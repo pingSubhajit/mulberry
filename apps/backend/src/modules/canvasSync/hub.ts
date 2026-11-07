@@ -2,6 +2,7 @@ import type { WebSocket } from "@fastify/websocket"
 import type { CanvasOperationEnvelope, ClientCanvasOperation, ClientCanvasOperationBatch } from "../../contracts/canvas.js"
 import { HttpError } from "../../infra/http/HttpError.js"
 import type { CanvasService } from "../canvas/service.js"
+import type { CanvasSessionContext } from "../_shared/session.js"
 import { operationForClient, operationsForClient } from "../canvas/featureCompat.js"
 
 type ClientMessage =
@@ -29,7 +30,17 @@ interface ConnectionContext {
   accessToken: string
   pairSessionId: string
   userId: string
+  /** The session, user and pair from HELLO, so each operation skips looking them up again. */
+  canvas: CanvasSessionContext
+  /** When `canvas` was last confirmed against the database. */
+  checkedAt: number
 }
+
+/**
+ * How long a socket trusts its session before checking it again. A signed-out or unpaired session
+ * keeps syncing for at most this long; ending a pair closes its sockets at once.
+ */
+const SESSION_RECHECK_MS = 30_000
 
 export class CanvasSyncHub {
   private readonly connectionsByPairSession = new Map<string, Set<WebSocket>>()
@@ -106,15 +117,17 @@ export class CanvasSyncHub {
     if (!message.accessToken || !message.pairSessionId) {
       throw new HttpError(400, "HELLO requires accessToken and pairSessionId")
     }
-    const bootstrap = await this.service.bootstrapCanvasSync(
-      message.accessToken,
-      message.pairSessionId,
+    const canvas = await this.service.resolveCanvasSessionContext(message.accessToken, message.pairSessionId)
+    const bootstrap = await this.service.bootstrapCanvasSyncForContext(
+      canvas,
       Number(message.lastAppliedServerRevision ?? 0),
     )
     this.contexts.set(socket, {
       accessToken: message.accessToken,
       pairSessionId: bootstrap.pairSessionId,
       userId: bootstrap.userId,
+      canvas,
+      checkedAt: Date.now(),
     })
     const connections = this.connectionsByPairSession.get(bootstrap.pairSessionId) ?? new Set()
     connections.add(socket)
@@ -141,12 +154,9 @@ export class CanvasSyncHub {
       throw new HttpError(400, "CLIENT_OP requires operation")
     }
 
-    const accepted = await this.enqueueForPair(context.pairSessionId, () =>
-      this.service.acceptCanvasOperationForSession(
-        context.accessToken,
-        context.pairSessionId,
-        operation,
-      ),
+    const startedAt = Date.now()
+    const accepted = await this.enqueueForPair(context.pairSessionId, async () =>
+      this.service.acceptCanvasOperation(await this.currentCanvasContext(context), operation),
     )
     this.send(socket, {
       type: "ACK",
@@ -157,7 +167,7 @@ export class CanvasSyncHub {
     this.broadcast(context.pairSessionId, (supportsPhotos) => ({
       type: "SERVER_OP",
       operation: operationForClient(accepted, supportsPhotos),
-    }), socket)
+    }), socket, undefined, startedAt)
   }
 
   private async handleClientOperationBatch(
@@ -174,16 +184,13 @@ export class CanvasSyncHub {
     const batchId = batch.batchId
     const operations = batch.operations
 
-    const accepted = await this.enqueueForPair(context.pairSessionId, () =>
-      this.service.acceptCanvasOperationBatchForSession(
-        context.accessToken,
-        context.pairSessionId,
-        {
-          batchId,
-          operations,
-          clientCreatedAt: batch.clientCreatedAt ?? new Date().toISOString(),
-        },
-      ),
+    const startedAt = Date.now()
+    const accepted = await this.enqueueForPair(context.pairSessionId, async () =>
+      this.service.acceptCanvasOperationBatchForContext(await this.currentCanvasContext(context), {
+        batchId,
+        operations,
+        clientCreatedAt: batch.clientCreatedAt ?? new Date().toISOString(),
+      }),
     )
     const ackedClientOperationIds = accepted.map((operation) => operation.clientOperationId)
     const ackedThroughRevision = accepted.at(-1)?.serverRevision ?? 0
@@ -197,13 +204,23 @@ export class CanvasSyncHub {
     this.broadcast(context.pairSessionId, (supportsPhotos) => ({
       type: "SERVER_OP_BATCH",
       operations: operationsForClient(accepted, supportsPhotos),
-    }), socket, batchId)
+    }), socket, batchId, startedAt)
     this.send(socket, {
       type: "FLOW_CONTROL",
       mode: operations.length >= SLOW_DOWN_OPERATION_THRESHOLD ? "SLOW_DOWN" : "NORMAL",
       maxAppendHz: operations.length >= SLOW_DOWN_OPERATION_THRESHOLD ? 15 : 30,
       reason: operations.length >= SLOW_DOWN_OPERATION_THRESHOLD ? "large_batch" : null,
     })
+  }
+
+  /** The socket's session context, checked against the database again once it is old enough. */
+  private async currentCanvasContext(context: ConnectionContext): Promise<CanvasSessionContext> {
+    if (Date.now() - context.checkedAt < SESSION_RECHECK_MS) {
+      return context.canvas
+    }
+    context.canvas = await this.service.resolveCanvasSessionContext(context.accessToken, context.pairSessionId)
+    context.checkedAt = Date.now()
+    return context.canvas
   }
 
   private async enqueueForPair<T>(
@@ -231,6 +248,7 @@ export class CanvasSyncHub {
     payloadFor: (supportsPhotos: boolean) => ServerMessage,
     excludedSocket?: WebSocket,
     batchId?: string,
+    startedAt?: number,
   ): void {
     const connections = this.connectionsByPairSession.get(pairSessionId)
     if (!connections) return
@@ -257,6 +275,8 @@ export class CanvasSyncHub {
       batchId: batchId ?? null,
       recipientCount,
       excludedOrigin: excludedSocket != null,
+      // From the message's arrival, including any wait behind the pair's earlier messages.
+      elapsedMs: startedAt === undefined ? null : Date.now() - startedAt,
     })
   }
 

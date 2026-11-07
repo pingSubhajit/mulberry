@@ -590,7 +590,18 @@ async function runBackfillOnce(db: Pick<Database, "query">, name: string, statem
 }
 
 export async function createDatabase(databaseUrl: string): Promise<Database> {
-  const pool = new pg.Pool({ connectionString: databaseUrl })
+  const pool = new pg.Pool({
+    connectionString: databaseUrl,
+    // Opening a connection to the database costs several round trips (~400 ms from Fly to
+    // Supabase), so idle connections are kept for minutes rather than pg's default 10 seconds.
+    idleTimeoutMillis: 10 * 60_000,
+    keepAlive: true,
+  })
+  // An idle connection the database or pooler closes reports here; without a listener it would
+  // crash the server. The pool drops it and opens a new one when needed.
+  pool.on("error", (error) => {
+    console.warn("[db] idle connection closed", { error: error.message })
+  })
   await runMigrations(pool as unknown as Pick<Database, "query">)
   return {
     query: pool.query.bind(pool),

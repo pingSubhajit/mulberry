@@ -4,8 +4,7 @@ import { HttpError } from "../../infra/http/HttpError.js"
 import type { PushDispatchService } from "../../infra/push/dispatchService.js"
 import { disabledAnalytics, type Analytics } from "../../infra/analytics/recorder.js"
 import { recordPairActivity } from "../_shared/pairActivity.js"
-import { requireSessionContext } from "../_shared/session.js"
-import { getPairSession } from "../_shared/pairs.js"
+import { requireSessionWithPair } from "../_shared/session.js"
 import { ReactionTypes, type ReactionType } from "../../contracts/reactions.js"
 
 const REACTION_SEND_RATE_LIMIT_CAPACITY = 6
@@ -43,8 +42,7 @@ export class ReactionsService {
     laughCount: number
     sparkleCount: number
   }> {
-    const context = await requireSessionContext(this.db, accessToken)
-    const pairSession = await getPairSession(this.db, context.user.id)
+    const { pairSession, ...context } = await requireSessionWithPair(this.db, accessToken)
     if (!pairSession) {
       throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
@@ -107,8 +105,7 @@ export class ReactionsService {
    * (iOS delivers it only while Mulberry is open). Playback still goes through lease and confirm.
    */
   async pendingReactions(accessToken: string): Promise<{ pending: PendingReactionBatch | null }> {
-    const context = await requireSessionContext(this.db, accessToken)
-    const pairSession = await getPairSession(this.db, context.user.id)
+    const { pairSession, ...context } = await requireSessionWithPair(this.db, accessToken)
     if (!pairSession) {
       throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
@@ -163,8 +160,7 @@ export class ReactionsService {
     status: "CLAIMED" | "NO_PENDING" | "LEASED_BY_OTHER" | "STALE_GENERATION"
     leaseExpiresAt?: string
   }> {
-    const context = await requireSessionContext(this.db, accessToken)
-    const pairSession = await getPairSession(this.db, context.user.id)
+    const { pairSession, ...context } = await requireSessionWithPair(this.db, accessToken)
     if (!pairSession) {
       throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
@@ -196,8 +192,7 @@ export class ReactionsService {
     accessToken: string,
     request: { generation?: unknown; deviceId?: unknown },
   ): Promise<{ ok: true }> {
-    const context = await requireSessionContext(this.db, accessToken)
-    const pairSession = await getPairSession(this.db, context.user.id)
+    const { pairSession, ...context } = await requireSessionWithPair(this.db, accessToken)
     if (!pairSession) {
       throw new HttpError(400, "User is not paired", { code: "NOT_PAIRED" })
     }
@@ -297,6 +292,10 @@ export class ReactionsService {
     )
   }
 
+  /**
+   * Adds the reaction to the recipient's inbox in one statement. A new batch starts, with a new
+   * generation and no lease, when the inbox is empty, belongs to another pair, or is being played.
+   */
   private async appendReactionForRecipient(
     tx: Pick<Database, "query">,
     input: {
@@ -304,28 +303,35 @@ export class ReactionsService {
       recipientUserId: string
       reactionType: NormalizedReactionType
     },
-	  ): Promise<{
-	    generation: number
-	    heartCount: number
-	    hugCount: number
-	    kissCount: number
-	    smileCount: number
-	    laughCount: number
-	    sparkleCount: number
-	  }> {
+  ): Promise<{
+    generation: number
+    heartCount: number
+    hugCount: number
+    kissCount: number
+    smileCount: number
+    laughCount: number
+    sparkleCount: number
+  }> {
+    const startsNewBatch = `(
+      COALESCE(reaction_inboxes.pair_session_id, '') <> $2
+      OR reaction_inboxes.heart_count + reaction_inboxes.hug_count + reaction_inboxes.kiss_count
+        + reaction_inboxes.smile_count + reaction_inboxes.laugh_count + reaction_inboxes.sparkle_count = 0
+      OR (reaction_inboxes.lease_expires_at IS NOT NULL AND reaction_inboxes.lease_expires_at > $9::timestamptz)
+    )`
+    const count = (column: string, parameter: string) =>
+      `${column} = (CASE WHEN ${startsNewBatch} THEN 0 ELSE reaction_inboxes.${column} END) + ${parameter}`
     const rows = await tx.query<{
-      pair_session_id: string | null
-      generation: number
+      generation: string | number
       heart_count: number
       hug_count: number
       kiss_count: number
       smile_count: number
       laugh_count: number
       sparkle_count: number
-      lease_expires_at: string | null
     }>(
       `
-      SELECT
+      INSERT INTO reaction_inboxes (
+        recipient_user_id,
         pair_session_id,
         generation,
         heart_count,
@@ -334,136 +340,50 @@ export class ReactionsService {
         smile_count,
         laugh_count,
         sparkle_count,
-        lease_expires_at
-      FROM reaction_inboxes
-      WHERE recipient_user_id = $1
-      FOR UPDATE
-      `,
-      [input.recipientUserId],
-    )
-    const existing = rows.rows[0]
-    if (!existing) {
-      const heart = input.reactionType === "HEART" ? 1 : 0
-      const hug = input.reactionType === "HUG" ? 1 : 0
-      const kiss = input.reactionType === "KISS" ? 1 : 0
-      const smile = input.reactionType === "SMILE" ? 1 : 0
-      const laugh = input.reactionType === "LAUGH" ? 1 : 0
-      const sparkle = input.reactionType === "SPARKLE" ? 1 : 0
-      await tx.query(
-        `
-        INSERT INTO reaction_inboxes (
-          recipient_user_id,
-          pair_session_id,
-          generation,
-          heart_count,
-          hug_count,
-          kiss_count,
-          smile_count,
-          laugh_count,
-          sparkle_count,
-          leased_by_device_id,
-          lease_expires_at,
-          lease_generation,
-          consumed_generation,
-          updated_at
-        )
-        VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, NULL, NULL, NULL, 0, NOW())
-        `,
-        [input.recipientUserId, input.pairSessionId, heart, hug, kiss, smile, laugh, sparkle],
+        leased_by_device_id,
+        lease_expires_at,
+        lease_generation,
+        consumed_generation,
+        updated_at
       )
-      return {
-        generation: 1,
-        heartCount: heart,
-        hugCount: hug,
-        kissCount: kiss,
-        smileCount: smile,
-        laughCount: laugh,
-        sparkleCount: sparkle,
-      }
-    }
-
-    let generation = Number(existing.generation) || 1
-    let heart = Number(existing.heart_count) || 0
-    let hug = Number(existing.hug_count) || 0
-    let kiss = Number(existing.kiss_count) || 0
-    let smile = Number(existing.smile_count) || 0
-    let laugh = Number(existing.laugh_count) || 0
-    let sparkle = Number(existing.sparkle_count) || 0
-
-    const totalBefore = heart + hug + kiss + smile + laugh + sparkle
-    const pairChanged = (existing.pair_session_id ?? "") !== input.pairSessionId
-    const leaseExpiresAt = existing.lease_expires_at ? new Date(existing.lease_expires_at) : null
-    const leaseActive = leaseExpiresAt !== null && leaseExpiresAt.getTime() > Date.now()
-    if (pairChanged) {
-      generation += 1
-      heart = 0
-      hug = 0
-      kiss = 0
-      smile = 0
-      laugh = 0
-      sparkle = 0
-      await tx.query(
-        `
-        UPDATE reaction_inboxes
-        SET leased_by_device_id = NULL,
-          lease_expires_at = NULL,
-          lease_generation = NULL
-        WHERE recipient_user_id = $1
-        `,
-        [input.recipientUserId],
-      )
-    } else if (totalBefore === 0 || leaseActive) {
-      generation += 1
-      heart = 0
-      hug = 0
-      kiss = 0
-      smile = 0
-      laugh = 0
-      sparkle = 0
-      await tx.query(
-        `
-        UPDATE reaction_inboxes
-        SET leased_by_device_id = NULL,
-          lease_expires_at = NULL,
-          lease_generation = NULL
-        WHERE recipient_user_id = $1
-        `,
-        [input.recipientUserId],
-      )
-    }
-
-    if (input.reactionType === "HEART") heart += 1
-    if (input.reactionType === "HUG") hug += 1
-    if (input.reactionType === "KISS") kiss += 1
-    if (input.reactionType === "SMILE") smile += 1
-    if (input.reactionType === "LAUGH") laugh += 1
-    if (input.reactionType === "SPARKLE") sparkle += 1
-
-    await tx.query(
-      `
-      UPDATE reaction_inboxes
-      SET pair_session_id = $2,
-        generation = $3,
-        heart_count = $4,
-        hug_count = $5,
-        kiss_count = $6,
-        smile_count = $7,
-        laugh_count = $8,
-        sparkle_count = $9,
+      VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, NULL, NULL, NULL, 0, NOW())
+      ON CONFLICT (recipient_user_id) DO UPDATE SET
+        pair_session_id = $2,
+        generation = (CASE WHEN reaction_inboxes.generation > 0 THEN reaction_inboxes.generation ELSE 1 END)
+          + (CASE WHEN ${startsNewBatch} THEN 1 ELSE 0 END),
+        ${count("heart_count", "$3")},
+        ${count("hug_count", "$4")},
+        ${count("kiss_count", "$5")},
+        ${count("smile_count", "$6")},
+        ${count("laugh_count", "$7")},
+        ${count("sparkle_count", "$8")},
+        leased_by_device_id = CASE WHEN ${startsNewBatch} THEN NULL ELSE reaction_inboxes.leased_by_device_id END,
+        lease_expires_at = CASE WHEN ${startsNewBatch} THEN NULL ELSE reaction_inboxes.lease_expires_at END,
+        lease_generation = CASE WHEN ${startsNewBatch} THEN NULL ELSE reaction_inboxes.lease_generation END,
         updated_at = NOW()
-      WHERE recipient_user_id = $1
+      RETURNING generation, heart_count, hug_count, kiss_count, smile_count, laugh_count, sparkle_count
       `,
-      [input.recipientUserId, input.pairSessionId, generation, heart, hug, kiss, smile, laugh, sparkle],
+      [
+        input.recipientUserId,
+        input.pairSessionId,
+        input.reactionType === "HEART" ? 1 : 0,
+        input.reactionType === "HUG" ? 1 : 0,
+        input.reactionType === "KISS" ? 1 : 0,
+        input.reactionType === "SMILE" ? 1 : 0,
+        input.reactionType === "LAUGH" ? 1 : 0,
+        input.reactionType === "SPARKLE" ? 1 : 0,
+        new Date().toISOString(),
+      ],
     )
-
+    const row = rows.rows[0]
     return {
-      generation,
-      heartCount: heart,
-      hugCount: hug,
-      kissCount: kiss,
-      smileCount: smile,
-      laughCount: laugh,
-      sparkleCount: sparkle,
+      generation: Number(row.generation) || 1,
+      heartCount: Number(row.heart_count) || 0,
+      hugCount: Number(row.hug_count) || 0,
+      kissCount: Number(row.kiss_count) || 0,
+      smileCount: Number(row.smile_count) || 0,
+      laughCount: Number(row.laugh_count) || 0,
+      sparkleCount: Number(row.sparkle_count) || 0,
     }
   }
 

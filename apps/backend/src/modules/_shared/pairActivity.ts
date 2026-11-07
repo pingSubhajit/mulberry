@@ -51,9 +51,12 @@ async function markActive(
   pairSessionId: string,
   day: string,
 ): Promise<boolean> {
-  const existing = await db.query(`SELECT 1 FROM ${table} WHERE pair_session_id = $1 AND ${column} = $2::date`, [pairSessionId, day])
-  if (existing.rows.length > 0) {
-    await db.query(`UPDATE ${table} SET last_seen_at = NOW() WHERE pair_session_id = $1 AND ${column} = $2::date`, [pairSessionId, day])
+  // Already marked is the usual case, so it takes one round trip.
+  const touched = await db.query(
+    `UPDATE ${table} SET last_seen_at = NOW() WHERE pair_session_id = $1 AND ${column} = $2::date RETURNING pair_session_id`,
+    [pairSessionId, day],
+  )
+  if (touched.rows.length > 0) {
     return false
   }
   await db.query(
