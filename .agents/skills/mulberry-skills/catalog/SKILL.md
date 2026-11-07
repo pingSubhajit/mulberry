@@ -63,6 +63,46 @@ curl --fail-with-body -sS -X PATCH "$API/admin/share-frames/christmas/1" -H "x-a
 
 Seasonal windows: Christmas 15–26 December, Halloween 20 October–1 November, Diwali from about 10 days before to the day after (it moves every year). Valentine's has no window: it is always available.
 
+### The v1 frame set
+
+The eight v1 frames live in `temp/share-frames/v1/<key>/` (git-ignored, on this machine only): `frame.png` (upload this, not the WebP), `layout.json`, and `preview.png` / `check-*.png` to look at. `src/` holds the reference renderer and validator; `validation-report.txt` must say `0 failed checks`, otherwise rerun `uv run --with pillow python temp/share-frames/v1/src/validate.py` and fix the art before uploading. Upload all eight, Plain and Polaroid included: the apps bundle those two only as an offline fallback, and a loaded catalog replaces the bundled copies.
+
+| Key | Title | sortOrder | Window |
+| --- | --- | --- | --- |
+| `polaroid` | Polaroid | 10 | none |
+| `plain` | Plain | 20 | none |
+| `valentines` | Valentine's | 30 | none |
+| `halloween` | Halloween | 40 | 20 Oct–1 Nov |
+| `diwali` | Diwali | 50 | ~10 days before Diwali to the day after |
+| `christmas` | Christmas | 60 | 15–26 Dec |
+| `lavender-black` | Lavender Black | 70 | none |
+| `spring-kittens` | Spring Kittens | 80 | none |
+
+Give each seasonal frame its next window that hasn't ended yet (a window still running counts). To load the whole set, read the catalog first, skip any key that already has version 1, then create every draft, read them back, and publish only once all of them uploaded cleanly. Run it under `bash` with `API` and `ADMIN_PASSWORD` set as in Connection:
+
+```sh
+FRAMES=temp/share-frames/v1
+while IFS='|' read -r key title order from until; do
+  args=(-F "frameKey=$key" -F frameVersion=1 -F "title=$title" -F "sortOrder=$order" -F published=false
+        -F "layout=<$PWD/$FRAMES/$key/layout.json" -F "image=@$PWD/$FRAMES/$key/frame.png;type=image/png")
+  [ -n "$from" ] && args+=(-F "availableFrom=$from" -F "availableUntil=$until")
+  curl --fail-with-body -sS "$API/admin/share-frames" -H "x-admin-password: $ADMIN_PASSWORD" "${args[@]}" >/dev/null && echo "draft $key"
+done <<'EOF'
+polaroid|Polaroid|10||
+plain|Plain|20||
+valentines|Valentine's|30||
+halloween|Halloween|40|YYYY-10-20|YYYY-11-01
+diwali|Diwali|50|YYYY-MM-DD|YYYY-MM-DD
+christmas|Christmas|60|YYYY-12-15|YYYY-12-26
+lavender-black|Lavender Black|70||
+spring-kittens|Spring Kittens|80||
+EOF
+```
+
+If one upload fails with a 502 `CATALOG_FAILURE` (Supabase sometimes returns an empty error, shown as `<none>`), read the catalog: the failed key has no row. Retry from that key once; if it fails again, stop and report it.
+
+Before publishing, check every draft is 1080×1920 and that its `frameUrl` loads. Afterwards, check that the public `GET /share-frames` (which needs a user's bearer token) or the admin list shows all eight published with the right windows. Remind the user to reset the seasonal windows each year.
+
 `INVALID_FRAME_IMAGE` means the file isn't a 1080×1920 PNG with alpha. `INVALID_FRAME_LAYOUT` names the failing field, or reports `outsidePixels` when transparent pixels fall outside the quad; fix the art or the layout, never the check.
 
 ## Wallpaper titles and descriptions
