@@ -28,6 +28,7 @@ import com.subhajit.mulberry.network.GoogleAuthRequest
 import com.subhajit.mulberry.network.RefreshRequest
 import com.subhajit.mulberry.network.toDomainBootstrap
 import com.subhajit.mulberry.photos.CanvasPhotoStore
+import com.subhajit.mulberry.share.ShareRenderCache
 import com.subhajit.mulberry.sync.FcmTokenRepository
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -44,6 +45,7 @@ class CredentialManagerAuthRepository @Inject constructor(
     private val fcmTokenRepository: FcmTokenRepository,
     private val appleSignInCoordinator: AppleSignInCoordinator,
     private val canvasPhotoStore: CanvasPhotoStore,
+    private val shareRenderCache: ShareRenderCache,
     @ApplicationContext private val context: Context
 ) : AuthRepository {
 
@@ -186,6 +188,9 @@ class CredentialManagerAuthRepository @Inject constructor(
             runCatching { canvasPhotoStore.removeAccount(userId) }
                 .onFailure { error -> Log.w(TAG, "Unable to remove canvas photos during sign-out", error) }
         }
+        // The kept share preview shows the pair's lock screen.
+        runCatching { shareRenderCache.clear() }
+            .onFailure { error -> Log.w(TAG, "Unable to remove the share preview during sign-out", error) }
     }
 
     private fun GetCredentialResponse.googleIdToken(): String {

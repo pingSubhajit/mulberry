@@ -71,6 +71,7 @@ class ShareViewModel @Inject constructor(
     private val frameRepository: ShareFrameRepository,
     private val wallpaperSource: ShareWallpaperSource,
     private val renderer: ShareImageRenderer,
+    private val renderCache: ShareRenderCache,
     private val sessionBootstrapRepository: SessionBootstrapRepository,
     private val analytics: AppAnalytics
 ) : ViewModel() {
@@ -86,6 +87,8 @@ class ShareViewModel @Inject constructor(
     private var defaultCaption: String = ""
     @Volatile private var realWallpaperAvailable = true
     private var sessionActive = false
+    /** The frame the sheet opens on, whose preview is kept for the next opening. */
+    @Volatile private var openingKey: String? = null
     private var loadJob: Job? = null
 
     // The renderer and these caches belong to whoever holds the mutex.
@@ -108,7 +111,10 @@ class ShareViewModel @Inject constructor(
                     Log.w(TAG, "Share preview failed", error)
                     null
                 }
-                if (preview != null) _uiState.update { it.copy(preview = preview) }
+                if (preview != null) {
+                    _uiState.update { it.copy(preview = preview) }
+                    savedPreviewKey(request)?.let { key -> renderCache.savePreview(preview, key) }
+                }
             }
         }
     }
@@ -130,14 +136,19 @@ class ShareViewModel @Inject constructor(
             frames = emptyList()
 
             bundledFrames = frameRepository.bundledFrames()
-            // Opens on the catalog as it last answered, so the frames don't swap a moment later.
+            // Opens on the catalog as it last answered, so the frames don't swap a moment later,
+            // and on the preview drawn last time, which the one being drawn replaces.
             val cached = frameRepository.cachedCatalogFrames()
-            if (cached != null) applyFrames(cached)
+            if (cached != null) {
+                applyFrames(cached)
+                restoreSavedPreview()
+            }
             val fresh = async { frameRepository.catalogFrames() }
             if (frames.isEmpty()) {
                 // The first time, the catalog gets a moment so the preview starts on the right
                 // frame; when it's slow or unreachable, the bundled frames stand in.
                 applyFrames(chooseShareFrames(withTimeoutOrNull(FIRST_CATALOG_WAIT_MS) { fresh.await() }, bundledFrames))
+                restoreSavedPreview()
             }
             fresh.await()?.let { catalog -> applyFrames(chooseShareFrames(catalog, bundledFrames)) }
         }
@@ -220,6 +231,7 @@ class ShareViewModel @Inject constructor(
         val arrangement = ShareFrameSelector.arrange(available, CalendarDate.today())
         if (arrangement.frames.isEmpty() || arrangement.frames == frames) return
         frames = arrangement.frames
+        openingKey = arrangement.preselectedKey
         val current = _uiState.value.selectedKey
         val selected = current?.takeIf { key -> frames.any { it.key == key } }
             ?: arrangement.preselectedKey
@@ -230,6 +242,30 @@ class ShareViewModel @Inject constructor(
             )
         }
         requestRender(debounce = false)
+    }
+
+    /** Shows the preview drawn last time while the sheet is as it opens and nothing is drawn yet. */
+    private suspend fun restoreSavedPreview() {
+        val state = _uiState.value
+        if (state.preview != null) return
+        val key = state.selectedKey ?: return
+        val savedKey = savedPreviewKey(RenderRequest(key, state.caption, state.useRealWallpaper, debounce = false))
+            ?: return
+        val saved = renderCache.preview(savedKey) ?: return
+        _uiState.update { current ->
+            if (current.preview == null && current.selectedKey == key) current.copy(preview = saved) else current
+        }
+    }
+
+    /**
+     * The key the preview for [request] is kept under, or null unless the sheet is as it opens:
+     * the opening frame, the starting caption and the switch on.
+     */
+    private fun savedPreviewKey(request: RenderRequest): String? {
+        if (request.frameKey != openingKey || request.caption != defaultCaption) return null
+        if (!request.useRealWallpaper && realWallpaperAvailable) return null
+        val frame = frames.firstOrNull { it.key == request.frameKey } ?: return null
+        return "${frame.key}/${frame.version}\n${request.caption}"
     }
 
     private fun requestRender(debounce: Boolean) {
