@@ -154,7 +154,7 @@ public struct ShareFrameColor: Equatable, Sendable {
 }
 
 /// One published frame version from `GET /share-frames`.
-public struct ShareFrameCatalogItem: Decodable, Equatable, Sendable {
+public struct ShareFrameCatalogItem: Codable, Equatable, Sendable {
     public let key: String
     public let version: Int
     public let title: String
@@ -187,6 +187,20 @@ public struct ShareFrameCatalogItem: Decodable, Equatable, Sendable {
         } else {
             layout = nil
         }
+    }
+
+    /// Written back in the catalog's own shape, so the apps can keep its last reply.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(key, forKey: .key)
+        try container.encode(version, forKey: .version)
+        try container.encode(title, forKey: .title)
+        try container.encode(sortOrder, forKey: .sortOrder)
+        try container.encodeIfPresent(availableFrom, forKey: .availableFrom)
+        try container.encodeIfPresent(availableUntil, forKey: .availableUntil)
+        try container.encode(frameUrl, forKey: .frameUrl)
+        try container.encodeIfPresent(thumbnailUrl, forKey: .thumbnailUrl)
+        try container.encodeIfPresent(layout, forKey: .layout)
     }
 }
 

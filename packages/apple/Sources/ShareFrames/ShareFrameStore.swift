@@ -7,8 +7,9 @@ import ProductCore
 /// How the store reaches the catalog. The apps pass a closure so it never holds a stale client.
 public typealias ShareFrameCatalogSource = @Sendable () async throws -> [ShareFrameCatalogItem]
 
-/// The frames to offer and their images. The catalog decides which frames show; until it answers,
-/// or when it can't, the frames bundled with the app stand in. Images are kept on disk by key and
+/// The frames to offer and their images. The catalog decides which frames show. Its last reply is
+/// kept on disk, so the share screen can open on it straight away; before it has ever answered, or
+/// when it can't, the frames bundled with the app stand in. Images are kept on disk by key and
 /// version, which never change once published, and a catalog frame that is also bundled is drawn
 /// from the app's own copy.
 public actor ShareFrameStore {
@@ -41,12 +42,37 @@ public actor ShareFrameStore {
         ShareFrameRules.lineup(bundled, on: day)
     }
 
+    /// The catalog as it last answered, arranged for `day`: what the share screen opens on, so it
+    /// starts on the right frames rather than swapping the bundled ones out a moment later. Nil
+    /// until the catalog has once answered with frames this build can draw.
+    public nonisolated func cachedLineup(on day: String = ServerDate.localDay()) -> ShareFrameLineup? {
+        guard let data = try? Data(contentsOf: catalogFile),
+              let list = try? JSONDecoder().decode(ShareFrameCatalogList.self, from: data) else { return nil }
+        let frames = list.items.compactMap { ShareFrame($0, baseURL: baseURL) }.map(preferBundled)
+        return frames.isEmpty ? nil : ShareFrameRules.lineup(frames, on: day)
+    }
+
+    /// The catalog's frames arranged for `day` (the bundled ones when it has none), or nil when it
+    /// can't be reached. Each reply is kept for `cachedLineup`.
+    public func catalogLineup(on day: String = ServerDate.localDay()) async -> ShareFrameLineup? {
+        guard let items = try? await catalog() else { return nil }
+        if let data = try? JSONEncoder().encode(CachedCatalog(items: items)) {
+            try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try? data.write(to: catalogFile, options: .atomic)
+        }
+        let frames = items.compactMap { ShareFrame($0, baseURL: baseURL) }.map(preferBundled)
+        return ShareFrameRules.lineup(frames.isEmpty ? bundled : frames, on: day)
+    }
+
     /// The catalog's frames arranged for `day`, or the bundled ones when it can't be reached.
     public func lineup(on day: String = ServerDate.localDay()) async -> ShareFrameLineup {
-        guard let items = try? await catalog() else { return ShareFrameRules.lineup(bundled, on: day) }
-        let frames = items.compactMap { ShareFrame($0, baseURL: baseURL) }.map(preferBundled)
-        return ShareFrameRules.lineup(frames, on: day)
+        await catalogLineup(on: day) ?? ShareFrameRules.lineup(bundled, on: day)
     }
+
+    /// The catalog's last reply, in its own shape.
+    private struct CachedCatalog: Encodable { let items: [ShareFrameCatalogItem] }
+
+    private nonisolated var catalogFile: URL { root.appendingPathComponent("catalog.json") }
 
     /// The frame's full image.
     public func image(_ frame: ShareFrame) async throws -> CGImage {
@@ -102,7 +128,7 @@ public actor ShareFrameStore {
 
     /// A catalog frame the app already carries, same key, version and layout, is drawn from the
     /// app's copy rather than downloaded.
-    private func preferBundled(_ frame: ShareFrame) -> ShareFrame {
+    private nonisolated func preferBundled(_ frame: ShareFrame) -> ShareFrame {
         guard let copy = bundled.first(where: { $0.key == frame.key && $0.version == frame.version && $0.layout == frame.layout }) else { return frame }
         return ShareFrame(key: frame.key, version: frame.version, title: frame.title, sortOrder: frame.sortOrder,
                           availableFrom: frame.availableFrom, availableUntil: frame.availableUntil, layout: frame.layout,

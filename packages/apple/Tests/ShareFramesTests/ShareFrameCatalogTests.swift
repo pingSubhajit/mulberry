@@ -201,6 +201,30 @@ private func frame(_ key: String, version: Int = 1, sortOrder: Int = 0, from: St
     #expect(!lineup.frames[0].bundled && lineup.frames[0].imageURL.absoluteString == "https://cdn.example/q2.webp")
 }
 
+@Test func theCatalogsLastReplyIsKeptForTheNextOpening() async throws {
+    let bundledDirectory = try fixture("frames")
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let polaroidJSON = try String(contentsOf: fixture("frames/polaroid/layout.json"), encoding: .utf8)
+    let items = try JSONDecoder().decode(ShareFrameCatalogList.self, from: Data("""
+    {"items": [
+      {"key": "polaroid", "version": 2, "title": "Polaroid", "sortOrder": 10, "availableFrom": "2026-06-01", "frameUrl": "https://cdn.example/q2.webp", "layout": \(polaroidJSON)}
+    ]}
+    """.utf8)).items
+
+    // Nothing kept before the catalog has ever answered.
+    let online = ShareFrameStore(catalog: { items }, bundledDirectory: bundledDirectory, root: root)
+    #expect(online.cachedLineup(on: "2026-06-01") == nil)
+    let fresh = try #require(await online.catalogLineup(on: "2026-06-01"))
+
+    // A later opening, offline, starts on the same frames, windows and all.
+    let offline = ShareFrameStore(catalog: { throw URLError(.notConnectedToInternet) }, bundledDirectory: bundledDirectory, root: root)
+    #expect(offline.cachedLineup(on: "2026-06-01") == fresh)
+    #expect(offline.cachedLineup(on: "2026-05-31")?.frames.isEmpty == true)
+    // An unreachable catalog says so rather than standing the bundled frames in.
+    #expect(await offline.catalogLineup(on: "2026-06-01") == nil)
+    #expect(offline.cachedLineup(on: "2026-06-01") == fresh)
+}
+
 // MARK: Caption text
 
 @Test func theDefaultCaptionNamesThePartner() {

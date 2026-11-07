@@ -38,8 +38,6 @@ final class ShareModel: ObservableObject {
     let defaultCaption: String
     private let store: ShareFrameStore
     private let fonts: ShareFrameFonts?
-    /// The person chose a frame, so the catalog arriving doesn't move the selection.
-    private var chosen = false
     private var started = false
     private var realWallpaper: Task<ShareWallpaper?, Never>?
     private var fallbackWallpaper: Task<ShareWallpaper?, Never>?
@@ -71,19 +69,39 @@ final class ShareModel: ObservableObject {
         guard !started else { return }
         started = true
         AppAnalytics.track(.shareOpened)
-        apply(store.bundledLineup(), draw: false)
+        // Opens on the catalog as it last answered, so the frames don't swap a moment later.
+        if let cached = store.cachedLineup() { apply(cached, draw: false) }
+        let store = store
+        let fresh = Task { await store.catalogLineup() }
         Task {
             // The lock screen image is drawn on the main thread, as for the Shortcut; let the
             // sheet finish rising first.
             try? await Task.sleep(for: .milliseconds(350))
+            if frames.isEmpty {
+                // The first time, the catalog gets a moment so the preview starts on the right
+                // frame; when it's slow or unreachable, the bundled frames stand in.
+                let first = await Self.value(of: fresh, within: .milliseconds(1150))
+                apply(first.flatMap { $0 } ?? store.bundledLineup(), draw: false)
+            }
             render()
             renderThumbnails()
-            apply(await store.lineup())
+            if let lineup = await fresh.value { apply(lineup) }
+        }
+    }
+
+    /// The task's value, or nil when it isn't ready within `limit`. The task carries on either way.
+    private static func value<T: Sendable>(of task: Task<T, Never>, within limit: Duration) async -> T? {
+        await withCheckedContinuation { continuation in
+            let once = ResumeOnce(continuation)
+            Task { @MainActor in once.resume(await task.value) }
+            Task { @MainActor in
+                try? await Task.sleep(for: limit)
+                once.resume(nil)
+            }
         }
     }
 
     func select(_ frame: ShareFrame) {
-        chosen = true
         // Tapping a frame that couldn't load tries it again.
         guard frame != selected || frameFailed else { return }
         if frame != selected { AppAnalytics.track(.shareFrameSelected(frameKey: frame.key)) }
@@ -92,12 +110,13 @@ final class ShareModel: ObservableObject {
         render()
     }
 
-    /// Shows the catalog's frames, keeping the person's choice when it is still there.
+    /// Shows a lineup. The frame on screen stays while the lineup still has it, so a catalog that
+    /// answers late adds frames rather than swapping the preview out.
     private func apply(_ lineup: ShareFrameLineup, draw: Bool = true) {
         guard !lineup.frames.isEmpty, lineup.frames != frames else { return }
         frames = lineup.frames
         let previous = selected
-        if chosen, let key = previous?.key, let same = lineup.frames.first(where: { $0.key == key }) {
+        if let key = previous?.key, let same = lineup.frames.first(where: { $0.key == key }) {
             selected = same
         } else {
             selected = lineup.preselected
@@ -424,5 +443,18 @@ private final class ShareImageItem: NSObject, UIActivityItemSource {
         metadata.imageProvider = provider
         metadata.iconProvider = provider
         return metadata
+    }
+}
+
+/// Resumes a continuation once, from whichever of several tasks gets there first.
+@MainActor
+private final class ResumeOnce<T> {
+    private var continuation: CheckedContinuation<T, Never>?
+
+    init(_ continuation: CheckedContinuation<T, Never>) { self.continuation = continuation }
+
+    func resume(_ value: T) {
+        continuation?.resume(returning: value)
+        continuation = nil
     }
 }
