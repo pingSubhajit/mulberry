@@ -57,16 +57,16 @@
       "build": 28,
       "commit": "c7166dcd9def2d8fe04b6f92599718b9ef7abeaf",
       "channel": "play-beta",
-      "uploadedAt": "2026-11-06",
-      "releasedAt": "2026-11-06",
-      "tag": "android-v1.2.0"
+      "uploadedAt": "2026-11-06"
     },
     {
       "version": "1.2.0",
       "build": 29,
       "commit": "6a26ca15caec01e017e2aed244bcd31b7cbd0309",
       "channel": "play-beta",
-      "uploadedAt": "2026-11-10"
+      "uploadedAt": "2026-11-10",
+      "releasedAt": "2026-11-10",
+      "tag": "android-v1.2.0"
     }
   ]
 }
