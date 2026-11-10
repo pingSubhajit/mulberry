@@ -60,6 +60,13 @@
       "uploadedAt": "2026-11-06",
       "releasedAt": "2026-11-06",
       "tag": "android-v1.2.0"
+    },
+    {
+      "version": "1.2.0",
+      "build": 29,
+      "commit": "6a26ca15caec01e017e2aed244bcd31b7cbd0309",
+      "channel": "play-beta",
+      "uploadedAt": "2026-11-10"
     }
   ]
 }
