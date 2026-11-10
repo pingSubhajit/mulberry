@@ -3,8 +3,6 @@ package com.subhajit.mulberry.sync
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.ForegroundInfo
 import com.subhajit.mulberry.MainActivity
@@ -14,18 +12,11 @@ import com.subhajit.mulberry.notifications.MulberryNotificationChannels
 object BackgroundCanvasSyncForegroundNotification {
     private const val NOTIFICATION_ID = 2201
 
+    // Only Android 11 and older run expedited work as a foreground service, and they need no
+    // service type, so the app declares no foreground service permission.
     fun createForegroundInfo(context: Context): ForegroundInfo {
         MulberryNotificationChannels.registerAll(context)
-        val notification = createNotification(context)
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            ForegroundInfo(NOTIFICATION_ID, notification)
-        }
+        return ForegroundInfo(NOTIFICATION_ID, createNotification(context))
     }
 
     private fun createNotification(context: Context) = NotificationCompat.Builder(
