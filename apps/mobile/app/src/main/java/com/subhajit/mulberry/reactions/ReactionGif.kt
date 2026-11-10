@@ -14,8 +14,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
@@ -31,8 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
-import com.google.android.play.core.assetpacks.AssetPackStateUpdateListener
-import com.google.android.play.core.assetpacks.model.AssetPackStatus
 import kotlin.math.min
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -60,27 +56,15 @@ private fun AnimatedReactionImage(
     modifier: Modifier
 ) {
     val context = LocalContext.current.applicationContext
-    val assetPackGeneration = rememberReactionAssetPackGeneration()
     var sizePx by remember { mutableIntStateOf(0) }
-    var decodeAttempt by remember(type) { mutableIntStateOf(0) }
-    val drawable by produceState<Drawable?>(null, type, sizePx, decodeAttempt, assetPackGeneration) {
+    // The emoji stands in for the moment the decode takes.
+    val drawable by produceState<Drawable?>(null, type, sizePx) {
         if (sizePx <= 0) return@produceState
         value = withContext(Dispatchers.IO) {
             ReactionGifAssets.decodeAnimatedDrawable(context, type, sizePx)
         }
     }
 
-    LaunchedEffect(type) {
-        if (type != ReactionType.HEART) ReactionGifAssets.requestFastFollowPack(context)
-    }
-    // Until the reactions' pack arrives, the emoji stands in, and the decode tries again.
-    LaunchedEffect(drawable, type, assetPackGeneration) {
-        if (drawable != null || type == ReactionType.HEART) return@LaunchedEffect
-        while (isActive) {
-            delay(1_000)
-            decodeAttempt += 1
-        }
-    }
     DisposableEffect(drawable) {
         val animated = drawable as? AnimatedImageDrawable
         animated?.start()
@@ -131,15 +115,8 @@ private fun MovieReactionGif(
     modifier: Modifier
 ) {
     val context = LocalContext.current.applicationContext
-    val assetPackGeneration = rememberReactionAssetPackGeneration()
-    var decodeAttempt by remember(type) { mutableIntStateOf(0) }
     // Decoded once and kept, off the main thread: the emoji stands in for the moment it takes.
-    val movie by produceState(
-        initialValue = ReactionGifUiCache.peek(type),
-        type,
-        decodeAttempt,
-        assetPackGeneration
-    ) {
+    val movie by produceState(initialValue = ReactionGifUiCache.peek(type), type) {
         value = ReactionGifUiCache.movie(context, type)
     }
     var elapsedMs by remember(type) { mutableLongStateOf(0L) }
@@ -147,20 +124,6 @@ private fun MovieReactionGif(
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
             typeface = Typeface.DEFAULT
-        }
-    }
-
-    LaunchedEffect(type) {
-        if (type != ReactionType.HEART) {
-            ReactionGifAssets.requestFastFollowPack(context)
-        }
-    }
-
-    LaunchedEffect(movie, type, assetPackGeneration) {
-        if (movie != null || type == ReactionType.HEART) return@LaunchedEffect
-        while (isActive) {
-            delay(1_000)
-            decodeAttempt += 1
         }
     }
 
@@ -199,36 +162,4 @@ private fun MovieReactionGif(
             native.restore()
         }
     }
-}
-
-@Composable
-private fun rememberReactionAssetPackGeneration(): Int {
-    val context = LocalContext.current.applicationContext
-    val assetPackManager = remember(context) { createReactionAssetPackManager(context) }
-    val mainHandler = remember { Handler(Looper.getMainLooper()) }
-    var generation by remember(assetPackManager) { mutableIntStateOf(0) }
-
-    DisposableEffect(assetPackManager) {
-        if (assetPackManager == null) return@DisposableEffect onDispose { }
-        val listener = AssetPackStateUpdateListener { state ->
-            if (
-                state.name() == REACTION_ASSET_PACK &&
-                state.status() in setOf(
-                    AssetPackStatus.COMPLETED,
-                    AssetPackStatus.FAILED,
-                    AssetPackStatus.CANCELED,
-                    AssetPackStatus.NOT_INSTALLED
-                )
-            ) {
-                ReactionGifAssets.onFastFollowPackStatus(state.status())
-                mainHandler.post {
-                    generation += 1
-                }
-            }
-        }
-        assetPackManager.registerListener(listener)
-        onDispose { assetPackManager.unregisterListener(listener) }
-    }
-
-    return generation
 }

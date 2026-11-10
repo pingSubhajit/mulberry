@@ -4,9 +4,6 @@ import android.app.WallpaperManager
 import android.app.WallpaperInfo
 import android.content.ComponentName
 import android.content.Context
-import com.google.android.play.core.assetpacks.AssetPackManagerFactory
-import com.google.android.play.core.assetpacks.AssetPackStateUpdateListener
-import com.google.android.play.core.assetpacks.model.AssetPackStatus
 import com.subhajit.mulberry.app.shortcut.WallpaperDoodlesShortcutPublisher
 import com.subhajit.mulberry.app.di.ApplicationScope
 import com.subhajit.mulberry.data.bootstrap.SessionBootstrapRepository
@@ -28,8 +25,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-
-private const val CANVAS_FONTS_ASSET_PACK = "canvas_fonts"
 
 @Singleton
 class DefaultWallpaperCoordinator @Inject constructor(
@@ -57,8 +52,6 @@ class DefaultWallpaperCoordinator @Inject constructor(
         applicationScope.launch {
             refreshWallpaperSelection()
         }
-
-        observeCanvasFontPack()
 
         applicationScope.launch {
             var lastObservedMode: CanvasStrokeRenderMode? = null
@@ -200,36 +193,4 @@ class DefaultWallpaperCoordinator @Inject constructor(
 
     private fun CanvasMetadataEntity.hasSnapshotFile(): Boolean =
         cachedImagePath?.let { File(it).exists() } == true
-
-    private fun observeCanvasFontPack() {
-        val assetPackManager = runCatching {
-            AssetPackManagerFactory.getInstance(context.applicationContext)
-        }.getOrNull() ?: return
-
-        suspend fun rerenderSnapshotForFonts() {
-            if (!wallpaperSyncSettingsRepository.enabled.first()) return
-            renderMutex.withLock {
-                val metadata = canvasMetadataDao.getMetadata() ?: CanvasMetadataEntity.default()
-                if (metadata.hasSnapshotFile()) {
-                    snapshotRenderer.renderCurrentSnapshot()
-                }
-            }
-            notifyWallpaperUpdatedIfSelected()
-        }
-
-        if (assetPackManager.getPackLocation(CANVAS_FONTS_ASSET_PACK) != null) {
-            applicationScope.launch { rerenderSnapshotForFonts() }
-            return
-        }
-
-        val listener = AssetPackStateUpdateListener { state ->
-            if (
-                state.name() == CANVAS_FONTS_ASSET_PACK &&
-                state.status() == AssetPackStatus.COMPLETED
-            ) {
-                applicationScope.launch { rerenderSnapshotForFonts() }
-            }
-        }
-        assetPackManager.registerListener(listener)
-    }
 }

@@ -14,6 +14,7 @@ import com.subhajit.mulberry.core.data.PreferenceStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -31,12 +32,6 @@ class DataStoreBackgroundImageRepository @Inject constructor(
     private val dataStore: DataStore<Preferences>
 ) : BackgroundImageRepository {
     private val publicHttpClient = OkHttpClient()
-    private val wallpaperPackAssetResolver = WallpaperPackAssetResolver.create(context)
-
-    init {
-        wallpaperPackAssetResolver.requestFastFollowPack()
-    }
-
     override val backgroundState: Flow<BackgroundImageState> = dataStore.data
         .map { preferences ->
             BackgroundImageState(
@@ -85,17 +80,10 @@ class DataStoreBackgroundImageRepository @Inject constructor(
 
     override suspend fun importPresetBackground(preset: WallpaperPreset) {
         withContext(Dispatchers.IO) {
-            val sourceFile = wallpaperPackAssetResolver.fileFor(preset)
-                ?: wallpaperPackAssetResolver.awaitFileFor(preset)
-            val canOpenDebugAsset = sourceFile == null &&
-                wallpaperPackAssetResolver.openAssetStream(preset)?.use { true } == true
-            if (sourceFile == null && !canOpenDebugAsset) {
-                error("Wallpaper assets are still downloading. Please try again in a moment.")
-            }
             val backgroundFile = WallpaperFiles.backgroundFile(context)
             storeOptimizedBackground(
                 destination = backgroundFile,
-                loadBitmap = { decodeScaledPresetBitmap(preset, sourceFile) }
+                loadBitmap = { decodeScaledPresetBitmap(preset) }
             )
             persistSelection(
                 assetPath = backgroundFile.absolutePath,
@@ -235,25 +223,20 @@ class DataStoreBackgroundImageRepository @Inject constructor(
         }
     }
 
-    private fun decodeScaledPresetBitmap(preset: WallpaperPreset, file: File?): Bitmap? {
+    private fun decodeScaledPresetBitmap(preset: WallpaperPreset): Bitmap? {
         val targetSize = optimizedTargetSize()
-        val bitmap = if (file != null) {
-            decodeSampledBitmapFromFile(
-                path = file.absolutePath,
-                targetWidth = targetSize.width,
-                targetHeight = targetSize.height
-            ) ?: decodeFullFileBitmap(file)
-        } else {
-            decodeSampledBitmap(
-                openStream = { wallpaperPackAssetResolver.openAssetStream(preset) },
-                targetWidth = targetSize.width,
-                targetHeight = targetSize.height
-            ) ?: wallpaperPackAssetResolver.openAssetStream(preset)?.use(BitmapFactory::decodeStream)
-        }
+        val bitmap = decodeSampledBitmap(
+            openStream = { openPresetAsset(preset) },
+            targetWidth = targetSize.width,
+            targetHeight = targetSize.height
+        ) ?: openPresetAsset(preset)?.use(BitmapFactory::decodeStream)
         return bitmap?.let { decoded ->
             scaleForTarget(decoded, targetSize)
         }
     }
+
+    private fun openPresetAsset(preset: WallpaperPreset): InputStream? =
+        runCatching { context.assets.open(preset.assetPath) }.getOrNull()
 
     private fun decodeScaledRemoteBitmap(downloadFile: File): Bitmap? {
         val targetSize = optimizedTargetSize()

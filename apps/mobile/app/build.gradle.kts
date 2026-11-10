@@ -77,7 +77,6 @@ android {
     }
 
     flavorDimensions += "environment"
-    assetPacks += listOf(":canvas_fonts", ":wallpaper_pack", ":reaction_pack")
 
     productFlavors {
         create("dev") {
@@ -151,15 +150,6 @@ android {
         compose = true
         buildConfig = true
     }
-    sourceSets {
-        getByName("debug") {
-            assets.srcDirs(
-                "../canvas_fonts/src/main/assets",
-                "../wallpaper_pack/src/main/assets",
-                "../reaction_pack/src/main/assets"
-            )
-        }
-    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -213,7 +203,6 @@ dependencies {
     implementation(libs.play.app.update.ktx)
     implementation(libs.play.review)
     implementation(libs.play.review.ktx)
-    implementation(libs.play.asset.delivery)
     implementation(libs.coil.compose)
     implementation(libs.commonmark)
     implementation(libs.androidx.ink.strokes)
