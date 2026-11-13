@@ -37,7 +37,9 @@
       "build": 15,
       "commit": "4b5ad882c9de709a977e23a85358b4497747aa5d",
       "channel": "app-store",
-      "uploadedAt": "2026-11-13"
+      "uploadedAt": "2026-11-13",
+      "releasedAt": "2026-11-13",
+      "tag": "ios-v1.2.0"
     }
   ],
   "macos": [
